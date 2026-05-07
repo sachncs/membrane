@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package membrane;
+
+option go_package = "github.com/membrane/api";
+
+service Membrane {
+  rpc StoreFragment(StoreRequest) returns (StoreResponse);
+  rpc RetrieveFragment(RetrieveRequest) returns (RetrieveResponse);
+  rpc SyncInventory(InventoryRequest) returns (InventoryResponse);
+  rpc Prefill(PrefillRequest) returns (PrefillResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message FragmentMessage {
+  string content_hash = 1;
+  repeated double embedding = 2;
+  string model_id = 3;
+  int32 layer_start = 4;
+  int32 layer_end = 5;
+  int32 token_start = 6;
+  int32 token_end = 7;
+  int32 size = 8;
+  double ttl = 9;
+  double reuse_score = 10;
+  int32 version_id = 11;
+}
+
+message StoreRequest {
+  FragmentMessage fragment = 1;
+  string node_id = 2;
+  bool is_primary = 3;
+}
+
+message StoreResponse {
+  bool success = 1;
+  string content_hash = 2;
+  string error = 3;
+}
+
+message RetrieveRequest {
+  string content_hash = 1;
+  string node_id = 2;
+}
+
+message RetrieveResponse {
+  FragmentMessage fragment = 1;
+  bool found = 2;
+  string error = 3;
+}
+
+message InventoryRequest {
+  string node_id = 1;
+}
+
+message InventoryResponse {
+  map<string, int32> digest = 1;
+  string node_id = 2;
+}
+
+message PrefillRequest {
+  repeated int32 prompt_tokens = 1;
+  string model_id = 2;
+  string node_id = 3;
+}
+
+message PrefillResponse {
+  repeated FragmentMessage fragments = 1;
+  double kv_size_mib = 2;
+  double latency_seconds = 3;
+  bool success = 4;
+  string error = 5;
+}
+
+message HeartbeatRequest {
+  string node_id = 1;
+}
+
+message HeartbeatResponse {
+  string node_id = 1;
+  double load = 2;
+  int64 memory_used_bytes = 3;
+  int64 memory_limit_bytes = 4;
+  int32 fragment_count = 5;
+  bool healthy = 6;
+}
