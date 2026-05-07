@@ -77,10 +77,10 @@ The service runs the multi-node simulation on boot and logs to journald.
 
 A GitHub Actions workflow (`.github/workflows/ci.yml`) is provided:
 
-- **Triggers**: Push to `main`, pull requests
+- **Triggers**: Push to `master`, pull requests
 - **Jobs**:
-  1. Lint with `mypy`
-  2. Run 450 tests on Python 3.10–3.13
+  1. Type-check with `mypy`
+  2. Run 548 tests on Python 3.10–3.13
   3. Build Docker image
   4. Run demos inside container
 
@@ -98,12 +98,19 @@ The `pyproject.toml` already defines the package metadata with zero runtime depe
 
 ## 8. Production Considerations
 
-Membrane is currently an **analytical simulator and in-memory library**. For production deployment as a real serving system, the following would be required:
+Membrane ships with several production-ready components already in place:
 
-1. **Persistent storage backend** (e.g., Redis, S3) for fragment durability
-2. **Network transport** (gRPC/HTTP) replacing the in-memory `TransferService`
-3. **GPU kernel integration** for actual KV-cache operations
-4. **Monitoring** (Prometheus metrics endpoint)
-5. **Horizontal scaling** with Kubernetes StatefulSets for Membrane nodes
+1. **Persistent storage backend** — Redis backend (`persistence/redis_backend.py`) with LRU eviction
+2. **Network transports** — HTTP (stdlib or FastAPI), gRPC, and peer-to-peer gossip (`network/`)
+3. **Compute backends** — CPU, GPU (PyTorch CUDA), and remote LLM APIs (OpenAI, Anthropic, Ollama)
+4. **Monitoring** — `/metrics` and `/heartbeat` endpoints; TUI dashboard via `membrane dashboard`
+
+For a hardened production deployment, additional work is recommended:
+
+- **Prometheus / Grafana** metrics exporter beyond the basic endpoints
+- **Kubernetes StatefulSets** for horizontal scaling of Membrane nodes
+- **TLS / mTLS** on gRPC and HTTP transports
+- **Rate limiting and authZ** on the public API surface
+- **S3-compatible blob storage** for large fragment offload
 
 These are outside the scope of the paper reproduction but are natural extension points.

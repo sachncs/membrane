@@ -37,7 +37,7 @@ class TransformersBackend(ComputeBackend):
     def _load_model(self) -> None:
         try:
             import torch
-            from transformers import AutoModel, AutoTokenizer
+            from transformers import AutoModel, AutoTokenizer  # type: ignore[import-not-found]
 
             self._torch = torch
             if self.device == "auto":

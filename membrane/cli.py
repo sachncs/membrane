@@ -11,6 +11,7 @@ Example:
   membrane dashboard --host localhost --port 8080
 """
 
+import json
 import logging
 import sys
 import time
@@ -44,11 +45,12 @@ console = Console()
 # ------------------------------------------------------------------
 
 def fmt_bytes(n: int) -> str:
+    size = float(n)
     for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
-        if abs(n) < 1024.0:
-            return f"{n:.1f} {unit}"
-        n /= 1024.0
-    return f"{n:.1f} PiB"
+        if abs(size) < 1024.0:
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} PiB"
 
 
 def fmt_duration(seconds: float) -> str:

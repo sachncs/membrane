@@ -135,7 +135,7 @@ class MembraneServer:
     # ------------------------------------------------------------------
 
     def _setup_persistence(self, redis_url: str) -> None:
-        self.persistence = InMemoryBackend()
+        self.persistence: Any = InMemoryBackend()
         if redis_url:
             try:
                 redis_backend = RedisBackend(redis_url)
@@ -169,6 +169,7 @@ class MembraneServer:
         host: str,
         port: int,
     ) -> None:
+        self.transport: Any
         if transport == "http":
             self.transport = FastAPIServer(
                 node=self.node,

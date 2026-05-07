@@ -53,6 +53,8 @@ class GPUBackend(ComputeBackend):
         if self._fallback is not None:
             return self._fallback.prefill(prompt_tokens, model_id)
 
+        assert self._torch is not None
+
         # GPU simulation: create tensors and simulate KV generation
         window_size = 128
         fragments: list[Fragment] = []

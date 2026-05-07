@@ -62,8 +62,11 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-No third-party runtime dependencies are required. The implementation uses only
-the Python standard library.
+Core dependencies are `typer` and `rich` for the CLI. Optional extras are available:
+
+- `pip install -e ".[server]"` — FastAPI, uvicorn, gRPC, Redis
+- `pip install -e ".[gpu]"` — PyTorch CUDA backend
+- `pip install -e ".[local-llm]"` — HuggingFace Transformers backend
 
 ## Running tests
 
@@ -98,7 +101,30 @@ membrane/
 │   ├── scheduler.py         # Dual-timescale scheduler
 │   ├── metrics.py           # TTFT and bandwidth metrics
 │   └── simulator.py         # End-to-end baseline simulations
+├── compute/                 # Compute backends
+│   ├── backend.py
+│   ├── cpu_backend.py
+│   ├── gpu_backend.py
+│   ├── transformers_backend.py
+│   ├── openai_backend.py
+│   ├── anthropic_backend.py
+│   └── ollama_backend.py
+├── persistence/             # Storage backends
+│   ├── memory_backend.py
+│   └── redis_backend.py
+├── transport/               # Network transports
+│   ├── http_server.py       # stdlib HTTP server
+│   ├── fastapi_server.py    # FastAPI + uvicorn server
+│   └── grpc_server.py       # gRPC server
+├── network/                 # Cluster and peer networking
+│   ├── cluster_manager.py
+│   ├── config.py
+│   ├── gossip_state.py
+│   ├── peer_client.py
+│   └── remote_transfer.py
 ├── __init__.py              # Public API exports
+├── server.py                # Unified production server
+├── cli.py                   # Command-line interface + dashboard
 ├── fragment.py              # Core data model
 ├── exact_index.py           # Hash-based exact index
 ├── semantic_index.py        # Embedding similarity index

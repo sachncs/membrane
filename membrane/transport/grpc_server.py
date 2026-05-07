@@ -36,10 +36,10 @@ class GrpcServer:
         self.host = host
         self.port = port
         self.compute_backend = compute_backend
-        self._server = None
-        self._grpc = None
+        self._server: Any | None = None
+        self._grpc: Any | None = None
         try:
-            import grpc
+            import grpc  # type: ignore[import-untyped]
 
             self._grpc = grpc
         except ImportError:
@@ -50,7 +50,8 @@ class GrpcServer:
 
     def start(self) -> None:
         """Start the gRPC server (blocking)."""
-        if self._grpc is None:
+        grpc_module = self._grpc
+        if grpc_module is None:
             raise RuntimeError("grpcio is not installed")
 
         from membrane.transport.proto import membrane_pb2
@@ -58,7 +59,7 @@ class GrpcServer:
 
         servicer = _MembraneServicer(self.node, self.compute_backend)
         from concurrent.futures import ThreadPoolExecutor
-        self._server = self._grpc.server(thread_pool=ThreadPoolExecutor(max_workers=10))
+        self._server = grpc_module.server(thread_pool=ThreadPoolExecutor(max_workers=10))
         membrane_pb2_grpc.add_MembraneServicer_to_server(servicer, self._server)
         self._server.add_insecure_port(f"{self.host}:{self.port}")
         self._server.start()
@@ -80,7 +81,7 @@ class _MembraneServicer:
         self.compute_backend = compute_backend
         from membrane.transport.proto import membrane_pb2
 
-        self._pb2 = membrane_pb2
+        self._pb2: Any = membrane_pb2
 
     def StoreFragment(self, request, context):
         frag = self._to_fragment(request.fragment)

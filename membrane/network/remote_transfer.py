@@ -26,7 +26,7 @@ class RemoteTransferService(TransferService):
 
     def __init__(
         self,
-        cluster_manager: "ClusterManager",
+        cluster_manager: "ClusterManager | None",
         local_node: MembraneNode,
     ) -> None:
         super().__init__()
@@ -47,6 +47,9 @@ class RemoteTransferService(TransferService):
         # Both local
         if isinstance(source, MembraneNode) and isinstance(target, MembraneNode):
             return super().transfer_fragment(source, target, content_hash)
+
+        if self.cluster_manager is None:
+            return False
 
         # Remote source
         if isinstance(source, str):
@@ -104,6 +107,8 @@ class RemoteTransferService(TransferService):
     def _inventory_digest(self, node: MembraneNode | str) -> dict[str, int] | None:
         if isinstance(node, MembraneNode):
             return super().inventory_digest(node)
+        if self.cluster_manager is None:
+            return None
         client = self.cluster_manager.get_peer_client(node)
         if client is None:
             return None

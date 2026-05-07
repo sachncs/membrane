@@ -7,7 +7,7 @@ inventory tracking, and LRU eviction.
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 
 from membrane.fragment import Fragment
 from membrane.structural_signature import StructuralSignature
@@ -69,7 +69,7 @@ class RedisBackend:
         Returns:
             Fragment if found, else None.
         """
-        data = self.client.hgetall(self._key(f"frag:{content_hash}"))
+        data = cast(dict[str, str], self.client.hgetall(self._key(f"frag:{content_hash}")))
         if not data:
             return None
         # Update LRU score on read
@@ -106,10 +106,10 @@ class RedisBackend:
         Returns:
             Inventory digest.
         """
-        hashes = self.client.smembers(self._key(f"node:{node_id}:fragments"))
+        hashes = cast(set[str], self.client.smembers(self._key(f"node:{node_id}:fragments")))
         digest: dict[str, int] = {}
         for h in hashes:
-            vid = self.client.hget(self._key(f"frag:{h}"), "version_id")
+            vid = cast(str | None, self.client.hget(self._key(f"frag:{h}"), "version_id"))
             if vid is not None:
                 digest[h] = int(vid)
         return digest
@@ -123,7 +123,7 @@ class RedisBackend:
         Returns:
             Set of content hashes.
         """
-        return self.client.smembers(self._key(f"node:{node_id}:fragments"))
+        return cast(set[str], self.client.smembers(self._key(f"node:{node_id}:fragments")))
 
     # ------------------------------------------------------------------
     # Location / directory
@@ -147,7 +147,7 @@ class RedisBackend:
         Returns:
             Set of node identifiers.
         """
-        return self.client.smembers(self._key(f"loc:{content_hash}"))
+        return cast(set[str], self.client.smembers(self._key(f"loc:{content_hash}")))
 
     def get_primary(self, content_hash: str) -> str | None:
         """Return the primary node for a fragment.
@@ -158,7 +158,7 @@ class RedisBackend:
         Returns:
             Node identifier, or None if not set.
         """
-        return self.client.get(self._key(f"primary:{content_hash}"))
+        return cast(str | None, self.client.get(self._key(f"primary:{content_hash}")))
 
     # ------------------------------------------------------------------
     # LRU eviction support
@@ -173,7 +173,7 @@ class RedisBackend:
         Returns:
             List of content hashes ordered by LRU (oldest first).
         """
-        return self.client.zrange(self._key("lru"), 0, count - 1)
+        return cast(list[str], self.client.zrange(self._key("lru"), 0, count - 1))
 
     # ------------------------------------------------------------------
     # Health
@@ -182,7 +182,7 @@ class RedisBackend:
     def ping(self) -> bool:
         """Return True if Redis is reachable."""
         try:
-            return self.client.ping()
+            return cast(bool, self.client.ping())
         except Exception:
             return False
 

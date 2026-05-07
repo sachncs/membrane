@@ -77,9 +77,9 @@ class GossipState:
 
         merged_locations = dict(self.fragment_locations)
         for h, nodes in other.fragment_locations.items():
-            existing = set(merged_locations.get(h, []))
-            existing.update(nodes)
-            merged_locations[h] = list(existing)
+            current_nodes = set(merged_locations.get(h, []))
+            current_nodes.update(nodes)
+            merged_locations[h] = list(current_nodes)
 
         merged_digest = dict(self.inventory_digest)
         merged_digest.update(other.inventory_digest)

@@ -84,6 +84,8 @@ class _MembraneServer(StdlibHTTPServer):
 class _MembraneHTTPHandler(BaseHTTPRequestHandler):
     """Request handler for Membrane HTTP transport."""
 
+    server: _MembraneServer  # type: ignore[misc]
+
     def log_message(self, fmt: str, *args: Any) -> None:
         logger.debug(fmt, *args)
 

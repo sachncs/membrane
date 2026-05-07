@@ -96,8 +96,8 @@ def _deserialize_fragment(data: FragmentPayload) -> Fragment:
         embedding=tuple(data.embedding),
         structural_signature=StructuralSignature(
             model_id=data.model_id,
-            layer_range=tuple(data.layer_range),
-            token_span=tuple(data.token_span),
+            layer_range=(data.layer_range[0], data.layer_range[1]),
+            token_span=(data.token_span[0], data.token_span[1]),
         ),
         size=data.size,
         ttl=data.ttl,
