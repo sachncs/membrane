@@ -1,5 +1,5 @@
 # Membrane — Core dependencies
-typer>=0.12
+typer>=0.26.7
 rich>=13.0
 
 # Dev dependencies
