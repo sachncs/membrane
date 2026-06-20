@@ -19,17 +19,27 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # Testing
 .coverage
+.coverage.*
+.coveragecov
+.coverage.xml
 .pytest_cache/
 .tox/
 .nox/
+htmlcov/
+
+# Type checking
+.mypy_cache/
 
 # Virtual environments
 venv/
+.venv/
 ENV/
 env/
+.python-version
 
 # IDE
 .vscode/
@@ -37,10 +47,40 @@ env/
 *.swp
 *.swo
 *~
+.project
+.settings/
+.classpath
+*.sublime-project
+*.sublime-workspace
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
+._*
 
-# Project specific
-scripts/__pycache__/
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+*.whl
+*.tar.gz
+*.zip
+
+# Jupyter
+.ipynb_checkpoints/
+
+# pyenv
+.python-version
+
+# pytest
+.pytest_cache/
+
+# ruff
+.ruff_cache/

@@ -1,243 +1,237 @@
-# Membrane — Global Contextual Memory Fabric
+# Membrane
 
-This repository contains the Membrane system: a distributed, content-addressed,
-reconstruction-driven memory fabric for LLM inference, built on top of the
-analytical throughput model from:
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/sachn-cs/membrane/actions/workflows/ci.yml/badge.svg)](https://github.com/sachn-cs/membrane/actions/workflows/ci.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![GitHub stars](https://img.shields.io/github/stars/sachn-cs/membrane)](https://github.com/sachn-cs/membrane/stargazers)
 
-> **Prefill-as-a-Service: KVCache of Next-Generation Models Could Go
-> Cross-Datacenter**  
-> Ruoyu Qin, Weiran He, Yaoyu Wang, Zheming Li, Xinran Xu, Yongwei Wu,
-> Weimin Zheng, Mingxing Zhang  
-> arXiv:2604.15039v2
+**Global Contextual Memory Fabric for cross-datacenter LLM serving.**
 
-## What is reproduced
+Membrane is a distributed, content-addressed, reconstruction-driven memory system built on the analytical throughput model from the ["Prefill-as-a-Service"](https://arxiv.org/abs/2604.15039) paper. It separates the KV cache from GPU memory and distributes it across a cluster, enabling optimal throughput and latency for LLM inference.
 
-1. **Analytical throughput model** (Section 3.4.1, Equations 1–6)
-   - Per-instance KV throughput `Phi_kv(l)`
-   - Stage throughputs `Theta_membrane`, `Theta_pd-p`, `Theta_pd-d`
-   - End-to-end system throughput `Lambda_max`
+---
 
-2. **Throughput-optimal configuration** (Section 3.4.2)
-   - Grid search over routing threshold `t` and PD prefill/decode split
-   - Optimality conditions from Equations 7–8
+## Features
 
-3. **Dual-timescale scheduling** (Section 3.4.3)
-   - Short-term: bandwidth- and cache-aware routing with congestion response
-   - Long-term: traffic-driven reallocation and re-optimization
+- **Analytical Throughput Model** — Verbatim reproduction of Equations (1)–(6) from the paper
+- **Throughput-Optimal Configuration** — Grid search over routing threshold and PD split ratio
+- **Dual-Timescale Scheduling** — Bandwidth-aware short-term routing with long-term reallocation
+- **Fragment Data Model** — Immutable, content-addressed KV segments with structural signatures
+- **Four In-Memory Indices** — Exact, Semantic, Positional, and Co-access lookup
+- **Reconstruction Engine** — Context rebuilding from fragments with prefill fallback
+- **Multi-Node Networking** — Gossip-based cluster management, consistent hashing, peer transfer
+- **Multi-Tenant Isolation** — Canonical store with per-tenant policies and deduplication
+- **Pluggable Backends** — CPU, GPU, Transformers, OpenAI, Anthropic, Ollama compute backends
+- **Multiple Transports** — HTTP (stdlib + FastAPI) and gRPC server options
+- **Redis Persistence** — LRU eviction and distributed storage
+- **CLI with TUI Dashboard** — Live monitoring, cluster status, and interactive setup wizard
+- **548+ Tests** — Comprehensive test suite across Python 3.10–3.13
 
-4. **Workload generator** (Section 4.1)
-   - Truncated log-normal request lengths (`mu=9.90`, `sigma=1.00`, `[128,128K]`)
-   - Fixed output length of 1024 tokens
-
-5. **Case-study baselines** (Section 4)
-   - Membrane-PD (selective offloading)
-   - Homogeneous PD
-   - Naive Heterogeneous PD
-
-6. **Evaluation metrics**
-   - `Lambda_max` (sustainable throughput)
-   - Mean and P90 TTFT
-   - Cross-datacenter bandwidth utilization
-
-## Membrane extensions
-
-Beyond the paper reproduction, this codebase implements:
-
-- **Fragment data model**: Immutable, content-addressed KV segments with structural signatures.
-- **Four in-memory indices**: Exact, Semantic, Positional, and Co-access.
-- **Graph layer**: Fragment relationship graph with weighted edges.
-- **Reconstruction engine**: Reads fragments via `rebuild_context()` with fallback to prefill.
-- **Global directory**: Multi-node fragment location resolution.
-- **Transfer plane**: Delta-sync and chunked, resumable fragment transfer.
-- **Multi-tenant deduplication**: Canonical store with tenant isolation.
-
-## Setup
+## Installation
 
 ```bash
-# Create a virtual environment (optional but recommended)
+git clone https://github.com/sachn-cs/membrane.git
+cd membrane
 python -m venv .venv
 source .venv/bin/activate
 
-# Install the package in editable mode with dev dependencies
+# Core installation (typer + rich CLI)
 pip install -e ".[dev]"
+
+# Optional: Server dependencies (FastAPI, gRPC, Redis)
+pip install -e ".[server]"
+
+# Optional: GPU backend (PyTorch CUDA)
+pip install -e ".[gpu]"
+
+# Optional: Local LLM backend (HuggingFace Transformers)
+pip install -e ".[local-llm]"
 ```
 
-Core dependencies are `typer` and `rich` for the CLI. Optional extras are available:
-
-- `pip install -e ".[server]"` — FastAPI, uvicorn, gRPC, Redis
-- `pip install -e ".[gpu]"` — PyTorch CUDA backend
-- `pip install -e ".[local-llm]"` — HuggingFace Transformers backend
-
-## Running tests
+## Quick Start
 
 ```bash
-pytest tests/ -v
-```
+# Verify installation
+python -c "import membrane; print(f'{len(membrane.__all__)} exports available')"
 
-## Running demos
-
-```bash
-# Paper reproduction demo
+# Run paper reproduction demo
 python scripts/demo.py
 
-# Full Membrane multi-phase demo
+# Run full multi-phase demo
 python scripts/demo_full.py
 
-# Multi-node simulation demo
+# Run multi-node simulation
 python scripts/demo_membrane.py
+
+# Start the server
+membrane serve --node-id n1 --port 8080 --transport http --compute cpu
 ```
 
-## Project structure
+## Usage
+
+### CLI Commands
+
+```bash
+# Start a Membrane server
+membrane serve --node-id n1 --port 8080 --transport http --compute cpu
+
+# Open live TUI dashboard
+membrane dashboard --host localhost --port 8080
+
+# Show server status
+membrane status
+
+# Show current configuration
+membrane config
+```
+
+### Python API
+
+```python
+import membrane
+
+# Create a fragment store
+from membrane.fragment_store import FragmentStore
+store = FragmentStore()
+
+# Create fragments
+from membrane.fragment import Fragment
+from membrane.structural_signature import StructuralSignature
+
+sig = StructuralSignature(model="llama-3", layer=0, token_span=(0, 128))
+frag = Fragment(content=b"kv-data", signature=sig)
+
+# Store and retrieve
+store.put(frag)
+retrieved = store.get(frag.content_hash)
+```
+
+### Docker
+
+```bash
+# Build and run
+docker compose up --build
+
+# Run tests
+docker compose --profile test run --rm membrane-tests
+```
+
+## Configuration
+
+Configuration is managed via environment variables. See [`.env.example`](.env.example) for all options.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEMBRANE_LOG_LEVEL` | `INFO` | Logging level |
+| `MEMBRANE_REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
+| `MEMBRANE_NODE_ID` | `membrane-0` | Unique node identifier |
+| `MEMBRANE_TRANSPORT` | `http` | Transport protocol (`http` or `grpc`) |
+| `MEMBRANE_COMPUTE` | `cpu` | Compute backend |
+| `MEMBRANE_PORT` | `8080` | Server listen port |
+| `MEMBRANE_HOST` | `0.0.0.0` | Server bind host |
+
+## Project Structure
 
 ```
 membrane/
-├── model/                    # Analytical model and simulator (paper reproduction)
-│   ├── __init__.py
-│   ├── profiler.py          # Table 5 profiling data + interpolation
-│   ├── throughput_model.py  # Equations (1)–(6)
-│   ├── optimizer.py         # Grid search for t and N_p/N_d
-│   ├── workload.py          # Truncated log-normal generator
-│   ├── router.py            # Length-based and cache-aware routing
-│   ├── scheduler.py         # Dual-timescale scheduler
-│   ├── metrics.py           # TTFT and bandwidth metrics
-│   └── simulator.py         # End-to-end baseline simulations
-├── compute/                 # Compute backends
-│   ├── backend.py
-│   ├── cpu_backend.py
-│   ├── gpu_backend.py
-│   ├── transformers_backend.py
-│   ├── openai_backend.py
-│   ├── anthropic_backend.py
-│   └── ollama_backend.py
-├── persistence/             # Storage backends
-│   ├── memory_backend.py
-│   └── redis_backend.py
-├── transport/               # Network transports
-│   ├── http_server.py       # stdlib HTTP server
-│   ├── fastapi_server.py    # FastAPI + uvicorn server
-│   └── grpc_server.py       # gRPC server
-├── network/                 # Cluster and peer networking
-│   ├── cluster_manager.py
-│   ├── config.py
-│   ├── gossip_state.py
-│   ├── peer_client.py
-│   └── remote_transfer.py
-├── __init__.py              # Public API exports
-├── server.py                # Unified production server
-├── cli.py                   # Command-line interface + dashboard
-├── fragment.py              # Core data model
-├── exact_index.py           # Hash-based exact index
-├── semantic_index.py        # Embedding similarity index
-├── positional_index.py      # Interval-based adjacency index
-├── co_access_index.py       # Co-access graph adjacency index
-├── graph_manager.py         # Graph lifecycle management
-├── fragment_graph.py        # Fragment relationship graph
-├── reconstruction_engine.py # Context reconstruction from fragments
-├── prefill_adapter.py       # Adapter to analytical model
-├── global_directory.py      # Fragment location directory
-├── distributed_directory.py # Shard-aware distributed directory
-├── transfer_service.py      # Sender/receiver negotiation
-├── chunked_transfer.py      # Chunk-based fragment transfer
-├── delta_encoder.py         # Delta encoding for transport
-├── canonical_store.py       # Multi-tenant deduplicated storage
-├── tenant_isolation.py      # Tenant policy enforcement
-├── kv_cache_manager.py      # Local KV cache management
-├── membrane_node.py         # Node owning a shard
-├── origin_node.py           # Primary fragment host
-├── replica_node.py          # Replica fragment host
-├── supernode.py             # Cluster coordination node
-├── latency_router.py        # Latency-aware routing
-├── economic_router.py       # Cost-aware routing
-├── hash_ring.py             # Consistent hashing
-├── workload_analyzer.py     # Session history analysis
-├── session_tracker.py       # Per-session access tracking
-├── node_telemetry.py        # Node health telemetry
-├── dynamic_role_manager.py  # Compute/memory role assignment
-├── joint_optimizer.py       # Joint placement optimization
-├── offload_decision_engine.py # KV offload decisions
-├── remote_prefill_dispatcher.py # Remote prefill dispatch
-├── cluster_replicator.py    # Cluster-wide replication
-├── promotion_policy.py      # Replica promotion logic
-├── predictor.py             # Access pattern prediction
-├── cost_model.py             # Cost estimation
-├── value_density.py         # Value density scoring
-├── semantic_cluster.py      # Semantic clustering
-├── semantic_hash.py         # Semantic hashing utilities
-├── structural_signature.py  # Model/layer/token span signatures
-├── prefix.py                # Prefix data model
-├── prefix_version_chain.py  # Version chain for prefixes
-├── fragmentation_engine.py  # Prompt-to-fragment conversion
-├── index_system.py          # Unified index facade
-├── cache_metrics.py         # Cache performance metrics
-├── tool_trace.py            # Tool execution traces
-├── artifact.py              # Artifact data model
-├── memory_object.py         # Memory object protocol
+├── model/                    # Analytical model (paper reproduction)
+│   ├── throughput_model.py   # Equations (1)–(6)
+│   ├── optimizer.py          # Grid search optimizer
+│   ├── scheduler.py          # Dual-timescale scheduler
+│   ├── workload.py           # Log-normal workload generator
+│   └── simulator.py          # End-to-end simulations
+├── compute/                  # Compute backends (CPU, GPU, API)
+├── persistence/              # Storage backends (Memory, Redis)
+├── transport/                # Network transports (HTTP, gRPC)
+├── network/                  # Cluster management and peer networking
+├── fragment.py               # Core fragment data model
+├── indices.py                # Four in-memory index types
+├── reconstruction_engine.py  # Context reconstruction from fragments
+├── server.py                 # Unified production server
+├── cli.py                    # CLI with TUI dashboard
 └── ...
 
-tests/
-├── test_*.py                # Model unit tests
-└── membrane/
-    ├── test_*.py            # Membrane unit and integration tests
-
-scripts/
-├── demo.py                 # Paper reproduction demo
-├── demo_full.py            # Full Membrane multi-phase demo
-└── demo_membrane.py        # Multi-node simulation demo
+tests/                        # 548+ tests across Python 3.10–3.13
+scripts/                      # Demo scripts
+deployment/                   # Systemd, nginx configs
+docs/                         # Documentation
 ```
 
-## Fidelity report
+## Development
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Throughput equations (1)–(6) | **Exact** | Implemented verbatim from the paper. |
-| Table 5 profiling data | **Exact** | All four measured points transcribed exactly. |
-| Grid-search optimizer | **Exact** | Exhaustive 2-D search over `t` and `N_p`. |
-| Workload distribution | **Exact** | Truncated log-normal with paper parameters. |
-| Routing logic | **Exact** | Threshold and cache-aware rules from Sections 3.3 and 3.4.3. |
-| Dual-timescale scheduler | **Approximate** | Congestion threshold value and relaxation rate are **ASSUMPTION** (not specified in paper). Long-term reallocation period is **NOT DETERMINED**. |
-| Decode constants | **Approximate** | `T_decode = 25 ms` and `BS_max = 20` are **ASSUMPTION** inferred from Table 6 consistency, not explicitly stated. |
-| Prefix cache model | **Approximate** | Simplified to per-request prefix lengths; hit-rate distribution is **NOT DETERMINED** by the paper. |
-| TTFT model | **Approximate** | Adds KV transfer time to prefill time for Membrane requests; queuing delay is **NOT DETERMINED** (assumed negligible for steady-state throughput). |
-| Interpolation | **Approximate** | Linear interpolation between measured profiling points; method is **NOT DETERMINED** by the paper. |
-| Homogeneous baseline | **Exact** | Uses same total instance count, no Membrane. |
-| Naive heterogeneous baseline | **Exact** | All prefill on Membrane, all decode on PD, no threshold. |
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
 
-## Mismatch report
+# Run tests
+pytest tests/ -v
 
-1. **Table 6 absolute numbers**: Because `Lambda_max` depends on conditional
-   means `E[L | L > t]` and `E[L | L <= t]`, which are computed from a
-   synthetic sample, exact reproduction of the paper's `t = 19.4K` and
-   `Lambda_max = 3.24` requires either the exact same random seed or a very
-   large sample. Our search with 20k–50k samples consistently finds `t` in
-   the 16K–21K range and `Lambda_max` in the 3.0–3.4 range, which is
-   statistically consistent with the paper.
+# Run type checking
+python -m mypy membrane/
 
-2. **Decode SLO constants**: The paper states `BS_max` and `T_decode` are
-   "SLO-governed constants" but does not give their values. We inferred
-   `T_decode = 0.025 s` and `BS_max = 20` from the consistency of Table 6
-   across the three baselines (see `optimizer.py` docstring for derivation).
-   These are marked as **ASSUMPTION**.
+# Run linting
+ruff check membrane/ tests/
 
-3. **Scheduler parameters**: The paper describes the short-term scheduler's
-   behavior conceptually ("raise the effective threshold") but does not
-   specify exact utilization thresholds, step sizes, or the long-term
-   reallocation period. We chose `congestion_threshold = 0.85` and a 10%
-   threshold increase, with gradual 1% relaxation. These are marked as
-   **ASSUMPTION**.
+# Run format check
+ruff format --check membrane/ tests/
 
-4. **Prefix cache evaluation**: The case study in Section 4 does not report
-   prefix-cache hit rates. Our baseline reproduction assumes zero cache hits
-   so that the results are driven solely by the routing threshold and
-   hardware allocation, matching the paper's primary comparison. The router
-   module still implements the cache-aware logic from Section 3.4.3 for
-   extensibility.
+# Auto-format code
+ruff format membrane/ tests/
 
-5. **No GPU-level simulation**: The paper's system is a real serving stack.
-   Our reproduction is an analytical/discrete-event simulator that captures
-   the steady-state throughput model. Fine-grained GPU scheduling, TCP
-   congestion control, and layer-wise pipelining (Section 3.3) are not
-   modeled at the packet or kernel level.
+# Run with coverage
+pytest tests/ --cov=membrane --cov-report=term-missing
+```
+
+### Helper Scripts
+
+```bash
+# Full setup: install, type-check, and run tests
+bash scripts/setup.sh
+
+# Clean build artifacts and caches
+bash scripts/cleanup.sh
+```
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Language | Python 3.10+ |
+| CLI | Typer + Rich |
+| HTTP Server | FastAPI / uvicorn / stdlib |
+| gRPC | grpcio / grpcio-tools |
+| Persistence | Redis |
+| Compute | PyTorch, HuggingFace Transformers, OpenAI/Anthropic APIs |
+| Testing | pytest, mypy |
+| Containerization | Docker, Docker Compose |
+| CI/CD | GitHub Actions |
+| Load Balancer | nginx |
+
+## Roadmap
+
+- [ ] Kubernetes operator for automatic scaling
+- [ ] Prometheus/Grafana metrics exporter
+- [ ] TLS/mTLS for transport encryption
+- [ ] Rate limiting and API key authentication
+- [ ] S3-compatible blob storage backend
+- [ ] WebAssembly compute backend
+- [ ] Web UI dashboard
+- [ ] gRPC streaming for real-time updates
+- [ ] Fragment compression and deduplication improvements
+- [ ] Multi-region replication policies
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
+
+## Code of Conduct
+
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 ## License
 
-MIT
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.

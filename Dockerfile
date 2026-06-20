@@ -2,7 +2,7 @@ FROM python:3.13-slim
 
 LABEL org.opencontainers.image.title="Membrane"
 LABEL org.opencontainers.image.description="Global Contextual Memory Fabric for LLM inference"
-LABEL org.opencontainers.image.source="https://github.com/your-org/membrane"
+LABEL org.opencontainers.image.source="https://github.com/sachn-cs/membrane"
 
 WORKDIR /app
 
@@ -23,7 +23,7 @@ COPY tests/ ./tests/
 COPY pyproject.toml ./
 COPY setup.sh cleanup.sh ./
 COPY README.md ./
-COPY docs/DEPLOY.md ./docs/
+COPY docs/deployment.md ./docs/
 
 # Install in production mode (includes typer + rich + fastapi + uvicorn + grpc)
 RUN pip install --no-cache-dir -e ".[server]"
