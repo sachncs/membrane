@@ -10,7 +10,7 @@ ruff>=0.4
 redis>=5.0
 
 # Server dependencies
-grpcio>=1.60
+grpcio>=1.81.1
 grpcio-tools>=1.60
 fastapi>=0.110
 uvicorn[standard]>=0.25
