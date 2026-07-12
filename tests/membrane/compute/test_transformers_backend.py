@@ -8,6 +8,14 @@ from membrane.compute.transformers_backend import TransformersBackend
 from membrane.fragment import Fragment
 
 
+# Skip the success-path test when torch is not installed. The
+# generate() implementation imports torch to set up the
+# torch.no_grad() context manager; without torch the call falls
+# back to the except branch and returns empty results, which
+# would mask real regressions in the success path.
+torch = pytest.importorskip("torch")
+
+
 class TestTransformersBackend:
     """Test suite for HuggingFace Transformers backend."""
 
