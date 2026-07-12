@@ -104,9 +104,7 @@ class KVCacheManager:
         # inserted entry cannot be immediately evicted.
         for evicted in self.lru.evict_if_over():
             self.remove_prefix(evicted)
-        logger.debug(
-            "Stored %d fragments for prefix %s", len(kv_fragments), prefix_hash
-        )
+        logger.debug("Stored %d fragments for prefix %s", len(kv_fragments), prefix_hash)
 
     def lookup_kv(self, prefix_hash: str) -> list[Fragment]:
         """Look up fragments by prefix hash with hit/miss tracking.

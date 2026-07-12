@@ -54,6 +54,7 @@ console = Console()
 # Helper: pretty byte formatting
 # ------------------------------------------------------------------
 
+
 def fmt_bytes(n: int) -> str:
     """Format an integer byte count using human-readable units.
 
@@ -91,6 +92,7 @@ def fmt_duration(seconds: float) -> str:
 # ------------------------------------------------------------------
 # Interactive setup wizard
 # ------------------------------------------------------------------
+
 
 def interactive_setup() -> dict[str, Any]:
     """Prompt the user for configuration values interactively.
@@ -136,10 +138,7 @@ def interactive_setup() -> dict[str, Any]:
     )
     valid_backends = ("cpu", "gpu", "ollama", "openai", "anthropic", "transformers")
     while compute not in valid_backends:
-        console.print(
-            "[red]Invalid compute. Choose one of: "
-            "cpu, gpu, ollama, openai, anthropic, transformers.[/red]"
-        )
+        console.print("[red]Invalid compute. Choose one of: cpu, gpu, ollama, openai, anthropic, transformers.[/red]")
         compute = ask("Compute backend", "cpu")
 
     llm_url = ""
@@ -191,13 +190,16 @@ def interactive_setup() -> dict[str, Any]:
 # Command: serve
 # ------------------------------------------------------------------
 
+
 @app.command()
 def serve(
     node_id: str = typer.Option("membrane-0", "--node-id", "-n", help="Node identifier"),
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind address"),
     port: int = typer.Option(8080, "--port", "-p", help="Listen port"),
     transport: str = typer.Option("http", "--transport", "-t", help="Transport: http or grpc"),
-    compute: str = typer.Option("cpu", "--compute", "-c", help="Compute: cpu, gpu, ollama, openai, anthropic, transformers"),
+    compute: str = typer.Option(
+        "cpu", "--compute", "-c", help="Compute: cpu, gpu, ollama, openai, anthropic, transformers"
+    ),
     redis_url: str = typer.Option("", "--redis", "-r", help="Redis URL (e.g. redis://localhost:6379/0)"),
     max_memory: int = typer.Option(1 << 30, "--max-memory", "-m", help="Max memory bytes"),
     log_level: str = typer.Option("INFO", "--log-level", "-l", help="Logging level"),
@@ -207,7 +209,9 @@ def serve(
     heartbeat_interval: float = typer.Option(2.0, "--heartbeat-interval", help="Heartbeat interval seconds"),
     gossip_interval: float = typer.Option(5.0, "--gossip-interval", help="Gossip interval seconds"),
     replica_count: int = typer.Option(2, "--replica-count", help="Replicas per fragment"),
-    failure_remove_threshold: int = typer.Option(4, "--failure-remove-threshold", help="Missed heartbeats before removing peer"),
+    failure_remove_threshold: int = typer.Option(
+        4, "--failure-remove-threshold", help="Missed heartbeats before removing peer"
+    ),
     llm_url: str = typer.Option("", "--llm-url", help="Base URL for Ollama or custom OpenAI endpoint"),
     llm_model: str = typer.Option("", "--llm-model", help="Model name (e.g. llama3.2, gpt-4o-mini, claude-3-sonnet)"),
     api_key: str = typer.Option("", "--api-key", help="API key for OpenAI / Anthropic"),
@@ -312,6 +316,7 @@ def serve(
 # Command: dashboard (standalone)
 # ------------------------------------------------------------------
 
+
 @app.command()
 def dashboard(
     host: str = typer.Option("localhost", "--host", help="Server host to monitor"),
@@ -379,9 +384,7 @@ def dashboard(
 
     def make_connected(data: dict) -> Panel:
         """Render the diagnostics panel for standalone mode."""
-        text = Text(
-            "Connect to a local server with 'membrane serve' for full diagnostics."
-        )
+        text = Text("Connect to a local server with 'membrane serve' for full diagnostics.")
         return Panel(text, title="[bold]Diagnostics[/bold]", border_style="yellow")
 
     def make_footer() -> Panel:
@@ -403,6 +406,7 @@ def dashboard(
 # ------------------------------------------------------------------
 # Internal: dashboard for local server
 # ------------------------------------------------------------------
+
 
 def run_dashboard(server: MembraneServer) -> None:
     """Render a live Rich dashboard for the local ``MembraneServer``.
@@ -493,9 +497,7 @@ def run_dashboard(server: MembraneServer) -> None:
                 "info": "green",
                 "debug": "dim",
             }.get(ev.level, "white")
-            table.add_row(
-                ts, f"[{color}]{ev.level.upper()}[/{color}]", ev.message
-            )
+            table.add_row(ts, f"[{color}]{ev.level.upper()}[/{color}]", ev.message)
         return Panel(table, title="[bold]Event Log[/bold]", border_style="yellow")
 
     def make_footer() -> Panel:
@@ -523,6 +525,7 @@ def run_dashboard(server: MembraneServer) -> None:
 # ------------------------------------------------------------------
 # Command: cluster status
 # ------------------------------------------------------------------
+
 
 @app.command(name="cluster-status")
 def cluster_status(
@@ -567,6 +570,7 @@ def cluster_status(
 # Command: llm-status
 # ------------------------------------------------------------------
 
+
 @app.command(name="llm-status")
 def llm_status(
     host: str = typer.Option("localhost", "--host", help="Server host"),
@@ -600,6 +604,7 @@ def llm_status(
 # Command: config
 # ------------------------------------------------------------------
 
+
 @app.command()
 def config(
     show: bool = typer.Option(True, "--show", help="Display current config"),
@@ -622,6 +627,7 @@ def config(
 # ------------------------------------------------------------------
 # Entry point
 # ------------------------------------------------------------------
+
 
 def main() -> None:
     """CLI entry point registered as the ``membrane`` console script."""

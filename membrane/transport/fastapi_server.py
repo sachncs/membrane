@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 # Pydantic models
 # ------------------------------------------------------------------
 
+
 class FragmentPayload(BaseModel):
     """Pydantic representation of a :class:`Fragment` for HTTP transport.
 
@@ -156,6 +157,7 @@ class GossipRequest(BaseModel):
 # Serialization helpers
 # ------------------------------------------------------------------
 
+
 def serialize_fragment(frag: Fragment) -> dict[str, Any]:
     """Serialize a fragment to a JSON-compatible dict.
 
@@ -205,6 +207,7 @@ def deserialize_fragment(data: FragmentPayload) -> Fragment:
 # ------------------------------------------------------------------
 # FastAPI application factory
 # ------------------------------------------------------------------
+
 
 def create_app(
     node: MembraneNode,
@@ -298,11 +301,7 @@ def create_app(
         """``POST /store`` — store a fragment on the local node."""
         try:
             frag = deserialize_fragment(req.fragment)
-            ok = (
-                app.state.node.store(frag, is_primary=req.is_primary)
-                if app.state.node
-                else False
-            )
+            ok = app.state.node.store(frag, is_primary=req.is_primary) if app.state.node else False
             return {"success": ok, "content_hash": frag.content_hash}
         except Exception as exc:
             logger.exception("store failed")
@@ -399,6 +398,7 @@ def create_app(
 # ------------------------------------------------------------------
 # Server wrapper
 # ------------------------------------------------------------------
+
 
 class FastAPIServer:
     """Production HTTP server using FastAPI + uvicorn.

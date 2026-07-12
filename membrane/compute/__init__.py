@@ -33,32 +33,29 @@ from membrane.compute.cpu_backend import CPUBackend
 
 __all__ = ["ComputeBackend", "CPUBackend"]
 
-try:
-    from membrane.compute.gpu_backend import GPUBackend
-    __all__.append("GPUBackend")
-except ImportError:
-    pass
 
-try:
-    from membrane.compute.ollama_backend import OllamaBackend
-    __all__.append("OllamaBackend")
-except ImportError:
-    pass
+def _try_register(name: str, module_path: str) -> None:
+    """Attempt to import an optional backend and add it to ``__all__``.
 
-try:
-    from membrane.compute.openai_backend import OpenAIBackend
-    __all__.append("OpenAIBackend")
-except ImportError:
-    pass
+    Args:
+        name: Public class name to register.
+        module_path: Dotted module path to import from.
+    """
+    try:
+        __import__(module_path, fromlist=[name])
+        __all__.append(name)
+    except ImportError:
+        # The optional dependency is not installed; skip silently
+        # so that ``import membrane.compute`` continues to work
+        # in minimal environments.
+        pass
 
-try:
-    from membrane.compute.anthropic_backend import AnthropicBackend
-    __all__.append("AnthropicBackend")
-except ImportError:
-    pass
 
-try:
-    from membrane.compute.transformers_backend import TransformersBackend
-    __all__.append("TransformersBackend")
-except ImportError:
-    pass
+for _backend_name, _backend_path in (
+    ("GPUBackend", "membrane.compute.gpu_backend"),
+    ("OllamaBackend", "membrane.compute.ollama_backend"),
+    ("OpenAIBackend", "membrane.compute.openai_backend"),
+    ("AnthropicBackend", "membrane.compute.anthropic_backend"),
+    ("TransformersBackend", "membrane.compute.transformers_backend"),
+):
+    _try_register(_backend_name, _backend_path)

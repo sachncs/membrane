@@ -94,18 +94,12 @@ class LatencyRouter:
         # Replica path: filter to candidates that actually hold
         # the fragment, then pick the one with the lowest
         # recorded latency.
-        candidates_with_fragment = [
-            node
-            for node in candidate_nodes
-            if node.retrieve(content_hash) is not None
-        ]
+        candidates_with_fragment = [node for node in candidate_nodes if node.retrieve(content_hash) is not None]
 
         if not candidates_with_fragment:
             # Fallback: origin if configured, otherwise local.
             fallback = self.origin_node_id or local_node.node_id
-            logger.debug(
-                "No replica for %s; falling back to %s", content_hash, fallback
-            )
+            logger.debug("No replica for %s; falling back to %s", content_hash, fallback)
             return fallback
 
         def latency_key(node: MembraneNode) -> float:

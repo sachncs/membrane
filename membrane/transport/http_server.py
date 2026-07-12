@@ -38,7 +38,8 @@ Security:
 
 import json
 import logging
-from http.server import BaseHTTPRequestHandler, HTTPServer as StdlibHTTPServer
+from http.server import BaseHTTPRequestHandler
+from http.server import HTTPServer as StdlibHTTPServer
 from typing import Any
 
 from membrane.compute.backend import ComputeBackend
@@ -248,14 +249,17 @@ class MembraneHTTPHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": "no node"})
             return
         stats = self.server.node.get_stats()
-        self.send_json(200, {
-            "node_id": self.server.node.node_id,
-            "load": self.server.node.heartbeat(),
-            "memory_used_bytes": stats.memory_used_bytes,
-            "memory_limit_bytes": stats.memory_limit_bytes,
-            "fragment_count": stats.fragment_count,
-            "healthy": True,
-        })
+        self.send_json(
+            200,
+            {
+                "node_id": self.server.node.node_id,
+                "load": self.server.node.heartbeat(),
+                "memory_used_bytes": stats.memory_used_bytes,
+                "memory_limit_bytes": stats.memory_limit_bytes,
+                "fragment_count": stats.fragment_count,
+                "healthy": True,
+            },
+        )
 
     def handle_metrics(self) -> None:
         """Handle ``GET /metrics`` — extended metrics payload."""
@@ -263,14 +267,17 @@ class MembraneHTTPHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": "no node"})
             return
         stats = self.server.node.get_stats()
-        self.send_json(200, {
-            "node_id": self.server.node.node_id,
-            "memory_used_bytes": stats.memory_used_bytes,
-            "memory_limit_bytes": stats.memory_limit_bytes,
-            "fragment_count": stats.fragment_count,
-            "primary_count": stats.primary_count,
-            "load": self.server.node.heartbeat(),
-        })
+        self.send_json(
+            200,
+            {
+                "node_id": self.server.node.node_id,
+                "memory_used_bytes": stats.memory_used_bytes,
+                "memory_limit_bytes": stats.memory_limit_bytes,
+                "fragment_count": stats.fragment_count,
+                "primary_count": stats.primary_count,
+                "load": self.server.node.heartbeat(),
+            },
+        )
 
     def handle_sync(self) -> None:
         """Handle ``POST /sync`` — pull missing fragments from a source URL.
@@ -289,6 +296,7 @@ class MembraneHTTPHandler(BaseHTTPRequestHandler):
         try:
             # Pull inventory from remote and transfer missing fragments.
             import urllib.request
+
             req = urllib.request.Request(f"{source_url}/inventory")
             with urllib.request.urlopen(req, timeout=5) as resp:
                 remote_data = json.loads(resp.read().decode())
@@ -319,10 +327,13 @@ class MembraneHTTPHandler(BaseHTTPRequestHandler):
             for frag in fragments:
                 if self.server.node:
                     self.server.node.store(frag, is_primary=True)
-            self.send_json(200, {
-                "success": True,
-                "fragments": [serialize_fragment(f) for f in fragments],
-            })
+            self.send_json(
+                200,
+                {
+                    "success": True,
+                    "fragments": [serialize_fragment(f) for f in fragments],
+                },
+            )
         except Exception as exc:
             self.send_json(500, {"error": str(exc)})
 

@@ -268,9 +268,7 @@ class IntervalTree:
         if node is None:
             # Base case: create the leaf node and register it in
             # the auxiliary map for O(1) deletion.
-            n = IntervalNode(
-                fragment=fragment, start=start, end=end, max_end=end
-            )
+            n = IntervalNode(fragment=fragment, start=start, end=end, max_end=end)
             self.node_map[fragment.content_hash] = n
             return n
         # BST descent on (start, content_hash) for determinism.
@@ -310,9 +308,7 @@ class IntervalTree:
         del self.node_map[content_hash]
         return True
 
-    def remove_node(
-        self, node: IntervalNode | None, start: int, content_hash: str
-    ) -> IntervalNode | None:
+    def remove_node(self, node: IntervalNode | None, start: int, content_hash: str) -> IntervalNode | None:
         """Recursive removal helper.
 
         Implements the standard BST-delete algorithm with in-order

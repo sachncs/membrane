@@ -123,7 +123,7 @@ def generate_embedding(tokens: tuple[int, ...], dim: int) -> tuple[float, ...]:
     """
     seed = int(compute_content_hash(tokens), 16)
     values = []
-    for i in range(dim):
+    for _ in range(dim):
         # Linear congruential generator with classic parameters
         # (Park-Miller variant). Deterministic and cheap.
         seed = (seed * 9301 + 49297) % 233280
@@ -284,8 +284,7 @@ class FragmentationEngine:
                 sub_tokens = tuple(range(sub_start, sub_end + 1))
                 if original_tokens is not None:
                     logger.warning(
-                        "Split at (%d, %d) exceeds original_tokens length %d; "
-                        "using synthetic tokens",
+                        "Split at (%d, %d) exceeds original_tokens length %d; using synthetic tokens",
                         sub_start,
                         sub_end,
                         len(original_tokens),

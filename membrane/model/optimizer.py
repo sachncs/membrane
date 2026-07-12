@@ -30,8 +30,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from typing import List, Tuple
-
 from membrane.model import throughput_model, workload
 
 # Hardware constraints from Section 4.1.
@@ -59,7 +57,7 @@ def evaluate_configuration(
     threshold: int,
     num_pd_p: int,
     num_pd_d: int,
-    lengths: List[int],
+    lengths: list[int],
 ) -> float:
     """Evaluate ``Lambda_max`` for a single configuration.
 
@@ -99,15 +97,13 @@ def evaluate_configuration(
         OUTPUT_LENGTH,
     )
 
-    return throughput_model.end_to_end_throughput(
-        theta_membrane, theta_pd_p, theta_pd_d, p
-    )
+    return throughput_model.end_to_end_throughput(theta_membrane, theta_pd_p, theta_pd_d, p)
 
 
 def search(
-    lengths: List[int],
+    lengths: list[int],
     total_pd_instances: int = TOTAL_PD_INSTANCES,
-) -> Tuple[int, int, int, float]:
+) -> tuple[int, int, int, float]:
     """Grid search over ``t`` and ``N_p`` to maximize ``Lambda_max``.
 
     ``N_d`` is implicitly ``total_pd_instances - N_p``.
@@ -140,9 +136,9 @@ def search(
 
 
 def optimal_homogeneous_pd(
-    lengths: List[int],
+    lengths: list[int],
     total_instances: int = TOTAL_PD_INSTANCES + MEMBRANE_INSTANCES,
-) -> Tuple[int, int, float]:
+) -> tuple[int, int, float]:
     """Optimize a homogeneous PD baseline (no Membrane).
 
     All instances are in one PD cluster. The function searches
@@ -166,18 +162,12 @@ def optimal_homogeneous_pd(
 
     for n_p in range(1, total_instances):
         n_d = total_instances - n_p
-        theta_pd_p = throughput_model.stage_throughput_pd_p(
-            n_p, length, compute_scale=H20_COMPUTE_SCALE
-        )
-        theta_pd_d = throughput_model.stage_throughput_pd_d(
-            n_d, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH
-        )
+        theta_pd_p = throughput_model.stage_throughput_pd_p(n_p, length, compute_scale=H20_COMPUTE_SCALE)
+        theta_pd_d = throughput_model.stage_throughput_pd_d(n_d, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH)
         # Membrane is unreachable in this baseline, so its
         # contribution is +inf and the min() picks the PD
         # bottleneck.
-        lam = throughput_model.end_to_end_throughput(
-            float("inf"), theta_pd_p, theta_pd_d, 0.0
-        )
+        lam = throughput_model.end_to_end_throughput(float("inf"), theta_pd_p, theta_pd_d, 0.0)
         if lam > best_lambda:
             best_lambda = lam
             best_n_p = n_p
@@ -187,10 +177,10 @@ def optimal_homogeneous_pd(
 
 
 def naive_heterogeneous_pd(
-    lengths: List[int],
+    lengths: list[int],
     membrane_instances: int = MEMBRANE_INSTANCES,
     pd_instances: int = TOTAL_PD_INSTANCES,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Evaluate naive heterogeneous PD (no selective routing).
 
     All prefill runs on Membrane (H200), all decode on PD (H20).
@@ -210,15 +200,11 @@ def naive_heterogeneous_pd(
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
     length = int(round(mean_length)) if mean_length > 0 else 32768
 
-    theta_membrane = throughput_model.stage_throughput_membrane(
-        membrane_instances, EGRESS_BANDWIDTH_GBPS, length
-    )
+    theta_membrane = throughput_model.stage_throughput_membrane(membrane_instances, EGRESS_BANDWIDTH_GBPS, length)
     theta_pd_d = throughput_model.stage_throughput_pd_d(
         pd_instances, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH
     )
     # fraction_to_membrane = 1.0 means PD-P's contribution is
     # +inf; only Membrane and PD-D bottlenecks apply.
-    lam = throughput_model.end_to_end_throughput(
-        theta_membrane, float("inf"), theta_pd_d, 1.0
-    )
+    lam = throughput_model.end_to_end_throughput(theta_membrane, float("inf"), theta_pd_d, 1.0)
     return lam, 0.0

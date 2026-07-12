@@ -200,9 +200,7 @@ class ShardManager:
             set[str]: Content hashes for which ``node_id`` is the
             primary owner.
         """
-        return {
-            h for h, primary in self.primary_map.items() if primary == node_id
-        }
+        return {h for h, primary in self.primary_map.items() if primary == node_id}
 
     def replica_shards_for_node(self, node_id: str) -> set[str]:
         """Return all content hashes replicated on ``node_id``.
@@ -214,6 +212,4 @@ class ShardManager:
             set[str]: Content hashes for which ``node_id`` appears
             in the replica set.
         """
-        return {
-            h for h, replicas in self.replica_map.items() if node_id in replicas
-        }
+        return {h for h, replicas in self.replica_map.items() if node_id in replicas}

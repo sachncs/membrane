@@ -13,9 +13,7 @@ def test_measured_points_exact():
         profiler.MEASURED_PREFILL_TIMES,
     ):
         assert math.isclose(profiler.kv_size_mib(length), expected_size, rel_tol=1e-9)
-        assert math.isclose(
-            profiler.prefill_time_seconds(length), expected_time, rel_tol=1e-9
-        )
+        assert math.isclose(profiler.prefill_time_seconds(length), expected_time, rel_tol=1e-9)
 
 
 def test_interpolation_between_points():
@@ -41,9 +39,7 @@ def test_clamping_above_maximum():
 
 def test_kv_throughput_consistency():
     """Computed KV throughput should approximately match Table 5 values."""
-    for length, expected in zip(
-        profiler.MEASURED_LENGTHS, profiler.MEASURED_KV_THROUGHPUTS
-    ):
+    for length, expected in zip(profiler.MEASURED_LENGTHS, profiler.MEASURED_KV_THROUGHPUTS):
         computed = profiler.kv_throughput_gbps(length)
         # Allow 1% tolerance for unit-conversion rounding
         assert math.isclose(computed, expected, rel_tol=0.01)

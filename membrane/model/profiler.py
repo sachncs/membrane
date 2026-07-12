@@ -25,7 +25,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from typing import Sequence
+from collections.abc import Sequence
 
 # Measured sequence lengths (tokens), Table 5.
 MEASURED_LENGTHS: Sequence[int] = (1024, 8192, 32768, 131072)

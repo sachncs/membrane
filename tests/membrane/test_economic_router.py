@@ -12,9 +12,7 @@ def make_fragment(reuse_score=0.5):
     return Fragment(
         content_hash="abc",
         embedding=(0.0,),
-        structural_signature=StructuralSignature(
-            model_id="m", layer_range=(0, 1), token_span=(0, 1)
-        ),
+        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
         size=10,
         ttl=3600.0,
         reuse_score=reuse_score,
@@ -71,9 +69,7 @@ class TestEconomicRouter:
     def test_latency_normalization_prevents_domination(self):
         """Without normalization, a 5000 ms latency would dominate the score.
         With normalization capped at 1.0, it should not overwhelm other dims."""
-        router = EconomicRouter(
-            config=EconomicRouterConfig(max_latency_ms=1000.0)
-        )
+        router = EconomicRouter(config=EconomicRouterConfig(max_latency_ms=1000.0))
         frag = make_fragment(reuse_score=0.5)
         # n1: latency 5000 -> normalized to 1.0, but everything else is 0
         # n2: latency 100, bandwidth 0.5, gpu 0.5, memory 0.5
@@ -91,19 +87,13 @@ class TestEconomicRouter:
         """By zeroing latency weight, a high-latency low-load node can win."""
         frag = make_fragment(reuse_score=0.5)
         telemetry = {
-            "fast_but_overloaded": NodeTelemetry(
-                "fast_but_overloaded", 10.0, 0.0, 0.9, 0.9
-            ),
-            "slow_but_idle": NodeTelemetry(
-                "slow_but_idle", 5000.0, 0.0, 0.1, 0.1
-            ),
+            "fast_but_overloaded": NodeTelemetry("fast_but_overloaded", 10.0, 0.0, 0.9, 0.9),
+            "slow_but_idle": NodeTelemetry("slow_but_idle", 5000.0, 0.0, 0.1, 0.1),
         }
         # With default weights, fast_but_overloaded should lose because of
         # high gpu/memory cost.
         router_default = EconomicRouter()
-        best = router_default.route(
-            frag, ["fast_but_overloaded", "slow_but_idle"], telemetry, []
-        )
+        best = router_default.route(frag, ["fast_but_overloaded", "slow_but_idle"], telemetry, [])
         assert best == "slow_but_idle"
 
         # With zero gpu/memory weight, fast node should win
@@ -115,9 +105,7 @@ class TestEconomicRouter:
                 weight_bandwidth=0.0,
             )
         )
-        best2 = router_latency_only.route(
-            frag, ["fast_but_overloaded", "slow_but_idle"], telemetry, []
-        )
+        best2 = router_latency_only.route(frag, ["fast_but_overloaded", "slow_but_idle"], telemetry, [])
         assert best2 == "fast_but_overloaded"
 
     def test_clamped_values_stay_in_range(self):

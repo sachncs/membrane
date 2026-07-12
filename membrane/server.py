@@ -21,7 +21,7 @@ command and the TUI dashboard. It owns:
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from membrane.compute.backend import ComputeBackend
@@ -181,19 +181,23 @@ class MembraneServer:
             return GPUBackend()
         if compute == "ollama":
             from membrane.compute.ollama_backend import OllamaBackend
+
             url = llm_url or "http://localhost:11434"
             model = llm_model or "llama3.2"
             return OllamaBackend(base_url=url, model=model)
         if compute == "openai":
             from membrane.compute.openai_backend import OpenAIBackend
+
             model = llm_model or "gpt-4o-mini"
             return OpenAIBackend(api_key=api_key, model=model)
         if compute == "anthropic":
             from membrane.compute.anthropic_backend import AnthropicBackend
+
             model = llm_model or "claude-3-sonnet-20240229"
             return AnthropicBackend(api_key=api_key, model=model)
         if compute == "transformers":
             from membrane.compute.transformers_backend import TransformersBackend
+
             model = llm_model or "gpt2"
             return TransformersBackend(model_id=model)
         # Default: CPU backend.
@@ -217,13 +221,9 @@ class MembraneServer:
                     self.persistence = redis_backend
                     logger.info("Redis connected at %s", redis_url)
                 else:
-                    logger.warning(
-                        "Redis at %s unreachable; using in-memory persistence", redis_url
-                    )
+                    logger.warning("Redis at %s unreachable; using in-memory persistence", redis_url)
             except Exception as exc:
-                logger.warning(
-                    "Redis connection failed (%s); using in-memory persistence", exc
-                )
+                logger.warning("Redis connection failed (%s); using in-memory persistence", exc)
 
     def setup_cluster(
         self,
@@ -398,8 +398,7 @@ class MembraneServer:
             error_count=self.error_count,
             connected_nodes=connected,
             backend_name=self.compute_backend.device_name(),
-            redis_connected=isinstance(self.persistence, RedisBackend)
-            and self.persistence.ping(),
+            redis_connected=isinstance(self.persistence, RedisBackend) and self.persistence.ping(),
             load=self.node.heartbeat(),
         )
 

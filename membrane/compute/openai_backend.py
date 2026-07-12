@@ -74,6 +74,7 @@ class OpenAIBackend(ComputeBackend):
         self._client: Any | None = None
         try:
             import httpx
+
             self._client = httpx.Client(
                 headers={"Authorization": f"Bearer {api_key}"},
                 timeout=60.0,
@@ -121,9 +122,7 @@ class OpenAIBackend(ComputeBackend):
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
             # Network/HTTP error, malformed JSON, or unexpected
             # response shape — all degrade to the simulated prefill.
-            logger.warning(
-                "OpenAI embedding failed (%s); falling back to simulation", exc
-            )
+            logger.warning("OpenAI embedding failed (%s); falling back to simulation", exc)
             return self.simulate_prefill(prompt_tokens, model_id)
 
         # Distribute the (single) embedding across windows by

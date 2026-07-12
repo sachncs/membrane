@@ -110,9 +110,7 @@ class SemanticCluster:
                 # neighbor, so a top-1 match on the seed means
                 # the candidate is at least as close as the seed
                 # is to itself.
-                neighbors = self.semantic_index.nearest_neighbors(
-                    list(candidate.embedding), k=1
-                )
+                neighbors = self.semantic_index.nearest_neighbors(list(candidate.embedding), k=1)
                 if neighbors and neighbors[0].content_hash == seed.content_hash:
                     cluster.append(candidate)
                     to_remove.append(idx)
@@ -148,7 +146,7 @@ class SemanticCluster:
             float: Cosine similarity in ``[-1.0, 1.0]``. Returns
             ``0.0`` when either vector has zero norm.
         """
-        dot = sum(x * y for x, y in zip(a, b))
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         norm_a = sum(x * x for x in a) ** 0.5
         norm_b = sum(x * x for x in b) ** 0.5
         if norm_a == 0.0 or norm_b == 0.0:

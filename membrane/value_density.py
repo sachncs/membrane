@@ -90,7 +90,5 @@ class ValueDensity:
             # - recency_bonus: whether the most recent access was for it
             count = access_history.count(fragment.content_hash)
             recency_bonus = 0.1 if fragment.content_hash == access_history[-1] else 0.0
-            expected_reuse = min(
-                1.0, fragment.reuse_score + count * 0.05 + recency_bonus
-            )
+            expected_reuse = min(1.0, fragment.reuse_score + count * 0.05 + recency_bonus)
         return importance * expected_reuse

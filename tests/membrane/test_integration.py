@@ -37,9 +37,7 @@ def make_fragment(content_hash, embedding=(0.0, 0.0), reuse_score=0.5, size=10):
     return Fragment(
         content_hash=content_hash,
         embedding=embedding,
-        structural_signature=StructuralSignature(
-            model_id="m", layer_range=(0, 1), token_span=(0, 1)
-        ),
+        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
         size=size,
         ttl=3600.0,
         reuse_score=reuse_score,
@@ -166,8 +164,6 @@ class TestMembraneIntegration:
 
         opt = JointOptimizer()
         frag = make_fragment("h1")
-        decision = opt.optimize(
-            frag, [node], {"n1": NodeTelemetry("n1", 10.0, 0.0, 0.0, 0.0)}
-        )
+        decision = opt.optimize(frag, [node], {"n1": NodeTelemetry("n1", 10.0, 0.0, 0.0, 0.0)})
         assert decision.compute_node_id == "n1"
         assert decision.memory_node_id == "n1"

@@ -3,8 +3,6 @@
 import pytest
 
 from membrane.canonical_store import CanonicalStore
-from membrane.global_directory import GlobalDirectory
-from membrane.index_system import IndexSystem
 from membrane.economic_router import EconomicRouter
 from membrane.global_directory import GlobalDirectory
 from membrane.index_system import IndexSystem

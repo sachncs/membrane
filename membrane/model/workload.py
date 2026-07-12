@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 import math
 import random
-from typing import List
 
 MU: float = 9.90
 SIGMA: float = 1.00
@@ -39,7 +38,7 @@ OUTPUT_LENGTH: int = 1024
 def generate_request_lengths(
     num_requests: int,
     seed: int = 42,
-) -> List[int]:
+) -> list[int]:
     """Generate a list of uncached input lengths.
 
     Sampling is performed via :func:`random.Random.lognormvariate`
@@ -57,7 +56,7 @@ def generate_request_lengths(
         each in ``[MIN_LENGTH, MAX_LENGTH]``.
     """
     rng = random.Random(seed)
-    lengths: List[int] = []
+    lengths: list[int] = []
     while len(lengths) < num_requests:
         sample = rng.lognormvariate(MU, SIGMA)
         length = int(round(sample))
@@ -66,7 +65,7 @@ def generate_request_lengths(
     return lengths
 
 
-def mean_and_p90(values: List[float]) -> tuple[float, float]:
+def mean_and_p90(values: list[float]) -> tuple[float, float]:
     """Return mean and 90th percentile of a list of values.
 
     Args:
@@ -90,7 +89,7 @@ def mean_and_p90(values: List[float]) -> tuple[float, float]:
 
 
 def conditional_means(
-    lengths: List[int],
+    lengths: list[int],
     threshold: int,
 ) -> tuple[float, float, float]:
     """Compute ``P(L > t)``, ``E[L | L > t]``, and ``E[L | L <= t]``.
@@ -108,8 +107,8 @@ def conditional_means(
         mean_long, mean_short)``. Means are ``0.0`` when the
         corresponding group is empty.
     """
-    longs = [l for l in lengths if l > threshold]
-    shorts = [l for l in lengths if l <= threshold]
+    longs = [length for length in lengths if length > threshold]
+    shorts = [length for length in lengths if length <= threshold]
 
     p = len(longs) / len(lengths) if lengths else 0.0
     mean_long = sum(longs) / len(longs) if longs else 0.0

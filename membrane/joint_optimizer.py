@@ -110,10 +110,7 @@ class JointOptimizer:
 
         # If compute and memory coincide on a heavily-loaded
         # node, split them by picking the next-best memory node.
-        if (
-            compute_node.node_id == memory_node.node_id
-            and compute_node.heartbeat() > 0.8
-        ):
+        if compute_node.node_id == memory_node.node_id and compute_node.heartbeat() > 0.8:
             alt_nodes = [n for n in nodes if n.node_id != compute_node.node_id]
             if alt_nodes:
                 memory_node = min(alt_nodes, key=memory_score)

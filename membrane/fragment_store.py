@@ -23,7 +23,7 @@ track *metadata* and *placement*; this class owns the bytes.
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.value_density import ValueDensity
@@ -107,9 +107,7 @@ class FragmentStore:
         self.fragments: dict[str, Fragment] = {}
         self.access_times: dict[str, float] = {}
         self.insertion_times: dict[str, float] = {}
-        self.metrics = FragmentStoreMetrics(
-            max_bytes=max_bytes, max_count=max_count
-        )
+        self.metrics = FragmentStoreMetrics(max_bytes=max_bytes, max_count=max_count)
 
     # ------------------------------------------------------------------
     # Core operations
@@ -152,8 +150,7 @@ class FragmentStore:
         # caps can accommodate the new entry, or until no further
         # eviction is possible.
         while (
-            self.metrics.stored_bytes + fragment.size > self.max_bytes
-            or self.metrics.stored_count + 1 > self.max_count
+            self.metrics.stored_bytes + fragment.size > self.max_bytes or self.metrics.stored_count + 1 > self.max_count
         ):
             evicted = self.evict_one(now)
             if not evicted:
@@ -255,11 +252,7 @@ class FragmentStore:
         now = now if now is not None else time.time()
 
         # Phase 1: expired fragments (TTL elapsed since insertion).
-        expired = [
-            h
-            for h, frag in self.fragments.items()
-            if now - self.insertion_times.get(h, now) > frag.ttl
-        ]
+        expired = [h for h, frag in self.fragments.items() if now - self.insertion_times.get(h, now) > frag.ttl]
         if expired:
             h = expired[0]
             frag = self.remove(h)
@@ -272,7 +265,7 @@ class FragmentStore:
         hot: list[str] = []
         warm: list[str] = []
         cold: list[str] = []
-        for h, frag in self.fragments.items():
+        for h in self.fragments:
             last_access = now - self.access_times.get(h, now)
             if last_access <= self.hot_ttl:
                 hot.append(h)
@@ -285,9 +278,7 @@ class FragmentStore:
         if cold:
             h = min(
                 cold,
-                key=lambda h: self.value_density.compute(
-                    self.fragments[h], []
-                ),
+                key=lambda h: self.value_density.compute(self.fragments[h], []),
             )
             frag = self.remove(h)
             if frag is not None:
@@ -300,8 +291,7 @@ class FragmentStore:
         if warm:
             h = min(
                 warm,
-                key=lambda h: self.access_times.get(h, now)
-                / (self.fragments[h].reuse_score + 0.01),
+                key=lambda h: self.access_times.get(h, now) / (self.fragments[h].reuse_score + 0.01),
             )
             frag = self.remove(h)
             if frag is not None:
@@ -312,8 +302,7 @@ class FragmentStore:
         if hot:
             h = min(
                 hot,
-                key=lambda h: self.access_times.get(h, now)
-                / (self.fragments[h].reuse_score + 0.01),
+                key=lambda h: self.access_times.get(h, now) / (self.fragments[h].reuse_score + 0.01),
             )
             frag = self.remove(h)
             if frag is not None:

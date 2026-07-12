@@ -68,9 +68,7 @@ class WorkloadAnalyzer:
             contains fewer distinct hashes.
         """
         frequencies = self.analyze_patterns(access_log)
-        sorted_items = sorted(
-            frequencies.items(), key=lambda item: item[1], reverse=True
-        )
+        sorted_items = sorted(frequencies.items(), key=lambda item: item[1], reverse=True)
         return sorted_items[:k]
 
     def reuse_ratio(self, access_log: list[str]) -> float:

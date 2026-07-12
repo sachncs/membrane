@@ -73,12 +73,8 @@ class TestNodeSelector:
         )
         sel = NodeSelector(config=cfg)
         telem = {
-            "fast_but_overloaded": NodeTelemetry(
-                "fast_but_overloaded", 10.0, 0.0, 0.9, 0.0
-            ),
-            "slow_but_idle": NodeTelemetry(
-                "slow_but_idle", 5000.0, 0.0, 0.1, 0.0
-            ),
+            "fast_but_overloaded": NodeTelemetry("fast_but_overloaded", 10.0, 0.0, 0.9, 0.0),
+            "slow_but_idle": NodeTelemetry("slow_but_idle", 5000.0, 0.0, 0.1, 0.0),
         }
         best = sel.select(["fast_but_overloaded", "slow_but_idle"], telem)
         assert best == "slow_but_idle"

@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 from collections import deque
 from dataclasses import dataclass, field
-from typing import List
 
 from membrane.model import optimizer
 
@@ -71,9 +70,7 @@ class EgressMonitor:
     def __post_init__(self):
         # Ensure the deque has the correct maxlen so that
         # historical samples are dropped automatically.
-        object.__setattr__(
-            self, "history", deque(self.history, maxlen=self.window_size)
-        )
+        object.__setattr__(self, "history", deque(self.history, maxlen=self.window_size))
 
     def record(self, utilization: float) -> None:
         """Record a new utilization sample.
@@ -178,36 +175,26 @@ class DualTimescaleScheduler:
             ``state.effective_threshold``.
         """
         util = self.state.monitor.average()
-        queue_ratio = (
-            current_queue_depth / max_queue_depth if max_queue_depth > 0 else 0.0
-        )
+        queue_ratio = current_queue_depth / max_queue_depth if max_queue_depth > 0 else 0.0
 
         if util >= self.congestion_threshold or queue_ratio >= 1.0:
             # Raise effective threshold to reduce bandwidth
             # pressure. The result is clamped so it never
             # exceeds MAX_EFFECTIVE_THRESHOLD_TOKENS.
-            new_threshold = int(
-                self.state.effective_threshold * THRESHOLD_RAISE_MULTIPLIER
-            )
-            self.state.effective_threshold = min(
-                new_threshold, MAX_EFFECTIVE_THRESHOLD_TOKENS
-            )
+            new_threshold = int(self.state.effective_threshold * THRESHOLD_RAISE_MULTIPLIER)
+            self.state.effective_threshold = min(new_threshold, MAX_EFFECTIVE_THRESHOLD_TOKENS)
             return self.state.effective_threshold
 
         # Otherwise, gradually relax back toward the base
         # threshold. The relaxation never goes below the base.
         if self.state.effective_threshold > self.state.threshold:
-            self.state.effective_threshold = int(
-                self.state.effective_threshold * THRESHOLD_RELAX_MULTIPLIER
-            )
-            self.state.effective_threshold = max(
-                self.state.effective_threshold, self.state.threshold
-            )
+            self.state.effective_threshold = int(self.state.effective_threshold * THRESHOLD_RELAX_MULTIPLIER)
+            self.state.effective_threshold = max(self.state.effective_threshold, self.state.threshold)
         return self.state.effective_threshold
 
     def long_term_reoptimize(
         self,
-        lengths: List[int],
+        lengths: list[int],
         total_pd_instances: int,
     ) -> None:
         """Re-run the grid search and update threshold and ``N_p`` / ``N_d``.

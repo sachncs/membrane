@@ -81,9 +81,7 @@ class ExactIndex:
             locations: Set of node IDs holding the fragment. The
                 set is converted to a ``frozenset`` for immutability.
         """
-        self.entries[fragment.content_hash] = IndexEntry(
-            fragment=fragment, locations=frozenset(locations)
-        )
+        self.entries[fragment.content_hash] = IndexEntry(fragment=fragment, locations=frozenset(locations))
 
     def lookup(self, content_hash: str) -> IndexEntry | None:
         """Look up a fragment by its content hash.
@@ -117,9 +115,7 @@ class ExactIndex:
         # Frozen dataclasses cannot be mutated in place; rebuild
         # with the augmented location set.
         new_locations = frozenset(entry.locations | {node_id})
-        self.entries[content_hash] = IndexEntry(
-            fragment=entry.fragment, locations=new_locations
-        )
+        self.entries[content_hash] = IndexEntry(fragment=entry.fragment, locations=new_locations)
         return True
 
     def remove(self, content_hash: str) -> bool:

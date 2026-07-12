@@ -80,6 +80,7 @@ class TransformersBackend(ComputeBackend):
         """
         try:
             import torch
+
             # transformers is an optional dependency. mypy cannot see
             # its type stubs without an explicit [transformers] extra,
             # hence the type: ignore on the import line below.
@@ -154,9 +155,7 @@ class TransformersBackend(ComputeBackend):
         except (RuntimeError, ValueError, IndexError) as exc:
             # OOM, device errors, or shape mismatches degrade to
             # simulated prefill.
-            logger.warning(
-                "Transformers forward pass failed (%s); falling back to simulation", exc
-            )
+            logger.warning("Transformers forward pass failed (%s); falling back to simulation", exc)
             return self.simulate_prefill(prompt_tokens, model_id)
 
         window_size = 128
@@ -168,10 +167,7 @@ class TransformersBackend(ComputeBackend):
             # fragment is represented by a single fixed-size
             # vector.
             emb_slice = embeddings[i : i + window_size]
-            if len(emb_slice) > 0:
-                avg_emb = emb_slice.mean(axis=0).tolist()
-            else:
-                avg_emb = [0.0]
+            avg_emb = emb_slice.mean(axis=0).tolist() if len(emb_slice) > 0 else [0.0]
             frag = Fragment(
                 content_hash=h,
                 # Cap the embedding at 256 dimensions regardless
@@ -216,9 +212,7 @@ class TransformersBackend(ComputeBackend):
             import torch
 
             prompt_text = " ".join(str(t) for t in prompt_tokens)
-            inputs = self._tokenizer(
-                prompt_text, return_tensors="pt", truncation=True, max_length=2048
-            )
+            inputs = self._tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=2048)
             inputs = {k: v.to(self._actual_device) for k, v in inputs.items()}
             with torch.no_grad():
                 output_ids = self._model.generate(

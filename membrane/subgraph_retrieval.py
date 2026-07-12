@@ -77,7 +77,7 @@ class SubgraphRetrieval:
         visited: set[str] = {seed_hash}
         frontier: set[str] = {seed_hash}
 
-        for depth in range(max_depth):
+        for _ in range(max_depth):
             # next_frontier collects every node reached in this
             # BFS layer.
             next_frontier: set[str] = set()

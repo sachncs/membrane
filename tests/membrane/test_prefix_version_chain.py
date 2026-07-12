@@ -12,9 +12,7 @@ class TestPrefixVersionChain:
         chain = PrefixVersionChain()
         chain.append_version("hash-a", version_id=1)
         entry = chain.get_version(1)
-        assert entry == VersionEntry(
-            prefix_hash="hash-a", version_id=1, parent_version=None
-        )
+        assert entry == VersionEntry(prefix_hash="hash-a", version_id=1, parent_version=None)
 
     def test_get_version_missing(self):
         chain = PrefixVersionChain()
