@@ -86,7 +86,7 @@ class GrpcServer:
         from membrane.transport.proto import membrane_pb2
         from membrane.transport.proto import membrane_pb2_grpc
 
-        servicer = _MembraneServicer(self.node, self.compute_backend)
+        servicer = MembraneServicer(self.node, self.compute_backend)
         self._server = grpc_module.server(thread_pool=ThreadPoolExecutor(max_workers=10))
         membrane_pb2_grpc.add_MembraneServicer_to_server(servicer, self._server)
         # Insecure port for local development. For production
@@ -108,7 +108,7 @@ class GrpcServer:
             logger.info("gRPC server stopped")
 
 
-class _MembraneServicer:
+class MembraneServicer:
     """Implementation of the Membrane gRPC service.
 
     Attributes:
@@ -141,7 +141,7 @@ class _MembraneServicer:
         Returns:
             StoreResponse: ``success`` and ``content_hash``.
         """
-        frag = self._to_fragment(request.fragment)
+        frag = self.pb_to_fragment(request.fragment)
         success = self.node.store(frag, is_primary=request.is_primary)
         return self._pb2.StoreResponse(
             success=success,
@@ -165,7 +165,7 @@ class _MembraneServicer:
             return self._pb2.RetrieveResponse(found=False)
         return self._pb2.RetrieveResponse(
             found=True,
-            fragment=self._to_message(frag),
+            fragment=self.fragment_to_pb(frag),
         )
 
     def SyncInventory(self, request, context):
@@ -204,7 +204,7 @@ class _MembraneServicer:
         latency = time.time() - t0
         return self._pb2.PrefillResponse(
             success=True,
-            fragments=[self._to_message(f) for f in frags],
+            fragments=[self.fragment_to_pb(f) for f in frags],
             kv_size_mib=sum(f.size for f in frags) / (1024 * 1024),
             latency_seconds=latency,
         )
@@ -235,7 +235,7 @@ class _MembraneServicer:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _to_fragment(self, msg) -> Fragment:
+    def pb_to_fragment(self, msg) -> Fragment:
         """Convert a protobuf Fragment message to a Fragment dataclass.
 
         Args:
@@ -258,7 +258,7 @@ class _MembraneServicer:
             version_id=msg.version_id,
         )
 
-    def _to_message(self, frag: Fragment):
+    def fragment_to_pb(self, frag: Fragment):
         """Convert a Fragment dataclass to a protobuf FragmentMessage.
 
         Args:

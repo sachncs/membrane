@@ -18,7 +18,7 @@ and :mod:`rich` (TUI rendering). It exposes two TUI dashboards:
 
 * :func:`dashboard` — standalone mode that polls a remote
   server's ``/heartbeat`` endpoint.
-* :func:`_run_dashboard` — local mode attached to a running
+* :func:`run_dashboard` — local mode attached to a running
   :class:`MembraneServer` instance, with full event-log
   visibility.
 """
@@ -92,7 +92,7 @@ def fmt_duration(seconds: float) -> str:
 # Interactive setup wizard
 # ------------------------------------------------------------------
 
-def _interactive_setup() -> dict[str, Any]:
+def interactive_setup() -> dict[str, Any]:
     """Prompt the user for configuration values interactively.
 
     Each question shows the current default in brackets; pressing
@@ -237,7 +237,7 @@ def serve(
         ]
     )
     if interactive or (sys.stdin.isatty() and defaults_match):
-        cfg = _interactive_setup()
+        cfg = interactive_setup()
         node_id = cfg["node_id"]
         host = cfg["host"]
         port = cfg["port"]
@@ -305,7 +305,7 @@ def serve(
             console.print("[bold red]Server stopped.[/bold red]")
     else:
         # Launch the local TUI dashboard.
-        _run_dashboard(server)
+        run_dashboard(server)
 
 
 # ------------------------------------------------------------------
@@ -404,7 +404,7 @@ def dashboard(
 # Internal: dashboard for local server
 # ------------------------------------------------------------------
 
-def _run_dashboard(server: MembraneServer) -> None:
+def run_dashboard(server: MembraneServer) -> None:
     """Render a live Rich dashboard for the local ``MembraneServer``.
 
     Unlike :func:`dashboard` (which polls a remote server over

@@ -148,18 +148,18 @@ class MembraneServer:
         self.connected_nodes: set[str] = set()
 
         # Compute backend.
-        self.compute_backend = self._make_compute_backend(compute, llm_url, llm_model, api_key)
+        self.compute_backend = self.make_compute_backend(compute, llm_url, llm_model, api_key)
 
         # Persistence.
-        self._setup_persistence(redis_url)
+        self.setup_persistence(redis_url)
 
         # Cluster.
-        self._setup_cluster(cluster_config, host, port)
+        self.setup_cluster(cluster_config, host, port)
 
         # Transport.
-        self._setup_transport(transport, host, port)
+        self.setup_transport(transport, host, port)
 
-    def _make_compute_backend(
+    def make_compute_backend(
         self,
         compute: str,
         llm_url: str,
@@ -203,7 +203,7 @@ class MembraneServer:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _setup_persistence(self, redis_url: str) -> None:
+    def setup_persistence(self, redis_url: str) -> None:
         """Initialize the persistence backend.
 
         When ``redis_url`` is set and reachable, use Redis;
@@ -225,7 +225,7 @@ class MembraneServer:
                     "Redis connection failed (%s); using in-memory persistence", exc
                 )
 
-    def _setup_cluster(
+    def setup_cluster(
         self,
         cluster_config: ClusterConfig | None,
         host: str,
@@ -249,7 +249,7 @@ class MembraneServer:
             # cluster manager.
             self.transfer_service.cluster_manager = self.cluster_manager
 
-    def _setup_transport(
+    def setup_transport(
         self,
         transport: str,
         host: str,

@@ -60,7 +60,7 @@ class CPUBackend(ComputeBackend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self._hash_tokens(chunk)
+            h = self.hash_tokens(chunk)
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),
@@ -116,7 +116,7 @@ class CPUBackend(ComputeBackend):
         return "cpu"
 
     @staticmethod
-    def _hash_tokens(tokens: list[int]) -> str:
+    def hash_tokens(tokens: list[int]) -> str:
         """Compute a deterministic MD5 digest over a token chunk.
 
         Args:

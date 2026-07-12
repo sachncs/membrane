@@ -57,7 +57,7 @@ class WeightedGraph:
         self.graph = FragmentGraph()
         self.weights: dict[str, dict[str, dict[str, float]]] = {}
 
-    def _ensure_node(self, content_hash: str) -> None:
+    def ensure_node(self, content_hash: str) -> None:
         """Insert a placeholder fragment into the structural graph if missing.
 
         The dummy fragment carries a single-element zero embedding
@@ -113,8 +113,8 @@ class WeightedGraph:
         """
         # Ensure both nodes exist in the underlying graph so that
         # add_edge never sees a missing endpoint.
-        self._ensure_node(source_hash)
-        self._ensure_node(target_hash)
+        self.ensure_node(source_hash)
+        self.ensure_node(target_hash)
         self.graph.add_edge(source_hash, target_hash, edge_type)
         self.weights.setdefault(source_hash, {}).setdefault(edge_type, {})[
             target_hash

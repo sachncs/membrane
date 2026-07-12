@@ -145,8 +145,8 @@ class RemoteTransferService(TransferService):
             return super().sync_nodes(source, target)
 
         # Remote paths: fetch both inventories via HTTP.
-        source_digest = self._inventory_digest(source)
-        target_digest = self._inventory_digest(target)
+        source_digest = self.inventory_digest(source)
+        target_digest = self.inventory_digest(target)
         if source_digest is None or target_digest is None:
             return []
 
@@ -157,7 +157,7 @@ class RemoteTransferService(TransferService):
                 transferred.append(h)
         return transferred
 
-    def _inventory_digest(self, node: MembraneNode | str) -> dict[str, int] | None:
+    def inventory_digest(self, node: MembraneNode | str) -> dict[str, int] | None:
         """Fetch a node's inventory digest.
 
         Args:

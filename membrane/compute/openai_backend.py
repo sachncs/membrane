@@ -78,7 +78,7 @@ class OpenAIBackend(ComputeBackend):
         except ImportError:
             logger.warning("OpenAIBackend: httpx not installed")
 
-    def _hash_tokens(self, tokens: list[int]) -> str:
+    def hash_tokens(self, tokens: list[int]) -> str:
         """MD5-hash a token chunk.
 
         Args:
@@ -104,7 +104,7 @@ class OpenAIBackend(ComputeBackend):
             or the ``httpx`` client is unavailable.
         """
         if self._client is None:
-            return self._simulate_prefill(prompt_tokens, model_id)
+            return self.simulate_prefill(prompt_tokens, model_id)
 
         text = " ".join(str(t) for t in prompt_tokens)
         try:
@@ -119,7 +119,7 @@ class OpenAIBackend(ComputeBackend):
             logger.warning(
                 "OpenAI embedding failed (%s); falling back to simulation", exc
             )
-            return self._simulate_prefill(prompt_tokens, model_id)
+            return self.simulate_prefill(prompt_tokens, model_id)
 
         # Distribute the (single) embedding across windows by
         # slicing it into chunks of ``window_size`` floats (with
@@ -129,7 +129,7 @@ class OpenAIBackend(ComputeBackend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self._hash_tokens(chunk)
+            h = self.hash_tokens(chunk)
             emb_slice = (
                 embedding[: len(chunk)]
                 if len(embedding) >= len(chunk)
@@ -217,7 +217,7 @@ class OpenAIBackend(ComputeBackend):
         """
         return f"openai({self.model})"
 
-    def _simulate_prefill(
+    def simulate_prefill(
         self,
         prompt_tokens: list[int],
         model_id: str,
@@ -237,7 +237,7 @@ class OpenAIBackend(ComputeBackend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self._hash_tokens(chunk)
+            h = self.hash_tokens(chunk)
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),

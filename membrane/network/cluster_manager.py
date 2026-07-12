@@ -139,14 +139,14 @@ class ClusterManager:
         self._stop_event.clear()
 
         loops = [
-            (self._bootstrap_loop, "bootstrap"),
-            (self._heartbeat_loop, "heartbeat"),
-            (self._failure_detection_loop, "failure-detection"),
+            (self.bootstrap_loop, "bootstrap"),
+            (self.heartbeat_loop, "heartbeat"),
+            (self.failure_detection_loop, "failure-detection"),
         ]
         if self.config.enable_gossip:
-            loops.append((self._gossip_loop, "gossip"))
+            loops.append((self.gossip_loop, "gossip"))
         if self.config.enable_replication:
-            loops.append((self._replication_loop, "replication"))
+            loops.append((self.replication_loop, "replication"))
 
         for target, name in loops:
             t = threading.Thread(target=target, daemon=True, name=f"membrane-{name}")
@@ -412,7 +412,7 @@ class ClusterManager:
     # Internal loops
     # ------------------------------------------------------------------
 
-    def _bootstrap_loop(self) -> None:
+    def bootstrap_loop(self) -> None:
         """Contact seed peers and join the cluster.
 
         Tries each configured seed in order; the first
@@ -433,7 +433,7 @@ class ClusterManager:
             except Exception as exc:
                 logger.warning("Bootstrap failed for seed %s: %s", seed, exc)
 
-    def _heartbeat_loop(self) -> None:
+    def heartbeat_loop(self) -> None:
         """Periodically ping every known peer.
 
         On success, the peer's ``last_heartbeat`` and
@@ -468,7 +468,7 @@ class ClusterManager:
                     logger.debug("Heartbeat to %s failed: %s", p.node_id, exc)
             self._stop_event.wait(timeout=self.config.heartbeat_interval_sec)
 
-    def _failure_detection_loop(self) -> None:
+    def failure_detection_loop(self) -> None:
         """Mark suspect peers and remove failed peers.
 
         Peers whose ``missed_heartbeats`` exceeds
@@ -492,7 +492,7 @@ class ClusterManager:
                 self.remove_peer(node_id)
             self._stop_event.wait(timeout=self.config.heartbeat_interval_sec)
 
-    def _gossip_loop(self) -> None:
+    def gossip_loop(self) -> None:
         """Periodically push our gossip state to a random fanout.
 
         Each round picks up to ``gossip_fanout`` healthy peers
@@ -549,7 +549,7 @@ class ClusterManager:
 
             self._stop_event.wait(timeout=self.config.gossip_interval_sec)
 
-    def _replication_loop(self) -> None:
+    def replication_loop(self) -> None:
         """Background replication of missing primary shards.
 
         For every primary hash held locally, ask each replica

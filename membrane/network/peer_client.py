@@ -32,7 +32,7 @@ from membrane.structural_signature import StructuralSignature
 logger = logging.getLogger(__name__)
 
 
-def _serialize_fragment(frag: Fragment) -> dict[str, Any]:
+def serialize_fragment(frag: Fragment) -> dict[str, Any]:
     """Serialize a fragment to a JSON-compatible dict.
 
     Args:
@@ -54,11 +54,11 @@ def _serialize_fragment(frag: Fragment) -> dict[str, Any]:
     }
 
 
-def _deserialize_fragment(data: dict[str, Any]) -> Fragment:
+def deserialize_fragment(data: dict[str, Any]) -> Fragment:
     """Reconstruct a fragment from its serialized form.
 
     Args:
-        data: Mapping produced by :func:`_serialize_fragment`.
+        data: Mapping produced by :func:`serialize_fragment`.
 
     Returns:
         Fragment: Reconstructed fragment instance.
@@ -121,7 +121,7 @@ class PeerClient:
             dict | None: Parsed JSON response, or ``None`` on
             failure.
         """
-        return self._request("GET", "/heartbeat")
+        return self.request_with_retry("GET", "/heartbeat")
 
     def get_inventory(self) -> dict | None:
         """Send ``GET /inventory`` to the peer.
@@ -130,7 +130,7 @@ class PeerClient:
             dict | None: Parsed JSON inventory response, or
             ``None`` on failure.
         """
-        return self._request("GET", "/inventory")
+        return self.request_with_retry("GET", "/inventory")
 
     def store_fragment(self, fragment: Fragment, is_primary: bool = False) -> bool:
         """Send ``POST /store`` with ``fragment`` and ``is_primary``.
@@ -144,8 +144,8 @@ class PeerClient:
             bool: True when the peer confirmed the store,
             False otherwise (including network failures).
         """
-        payload = {"fragment": _serialize_fragment(fragment), "is_primary": is_primary}
-        resp = self._request("POST", "/store", payload)
+        payload = {"fragment": serialize_fragment(fragment), "is_primary": is_primary}
+        resp = self.request_with_retry("POST", "/store", payload)
         return resp is not None and resp.get("success", False)
 
     def retrieve_fragment(self, content_hash: str) -> Fragment | None:
@@ -158,9 +158,9 @@ class PeerClient:
             Fragment | None: The fragment, or ``None`` when
             the peer did not find it or the request failed.
         """
-        resp = self._request("GET", f"/retrieve?content_hash={content_hash}")
+        resp = self.request_with_retry("GET", f"/retrieve?content_hash={content_hash}")
         if resp and resp.get("found"):
-            return _deserialize_fragment(resp["fragment"])
+            return deserialize_fragment(resp["fragment"])
         return None
 
     def join_cluster(self, node_id: str, host: str, port: int) -> dict | None:
@@ -176,7 +176,7 @@ class PeerClient:
             ``{"success": True, "peers": [...]}``) or ``None``
             on failure.
         """
-        return self._request("POST", "/join", {"node_id": node_id, "host": host, "port": port})
+        return self.request_with_retry("POST", "/join", {"node_id": node_id, "host": host, "port": port})
 
     def leave_cluster(self, node_id: str) -> bool:
         """Send ``POST /leave`` to remove ``node_id`` from the cluster.
@@ -188,7 +188,7 @@ class PeerClient:
             bool: True when the peer confirmed the leave,
             False otherwise.
         """
-        resp = self._request("POST", "/leave", {"node_id": node_id})
+        resp = self.request_with_retry("POST", "/leave", {"node_id": node_id})
         return resp is not None and resp.get("success", False)
 
     def gossip(self, state: dict) -> dict | None:
@@ -201,7 +201,7 @@ class PeerClient:
             dict | None: Parsed JSON response or ``None`` on
             failure.
         """
-        return self._request("POST", "/gossip", state)
+        return self.request_with_retry("POST", "/gossip", state)
 
     def request_replicate(self, fragment: Fragment) -> bool:
         """Send ``POST /replicate`` with ``fragment``.
@@ -213,8 +213,8 @@ class PeerClient:
             bool: True when the peer confirmed the replication,
             False otherwise.
         """
-        payload = {"fragment": _serialize_fragment(fragment)}
-        resp = self._request("POST", "/replicate", payload)
+        payload = {"fragment": serialize_fragment(fragment)}
+        resp = self.request_with_retry("POST", "/replicate", payload)
         return resp is not None and resp.get("success", False)
 
     def get_peers(self) -> dict | None:
@@ -224,13 +224,13 @@ class PeerClient:
             dict | None: Parsed membership payload or ``None``
             on failure.
         """
-        return self._request("GET", "/peers")
+        return self.request_with_retry("GET", "/peers")
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
-    def _request(
+    def request_with_retry(
         self,
         method: str,
         path: str,
