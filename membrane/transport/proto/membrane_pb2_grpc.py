@@ -3,9 +3,9 @@
 import grpc
 import warnings
 
-from membrane.transport.proto import membrane_pb2 as membrane_dot_transport_dot_proto_dot_membrane__pb2
+from membrane.transport.proto import membrane_pb2 as membrane__pb2
 
-GRPC_GENERATED_VERSION = '1.80.0'
+GRPC_GENERATED_VERSION = '1.82.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -18,14 +18,14 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in membrane/transport/proto/membrane_pb2_grpc.py depends on'
+        + ' but the generated code in membrane_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class MembraneStub(object):
+class MembraneStub:
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -36,32 +36,32 @@ class MembraneStub(object):
         """
         self.StoreFragment = channel.unary_unary(
                 '/membrane.Membrane/StoreFragment',
-                request_serializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.StoreRequest.SerializeToString,
-                response_deserializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.StoreResponse.FromString,
+                request_serializer=membrane__pb2.StoreRequest.SerializeToString,
+                response_deserializer=membrane__pb2.StoreResponse.FromString,
                 _registered_method=True)
         self.RetrieveFragment = channel.unary_unary(
                 '/membrane.Membrane/RetrieveFragment',
-                request_serializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.RetrieveRequest.SerializeToString,
-                response_deserializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.RetrieveResponse.FromString,
+                request_serializer=membrane__pb2.RetrieveRequest.SerializeToString,
+                response_deserializer=membrane__pb2.RetrieveResponse.FromString,
                 _registered_method=True)
         self.SyncInventory = channel.unary_unary(
                 '/membrane.Membrane/SyncInventory',
-                request_serializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.InventoryRequest.SerializeToString,
-                response_deserializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.InventoryResponse.FromString,
+                request_serializer=membrane__pb2.InventoryRequest.SerializeToString,
+                response_deserializer=membrane__pb2.InventoryResponse.FromString,
                 _registered_method=True)
         self.Prefill = channel.unary_unary(
                 '/membrane.Membrane/Prefill',
-                request_serializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.PrefillRequest.SerializeToString,
-                response_deserializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.PrefillResponse.FromString,
+                request_serializer=membrane__pb2.PrefillRequest.SerializeToString,
+                response_deserializer=membrane__pb2.PrefillResponse.FromString,
                 _registered_method=True)
         self.Heartbeat = channel.unary_unary(
                 '/membrane.Membrane/Heartbeat',
-                request_serializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.HeartbeatRequest.SerializeToString,
-                response_deserializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.HeartbeatResponse.FromString,
+                request_serializer=membrane__pb2.HeartbeatRequest.SerializeToString,
+                response_deserializer=membrane__pb2.HeartbeatResponse.FromString,
                 _registered_method=True)
 
 
-class MembraneServicer(object):
+class MembraneServicer:
     """Missing associated documentation comment in .proto file."""
 
     def StoreFragment(self, request, context):
@@ -99,28 +99,28 @@ def add_MembraneServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'StoreFragment': grpc.unary_unary_rpc_method_handler(
                     servicer.StoreFragment,
-                    request_deserializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.StoreRequest.FromString,
-                    response_serializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.StoreResponse.SerializeToString,
+                    request_deserializer=membrane__pb2.StoreRequest.FromString,
+                    response_serializer=membrane__pb2.StoreResponse.SerializeToString,
             ),
             'RetrieveFragment': grpc.unary_unary_rpc_method_handler(
                     servicer.RetrieveFragment,
-                    request_deserializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.RetrieveRequest.FromString,
-                    response_serializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.RetrieveResponse.SerializeToString,
+                    request_deserializer=membrane__pb2.RetrieveRequest.FromString,
+                    response_serializer=membrane__pb2.RetrieveResponse.SerializeToString,
             ),
             'SyncInventory': grpc.unary_unary_rpc_method_handler(
                     servicer.SyncInventory,
-                    request_deserializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.InventoryRequest.FromString,
-                    response_serializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.InventoryResponse.SerializeToString,
+                    request_deserializer=membrane__pb2.InventoryRequest.FromString,
+                    response_serializer=membrane__pb2.InventoryResponse.SerializeToString,
             ),
             'Prefill': grpc.unary_unary_rpc_method_handler(
                     servicer.Prefill,
-                    request_deserializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.PrefillRequest.FromString,
-                    response_serializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.PrefillResponse.SerializeToString,
+                    request_deserializer=membrane__pb2.PrefillRequest.FromString,
+                    response_serializer=membrane__pb2.PrefillResponse.SerializeToString,
             ),
             'Heartbeat': grpc.unary_unary_rpc_method_handler(
                     servicer.Heartbeat,
-                    request_deserializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.HeartbeatRequest.FromString,
-                    response_serializer=membrane_dot_transport_dot_proto_dot_membrane__pb2.HeartbeatResponse.SerializeToString,
+                    request_deserializer=membrane__pb2.HeartbeatRequest.FromString,
+                    response_serializer=membrane__pb2.HeartbeatResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -130,7 +130,7 @@ def add_MembraneServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class Membrane(object):
+class Membrane:
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
@@ -148,8 +148,8 @@ class Membrane(object):
             request,
             target,
             '/membrane.Membrane/StoreFragment',
-            membrane_dot_transport_dot_proto_dot_membrane__pb2.StoreRequest.SerializeToString,
-            membrane_dot_transport_dot_proto_dot_membrane__pb2.StoreResponse.FromString,
+            membrane__pb2.StoreRequest.SerializeToString,
+            membrane__pb2.StoreResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -175,8 +175,8 @@ class Membrane(object):
             request,
             target,
             '/membrane.Membrane/RetrieveFragment',
-            membrane_dot_transport_dot_proto_dot_membrane__pb2.RetrieveRequest.SerializeToString,
-            membrane_dot_transport_dot_proto_dot_membrane__pb2.RetrieveResponse.FromString,
+            membrane__pb2.RetrieveRequest.SerializeToString,
+            membrane__pb2.RetrieveResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -202,8 +202,8 @@ class Membrane(object):
             request,
             target,
             '/membrane.Membrane/SyncInventory',
-            membrane_dot_transport_dot_proto_dot_membrane__pb2.InventoryRequest.SerializeToString,
-            membrane_dot_transport_dot_proto_dot_membrane__pb2.InventoryResponse.FromString,
+            membrane__pb2.InventoryRequest.SerializeToString,
+            membrane__pb2.InventoryResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -229,8 +229,8 @@ class Membrane(object):
             request,
             target,
             '/membrane.Membrane/Prefill',
-            membrane_dot_transport_dot_proto_dot_membrane__pb2.PrefillRequest.SerializeToString,
-            membrane_dot_transport_dot_proto_dot_membrane__pb2.PrefillResponse.FromString,
+            membrane__pb2.PrefillRequest.SerializeToString,
+            membrane__pb2.PrefillResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -256,8 +256,8 @@ class Membrane(object):
             request,
             target,
             '/membrane.Membrane/Heartbeat',
-            membrane_dot_transport_dot_proto_dot_membrane__pb2.HeartbeatRequest.SerializeToString,
-            membrane_dot_transport_dot_proto_dot_membrane__pb2.HeartbeatResponse.FromString,
+            membrane__pb2.HeartbeatRequest.SerializeToString,
+            membrane__pb2.HeartbeatResponse.FromString,
             options,
             channel_credentials,
             insecure,
