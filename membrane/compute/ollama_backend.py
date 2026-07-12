@@ -1,6 +1,22 @@
 """OllamaBackend: compute backend that delegates to a local Ollama server.
 
 Requires ``httpx`` (installed via ``pip install membrane[server]``).
+
+The backend exposes the standard
+:class:`~membrane.compute.backend.ComputeBackend` interface and
+backs it with HTTP calls to a locally running Ollama daemon:
+
+* :meth:`prefill` — calls ``POST /api/embeddings`` to fetch a
+  prompt embedding and slices it across 128-token windows.
+* :meth:`generate` — calls ``POST /api/generate`` with
+  ``stream=False`` and returns the produced text.
+* :meth:`available` — calls ``GET /api/tags`` as a cheap
+  liveness probe.
+
+The backend gracefully degrades when the ``httpx`` package is
+missing or the API call fails: prefill falls back to a small
+simulation, and ``generate`` returns an empty result with a
+warning.
 """
 
 import hashlib
@@ -18,11 +34,18 @@ class OllamaBackend(ComputeBackend):
     """Compute backend using Ollama API for embeddings and generation.
 
     Args:
-        base_url: Ollama server URL (default ``http://localhost:11434``).
+        base_url: Ollama server URL
+            (default ``http://localhost:11434``).
         model: Model name to use (default ``"llama3.2"``).
     """
 
     def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.2") -> None:
+        """Initialize the backend.
+
+        Args:
+            base_url: Ollama server URL.
+            model: Model identifier.
+        """
         self.base_url = base_url.rstrip("/")
         self.model = model
         self._client: Any | None = None
@@ -33,15 +56,36 @@ class OllamaBackend(ComputeBackend):
             logger.warning("OllamaBackend: httpx not installed")
 
     def _hash_tokens(self, tokens: list[int]) -> str:
+        """MD5-hash a token chunk.
+
+        Args:
+            tokens: Token IDs.
+
+        Returns:
+            str: Hexadecimal digest.
+        """
         payload = ",".join(str(t) for t in tokens)
         return hashlib.md5(payload.encode()).hexdigest()
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
-        """Get embeddings from Ollama and convert to fragments."""
+        """Fetch embeddings from Ollama and convert to fragments.
+
+        Args:
+            prompt_tokens: Input token IDs.
+            model_id: Model identifier stamped on each
+                fragment's structural signature.
+
+        Returns:
+            list[Fragment]: One fragment per 128-token window.
+            Falls back to a simulation when the API call fails
+            or the ``httpx`` client is unavailable.
+        """
         if self._client is None:
             return self._simulate_prefill(prompt_tokens, model_id)
 
-        # Decode tokens to text for Ollama embedding API
+        # Ollama expects text, not raw token IDs; we stringify
+        # the tokens with a space separator so the embedding is
+        # deterministic for a given token sequence.
         text = " ".join(str(t) for t in prompt_tokens)
         try:
             resp = self._client.post(
@@ -52,16 +96,23 @@ class OllamaBackend(ComputeBackend):
             data = resp.json()
             embedding = data.get("embedding", [])
         except Exception as exc:
-            logger.warning("Ollama embedding failed (%s); falling back to simulation", exc)
+            logger.warning(
+                "Ollama embedding failed (%s); falling back to simulation", exc
+            )
             return self._simulate_prefill(prompt_tokens, model_id)
 
+        # Distribute the embedding across 128-token windows
+        # (with zero-padding when shorter).
         window_size = 128
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
             h = self._hash_tokens(chunk)
-            # Use a slice of the embedding for each chunk (or full embedding for first chunk)
-            emb_slice = embedding[: len(chunk)] if len(embedding) >= len(chunk) else embedding + [0.0] * (len(chunk) - len(embedding))
+            emb_slice = (
+                embedding[: len(chunk)]
+                if len(embedding) >= len(chunk)
+                else embedding + [0.0] * (len(chunk) - len(embedding))
+            )
             frag = Fragment(
                 content_hash=h,
                 embedding=tuple(emb_slice),
@@ -76,18 +127,41 @@ class OllamaBackend(ComputeBackend):
                 version_id=1,
             )
             fragments.append(frag)
-        logger.debug("OllamaBackend: prefill %s tokens into %s fragments", len(prompt_tokens), len(fragments))
+        logger.debug(
+            "OllamaBackend: prefill %s tokens into %s fragments",
+            len(prompt_tokens),
+            len(fragments),
+        )
         return fragments
 
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
-        """Generate text via Ollama /api/generate."""
+        """Generate text via Ollama's ``/api/generate``.
+
+        Args:
+            prompt_tokens: Input token IDs.
+            model_id: Model identifier (currently unused —
+                ``self.model`` is the source of truth).
+            max_tokens: Maximum tokens to generate, passed as
+                Ollama's ``num_predict`` option.
+
+        Returns:
+            dict: ``{"text": ..., "tokens": [...]}``. ``tokens``
+            is always empty because the API does not return raw
+            token IDs. Empty values when the client is missing
+            or the request fails.
+        """
         if self._client is None:
             return {"text": "", "tokens": []}
         text = " ".join(str(t) for t in prompt_tokens)
         try:
             resp = self._client.post(
                 f"{self.base_url}/api/generate",
-                json={"model": self.model, "prompt": text, "stream": False, "options": {"num_predict": max_tokens}},
+                json={
+                    "model": self.model,
+                    "prompt": text,
+                    "stream": False,
+                    "options": {"num_predict": max_tokens},
+                },
             )
             resp.raise_for_status()
             data = resp.json()
@@ -97,6 +171,12 @@ class OllamaBackend(ComputeBackend):
             return {"text": "", "tokens": []}
 
     def available(self) -> bool:
+        """Return whether Ollama is reachable.
+
+        Returns:
+            bool: True when the client is configured and the
+            server responds with status 200 to ``GET /api/tags``.
+        """
         if self._client is None:
             return False
         try:
@@ -106,9 +186,29 @@ class OllamaBackend(ComputeBackend):
             return False
 
     def device_name(self) -> str:
+        """Return the backend's device descriptor.
+
+        Returns:
+            str: ``"ollama(<model>)"``.
+        """
         return f"ollama({self.model})"
 
-    def _simulate_prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
+    def _simulate_prefill(
+        self,
+        prompt_tokens: list[int],
+        model_id: str,
+    ) -> list[Fragment]:
+        """Simulated prefill used when the API call is unavailable.
+
+        Args:
+            prompt_tokens: Input token IDs.
+            model_id: Model identifier for the structural
+                signature.
+
+        Returns:
+            list[Fragment]: One fragment per 128-token window
+            with a placeholder embedding.
+        """
         window_size = 128
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):

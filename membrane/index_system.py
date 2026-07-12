@@ -1,4 +1,32 @@
-"""IndexSystem: facade over all four in-memory indices."""
+"""IndexSystem: facade over all four in-memory indices.
+
+This module defines :class:`IndexSystem`, a thin aggregate that
+coordinates the four specialized index structures that ship with
+Membrane:
+
+* :class:`~membrane.exact_index.ExactIndex` — primary
+  ``content_hash`` lookup with replica tracking.
+* :class:`~membrane.semantic_index.SemanticIndex` — embedding-based
+  similarity search.
+* :class:`~membrane.positional_index.PositionalIndex` — token-span
+  overlap and adjacency queries.
+* :class:`~membrane.co_access_index.CoAccessIndex` — undirected
+  graph of fragments accessed together.
+
+The facade ensures that *every* sub-index stays in sync whenever a
+fragment is inserted or removed, and exposes a single set of
+query methods that map to the most appropriate sub-index.
+
+Because the underlying indexes are independent data structures,
+:class:`IndexSystem` can be initialized lazily in tests or replaced
+with mocks that satisfy
+:class:`~membrane.protocols.IndexProtocol`.
+
+Thread safety:
+    The class inherits the threading properties of its
+    sub-indexes. None of them are individually thread-safe, so the
+    facade as a whole is not thread-safe.
+"""
 
 from __future__ import annotations
 
@@ -19,11 +47,18 @@ from membrane.semantic_index import SemanticIndex
 class IndexSystem:
     """Manages exact, semantic, positional, and co-access indices.
 
-    Provides incremental updates and supports distributed queries by
-    exposing each sub-index independently.
+    Provides incremental updates and supports distributed queries
+    by exposing each sub-index independently.
+
+    Attributes:
+        exact: Primary ``content_hash`` -> entry index.
+        semantic: Embedding-based similarity index.
+        positional: Token-span overlap/adjacency index.
+        co_access: Undirected co-access graph.
     """
 
     def __init__(self) -> None:
+        """Initialize empty sub-indices and log the lifecycle event."""
         logger.info("Initialized %s", self.__class__.__name__)
         self.exact = ExactIndex()
         self.semantic = SemanticIndex()
@@ -32,6 +67,13 @@ class IndexSystem:
 
     def insert(self, fragment: Fragment, locations: set[str]) -> None:
         """Insert a fragment into all indices.
+
+        The exact index receives both the fragment and its
+        locations; the semantic and positional indexes only need
+        the fragment itself. The co-access index is updated
+        separately via :meth:`record_co_access` so callers can
+        distinguish structural insertion from behavioral
+        observation.
 
         Args:
             fragment: Fragment to index.
@@ -48,7 +90,8 @@ class IndexSystem:
             content_hash: Hash to look up.
 
         Returns:
-            IndexEntry if found, else None.
+            IndexEntry | None: The matching entry, or ``None`` if
+            no fragment with that hash is indexed.
         """
         return self.exact.lookup(content_hash)
 
@@ -64,7 +107,8 @@ class IndexSystem:
             k: Number of neighbors to return.
 
         Returns:
-            List of fragments sorted by descending similarity.
+            list[Fragment]: Fragments sorted by descending
+            similarity. Empty when the index has no entries.
         """
         return self.semantic.nearest_neighbors(query_embedding, k)
 
@@ -76,7 +120,8 @@ class IndexSystem:
             end: Query end position (inclusive).
 
         Returns:
-            Fragments with overlapping token spans.
+            list[Fragment]: Fragments with overlapping token
+            spans. Order is unspecified.
         """
         return self.positional.find_overlapping(start, end)
 
@@ -92,7 +137,7 @@ class IndexSystem:
             max_gap: Maximum allowed gap for adjacency.
 
         Returns:
-            Adjacent fragments.
+            list[Fragment]: Adjacent fragments in traversal order.
         """
         return self.positional.find_adjacent(position, max_gap)
 
@@ -108,11 +153,17 @@ class IndexSystem:
     def remove(self, content_hash: str) -> bool:
         """Remove a fragment from all sub-indices.
 
+        Each sub-index is queried independently because their
+        membership sets may diverge (e.g., a co-access entry can
+        outlive its fragment). The method returns ``True`` if at
+        least one sub-index reported a removal.
+
         Args:
             content_hash: Hash of the fragment to remove.
 
         Returns:
-            True if the fragment was found in at least one index.
+            bool: True if the fragment was found in at least one
+            sub-index, False otherwise.
         """
         removed = (
             self.exact.remove(content_hash)
@@ -129,6 +180,7 @@ class IndexSystem:
             content_hash: Hash to look up.
 
         Returns:
-            Set of neighbor hashes.
+            set[str]: Defensive copy of the neighbor set. Empty
+            when the hash has no recorded co-accesses.
         """
         return self.co_access.lookup(content_hash)

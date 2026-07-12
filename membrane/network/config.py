@@ -1,4 +1,16 @@
-"""Cluster configuration for Membrane peer-to-peer networking."""
+"""Cluster configuration for Membrane peer-to-peer networking.
+
+This module defines :class:`ClusterConfig`, the single source of
+truth for the runtime parameters that govern a Membrane node's
+participation in a cluster: bind addresses, peer seeds, heartbeat
+and gossip intervals, failure thresholds, retry policy, and
+replication knobs.
+
+Callers typically construct a :class:`ClusterConfig` once at
+process start (often loading values from environment variables)
+and pass it to the :class:`~membrane.network.cluster_manager
+.ClusterManager` constructor.
+"""
 
 from dataclasses import dataclass, field
 
@@ -11,19 +23,25 @@ class ClusterConfig:
         node_id: Unique identifier for this node.
         host: Bind address for the HTTP server.
         port: Listen port for the HTTP server.
-        peers: Seed peer list as "host:port" strings.
+        peers: Seed peer list as ``"host:port"`` strings.
         heartbeat_interval_sec: Seconds between heartbeats.
-        heartbeat_timeout_sec: HTTP timeout for heartbeat requests.
+        heartbeat_timeout_sec: HTTP timeout for heartbeat
+            requests.
         gossip_interval_sec: Seconds between gossip rounds.
-        failure_suspect_threshold: Missed heartbeats before marking suspect.
-        failure_remove_threshold: Missed heartbeats before removing peer.
+        failure_suspect_threshold: Missed heartbeats before
+            marking a peer as suspect.
+        failure_remove_threshold: Missed heartbeats before
+            removing a peer from the membership table.
         max_retries: Max retries for peer HTTP requests.
-        retry_delay_sec: Base delay between retries (exponential backoff).
+        retry_delay_sec: Base delay between retries (exponential
+            backoff).
         replica_count: Number of replicas per primary fragment.
         enable_gossip: Whether to enable gossip protocol.
         enable_replication: Whether to auto-replicate on store.
-        gossip_fanout: Number of peers to gossip with each round.
-        gossip_max_fragment_entries: Max fragment locations per gossip message.
+        gossip_fanout: Number of peers to gossip with each
+            round.
+        gossip_max_fragment_entries: Max fragment locations per
+            gossip message.
     """
 
     node_id: str = "membrane-0"

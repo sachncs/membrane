@@ -1,10 +1,23 @@
 """Discrete-event simulator for end-to-end Membrane-PD evaluation.
 
-The simulator runs a request stream through the routing and scheduling
-pipeline and records stage-level throughput, TTFT, and bandwidth
-utilization. It is intentionally simplified: it does not model fine-grained
-GPU scheduling or TCP congestion, but it does faithfully implement the
-analytical throughput model and routing policies from the paper.
+The simulator runs a request stream through the routing and
+scheduling pipeline and records stage-level throughput, TTFT,
+and bandwidth utilization. It is intentionally simplified: it
+does not model fine-grained GPU scheduling or TCP congestion,
+but it does faithfully implement the analytical throughput
+model and routing policies from the paper.
+
+Three simulation scenarios are provided:
+
+* :func:`run_membrane_pd` — Membrane-PD with the grid-search
+  optimal configuration.
+* :func:`run_homogeneous_pd` — homogeneous PD baseline (no
+  Membrane).
+* :func:`run_naive_heterogeneous_pd` — naive heterogeneous PD
+  baseline where every request goes to Membrane.
+
+References:
+    * "Prefill-as-a-Service", arXiv:2604.15039v2, §4.
 """
 
 import logging
@@ -18,7 +31,29 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SimulationResult:
-    """Aggregated results from a simulation run."""
+    """Aggregated results from a simulation run.
+
+    Attributes:
+        config_name: Human-readable label of the simulated
+            configuration.
+        lambda_max: End-to-end throughput in req/s.
+        theta_membrane: Membrane stage throughput in req/s.
+        theta_pd_p: PD-P stage throughput in req/s.
+        theta_pd_d: PD-D stage throughput in req/s.
+        threshold: Routing threshold ``t`` used in the run.
+        num_membrane: Number of Membrane instances.
+        num_pd_p: Number of PD-P instances.
+        num_pd_d: Number of PD-D instances.
+        mean_ttft: Mean time-to-first-token in seconds.
+        p90_ttft: 90th-percentile TTFT in seconds.
+        bandwidth_gbps: Egress bandwidth utilization in Gbps.
+        fraction_to_membrane: Fraction of requests routed to
+            Membrane.
+        mean_long_length: Mean length of requests classified
+            as long.
+        mean_short_length: Mean length of requests classified
+            as short.
+    """
 
     config_name: str
     lambda_max: float
@@ -46,11 +81,14 @@ def run_membrane_pd(
     Args:
         lengths: Workload request lengths.
         seed: Random seed for any stochastic sub-components.
+            Currently unused by the deterministic routing/TTFT
+            logic but accepted for forward compatibility.
 
     Returns:
-        SimulationResult with all metrics.
+        SimulationResult: End-to-end metrics for the optimal
+        Membrane-PD configuration.
     """
-    # Optimize configuration
+    # Optimize configuration.
     best_t, best_n_p, best_n_d, best_lambda = optimizer.search(lengths)
 
     p, mean_long, mean_short = workload.conditional_means(lengths, best_t)
@@ -74,7 +112,7 @@ def run_membrane_pd(
         optimizer.OUTPUT_LENGTH,
     )
 
-    # Route every request to compute TTFT distribution
+    # Route every request to compute TTFT distribution.
     from membrane.model import router
 
     rtr = router.Router(best_t, bandwidth_abundant=False)
@@ -118,7 +156,8 @@ def run_homogeneous_pd(
         lengths: Workload request lengths.
 
     Returns:
-        SimulationResult with all metrics.
+        SimulationResult: End-to-end metrics for the optimal
+        homogeneous PD configuration.
     """
     total_instances = optimizer.TOTAL_PD_INSTANCES + optimizer.MEMBRANE_INSTANCES
     best_n_p, best_n_d, best_lambda = optimizer.optimal_homogeneous_pd(
@@ -138,8 +177,8 @@ def run_homogeneous_pd(
         optimizer.OUTPUT_LENGTH,
     )
 
-    # All requests go to PD-P
-    routed = [(length, "pd-p") for unused in lengths]
+    # All requests go to PD-P.
+    routed = [(length, "pd-p") for _unused in lengths]
     mean_ttft, p90_ttft = metrics.aggregate_ttft(
         routed, pd_compute_scale=optimizer.H20_COMPUTE_SCALE
     )
@@ -172,9 +211,10 @@ def run_naive_heterogeneous_pd(
         lengths: Workload request lengths.
 
     Returns:
-        SimulationResult with all metrics.
+        SimulationResult: End-to-end metrics for the naive
+        heterogeneous PD configuration.
     """
-    lam, unused = optimizer.naive_heterogeneous_pd(lengths)
+    lam, _unused = optimizer.naive_heterogeneous_pd(lengths)
 
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
     length = int(round(mean_length)) if mean_length > 0 else 32768
@@ -191,7 +231,7 @@ def run_naive_heterogeneous_pd(
         optimizer.OUTPUT_LENGTH,
     )
 
-    # All requests go to Membrane
+    # All requests go to Membrane.
     routed = [(length, "membrane") for _ in lengths]
     mean_ttft, p90_ttft = metrics.aggregate_ttft(routed)
 

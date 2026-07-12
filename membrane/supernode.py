@@ -1,4 +1,27 @@
-"""Supernode: routing table maintainer and directory super-peer."""
+"""Supernode: routing table maintainer and directory super-peer.
+
+This module defines :class:`Supernode`, the lightweight directory
+service that aggregates fragment-location information for a slice
+of the cluster. A deployment typically runs several supernodes,
+each covering a subset of the hash ring; together they form a
+*hierarchical directory* that the
+:class:`~membrane.distributed_directory.DistributedDirectory`
+queries in parallel.
+
+The supernode is intentionally minimal:
+
+* It records where fragments live (:meth:`register_fragment`,
+  :meth:`unregister_fragment`).
+* It answers "who holds this fragment?" queries
+  (:meth:`resolve`).
+* It maintains a consistent :class:`~membrane.hash_ring.HashRing`
+  so it can fall back to placement-based answers when gossip
+  state is incomplete (:meth:`resolve_via_ring`).
+
+Thread safety:
+    The class is **not thread-safe**. Provide external locking
+    when sharing across threads.
+"""
 
 import logging
 
@@ -11,7 +34,15 @@ from membrane.hash_ring import HashRing
 class Supernode:
     """Maintains routing tables and resolves fragment locations.
 
-    Acts as a directory super-peer that knows which nodes hold which fragments.
+    Acts as a directory super-peer that knows which nodes hold
+    which fragments.
+
+    Attributes:
+        supernode_id: Stable identifier for this supernode.
+        hash_ring: Consistent hash ring used for placement-based
+            fallbacks.
+        fragment_locations: Mapping from ``content_hash`` to the
+            set of node IDs holding a replica.
     """
 
     def __init__(self, supernode_id: str, hash_ring: HashRing | None = None) -> None:
@@ -19,13 +50,9 @@ class Supernode:
 
         Args:
             supernode_id: Unique identifier for this supernode.
-            hash_ring: Optional consistent hash ring for node placement.
-        """
-        """Initialize the supernode.
-
-        Args:
-            supernode_id: Unique identifier for this supernode.
-            hash_ring: Optional consistent hash ring for node placement.
+            hash_ring: Optional consistent hash ring for node
+                placement. A default empty ring is created when
+                ``None``.
         """
         self.supernode_id = supernode_id
         self.hash_ring = hash_ring or HashRing()
@@ -42,6 +69,10 @@ class Supernode:
 
     def unregister_fragment(self, content_hash: str, node_id: str) -> None:
         """Remove a fragment location record.
+
+        If the holder set becomes empty after removal, the entry
+        is deleted from the directory to prevent stale records
+        from accumulating.
 
         Args:
             content_hash: Fragment content hash.
@@ -60,18 +91,24 @@ class Supernode:
             content_hash: Hash to resolve.
 
         Returns:
-            Set of node identifiers. Empty if unknown.
+            set[str]: Defensive copy of the holder set. Empty if
+            the supernode has no record of the hash.
         """
         return set(self.fragment_locations.get(content_hash, set()))
 
     def resolve_via_ring(self, content_hash: str) -> str | None:
-        """Return the primary node responsible for a content hash via the ring.
+        """Return the primary node responsible via the hash ring.
+
+        Useful when the supernode has not yet observed a
+        registration for the hash and a placement-based answer is
+        needed immediately.
 
         Args:
             content_hash: Hash to look up.
 
         Returns:
-            Node identifier from the hash ring, or None if empty.
+            str | None: Node identifier from the hash ring, or
+            ``None`` if the ring is empty.
         """
         return self.hash_ring.get_node(content_hash)
 

@@ -1,4 +1,20 @@
-"""JointOptimizer: jointly optimize memory placement and compute placement."""
+"""JointOptimizer: jointly optimize memory placement and compute placement.
+
+This module defines :class:`JointOptimizer` and its supporting
+:class:`PlacementDecision` dataclass. The optimizer picks two
+nodes for a fragment — one to *compute* (prefill or decode) and
+one to *store* the resulting fragments — with the constraint that
+the two may be the same node when the load allows, but should be
+split when the joint node is too loaded.
+
+Heuristic:
+
+* **Compute node**: minimize ``gpu_load + latency_ms / 1000``.
+* **Memory node**: minimize ``memory_pressure``; if the
+  candidate coincides with the compute node and the node is
+  heavily loaded (``heartbeat() > 0.8``), pick a different node
+  for memory.
+"""
 
 import logging
 
@@ -18,8 +34,10 @@ class PlacementDecision:
 
     Attributes:
         compute_node_id: Node to perform prefill/decode.
-        memory_node_id: Node to store resulting fragments.
-        estimated_latency_seconds: Expected end-to-end latency.
+        memory_node_id: Node to store resulting fragments. May be
+            the same as ``compute_node_id`` when load permits.
+        estimated_latency_seconds: Expected end-to-end latency
+            derived from the compute node's telemetry.
     """
 
     compute_node_id: str
@@ -28,10 +46,14 @@ class PlacementDecision:
 
 
 class JointOptimizer:
-    """Optimizes both where to compute and where to store results."""
+    """Optimizes both where to compute and where to store results.
+
+    The optimizer is stateless; instances are safe to share
+    across threads as long as the supplied ``MembraneNode``
+    references are themselves safe to query.
+    """
 
     def __init__(self) -> None:
-        """Initialize the joint optimizer."""
         """Initialize the joint optimizer."""
         pass
 
@@ -43,17 +65,18 @@ class JointOptimizer:
     ) -> PlacementDecision:
         """Jointly select compute node and memory node.
 
-        Strategy:
-        - Compute node: lowest GPU load
-        - Memory node: lowest memory pressure with existing adjacency
-
         Args:
-            fragment: Fragment to place.
+            fragment: Fragment to place. Currently unused by the
+                scoring logic but accepted for forward
+                compatibility with fragment-aware heuristics.
             nodes: Candidate nodes.
-            telemetry_map: Telemetry for each node.
+            telemetry_map: ``node_id -> NodeTelemetry`` snapshot.
 
         Returns:
-            PlacementDecision with compute and memory targets.
+            PlacementDecision: Selected compute and memory
+            targets plus the estimated end-to-end latency. When
+            ``nodes`` is empty, both targets are empty strings
+            and the estimated latency is ``0.0``.
         """
         if not nodes:
             return PlacementDecision(
@@ -62,9 +85,12 @@ class JointOptimizer:
                 estimated_latency_seconds=0.0,
             )
 
-        # Compute node: minimize GPU load + latency
+        # Compute node: minimize GPU load + (latency in seconds).
+        # Adding latency in seconds (rather than milliseconds)
+        # keeps both terms on the same order of magnitude for
+        # typical GPU loads in the 0.1-1.0 range.
         def compute_score(node: MembraneNode) -> float:
-            """Score compute suitability: lower is better."""
+            """Score compute suitability (lower is better)."""
             telem = telemetry_map.get(node.node_id)
             if telem is None:
                 return float("inf")
@@ -72,9 +98,9 @@ class JointOptimizer:
 
         compute_node = min(nodes, key=compute_score)
 
-        # Memory node: minimize memory pressure
+        # Memory node: minimize memory pressure.
         def memory_score(node: MembraneNode) -> float:
-            """Score memory suitability: lower is better."""
+            """Score memory suitability (lower is better)."""
             telem = telemetry_map.get(node.node_id)
             if telem is None:
                 return float("inf")
@@ -82,7 +108,8 @@ class JointOptimizer:
 
         memory_node = min(nodes, key=memory_score)
 
-        # If compute and memory are the same overloaded node, split them
+        # If compute and memory coincide on a heavily-loaded
+        # node, split them by picking the next-best memory node.
         if (
             compute_node.node_id == memory_node.node_id
             and compute_node.heartbeat() > 0.8
@@ -91,6 +118,10 @@ class JointOptimizer:
             if alt_nodes:
                 memory_node = min(alt_nodes, key=memory_score)
 
+        # Estimated end-to-end latency is the compute node's
+        # round-trip latency, converted to seconds. A zero-valued
+        # fallback telemetry is used when the compute node has
+        # no entry in the telemetry map.
         est_latency = (
             telemetry_map.get(
                 compute_node.node_id,
