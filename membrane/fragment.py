@@ -127,10 +127,6 @@ class Fragment:
         if self.ttl < 0:
             raise ValueError(f"Fragment ttl must be >= 0, got {self.ttl}")
         if not 0.0 <= self.reuse_score <= 1.0:
-            raise ValueError(
-                f"Fragment reuse_score must be in [0, 1], got {self.reuse_score}"
-            )
+            raise ValueError(f"Fragment reuse_score must be in [0, 1], got {self.reuse_score}")
         if self.version_id < 1:
-            raise ValueError(
-                f"Fragment version_id must be >= 1, got {self.version_id}"
-            )
+            raise ValueError(f"Fragment version_id must be >= 1, got {self.version_id}")

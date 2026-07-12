@@ -263,13 +263,11 @@ class ReconstructionEngine:
                 # Only accept fragments produced by the same
                 # model — different models produce
                 # incompatible KV tensors.
-                if frag.structural_signature.model_id == model_id:
-                    if best is None or i > (
-                        best.structural_signature.token_span[1]
-                        - best.structural_signature.token_span[0]
-                        + 1
-                    ):
-                        best = frag
+                if frag.structural_signature.model_id == model_id and (
+                    best is None
+                    or i > (best.structural_signature.token_span[1] - best.structural_signature.token_span[0] + 1)
+                ):
+                    best = frag
         return best
 
     def find_next_adjacent(
@@ -293,9 +291,7 @@ class ReconstructionEngine:
             Fragment | None: Adjacent fragment if found,
             otherwise ``None``.
         """
-        candidates = self.index_system.positional_adjacent(
-            current_end, max_gap=self.config.max_gap_tokens
-        )
+        candidates = self.index_system.positional_adjacent(current_end, max_gap=self.config.max_gap_tokens)
         for cand in candidates:
             if cand.structural_signature.model_id != model_id:
                 continue

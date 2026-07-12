@@ -122,8 +122,6 @@ class DeltaEncoder:
         """
         removed = delta.removed_tail_count
         if removed < 0 or removed > len(base_tokens):
-            raise ValueError(
-                f"Invalid removed_tail_count {removed} for base of length {len(base_tokens)}"
-            )
+            raise ValueError(f"Invalid removed_tail_count {removed} for base of length {len(base_tokens)}")
         kept = base_tokens[: len(base_tokens) - removed]
         return kept + delta.appended_tokens

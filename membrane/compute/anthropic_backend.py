@@ -67,6 +67,7 @@ class AnthropicBackend(ComputeBackend):
         self._client: Any | None = None
         try:
             import httpx
+
             self._client = httpx.Client(
                 headers={
                     "x-api-key": api_key,

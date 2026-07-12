@@ -24,6 +24,7 @@ class TestGPUBackend:
         backend = GPUBackend()
         try:
             import torch
+
             expected = torch.cuda.is_available()
         except ImportError:
             expected = False

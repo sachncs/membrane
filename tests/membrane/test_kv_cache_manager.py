@@ -14,9 +14,7 @@ def make_fragment(token_span=(0, 3), content_hash="abc"):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1, 0.2),
-        structural_signature=StructuralSignature(
-            model_id="test-model", layer_range=(0, 1), token_span=token_span
-        ),
+        structural_signature=StructuralSignature(model_id="test-model", layer_range=(0, 1), token_span=token_span),
         size=128,
         ttl=3600.0,
         reuse_score=0.5,

@@ -12,9 +12,7 @@ def make_fragment(content_hash, size=10):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.0,),
-        structural_signature=StructuralSignature(
-            model_id="m", layer_range=(0, 1), token_span=(0, 1)
-        ),
+        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
         size=size,
         ttl=3600.0,
         reuse_score=0.5,
@@ -52,9 +50,7 @@ class TestLatencyRouter:
         r2 = MembraneNode("replica-west")
         r1.store(make_fragment("abc"))
         r2.store(make_fragment("abc"))
-        router = LatencyRouter(
-            latency_table={"replica-east": 10.0, "replica-west": 50.0}
-        )
+        router = LatencyRouter(latency_table={"replica-east": 10.0, "replica-west": 50.0})
         node_id = router.route_local_or_replica("abc", local, [r1, r2])
         assert node_id == "replica-east"
 

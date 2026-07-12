@@ -16,6 +16,9 @@ from membrane.canonical_store import CanonicalRef, CanonicalStore
 from membrane.chunked_transfer import Chunk, ChunkedTransfer
 from membrane.cluster_replicator import ClusterReplicator
 from membrane.co_access_index import CoAccessIndex
+from membrane.compute.backend import ComputeBackend
+from membrane.compute.cpu_backend import CPUBackend
+from membrane.compute.gpu_backend import GPUBackend
 from membrane.cost_model import CostModel
 from membrane.delta_encoder import Delta, DeltaEncoder
 from membrane.delta_sync import DeltaSync, SyncPlan, SyncResult
@@ -39,12 +42,19 @@ from membrane.kv_transfer_after_prefill import KVTransferAfterPrefill
 from membrane.latency_router import LatencyRouter
 from membrane.logging import configure_logging, get_logger
 from membrane.lru_cache import LRUCache
-from membrane.node_selector import NodeSelector, NodeSelectorConfig
 from membrane.membrane_node import MembraneNode, NodeStats
 from membrane.memory_object import MemoryObject
+from membrane.network.cluster_manager import ClusterManager, PeerInfo
+from membrane.network.config import ClusterConfig
+from membrane.network.gossip_state import GossipState, PeerEndpoint
+from membrane.network.peer_client import PeerClient
+from membrane.network.remote_transfer import RemoteTransferService
+from membrane.node_selector import NodeSelector, NodeSelectorConfig
 from membrane.node_telemetry import NodeTelemetry, TelemetryCollector
 from membrane.offload_decision_engine import OffloadDecision, OffloadDecisionEngine
 from membrane.origin_node import OriginNode
+from membrane.persistence.memory_backend import InMemoryBackend
+from membrane.persistence.redis_backend import RedisBackend
 from membrane.positional_index import PositionalIndex
 from membrane.predictor import Predictor
 from membrane.prefix import Prefix
@@ -54,27 +64,17 @@ from membrane.reconstruction_engine import ReconstructionEngine, ReconstructionR
 from membrane.remote_prefill_dispatcher import RemotePrefillDispatcher
 from membrane.replica_node import ReplicaNode
 from membrane.semantic_cluster import SemanticCluster
-from membrane.shard_manager import ShardManager
 from membrane.semantic_hash import compute_semantic_hash, semantic_distance
 from membrane.semantic_index import SemanticIndex
+from membrane.server import MembraneServer, ServerDiagnostics, ServerEvent
 from membrane.session_tracker import Session, SessionTracker
+from membrane.shard_manager import ShardManager
 from membrane.structural_signature import StructuralSignature
 from membrane.subgraph_retrieval import SubgraphRetrieval
 from membrane.supernode import Supernode
 from membrane.tenant_isolation import TenantIsolation, TenantPolicy
 from membrane.tool_trace import ToolTrace
 from membrane.transfer_service import TransferService
-from membrane.compute.backend import ComputeBackend
-from membrane.compute.cpu_backend import CPUBackend
-from membrane.compute.gpu_backend import GPUBackend
-from membrane.network.cluster_manager import ClusterManager, PeerInfo
-from membrane.network.config import ClusterConfig
-from membrane.network.gossip_state import GossipState, PeerEndpoint
-from membrane.network.peer_client import PeerClient
-from membrane.network.remote_transfer import RemoteTransferService
-from membrane.persistence.memory_backend import InMemoryBackend
-from membrane.persistence.redis_backend import RedisBackend
-from membrane.server import MembraneServer, ServerDiagnostics, ServerEvent
 from membrane.transport.grpc_server import GrpcServer
 from membrane.transport.http_server import HTTPServer
 from membrane.value_density import ValueDensity

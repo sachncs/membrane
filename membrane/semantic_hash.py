@@ -115,6 +115,6 @@ def semantic_distance(hash_a: str, hash_b: str) -> float:
     # then add the length mismatch as additional differing
     # positions. This treats shorter hashes as if padded with
     # differing bytes.
-    diff = sum(a != b for a, b in zip(bytes_a, bytes_b))
+    diff = sum(a != b for a, b in zip(bytes_a, bytes_b, strict=False))
     diff += abs(len(bytes_a) - len(bytes_b))
     return diff / max_len

@@ -69,15 +69,13 @@ class TestClusterManager:
         with mgr._lock:
             mgr._peers["n2"].missed_heartbeats = 2
         # _failure_detection_loop is infinite; test the logic inline
-        now = __import__("time").time()
         to_remove = []
         with mgr._lock:
             for node_id, p in list(mgr._peers.items()):
                 if p.missed_heartbeats >= mgr.config.failure_remove_threshold:
                     to_remove.append(node_id)
-                elif p.missed_heartbeats >= mgr.config.failure_suspect_threshold:
-                    if not p.suspect:
-                        p.suspect = True
+                elif p.missed_heartbeats >= mgr.config.failure_suspect_threshold and not p.suspect:
+                    p.suspect = True
         for node_id in to_remove:
             mgr.remove_peer(node_id)
         assert mgr.get_peers() == []
@@ -86,12 +84,14 @@ class TestClusterManager:
         node = MembraneNode("n1", max_memory_bytes=10000)
         cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
         mgr = ClusterManager("n1", "127.0.0.1", 8080, node, cfg)
-        result = mgr.on_gossip({
-            "node_id": "n2",
-            "timestamp": 1000.0,
-            "peers": [{"node_id": "n2", "host": "127.0.0.2", "port": 8081, "healthy": True}],
-            "fragment_locations": {"h1": ["n2"]},
-            "inventory_digest": {"h1": 1},
-        })
+        result = mgr.on_gossip(
+            {
+                "node_id": "n2",
+                "timestamp": 1000.0,
+                "peers": [{"node_id": "n2", "host": "127.0.0.2", "port": 8081, "healthy": True}],
+                "fragment_locations": {"h1": ["n2"]},
+                "inventory_digest": {"h1": 1},
+            }
+        )
         assert result["node_id"] == "n1"
         assert len(mgr.get_peers()) == 1

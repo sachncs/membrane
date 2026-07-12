@@ -21,7 +21,6 @@ Note:
 """
 
 import logging
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -71,8 +70,7 @@ class GrpcServer:
             self._grpc = grpc_module
         except ImportError:
             logger.warning(
-                "grpcio not installed; GrpcServer will not function. "
-                "Install with: pip install grpcio grpcio-tools"
+                "grpcio not installed; GrpcServer will not function. Install with: pip install grpcio grpcio-tools"
             )
 
     def start(self) -> None:
@@ -85,7 +83,6 @@ class GrpcServer:
         if grpc_module is None:
             raise RuntimeError("grpcio is not installed")
 
-        from membrane.transport.proto import membrane_pb2
         from membrane.transport.proto import membrane_pb2_grpc
 
         servicer = MembraneServicer(self.node, self.compute_backend)
@@ -181,7 +178,6 @@ class MembraneServicer:
             InventoryResponse: ``digest`` map plus the
             ``node_id``.
         """
-        stats = self.node.get_stats()
         digest = {h: frag.version_id for h, frag in self.node.fragments.items()}
         return self._pb2.InventoryResponse(
             digest=digest,

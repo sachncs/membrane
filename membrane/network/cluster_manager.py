@@ -24,7 +24,7 @@ import logging
 import random
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from membrane.global_directory import GlobalDirectory
@@ -200,9 +200,7 @@ class ClusterManager:
                 self._peers[node_id].host = host
                 self._peers[node_id].port = port
                 return
-            self._peers[node_id] = PeerInfo(
-                node_id=node_id, host=host, port=port, last_heartbeat=time.time()
-            )
+            self._peers[node_id] = PeerInfo(node_id=node_id, host=host, port=port, last_heartbeat=time.time())
             self._clients[node_id] = PeerClient(f"http://{host}:{port}")
             self.hash_ring.add_node(node_id)
             self.shard_manager.add_node(node_id)
@@ -300,10 +298,7 @@ class ClusterManager:
         """
         self.add_peer(node_id, host, port)
         with self._lock:
-            peers = [
-                {"node_id": p.node_id, "host": p.host, "port": p.port}
-                for p in self._peers.values()
-            ]
+            peers = [{"node_id": p.node_id, "host": p.host, "port": p.port} for p in self._peers.values()]
         return {"success": True, "peers": peers}
 
     def on_peer_leave(self, node_id: str) -> None:
@@ -477,16 +472,14 @@ class ClusterManager:
         are removed from the membership table.
         """
         while self._running and not self._stop_event.is_set():
-            now = time.time()
             to_remove: list[str] = []
             with self._lock:
                 for node_id, p in list(self._peers.items()):
                     if p.missed_heartbeats >= self.config.failure_remove_threshold:
                         to_remove.append(node_id)
-                    elif p.missed_heartbeats >= self.config.failure_suspect_threshold:
-                        if not p.suspect:
-                            p.suspect = True
-                            logger.warning("Peer %s is now suspect", node_id)
+                    elif p.missed_heartbeats >= self.config.failure_suspect_threshold and not p.suspect:
+                        p.suspect = True
+                        logger.warning("Peer %s is now suspect", node_id)
             for node_id in to_remove:
                 logger.warning("Removing failed peer %s", node_id)
                 self.remove_peer(node_id)
@@ -512,10 +505,7 @@ class ClusterManager:
             )
 
             with self._lock:
-                our_peers = [
-                    PeerEndpoint(p.node_id, p.host, p.port, p.healthy)
-                    for p in self._peers.values()
-                ]
+                our_peers = [PeerEndpoint(p.node_id, p.host, p.port, p.healthy) for p in self._peers.values()]
                 all_hashes = list(self.node.fragments.keys())
                 sample_hashes = random.sample(
                     all_hashes,
@@ -558,7 +548,6 @@ class ClusterManager:
         """
         while self._running and not self._stop_event.is_set():
             with self._lock:
-                healthy_peers = [p for p in self._peers.values() if p.healthy]
                 primary_hashes = list(self.node.get_shard_hashes())
 
             for h in primary_hashes:
@@ -582,8 +571,6 @@ class ClusterManager:
                                 client.request_replicate(frag)
                                 logger.debug("Replicated %s to %s", h, peer_id)
                     except Exception as exc:
-                        logger.debug(
-                            "Replication of %s to %s failed: %s", h, peer_id, exc
-                        )
+                        logger.debug("Replication of %s to %s failed: %s", h, peer_id, exc)
 
             self._stop_event.wait(timeout=self.config.gossip_interval_sec)

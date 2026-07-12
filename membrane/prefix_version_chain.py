@@ -120,9 +120,8 @@ class PrefixVersionChain:
         """
         best: int | None = None
         for vid, entry in self.versions.items():
-            if entry.prefix_hash == prefix_hash:
-                if best is None or vid > best:
-                    best = vid
+            if entry.prefix_hash == prefix_hash and (best is None or vid > best):
+                best = vid
         return best
 
     def get_common_ancestor(self, v1: int, v2: int) -> int | None:

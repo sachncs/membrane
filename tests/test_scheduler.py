@@ -26,9 +26,7 @@ def test_short_term_raises_threshold_on_congestion():
 
 def test_short_term_relaxes_threshold_when_clear():
     """When utilization is low, effective threshold should move toward base."""
-    state = scheduler.SchedulerState(
-        threshold=10000, num_pd_p=3, num_pd_d=5, effective_threshold=12000
-    )
+    state = scheduler.SchedulerState(threshold=10000, num_pd_p=3, num_pd_d=5, effective_threshold=12000)
     state.monitor.record(0.1)
     sched = scheduler.DualTimescaleScheduler(state, congestion_threshold=0.85)
     new_t = sched.short_term_adjust(current_queue_depth=0, max_queue_depth=50)

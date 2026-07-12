@@ -104,11 +104,8 @@ class TenantIsolation:
         # policy. Unknown ids fall through to "allowed" because
         # they were not explicitly opted out of.
         model_id = fragment.structural_signature.model_id
-        if model_id == "prefix" and not self.policy.allow_public_prefixes:
-            return False
-        if model_id == "tool" and not self.policy.allow_tool_traces:
-            return False
-        if model_id == "artifact" and not self.policy.allow_artifacts:
-            return False
-
-        return True
+        return not (
+            (model_id == "prefix" and not self.policy.allow_public_prefixes)
+            or (model_id == "tool" and not self.policy.allow_tool_traces)
+            or (model_id == "artifact" and not self.policy.allow_artifacts)
+        )

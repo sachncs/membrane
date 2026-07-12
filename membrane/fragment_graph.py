@@ -90,9 +90,7 @@ class FragmentGraph:
                 (e.g., ``"co_access"``, ``"semantic"``,
                 ``"positional"``).
         """
-        self.adjacency.setdefault(source_hash, {}).setdefault(edge_type, set()).add(
-            target_hash
-        )
+        self.adjacency.setdefault(source_hash, {}).setdefault(edge_type, set()).add(target_hash)
 
     def has_node(self, content_hash: str) -> bool:
         """Check if a fragment hash is a node in the graph.

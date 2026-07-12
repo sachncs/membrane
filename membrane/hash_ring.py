@@ -117,9 +117,7 @@ class HashRing:
         methods stay readable.
         """
         if not self.sorted_keys:
-            raise EmptyRingError(
-                "HashRing is empty: add at least one node before lookup"
-            )
+            raise EmptyRingError("HashRing is empty: add at least one node before lookup")
 
     def get_node(self, content_hash: str) -> str:
         """Return the node responsible for ``content_hash``.

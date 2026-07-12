@@ -17,9 +17,7 @@ class TestPredictor:
         p1 = Predictor(kv_size_bias=1.0)
         p2 = Predictor(kv_size_bias=2.0)
         tokens = list(range(100))
-        assert p2.predict_kv_size(tokens) == pytest.approx(
-            p1.predict_kv_size(tokens) * 2.0
-        )
+        assert p2.predict_kv_size(tokens) == pytest.approx(p1.predict_kv_size(tokens) * 2.0)
 
     def test_predict_reuse_empty_history(self):
         p = Predictor()

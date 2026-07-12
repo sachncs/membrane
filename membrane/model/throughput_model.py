@@ -70,9 +70,7 @@ def stage_throughput_membrane(
     Returns:
         float: Membrane throughput in requests per second.
     """
-    compute_limit = num_instances / profiler.prefill_time_seconds(
-        long_length, compute_scale
-    )
+    compute_limit = num_instances / profiler.prefill_time_seconds(long_length, compute_scale)
     size_mib = profiler.kv_size_mib(long_length)
     # Convert Gbps to MiB/s: 1 Gbps = 1e9 bits/s = 1e9/8 bytes/s
     # = 1e9/8/1024/1024 MiB/s.
@@ -163,15 +161,9 @@ def end_to_end_throughput(
         ``+inf`` is reported for a stage whose fraction is
         outside ``(0, 1)`` so the ``min`` never picks it.
     """
-    if fraction_to_membrane <= 0.0:
-        upstream_membrane = float("inf")
-    else:
-        upstream_membrane = theta_membrane / fraction_to_membrane
+    upstream_membrane = float("inf") if fraction_to_membrane <= 0.0 else theta_membrane / fraction_to_membrane
 
-    if fraction_to_membrane >= 1.0:
-        upstream_pd_p = float("inf")
-    else:
-        upstream_pd_p = theta_pd_p / (1.0 - fraction_to_membrane)
+    upstream_pd_p = float("inf") if fraction_to_membrane >= 1.0 else theta_pd_p / (1.0 - fraction_to_membrane)
 
     # The system is bottlenecked by whichever stage has the
     # smallest scaled throughput.

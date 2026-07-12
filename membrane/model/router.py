@@ -114,9 +114,9 @@ class Router:
             target = "pd-p" if incremental <= self.threshold else "membrane"
             # cross_cluster is True when the best cache lives in
             # the *other* cluster than the chosen target.
-            cross_cluster = (
-                target == "pd-p" and best_prefix == cached_prefix_membrane
-            ) or (target == "membrane" and best_prefix == cached_prefix_pd)
+            cross_cluster = (target == "pd-p" and best_prefix == cached_prefix_membrane) or (
+                target == "membrane" and best_prefix == cached_prefix_pd
+            )
             return RoutingDecision(
                 target=target,
                 incremental_length=max(0, incremental),

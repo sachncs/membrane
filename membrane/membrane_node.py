@@ -35,8 +35,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-import time
 import threading
+import time
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
@@ -163,9 +163,7 @@ class MembraneNode:
                 self.insertion_times[fragment.content_hash] = now
                 self.index_system.insert(fragment, {self.node_id})
                 self.graph_manager.register(fragment)
-                logger.debug(
-                    "Stored fragment %s on %s", fragment.content_hash, self.node_id
-                )
+                logger.debug("Stored fragment %s on %s", fragment.content_hash, self.node_id)
 
             self.access_times[fragment.content_hash] = now
 
@@ -244,11 +242,7 @@ class MembraneNode:
         with self._lock:
             evicted: list[str] = []
             freed = 0
-            expired = [
-                h
-                for h, frag in self.fragments.items()
-                if now - self.insertion_times.get(h, now) > frag.ttl
-            ]
+            expired = [h for h, frag in self.fragments.items() if now - self.insertion_times.get(h, now) > frag.ttl]
             for h in expired:
                 if freed >= target_bytes:
                     break
@@ -277,9 +271,7 @@ class MembraneNode:
         with self._lock:
             evicted: list[str] = []
             freed = 0
-            candidates = [
-                (h, frag) for h, frag in self.fragments.items() if h not in already_evicted
-            ]
+            candidates = [(h, frag) for h, frag in self.fragments.items() if h not in already_evicted]
 
             def eviction_score(hash_and_frag: tuple[str, Fragment]) -> float:
                 """Eviction priority (lower = evict first)."""
@@ -379,18 +371,14 @@ class MembraneNode:
 
             # Phase 2: LRU weighted by reuse_score.
             already_evicted = set(evicted_hashes)
-            lru_evicted, lru_freed = self.evict_lru(
-                target_bytes - freed, now, already_evicted
-            )
+            lru_evicted, lru_freed = self.evict_lru(target_bytes - freed, now, already_evicted)
             evicted_hashes.extend(lru_evicted)
             freed += lru_freed
             if freed >= target_bytes:
                 return evicted_hashes
 
             # Phase 3: graph-aware co-eviction.
-            graph_evicted, graph_freed = self.evict_graph_neighbors(
-                target_bytes - freed, evicted_hashes
-            )
+            graph_evicted, graph_freed = self.evict_graph_neighbors(target_bytes - freed, evicted_hashes)
             evicted_hashes.extend(graph_evicted)
             freed += graph_freed
 

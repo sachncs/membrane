@@ -17,7 +17,6 @@ Thread safety:
 """
 
 import time
-from typing import Any
 
 from membrane.fragment import Fragment
 from membrane.structural_signature import StructuralSignature
@@ -268,6 +267,7 @@ class InMemoryBackend:
             Fragment: Reconstructed fragment instance.
         """
         import json
+
         return Fragment(
             content_hash=data["content_hash"],
             embedding=tuple(json.loads(data["embedding"])),

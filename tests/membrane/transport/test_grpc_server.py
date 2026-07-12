@@ -26,6 +26,7 @@ class TestGrpcServer:
 
     def test_heartbeat(self, server):
         import grpc
+
         from membrane.transport.proto import membrane_pb2, membrane_pb2_grpc
 
         channel = grpc.insecure_channel("127.0.0.1:50053")
@@ -36,6 +37,7 @@ class TestGrpcServer:
 
     def test_store_and_retrieve(self, server):
         import grpc
+
         from membrane.transport.proto import membrane_pb2, membrane_pb2_grpc
 
         channel = grpc.insecure_channel("127.0.0.1:50053")
@@ -54,9 +56,7 @@ class TestGrpcServer:
             reuse_score=0.5,
             version_id=1,
         )
-        store_resp = stub.StoreFragment(
-            membrane_pb2.StoreRequest(fragment=frag, node_id="grpc-test", is_primary=True)
-        )
+        store_resp = stub.StoreFragment(membrane_pb2.StoreRequest(fragment=frag, node_id="grpc-test", is_primary=True))
         assert store_resp.success is True
 
         retrieve_resp = stub.RetrieveFragment(
@@ -67,12 +67,11 @@ class TestGrpcServer:
 
     def test_prefill_uses_injected_backend(self, server):
         import grpc
+
         from membrane.transport.proto import membrane_pb2, membrane_pb2_grpc
 
         channel = grpc.insecure_channel("127.0.0.1:50053")
         stub = membrane_pb2_grpc.MembraneStub(channel)
-        resp = stub.Prefill(
-            membrane_pb2.PrefillRequest(prompt_tokens=[1, 2, 3], model_id="m", node_id="grpc-test")
-        )
+        resp = stub.Prefill(membrane_pb2.PrefillRequest(prompt_tokens=[1, 2, 3], model_id="m", node_id="grpc-test"))
         assert resp.success is True
         assert len(resp.fragments) > 0

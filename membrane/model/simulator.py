@@ -22,7 +22,6 @@ References:
 
 import logging
 from dataclasses import dataclass
-from typing import List, Tuple
 
 from membrane.model import metrics, optimizer, throughput_model, workload
 
@@ -73,7 +72,7 @@ class SimulationResult:
 
 
 def run_membrane_pd(
-    lengths: List[int],
+    lengths: list[int],
     seed: int = 42,
 ) -> SimulationResult:
     """Simulate the Membrane-PD architecture with optimal configuration.
@@ -102,9 +101,7 @@ def run_membrane_pd(
         long_len,
         compute_scale=1.0,
     )
-    theta_pd_p = throughput_model.stage_throughput_pd_p(
-        best_n_p, short_len, compute_scale=optimizer.H20_COMPUTE_SCALE
-    )
+    theta_pd_p = throughput_model.stage_throughput_pd_p(best_n_p, short_len, compute_scale=optimizer.H20_COMPUTE_SCALE)
     theta_pd_d = throughput_model.stage_throughput_pd_d(
         best_n_d,
         optimizer.MAX_BATCH_SIZE,
@@ -116,17 +113,13 @@ def run_membrane_pd(
     from membrane.model import router
 
     rtr = router.Router(best_t, bandwidth_abundant=False)
-    routed: List[Tuple[int, str]] = []
+    routed: list[tuple[int, str]] = []
     for total_len in lengths:
         decision = rtr.route(total_len, cached_prefix_membrane=0, cached_prefix_pd=0)
         routed.append((decision.incremental_length, decision.target))
 
-    mean_ttft, p90_ttft = metrics.aggregate_ttft(
-        routed, pd_compute_scale=optimizer.H20_COMPUTE_SCALE
-    )
-    bw = metrics.bandwidth_utilization(
-        best_lambda, p, long_len, optimizer.MEMBRANE_INSTANCES
-    )
+    mean_ttft, p90_ttft = metrics.aggregate_ttft(routed, pd_compute_scale=optimizer.H20_COMPUTE_SCALE)
+    bw = metrics.bandwidth_utilization(best_lambda, p, long_len, optimizer.MEMBRANE_INSTANCES)
 
     return SimulationResult(
         config_name="Membrane-PD",
@@ -148,7 +141,7 @@ def run_membrane_pd(
 
 
 def run_homogeneous_pd(
-    lengths: List[int],
+    lengths: list[int],
 ) -> SimulationResult:
     """Simulate the homogeneous PD baseline.
 
@@ -160,16 +153,12 @@ def run_homogeneous_pd(
         homogeneous PD configuration.
     """
     total_instances = optimizer.TOTAL_PD_INSTANCES + optimizer.MEMBRANE_INSTANCES
-    best_n_p, best_n_d, best_lambda = optimizer.optimal_homogeneous_pd(
-        lengths, total_instances
-    )
+    best_n_p, best_n_d, best_lambda = optimizer.optimal_homogeneous_pd(lengths, total_instances)
 
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
     length = int(round(mean_length)) if mean_length > 0 else 32768
 
-    theta_pd_p = throughput_model.stage_throughput_pd_p(
-        best_n_p, length, compute_scale=optimizer.H20_COMPUTE_SCALE
-    )
+    theta_pd_p = throughput_model.stage_throughput_pd_p(best_n_p, length, compute_scale=optimizer.H20_COMPUTE_SCALE)
     theta_pd_d = throughput_model.stage_throughput_pd_d(
         best_n_d,
         optimizer.MAX_BATCH_SIZE,
@@ -179,9 +168,7 @@ def run_homogeneous_pd(
 
     # All requests go to PD-P.
     routed = [(length, "pd-p") for _unused in lengths]
-    mean_ttft, p90_ttft = metrics.aggregate_ttft(
-        routed, pd_compute_scale=optimizer.H20_COMPUTE_SCALE
-    )
+    mean_ttft, p90_ttft = metrics.aggregate_ttft(routed, pd_compute_scale=optimizer.H20_COMPUTE_SCALE)
 
     return SimulationResult(
         config_name="Homogeneous PD",
@@ -203,7 +190,7 @@ def run_homogeneous_pd(
 
 
 def run_naive_heterogeneous_pd(
-    lengths: List[int],
+    lengths: list[int],
 ) -> SimulationResult:
     """Simulate the naive heterogeneous PD baseline.
 
@@ -247,9 +234,7 @@ def run_naive_heterogeneous_pd(
         num_pd_d=optimizer.TOTAL_PD_INSTANCES,
         mean_ttft=mean_ttft,
         p90_ttft=p90_ttft,
-        bandwidth_gbps=metrics.bandwidth_utilization(
-            lam, 1.0, length, optimizer.MEMBRANE_INSTANCES
-        ),
+        bandwidth_gbps=metrics.bandwidth_utilization(lam, 1.0, length, optimizer.MEMBRANE_INSTANCES),
         fraction_to_membrane=1.0,
         mean_long_length=mean_length,
         mean_short_length=0.0,

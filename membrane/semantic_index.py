@@ -142,7 +142,7 @@ class SemanticIndex:
             Uses the cached fragment norm to avoid recomputing it
             per query.
             """
-            dot = sum(x * y for x, y in zip(query_embedding, frag.embedding))
+            dot = sum(x * y for x, y in zip(query_embedding, frag.embedding, strict=False))
             norm_b = self.norms.get(frag.content_hash, 1.0)
             return dot / (query_norm * norm_b)
 

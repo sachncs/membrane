@@ -28,9 +28,7 @@ class MockMemoryObject:
         return Fragment(
             content_hash=self.content_hash,
             embedding=(0.0,),
-            structural_signature=StructuralSignature(
-                model_id="mock", layer_range=(0, 0), token_span=(0, 0)
-            ),
+            structural_signature=StructuralSignature(model_id="mock", layer_range=(0, 0), token_span=(0, 0)),
             size=self.size_bytes,
             ttl=3600.0,
             reuse_score=self.reuse_score,
@@ -67,9 +65,7 @@ class TestMemoryObject:
         frag = Fragment(
             content_hash="h2",
             embedding=(0.0,),
-            structural_signature=StructuralSignature(
-                model_id="m", layer_range=(0, 1), token_span=(0, 1)
-            ),
+            structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
             size=50,
             ttl=3600.0,
             reuse_score=0.8,

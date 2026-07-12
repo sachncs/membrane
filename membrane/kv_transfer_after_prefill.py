@@ -67,8 +67,6 @@ class KVTransferAfterPrefill:
         """
         transferred: list[str] = []
         for frag in prefill_result.fragments:
-            if self.transfer_service.transfer_fragment(
-                source_node, target_node, frag.content_hash
-            ):
+            if self.transfer_service.transfer_fragment(source_node, target_node, frag.content_hash):
                 transferred.append(frag.content_hash)
         return transferred

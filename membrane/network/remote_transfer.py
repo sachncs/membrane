@@ -157,7 +157,9 @@ class RemoteTransferService(TransferService):
                 transferred.append(h)
         return transferred
 
-    def inventory_digest(self, node: MembraneNode | str) -> dict[str, int] | None:
+    def inventory_digest(  # type: ignore[override]
+        self, node: MembraneNode | str
+    ) -> dict[str, int] | None:
         """Fetch a node's inventory digest.
 
         Args:

@@ -273,7 +273,10 @@ class PeerClient:
                 if e.code in (404, 400, 503):
                     logger.debug(
                         "HTTP %s from %s%s: %s",
-                        e.code, self.base_url, path, e.reason,
+                        e.code,
+                        self.base_url,
+                        path,
+                        e.reason,
                     )
                     return None
                 last_error = e
@@ -281,15 +284,23 @@ class PeerClient:
                 last_error = exc
 
             # Exponential backoff: 1x, 2x, 4x, ...
-            delay = self.retry_delay_sec * (2 ** attempt)
+            delay = self.retry_delay_sec * (2**attempt)
             logger.debug(
                 "Request to %s%s failed (attempt %s/%s), retrying in %.1fs: %s",
-                self.base_url, path, attempt + 1, self.max_retries, delay, last_error,
+                self.base_url,
+                path,
+                attempt + 1,
+                self.max_retries,
+                delay,
+                last_error,
             )
             time.sleep(delay)
 
         logger.warning(
             "Request to %s%s failed after %s retries: %s",
-            self.base_url, path, self.max_retries, last_error,
+            self.base_url,
+            path,
+            self.max_retries,
+            last_error,
         )
         return None

@@ -76,9 +76,7 @@ class OriginNode(MembraneNode):
             # Ensure the origin is the source of truth for the
             # fragment before pushing it downstream.
             self.store(fragment, is_primary=True)
-        return self.transfer_service.transfer_fragment(
-            self, replica, fragment.content_hash
-        )
+        return self.transfer_service.transfer_fragment(self, replica, fragment.content_hash)
 
     def bulk_promote(
         self,

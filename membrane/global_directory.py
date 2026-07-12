@@ -146,10 +146,7 @@ class GlobalDirectory:
         # Step size grows with prompt length so we keep the total
         # number of sampled prefixes bounded by max_prefix_attempts.
         step = max(1, length // max_prefix_attempts) if max_prefix_attempts > 0 else 1
-        prefix_hashes = {
-            compute_content_hash(tuple(prompt_tokens[:i]))
-            for i in range(1, length + 1, step)
-        }
+        prefix_hashes = {compute_content_hash(tuple(prompt_tokens[:i])) for i in range(1, length + 1, step)}
 
         scores: dict[str, int] = {}
         for node_id, node in self.nodes.items():

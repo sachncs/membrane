@@ -108,7 +108,11 @@ class RedisBackend:
         # primary key, and the LRU score are written atomically
         # from the client's perspective.
         pipe = self.client.pipeline()
-        pipe.hset(self.key_for(f"frag:{h}"), mapping=data)
+        # redis-py's Mapping type accepts dict[str, str] at runtime
+        # but the stub signature uses a Union of bytes/bytearray/etc.
+        # The cast to the broader Mapping type satisfies mypy without
+        # changing the wire format.
+        pipe.hset(self.key_for(f"frag:{h}"), mapping=cast(Any, data))
         pipe.sadd(self.key_for(f"node:{node_id}:fragments"), h)
         if is_primary:
             pipe.set(self.key_for(f"primary:{h}"), node_id)

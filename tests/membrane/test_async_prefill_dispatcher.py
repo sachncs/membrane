@@ -47,9 +47,7 @@ class ControlledAdapter(PrefillAdapter):
         frag = Fragment(
             content_hash=f"{self.hash_prefix}-{length}",
             embedding=(0.1,),
-            structural_signature=StructuralSignature(
-                model_id=model_id, layer_range=(0, 1), token_span=(0, length - 1)
-            ),
+            structural_signature=StructuralSignature(model_id=model_id, layer_range=(0, 1), token_span=(0, length - 1)),
             size=10,
             ttl=3600.0,
             reuse_score=0.5,
@@ -77,12 +75,10 @@ async def test_fastest_node_wins_race():
     medium = MembraneNode("medium")
     slow = MembraneNode("slow")
 
-    result = await dispatcher.dispatch(
-        list(range(10)), "m", [fast, medium, slow], local_node=None
-    )
+    result = await dispatcher.dispatch(list(range(10)), "m", [fast, medium, slow], local_node=None)
 
     # Fastest node should have stored the fragment
-    assert fast.retrieve(f"fast-10") is not None
+    assert fast.retrieve("fast-10") is not None
     # Slower nodes may or may not have stored depending on cancellation timing,
     # but the *returned* result must come from the winning adapter call.
     assert result.kv_size_mib == 1.0
@@ -102,9 +98,7 @@ async def test_timeout_cancels_slow_node():
     win = MembraneNode("win")
     lose = MembraneNode("lose")
 
-    result = await dispatcher.dispatch(
-        list(range(10)), "m", [win, lose], local_node=None
-    )
+    result = await dispatcher.dispatch(list(range(10)), "m", [win, lose], local_node=None)
 
     assert result.fragments[0].content_hash == "win-10"
     assert win.retrieve("win-10") is not None
@@ -126,9 +120,7 @@ async def test_all_timeout_fallback_local():
     slow1 = MembraneNode("slow1")
     slow2 = MembraneNode("slow2")
 
-    result = await dispatcher.dispatch(
-        list(range(10)), "m", [slow1, slow2], local_node=local
-    )
+    result = await dispatcher.dispatch(list(range(10)), "m", [slow1, slow2], local_node=local)
 
     assert result.fragments[0].content_hash == "local-10"
     assert local.retrieve("local-10") is not None
@@ -146,15 +138,12 @@ async def test_all_timeout_no_local_raises():
     )
 
     with pytest.raises(PrefillFallbackError):
-        await dispatcher.dispatch(
-            list(range(10)), "m", [MembraneNode("slow")], local_node=None
-        )
+        await dispatcher.dispatch(list(range(10)), "m", [MembraneNode("slow")], local_node=None)
 
 
 @pytest.mark.anyio
 async def test_empty_fragments_treated_as_failure():
     """A node returning empty fragments should be treated as a failed attempt."""
-    bad = EmptyFragmentAdapter()
     good = ControlledAdapter("good")
 
     # Use a composite adapter that alternates? No, we need two *different*
@@ -186,9 +175,7 @@ async def test_empty_fragments_treated_as_failure():
     bad_node = MembraneNode("bad")
     good_node = MembraneNode("good")
 
-    result = await dispatcher.dispatch(
-        list(range(10)), "m", [bad_node, good_node], local_node=None
-    )
+    result = await dispatcher.dispatch(list(range(10)), "m", [bad_node, good_node], local_node=None)
 
     assert result.fragments[0].content_hash == "good-10"
     assert good_node.retrieve("good-10") is not None
@@ -197,7 +184,6 @@ async def test_empty_fragments_treated_as_failure():
 @pytest.mark.anyio
 async def test_exception_in_prefill_treated_as_failure():
     """A node whose adapter raises should not crash the dispatcher."""
-    bad = ExplodingAdapter()
     good = ControlledAdapter("good")
 
     class AlternatingExplodingAdapter(PrefillAdapter):
@@ -220,9 +206,7 @@ async def test_exception_in_prefill_treated_as_failure():
     bad_node = MembraneNode("bad")
     good_node = MembraneNode("good")
 
-    result = await dispatcher.dispatch(
-        list(range(10)), "m", [bad_node, good_node], local_node=None
-    )
+    result = await dispatcher.dispatch(list(range(10)), "m", [bad_node, good_node], local_node=None)
 
     assert result.fragments[0].content_hash == "good-10"
 
@@ -234,9 +218,7 @@ async def test_no_candidates_uses_local():
     dispatcher = AsyncRemotePrefillDispatcher(prefill_adapter=adapter)
 
     local = MembraneNode("local")
-    result = await dispatcher.dispatch(
-        list(range(10)), "m", [], local_node=local
-    )
+    result = await dispatcher.dispatch(list(range(10)), "m", [], local_node=local)
 
     assert result.fragments[0].content_hash == "local-10"
     assert local.retrieve("local-10") is not None
@@ -254,6 +236,7 @@ async def test_no_candidates_no_local_raises():
 @pytest.mark.anyio
 async def test_partial_failure_one_succeeds():
     """One node fails, another succeeds; success should be returned."""
+
     class OneShotFailAdapter(PrefillAdapter):
         def __init__(self) -> None:
             self.fail_node_id: str | None = None
@@ -278,9 +261,7 @@ async def test_partial_failure_one_succeeds():
     fail_node = MembraneNode("fail")
     ok_node = MembraneNode("ok")
 
-    result = await dispatcher.dispatch(
-        list(range(10)), "m", [fail_node, ok_node], local_node=None
-    )
+    result = await dispatcher.dispatch(list(range(10)), "m", [fail_node, ok_node], local_node=None)
 
     assert result.fragments[0].content_hash == "ok-10"
     assert ok_node.retrieve("ok-10") is not None
@@ -301,9 +282,7 @@ async def test_cancellation_cleanup_on_success():
     pending2 = MembraneNode("pending2")
 
     # This should complete quickly and not hang waiting for pending nodes.
-    result = await dispatcher.dispatch(
-        list(range(10)), "m", [win, pending1, pending2], local_node=None
-    )
+    result = await dispatcher.dispatch(list(range(10)), "m", [win, pending1, pending2], local_node=None)
 
     assert result.fragments[0].content_hash == "win-10"
     # After a tiny yield to let cancellations propagate, no pending tasks remain.
@@ -325,9 +304,7 @@ async def test_timeout_per_node_not_global():
     slow = MembraneNode("slow")
     ok = MembraneNode("ok")
 
-    result = await dispatcher.dispatch(
-        list(range(10)), "m", [slow, ok], local_node=None
-    )
+    result = await dispatcher.dispatch(list(range(10)), "m", [slow, ok], local_node=None)
 
     assert result.fragments[0].content_hash == "ok-10"
     assert ok.retrieve("ok-10") is not None

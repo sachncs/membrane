@@ -8,9 +8,7 @@ from membrane.reconstruction_engine import ReconstructionConfig, ReconstructionE
 from membrane.structural_signature import StructuralSignature
 
 
-def make_fragment(
-    content_hash: str, token_span: tuple[int, int], model_id: str = "m"
-) -> Fragment:
+def make_fragment(content_hash: str, token_span: tuple[int, int], model_id: str = "m") -> Fragment:
     sig = StructuralSignature(model_id, (0, 1), token_span)
     return Fragment(
         content_hash=content_hash,

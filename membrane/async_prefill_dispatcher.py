@@ -25,7 +25,6 @@ import logging
 from membrane.membrane_node import MembraneNode
 from membrane.prefill_adapter import PrefillAdapter, PrefillResult
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -180,13 +179,9 @@ class AsyncRemotePrefillDispatcher:
         try:
             result = self.prefill_adapter.prefill(prompt_tokens, model_id)
         except Exception as exc:
-            raise NodePrefillError(
-                f"Node {node.node_id} prefill failed: {exc}"
-            ) from exc
+            raise NodePrefillError(f"Node {node.node_id} prefill failed: {exc}") from exc
         if not result.fragments:
-            raise NodePrefillError(
-                f"Node {node.node_id} returned empty fragments"
-            )
+            raise NodePrefillError(f"Node {node.node_id} returned empty fragments")
         # Store every fragment on the target as a non-primary
         # replica so subsequent reads can find it there.
         for frag in result.fragments:

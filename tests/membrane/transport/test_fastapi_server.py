@@ -17,9 +17,7 @@ def make_fragment(content_hash: str = "h1"):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1, 0.2),
-        structural_signature=StructuralSignature(
-            model_id="m", layer_range=(0, 1), token_span=(0, 10)
-        ),
+        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
         size=100,
         ttl=3600.0,
         reuse_score=0.5,
@@ -85,20 +83,23 @@ class TestFastAPIServer:
 
     def test_inventory(self, client):
         frag = make_fragment("inv1")
-        client.post("/store", json={
-            "fragment": {
-                "content_hash": frag.content_hash,
-                "embedding": list(frag.embedding),
-                "model_id": frag.structural_signature.model_id,
-                "layer_range": list(frag.structural_signature.layer_range),
-                "token_span": list(frag.structural_signature.token_span),
-                "size": frag.size,
-                "ttl": frag.ttl,
-                "reuse_score": frag.reuse_score,
-                "version_id": frag.version_id,
+        client.post(
+            "/store",
+            json={
+                "fragment": {
+                    "content_hash": frag.content_hash,
+                    "embedding": list(frag.embedding),
+                    "model_id": frag.structural_signature.model_id,
+                    "layer_range": list(frag.structural_signature.layer_range),
+                    "token_span": list(frag.structural_signature.token_span),
+                    "size": frag.size,
+                    "ttl": frag.ttl,
+                    "reuse_score": frag.reuse_score,
+                    "version_id": frag.version_id,
+                },
+                "is_primary": True,
             },
-            "is_primary": True,
-        })
+        )
         resp = client.get("/inventory")
         assert resp.status_code == 200
         data = resp.json()
@@ -114,19 +115,22 @@ class TestFastAPIServer:
 
     def test_replicate(self, client):
         frag = make_fragment("rep1")
-        resp = client.post("/replicate", json={
-            "fragment": {
-                "content_hash": frag.content_hash,
-                "embedding": list(frag.embedding),
-                "model_id": frag.structural_signature.model_id,
-                "layer_range": list(frag.structural_signature.layer_range),
-                "token_span": list(frag.structural_signature.token_span),
-                "size": frag.size,
-                "ttl": frag.ttl,
-                "reuse_score": frag.reuse_score,
-                "version_id": frag.version_id,
+        resp = client.post(
+            "/replicate",
+            json={
+                "fragment": {
+                    "content_hash": frag.content_hash,
+                    "embedding": list(frag.embedding),
+                    "model_id": frag.structural_signature.model_id,
+                    "layer_range": list(frag.structural_signature.layer_range),
+                    "token_span": list(frag.structural_signature.token_span),
+                    "size": frag.size,
+                    "ttl": frag.ttl,
+                    "reuse_score": frag.reuse_score,
+                    "version_id": frag.version_id,
+                },
             },
-        })
+        )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
@@ -166,9 +170,11 @@ class TestFastAPIServer:
         node = MembraneNode("n1", max_memory_bytes=10000)
         srv = FastAPIServer(node=node, host="127.0.0.1", port=18080)
         import threading
+
         t = threading.Thread(target=srv.start, daemon=True)
         t.start()
         import time
+
         time.sleep(0.5)
         srv.stop()
         t.join(timeout=2)

@@ -54,6 +54,7 @@ class OllamaBackend(ComputeBackend):
         self._client: Any | None = None
         try:
             import httpx
+
             self._client = httpx.Client(timeout=30.0)
         except ImportError:
             logger.warning("OllamaBackend: httpx not installed")
@@ -99,9 +100,7 @@ class OllamaBackend(ComputeBackend):
             data = resp.json()
             embedding = data.get("embedding", [])
         except (httpx.HTTPError, json.JSONDecodeError) as exc:
-            logger.warning(
-                "Ollama embedding failed (%s); falling back to simulation", exc
-            )
+            logger.warning("Ollama embedding failed (%s); falling back to simulation", exc)
             return self.simulate_prefill(prompt_tokens, model_id)
 
         # Distribute the embedding across 128-token windows

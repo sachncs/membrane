@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 from dataclasses import dataclass, field
 
-from membrane.fragment import Fragment
 from membrane.membrane_node import MembraneNode
 from membrane.transfer_service import TransferService
 

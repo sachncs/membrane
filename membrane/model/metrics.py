@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 
 
 import math
-from typing import List, Tuple
 
 from membrane.model import profiler
 
@@ -62,10 +61,10 @@ def compute_ttft(
 
 
 def aggregate_ttft(
-    lengths_and_targets: List[Tuple[int, str]],
+    lengths_and_targets: list[tuple[int, str]],
     membrane_bandwidth_gbps: float = 100.0,
     pd_compute_scale: float = 1.0,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Compute mean and P90 TTFT over a batch of requests.
 
     Args:

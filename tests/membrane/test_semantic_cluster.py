@@ -11,9 +11,7 @@ def make_fragment(content_hash, embedding):
     return Fragment(
         content_hash=content_hash,
         embedding=embedding,
-        structural_signature=StructuralSignature(
-            model_id="m", layer_range=(0, 1), token_span=(0, 1)
-        ),
+        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
         size=10,
         ttl=3600.0,
         reuse_score=0.5,
@@ -63,9 +61,7 @@ class TestSemanticCluster:
         assert SemanticCluster.cosine_similarity((1.0, 0.0), (0.0, 1.0)) == 0.0
 
     def test_cosine_similarity_identical(self):
-        assert SemanticCluster.cosine_similarity(
-            (1.0, 2.0), (1.0, 2.0)
-        ) == pytest.approx(1.0)
+        assert SemanticCluster.cosine_similarity((1.0, 2.0), (1.0, 2.0)) == pytest.approx(1.0)
 
     def test_cosine_similarity_zero_vector(self):
         assert SemanticCluster.cosine_similarity((0.0, 0.0), (1.0, 0.0)) == 0.0

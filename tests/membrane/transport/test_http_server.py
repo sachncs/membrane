@@ -16,9 +16,7 @@ def make_fragment(content_hash: str = "h1"):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1,),
-        structural_signature=StructuralSignature(
-            model_id="m", layer_range=(0, 1), token_span=(0, 1)
-        ),
+        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
         size=10,
         ttl=3600.0,
         reuse_score=0.5,
@@ -35,6 +33,7 @@ class TestHTTPServer:
         srv = HTTPServer(node=node, host="127.0.0.1", port=18080, compute_backend=CPUBackend())
         srv.run_in_thread()
         import time
+
         time.sleep(0.2)
         yield srv
         srv.stop()
@@ -49,20 +48,22 @@ class TestHTTPServer:
 
     def test_store_and_retrieve(self, server):
         frag = make_fragment("store-test")
-        payload = json.dumps({
-            "fragment": {
-                "content_hash": frag.content_hash,
-                "embedding": list(frag.embedding),
-                "model_id": frag.structural_signature.model_id,
-                "layer_range": list(frag.structural_signature.layer_range),
-                "token_span": list(frag.structural_signature.token_span),
-                "size": frag.size,
-                "ttl": frag.ttl,
-                "reuse_score": frag.reuse_score,
-                "version_id": frag.version_id,
-            },
-            "is_primary": True,
-        }).encode()
+        payload = json.dumps(
+            {
+                "fragment": {
+                    "content_hash": frag.content_hash,
+                    "embedding": list(frag.embedding),
+                    "model_id": frag.structural_signature.model_id,
+                    "layer_range": list(frag.structural_signature.layer_range),
+                    "token_span": list(frag.structural_signature.token_span),
+                    "size": frag.size,
+                    "ttl": frag.ttl,
+                    "reuse_score": frag.reuse_score,
+                    "version_id": frag.version_id,
+                },
+                "is_primary": True,
+            }
+        ).encode()
 
         req = urllib.request.Request(
             "http://127.0.0.1:18080/store",

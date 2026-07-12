@@ -7,9 +7,7 @@ from membrane.membrane_node import MembraneNode
 from membrane.structural_signature import StructuralSignature
 
 
-def make_fragment(
-    content_hash: str, size: int, reuse_score: float = 0.5, ttl: float = 3600.0
-) -> Fragment:
+def make_fragment(content_hash: str, size: int, reuse_score: float = 0.5, ttl: float = 3600.0) -> Fragment:
     sig = StructuralSignature("m", (0, 1), (0, 10))
     return Fragment(
         content_hash=content_hash,

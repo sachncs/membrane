@@ -116,9 +116,7 @@ class WeightedGraph:
         self.ensure_node(source_hash)
         self.ensure_node(target_hash)
         self.graph.add_edge(source_hash, target_hash, edge_type)
-        self.weights.setdefault(source_hash, {}).setdefault(edge_type, {})[
-            target_hash
-        ] = weight
+        self.weights.setdefault(source_hash, {}).setdefault(edge_type, {})[target_hash] = weight
 
     def get_edge_weight(
         self,
@@ -136,9 +134,7 @@ class WeightedGraph:
         Returns:
             float: Edge weight, or ``0.0`` if no such edge exists.
         """
-        return (
-            self.weights.get(source_hash, {}).get(edge_type, {}).get(target_hash, 0.0)
-        )
+        return self.weights.get(source_hash, {}).get(edge_type, {}).get(target_hash, 0.0)
 
     def get_strong_neighbors(
         self,
