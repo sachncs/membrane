@@ -20,8 +20,11 @@ warning.
 """
 
 import hashlib
+import json
 import logging
 from typing import Any
+
+import httpx
 
 from membrane.compute.backend import ComputeBackend
 from membrane.fragment import Fragment
@@ -95,7 +98,7 @@ class OllamaBackend(ComputeBackend):
             resp.raise_for_status()
             data = resp.json()
             embedding = data.get("embedding", [])
-        except Exception as exc:
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
             logger.warning(
                 "Ollama embedding failed (%s); falling back to simulation", exc
             )
@@ -166,7 +169,7 @@ class OllamaBackend(ComputeBackend):
             resp.raise_for_status()
             data = resp.json()
             return {"text": data.get("response", ""), "tokens": []}
-        except Exception as exc:
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
             logger.warning("Ollama generate failed: %s", exc)
             return {"text": "", "tokens": []}
 
@@ -182,7 +185,7 @@ class OllamaBackend(ComputeBackend):
         try:
             resp = self._client.get(f"{self.base_url}/api/tags", timeout=2.0)
             return resp.status_code == 200
-        except Exception:
+        except httpx.HTTPError:
             return False
 
     def device_name(self) -> str:

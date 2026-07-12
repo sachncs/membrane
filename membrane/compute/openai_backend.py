@@ -26,8 +26,11 @@ Security:
 """
 
 import hashlib
+import json
 import logging
 from typing import Any
+
+import httpx
 
 from membrane.compute.backend import ComputeBackend
 from membrane.fragment import Fragment
@@ -115,7 +118,9 @@ class OpenAIBackend(ComputeBackend):
             resp.raise_for_status()
             data = resp.json()
             embedding = data["data"][0]["embedding"]
-        except Exception as exc:
+        except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
+            # Network/HTTP error, malformed JSON, or unexpected
+            # response shape — all degrade to the simulated prefill.
             logger.warning(
                 "OpenAI embedding failed (%s); falling back to simulation", exc
             )
@@ -187,7 +192,7 @@ class OpenAIBackend(ComputeBackend):
             data = resp.json()
             choice = data["choices"][0]
             return {"text": choice["message"]["content"], "tokens": []}
-        except Exception as exc:
+        except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
             logger.warning("OpenAI generate failed: %s", exc)
             return {"text": "", "tokens": []}
 
@@ -206,7 +211,7 @@ class OpenAIBackend(ComputeBackend):
         try:
             resp = self._client.get(f"{self.base_url}/models", timeout=5.0)
             return resp.status_code == 200
-        except Exception:
+        except httpx.HTTPError:
             return False
 
     def device_name(self) -> str:

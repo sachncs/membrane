@@ -24,8 +24,11 @@ Security:
 """
 
 import hashlib
+import json
 import logging
 from typing import Any
+
+import httpx
 
 from membrane.compute.backend import ComputeBackend
 from membrane.fragment import Fragment
@@ -170,7 +173,7 @@ class AnthropicBackend(ComputeBackend):
                 if block.get("type") == "text":
                     text_out += block.get("text", "")
             return {"text": text_out, "tokens": []}
-        except Exception as exc:
+        except (httpx.HTTPError, json.JSONDecodeError, AttributeError) as exc:
             logger.warning("Anthropic generate failed: %s", exc)
             return {"text": "", "tokens": []}
 
@@ -186,7 +189,7 @@ class AnthropicBackend(ComputeBackend):
         try:
             resp = self._client.get(f"{self.base_url}/models", timeout=5.0)
             return resp.status_code == 200
-        except Exception:
+        except httpx.HTTPError:
             return False
 
     def device_name(self) -> str:

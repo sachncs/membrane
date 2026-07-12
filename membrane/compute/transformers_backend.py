@@ -80,6 +80,9 @@ class TransformersBackend(ComputeBackend):
         """
         try:
             import torch
+            # transformers is an optional dependency. mypy cannot see
+            # its type stubs without an explicit [transformers] extra,
+            # hence the type: ignore on the import line below.
             from transformers import AutoModel, AutoTokenizer  # type: ignore[import-not-found]
 
             self._torch = torch
@@ -97,7 +100,8 @@ class TransformersBackend(ComputeBackend):
             logger.info("TransformersBackend: loaded %s", self.model_id)
         except ImportError:
             logger.warning("TransformersBackend: transformers or torch not installed")
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
+            # Network errors, OOM, or invalid model IDs land here.
             logger.warning("TransformersBackend: failed to load model (%s)", exc)
 
     def hash_tokens(self, tokens: list[int]) -> str:
@@ -147,9 +151,9 @@ class TransformersBackend(ComputeBackend):
                 hidden_states = outputs.hidden_states[-1]
                 # Drop batch dim and move to CPU as numpy.
                 embeddings = hidden_states[0].cpu().numpy()
-        except Exception as exc:
-            # Any runtime failure (OOM, device error, etc.) is
-            # logged and converted into a simulated prefill.
+        except (RuntimeError, ValueError, IndexError) as exc:
+            # OOM, device errors, or shape mismatches degrade to
+            # simulated prefill.
             logger.warning(
                 "Transformers forward pass failed (%s); falling back to simulation", exc
             )
@@ -227,7 +231,7 @@ class TransformersBackend(ComputeBackend):
             new_ids = output_ids[0][inputs["input_ids"].shape[1] :]
             text = self._tokenizer.decode(new_ids, skip_special_tokens=True)
             return {"text": text, "tokens": new_ids.tolist()}
-        except Exception as exc:
+        except (RuntimeError, ValueError, IndexError) as exc:
             logger.warning("Transformers generate failed: %s", exc)
             return {"text": "", "tokens": []}
 

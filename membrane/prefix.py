@@ -182,5 +182,8 @@ class Prefix:
 
 
 # Re-exported for convenience: callers can import Delta alongside Prefix
-# when implementing prefix deltas / chain updates.
+# when implementing prefix deltas / chain updates. The noqa is scoped
+# narrowly to F401 (imported but unused) because Delta is intentionally
+# re-exported; the E402 (import not at top of file) is intentional so
+# the comment block above can describe the re-export.
 from membrane.delta_encoder import Delta  # noqa: F401, E402
