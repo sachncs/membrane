@@ -1,4 +1,20 @@
-"""WorkloadAnalyzer: detect patterns in access logs."""
+"""WorkloadAnalyzer: detect patterns in access logs.
+
+This module defines :class:`WorkloadAnalyzer`, a small helper
+that summarizes a stream of ``content_hash`` accesses. It exposes
+three operations:
+
+* :meth:`analyze_patterns` — content hash → normalized
+  frequency.
+* :meth:`top_patterns` — the ``k`` most frequent hashes.
+* :meth:`reuse_ratio` — fraction of accesses that hit an
+  already-seen hash.
+
+The analyzer is stateless and intentionally cheap; it is
+intended for ad-hoc inspection of access logs and for
+bootstrapping the prediction / promotion layers with empirical
+frequencies.
+"""
 
 import logging
 
@@ -13,17 +29,19 @@ class WorkloadAnalyzer:
 
     def __init__(self) -> None:
         """Initialize the analyzer."""
-        """Initialize the analyzer."""
         pass
 
     def analyze_patterns(self, access_log: list[str]) -> dict[str, float]:
-        """Compute frequency map for content hashes in an access log.
+        """Compute a content_hash → normalized frequency map.
 
         Args:
-            access_log: Ordered list of accessed content hashes.
+            access_log: Ordered list of accessed content
+                hashes.
 
         Returns:
-            Map of content_hash -> normalized frequency in [0.0, 1.0].
+            dict[str, float]: Map of ``content_hash`` to its
+            normalized frequency in ``[0.0, 1.0]``. Empty when
+            ``access_log`` is empty.
         """
         if not access_log:
             return {}
@@ -36,14 +54,18 @@ class WorkloadAnalyzer:
         access_log: list[str],
         k: int = 5,
     ) -> list[tuple[str, float]]:
-        """Return the top-k most frequent patterns.
+        """Return the top-``k`` most frequent patterns.
 
         Args:
-            access_log: Ordered list of accessed content hashes.
+            access_log: Ordered list of accessed content
+                hashes.
             k: Number of top patterns to return.
 
         Returns:
-            List of (content_hash, frequency) tuples sorted descending.
+            list[tuple[str, float]]: ``(content_hash,
+            frequency)`` tuples sorted in descending order of
+            frequency. May be shorter than ``k`` when the log
+            contains fewer distinct hashes.
         """
         frequencies = self.analyze_patterns(access_log)
         sorted_items = sorted(
@@ -55,10 +77,13 @@ class WorkloadAnalyzer:
         """Compute the fraction of accesses that are repeats.
 
         Args:
-            access_log: Ordered list of accessed content hashes.
+            access_log: Ordered list of accessed content
+                hashes.
 
         Returns:
-            Ratio in [0.0, 1.0] where 1.0 means all accesses are repeats.
+            float: Ratio in ``[0.0, 1.0]``. ``1.0`` means
+            every access is a repeat of an earlier one;
+            ``0.0`` means every access is unique.
         """
         if not access_log:
             return 0.0

@@ -1,4 +1,22 @@
-"""LatencyRouter: route requests by latency to local, replica, or origin."""
+"""LatencyRouter: route requests by latency to local, replica, or origin.
+
+This module defines :class:`LatencyRouter`, a request-time router
+that picks the lowest-latency node holding a requested fragment.
+
+The priority order is:
+
+1. **Local node** — if the local node already has the fragment,
+   the lookup is served directly (zero network hop).
+2. **Best replica** — among the candidates that hold the
+   fragment, the one with the lowest recorded latency is chosen.
+3. **Origin fallback** — when no candidate holds the fragment,
+   the router falls back to a configured origin (or the local
+   node id if no origin is configured).
+
+The router is intentionally stateless apart from its
+``latency_table``. Callers update the table as new measurements
+become available via :meth:`add_latency`.
+"""
 
 import logging
 
@@ -12,9 +30,16 @@ class LatencyRouter:
     """Routes fragment lookups based on latency tiers.
 
     Priority:
-    1. Local node exact match
-    2. Nearest replica with lowest latency
-    3. Origin node (fallback)
+        1. Local node exact match
+        2. Nearest replica with lowest latency
+        3. Origin node (fallback)
+
+    Attributes:
+        latency_table: Mapping ``node_id -> latency_ms`` used to
+            score replica candidates.
+        origin_node_id: Optional fallback node id used when no
+            candidate holds the fragment. ``None`` causes the
+            local node id to be used instead.
     """
 
     def __init__(
@@ -25,9 +50,11 @@ class LatencyRouter:
         """Initialize with optional latency table and origin fallback.
 
         Args:
-            latency_table: Mapping of node_id -> latency in milliseconds.
-            origin_node_id: Node ID to use as fallback when no replica holds
-                the fragment. If None, falls back to local_node.node_id.
+            latency_table: Mapping of ``node_id -> latency`` in
+                milliseconds.
+            origin_node_id: Node ID to use as fallback when no
+                replica holds the fragment. ``None`` causes the
+                router to fall back to ``local_node.node_id``.
         """
         self.latency_table: dict[str, float] = latency_table or {}
         self.origin_node_id = origin_node_id
@@ -52,14 +79,21 @@ class LatencyRouter:
         Args:
             content_hash: Fragment hash to retrieve.
             local_node: Node processing the request.
-            candidate_nodes: Other nodes that may hold the fragment.
+            candidate_nodes: Other nodes that may hold the
+                fragment.
 
         Returns:
-            Selected node identifier.
+            str: Selected node identifier. Always one of the
+            ``node_id`` values from ``local_node`` or
+            ``candidate_nodes``, or the configured origin id.
         """
+        # Fast path: local exact match.
         if local_node.retrieve(content_hash) is not None:
             return local_node.node_id
 
+        # Replica path: filter to candidates that actually hold
+        # the fragment, then pick the one with the lowest
+        # recorded latency.
         candidates_with_fragment = [
             node
             for node in candidate_nodes
@@ -67,7 +101,7 @@ class LatencyRouter:
         ]
 
         if not candidates_with_fragment:
-            # Fallback to origin node if configured, otherwise local node
+            # Fallback: origin if configured, otherwise local.
             fallback = self.origin_node_id or local_node.node_id
             logger.debug(
                 "No replica for %s; falling back to %s", content_hash, fallback
@@ -75,7 +109,7 @@ class LatencyRouter:
             return fallback
 
         def latency_key(node: MembraneNode) -> float:
-            """Return latency for a candidate node."""
+            """Latency score (lower is better); infinity if unknown."""
             return self.latency_table.get(node.node_id, float("inf"))
 
         best = min(candidates_with_fragment, key=latency_key)
@@ -88,6 +122,7 @@ class LatencyRouter:
             node_id: Node identifier.
 
         Returns:
-            Latency in milliseconds, or infinity if unknown.
+            float: Latency in milliseconds, or ``inf`` if the
+            node is not in the table.
         """
         return self.latency_table.get(node_id, float("inf"))

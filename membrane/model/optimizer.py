@@ -1,8 +1,28 @@
 """Throughput-optimal configuration via grid search.
 
-Implements Section 3.4.2: given fixed hardware resources and bandwidth,
-search over routing threshold t and PD-cluster prefill-to-decode ratio
-N_p / N_d to maximize Lambda_max.
+Implements Section 3.4.2: given fixed hardware resources and
+bandwidth, search over routing threshold ``t`` and the PD-cluster
+prefill-to-decode ratio ``N_p / N_d`` to maximize ``Lambda_max``.
+
+Three entry points are provided:
+
+* :func:`evaluate_configuration` — evaluate ``Lambda_max`` for
+  a single ``(t, N_p, N_d)`` triple.
+* :func:`search` — exhaustive grid search over
+  ``(t, N_p)``.
+* :func:`optimal_homogeneous_pd` — grid search over ``(N_p,
+  N_d)`` for a homogeneous PD baseline (no Membrane).
+* :func:`naive_heterogeneous_pd` — evaluate the naive
+  heterogeneous baseline where every request goes to Membrane.
+
+References:
+    * "Prefill-as-a-Service", arXiv:2604.15039v2, §3.4.2.
+
+Assumptions (documented inline):
+
+* H20 prefill is slower than H200. The single scale factor
+  ``H20_COMPUTE_SCALE`` captures this difference uniformly
+  because the paper does not provide per-length H20 profiles.
 """
 
 import logging
@@ -14,25 +34,22 @@ from typing import List, Tuple
 
 from membrane.model import throughput_model, workload
 
-# Hardware constraints from Section 4.1
-TOTAL_PD_INSTANCES: int = 8  # 64 H20 GPUs / 8 GPUs per instance
-MEMBRANE_INSTANCES: int = 4  # 32 H200 GPUs / 8 GPUs per instance
-EGRESS_BANDWIDTH_GBPS: float = 100.0  # ~100 Gbps cross-cluster link
+# Hardware constraints from Section 4.1.
+TOTAL_PD_INSTANCES: int = 8  # 64 H20 GPUs / 8 GPUs per instance.
+MEMBRANE_INSTANCES: int = 4  # 32 H200 GPUs / 8 GPUs per instance.
+EGRESS_BANDWIDTH_GBPS: float = 100.0  # ~100 Gbps cross-cluster link.
 
-# ASSUMPTION: H20 prefill is slower than H200. Table 5 is for H200.
-# From Table 6, homogeneous PD (all H20) achieves Theta_pd-p = 2.11 with
-# N_p = 9 at mean length ~27K, giving T_prefill ~ 4.26 s. Our H200 profiler
-# gives T_prefill(27K) ~ 1.61 s. Scale factor ~ 2.65. We use 2.5 as a
-# single approximate factor for all lengths because the paper does not
-# provide per-length H20 profiles.
+# H20 prefill is slower than H200; the analytical H200 model
+# is scaled by a single factor to approximate H20. See module
+# docstring for the rationale.
 H20_COMPUTE_SCALE: float = 2.5
 
-# Decode constants inferred from Table 6 (see ASSUMPTION in README)
-DECODE_TIME_SECONDS: float = 0.025  # 25 ms per step
+# Decode constants inferred from Table 6.
+DECODE_TIME_SECONDS: float = 0.025  # 25 ms per step.
 MAX_BATCH_SIZE: int = 20
 OUTPUT_LENGTH: int = 1024
 
-# Grid search resolution
+# Grid search resolution.
 THRESHOLD_MIN: int = 1024
 THRESHOLD_MAX: int = 65536
 THRESHOLD_STEP: int = 256
@@ -44,21 +61,23 @@ def evaluate_configuration(
     num_pd_d: int,
     lengths: List[int],
 ) -> float:
-    """Evaluate Lambda_max for a given (t, N_p, N_d) configuration.
+    """Evaluate ``Lambda_max`` for a single configuration.
 
     Args:
-        threshold: Routing threshold t in tokens.
+        threshold: Routing threshold ``t`` in tokens.
         num_pd_p: Number of PD-P instances.
         num_pd_d: Number of PD-D instances.
-        lengths: Workload lengths for computing conditional expectations.
+        lengths: Workload lengths for computing conditional
+            expectations.
 
     Returns:
-        End-to-end throughput in req/s.
+        float: End-to-end throughput in req/s.
     """
     p, mean_long, mean_short = workload.conditional_means(lengths, threshold)
 
-    # If no requests fall into a category, the corresponding upstream
-    # throughput is effectively infinite (handled by the model).
+    # Fall back to ``threshold`` when a category is empty so
+    # the throughput model has a well-defined representative
+    # length to evaluate at.
     long_len = int(round(mean_long)) if mean_long > 0 else threshold
     short_len = int(round(mean_short)) if mean_short > 0 else threshold
 
@@ -89,16 +108,18 @@ def search(
     lengths: List[int],
     total_pd_instances: int = TOTAL_PD_INSTANCES,
 ) -> Tuple[int, int, int, float]:
-    """Grid search over t and N_p to maximize Lambda_max.
+    """Grid search over ``t`` and ``N_p`` to maximize ``Lambda_max``.
 
-    N_d is implicitly total_pd_instances - N_p.
+    ``N_d`` is implicitly ``total_pd_instances - N_p``.
 
     Args:
         lengths: Workload lengths.
-        total_pd_instances: Total number of PD instances available.
+        total_pd_instances: Total number of PD instances
+            available.
 
     Returns:
-        Tuple of (optimal_threshold, optimal_n_p, optimal_n_d, optimal_lambda_max).
+        tuple[int, int, int, float]: ``(optimal_threshold,
+        optimal_n_p, optimal_n_d, optimal_lambda_max)``.
     """
     best_lambda = -1.0
     best_t = THRESHOLD_MIN
@@ -124,14 +145,17 @@ def optimal_homogeneous_pd(
 ) -> Tuple[int, int, float]:
     """Optimize a homogeneous PD baseline (no Membrane).
 
-    All instances are in one PD cluster. We search over N_p / N_d ratio.
+    All instances are in one PD cluster. The function searches
+    over the ``N_p / N_d`` ratio.
 
     Args:
         lengths: Workload lengths.
-        total_instances: Total instances available (all H20 equivalent).
+        total_instances: Total instances available (all H20
+            equivalent).
 
     Returns:
-        Tuple of (optimal_n_p, optimal_n_d, optimal_lambda_max).
+        tuple[int, int, float]: ``(optimal_n_p, optimal_n_d,
+        optimal_lambda_max)``.
     """
     best_lambda = -1.0
     best_n_p = 1
@@ -148,6 +172,9 @@ def optimal_homogeneous_pd(
         theta_pd_d = throughput_model.stage_throughput_pd_d(
             n_d, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH
         )
+        # Membrane is unreachable in this baseline, so its
+        # contribution is +inf and the min() picks the PD
+        # bottleneck.
         lam = throughput_model.end_to_end_throughput(
             float("inf"), theta_pd_p, theta_pd_d, 0.0
         )
@@ -164,10 +191,11 @@ def naive_heterogeneous_pd(
     membrane_instances: int = MEMBRANE_INSTANCES,
     pd_instances: int = TOTAL_PD_INSTANCES,
 ) -> Tuple[float, float]:
-    """Evaluate naive heterogeneous PD (no selective routing, no load balancing).
+    """Evaluate naive heterogeneous PD (no selective routing).
 
     All prefill runs on Membrane (H200), all decode on PD (H20).
-    There is no routing threshold; every request goes to Membrane.
+    There is no routing threshold; every request goes to
+    Membrane.
 
     Args:
         lengths: Workload lengths.
@@ -175,7 +203,9 @@ def naive_heterogeneous_pd(
         pd_instances: Number of PD instances (all decode).
 
     Returns:
-        Tuple of (lambda_max, mean_ttft_estimate).
+        tuple[float, float]: ``(lambda_max, mean_ttft_estimate)``.
+        ``mean_ttft_estimate`` is always ``0.0`` because the
+        paper does not model TTFT for this baseline.
     """
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
     length = int(round(mean_length)) if mean_length > 0 else 32768
@@ -186,7 +216,9 @@ def naive_heterogeneous_pd(
     theta_pd_d = throughput_model.stage_throughput_pd_d(
         pd_instances, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH
     )
+    # fraction_to_membrane = 1.0 means PD-P's contribution is
+    # +inf; only Membrane and PD-D bottlenecks apply.
     lam = throughput_model.end_to_end_throughput(
         theta_membrane, float("inf"), theta_pd_d, 1.0
     )
-    return lam, 0.0  # TTFT not modeled for naive baseline in the paper
+    return lam, 0.0

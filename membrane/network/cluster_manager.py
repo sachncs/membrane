@@ -1,6 +1,23 @@
 """ClusterManager: peer-to-peer bootstrap, heartbeat, gossip, and replication.
 
-Runs background daemon threads for membership maintenance and state exchange.
+Runs background daemon threads for membership maintenance and
+state exchange.
+
+The :class:`ClusterManager` is the heart of Membrane's runtime:
+it owns the cluster-membership tables, the
+:class:`~membrane.hash_ring.HashRing`,
+:class:`~membrane.shard_manager.ShardManager`, and
+:class:`~membrane.global_directory.GlobalDirectory`; runs the
+periodic bootstrap, heartbeat, failure-detection, gossip, and
+replication loops; and exposes a small synchronous API for
+membership queries and event handling.
+
+Threading:
+    * Membership mutations are protected by an internal
+      :class:`threading.RLock`.
+    * The background loops run as daemon threads; they are
+      stopped by :meth:`stop` (which sets ``_stop_event`` and
+      joins each thread with a short timeout).
 """
 
 import logging
@@ -23,7 +40,21 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PeerInfo:
-    """Runtime state for a known peer."""
+    """Runtime state for a known peer.
+
+    Attributes:
+        node_id: Peer node identifier.
+        host: Peer host.
+        port: Peer port.
+        last_heartbeat: Unix timestamp of the most recent
+            successful heartbeat.
+        healthy: Whether the peer is currently considered
+            healthy.
+        suspect: Whether the peer has crossed the suspect
+            threshold but not yet the remove threshold.
+        missed_heartbeats: Counter of consecutive failed
+            heartbeats.
+    """
 
     node_id: str
     host: str
@@ -34,6 +65,12 @@ class PeerInfo:
     missed_heartbeats: int = 0
 
     def to_json(self) -> dict[str, Any]:
+        """Serialize this peer to a JSON-compatible dict.
+
+        Returns:
+            dict[str, Any]: ``node_id``, ``host``, ``port``,
+            ``healthy``, ``suspect``, and ``missed_heartbeats``.
+        """
         return {
             "node_id": self.node_id,
             "host": self.host,
@@ -51,11 +88,11 @@ class ClusterManager:
         node_id: Identifier for this node.
         host: Bind host.
         port: Listen port.
-        node: Local MembraneNode.
+        node: Local :class:`MembraneNode`.
         config: Cluster configuration.
-        directory: Optional GlobalDirectory.
-        hash_ring: Optional HashRing.
-        shard_manager: Optional ShardManager.
+        directory: Optional :class:`GlobalDirectory`.
+        hash_ring: Optional :class:`HashRing`.
+        shard_manager: Optional :class:`ShardManager`.
     """
 
     def __init__(
@@ -69,6 +106,7 @@ class ClusterManager:
         hash_ring: HashRing | None = None,
         shard_manager: ShardManager | None = None,
     ) -> None:
+        """Initialize the cluster manager and internal state."""
         self.node_id = node_id
         self.host = host
         self.port = port
@@ -90,7 +128,13 @@ class ClusterManager:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Start background threads."""
+        """Start background threads.
+
+        Launches bootstrap, heartbeat, and failure-detection
+        threads unconditionally. Gossip and replication threads
+        are started only when the corresponding
+        ``config.enable_*`` flag is set.
+        """
         self._running = True
         self._stop_event.clear()
 
@@ -112,7 +156,14 @@ class ClusterManager:
         logger.info("ClusterManager started with %s background threads", len(loops))
 
     def stop(self) -> None:
-        """Signal all background threads to exit."""
+        """Signal all background threads to exit.
+
+        Sets ``_running`` to ``False`` and ``_stop_event``, then
+        joins each background thread with a short timeout.
+        Threads that do not terminate within the timeout remain
+        alive (they are daemon threads, so they will not block
+        process exit).
+        """
         self._running = False
         self._stop_event.set()
         for t in self._threads:
@@ -120,7 +171,12 @@ class ClusterManager:
         logger.info("ClusterManager stopped")
 
     def join(self) -> None:
-        """Block until stop() is called."""
+        """Block until :meth:`stop` is called.
+
+        Useful as a foreground companion to ``start()`` when the
+        caller wants the manager to live for the duration of the
+        process.
+        """
         self._stop_event.wait()
 
     # ------------------------------------------------------------------
@@ -128,11 +184,19 @@ class ClusterManager:
     # ------------------------------------------------------------------
 
     def add_peer(self, node_id: str, host: str, port: int) -> None:
+        """Add or update a peer in the membership table.
+
+        Args:
+            node_id: Peer node identifier.
+            host: Peer host.
+            port: Peer port.
+        """
         with self._lock:
             if node_id == self.node_id:
+                # Never add ourselves.
                 return
             if node_id in self._peers:
-                # Update endpoint if changed
+                # Refresh endpoint if changed.
                 self._peers[node_id].host = host
                 self._peers[node_id].port = port
                 return
@@ -145,6 +209,15 @@ class ClusterManager:
             logger.info("Added peer %s at %s:%s", node_id, host, port)
 
     def remove_peer(self, node_id: str) -> bool:
+        """Remove a peer from the cluster.
+
+        Args:
+            node_id: Peer node identifier.
+
+        Returns:
+            bool: True when the peer was registered and is
+            now removed, False if it was unknown.
+        """
         with self._lock:
             if node_id not in self._peers:
                 return False
@@ -157,19 +230,51 @@ class ClusterManager:
             return True
 
     def get_peers(self) -> list[dict[str, Any]]:
+        """Return a snapshot of the membership table.
+
+        Returns:
+            list[dict[str, Any]]: Per-peer
+            :meth:`PeerInfo.to_json` snapshots.
+        """
         with self._lock:
             return [p.to_json() for p in self._peers.values()]
 
     def is_peer_healthy(self, node_id: str) -> bool:
+        """Return whether a peer is currently healthy.
+
+        Args:
+            node_id: Peer node identifier.
+
+        Returns:
+            bool: True when the peer exists and is healthy,
+            False otherwise.
+        """
         with self._lock:
             p = self._peers.get(node_id)
             return p.healthy if p else False
 
     def get_peer_client(self, node_id: str) -> PeerClient | None:
+        """Return the cached HTTP client for a peer.
+
+        Args:
+            node_id: Peer node identifier.
+
+        Returns:
+            PeerClient | None: The cached client, or ``None``
+            if the peer is unknown.
+        """
         with self._lock:
             return self._clients.get(node_id)
 
     def get_peer_url(self, node_id: str) -> str | None:
+        """Return the HTTP base URL for a peer.
+
+        Args:
+            node_id: Peer node identifier.
+
+        Returns:
+            str | None: ``http://<host>:<port>`` or ``None``.
+        """
         with self._lock:
             p = self._peers.get(node_id)
             if p:
@@ -181,6 +286,18 @@ class ClusterManager:
     # ------------------------------------------------------------------
 
     def on_peer_join(self, node_id: str, host: str, port: int) -> dict[str, Any]:
+        """Handle a ``POST /join`` request from a peer.
+
+        Args:
+            node_id: Joining node's identifier.
+            host: Joining node's host.
+            port: Joining node's port.
+
+        Returns:
+            dict[str, Any]: ``{"success": True, "peers": [...]}``
+            where ``peers`` is the current membership view
+            (excluding the joiner).
+        """
         self.add_peer(node_id, host, port)
         with self._lock:
             peers = [
@@ -190,9 +307,28 @@ class ClusterManager:
         return {"success": True, "peers": peers}
 
     def on_peer_leave(self, node_id: str) -> None:
+        """Handle a ``POST /leave`` request.
+
+        Args:
+            node_id: Leaving node's identifier.
+        """
         self.remove_peer(node_id)
 
     def on_heartbeat(self, node_id: str) -> dict[str, Any]:
+        """Handle a ``POST /heartbeat`` request.
+
+        Refreshes the peer's heartbeat counters and returns the
+        local node's view of its own load for the caller's
+        bookkeeping.
+
+        Args:
+            node_id: Heartbeating peer's identifier.
+
+        Returns:
+            dict[str, Any]: ``node_id``, ``load``,
+            ``memory_used_bytes``, ``memory_limit_bytes``,
+            ``fragment_count``, ``healthy``.
+        """
         with self._lock:
             p = self._peers.get(node_id)
             if p:
@@ -211,23 +347,37 @@ class ClusterManager:
         }
 
     def on_gossip(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Handle a ``POST /gossip`` request.
+
+        Merges the incoming peer's view into the local state and
+        returns the local view as the response. Unknown or
+        malformed gossip payloads yield an empty response.
+
+        Args:
+            data: Incoming gossip payload.
+
+        Returns:
+            dict[str, Any]: Local gossip state serialized via
+            :meth:`GossipState.to_json`. Empty dict on parse
+            failure.
+        """
         try:
             incoming = GossipState.from_json(data)
         except Exception as exc:
             logger.warning("Failed to parse gossip state: %s", exc)
             return {}
 
-        # Add/update peers from incoming state
+        # Add/update peers from the incoming state.
         for ep in incoming.peers:
             if ep.node_id != self.node_id:
                 self.add_peer(ep.node_id, ep.host, ep.port)
 
-        # Merge fragment locations into directory
+        # Merge fragment locations into the local directory.
         for h, nodes in incoming.fragment_locations.items():
             for nid in nodes:
                 self.directory.record_fragment_location(h, nid)
 
-        # Build response with our state
+        # Build response with our state.
         with self._lock:
             our_peers = [
                 PeerEndpoint(
@@ -238,7 +388,7 @@ class ClusterManager:
                 )
                 for p in self._peers.values()
             ]
-            # Sample fragment locations
+            # Sample fragment locations to bound the gossip size.
             all_hashes = list(self.node.fragments.keys())
             sample_hashes = random.sample(
                 all_hashes,
@@ -263,7 +413,12 @@ class ClusterManager:
     # ------------------------------------------------------------------
 
     def _bootstrap_loop(self) -> None:
-        """Contact seed peers and join the cluster."""
+        """Contact seed peers and join the cluster.
+
+        Tries each configured seed in order; the first
+        successful join terminates the loop. The other peers
+        are then added via the response payload.
+        """
         for seed in self.config.peers:
             if self._stop_event.is_set():
                 return
@@ -279,6 +434,13 @@ class ClusterManager:
                 logger.warning("Bootstrap failed for seed %s: %s", seed, exc)
 
     def _heartbeat_loop(self) -> None:
+        """Periodically ping every known peer.
+
+        On success, the peer's ``last_heartbeat`` and
+        ``missed_heartbeats`` are reset and ``healthy`` is set
+        to ``True``. On failure, ``missed_heartbeats`` is
+        incremented.
+        """
         while self._running and not self._stop_event.is_set():
             with self._lock:
                 peers = list(self._peers.values())
@@ -307,6 +469,13 @@ class ClusterManager:
             self._stop_event.wait(timeout=self.config.heartbeat_interval_sec)
 
     def _failure_detection_loop(self) -> None:
+        """Mark suspect peers and remove failed peers.
+
+        Peers whose ``missed_heartbeats`` exceeds
+        ``failure_suspect_threshold`` are flagged suspect.
+        Peers whose count exceeds ``failure_remove_threshold``
+        are removed from the membership table.
+        """
         while self._running and not self._stop_event.is_set():
             now = time.time()
             to_remove: list[str] = []
@@ -324,6 +493,12 @@ class ClusterManager:
             self._stop_event.wait(timeout=self.config.heartbeat_interval_sec)
 
     def _gossip_loop(self) -> None:
+        """Periodically push our gossip state to a random fanout.
+
+        Each round picks up to ``gossip_fanout`` healthy peers
+        uniformly at random and exchanges a sampled view of our
+        fragment locations and inventory digest.
+        """
         while self._running and not self._stop_event.is_set():
             with self._lock:
                 healthy_peers = [p for p in self._peers.values() if p.healthy]
@@ -375,7 +550,12 @@ class ClusterManager:
             self._stop_event.wait(timeout=self.config.gossip_interval_sec)
 
     def _replication_loop(self) -> None:
-        """Background replication of missing fragments."""
+        """Background replication of missing primary shards.
+
+        For every primary hash held locally, ask each replica
+        target whether it already has the fragment. If not,
+        push the fragment via :class:`PeerClient`.
+        """
         while self._running and not self._stop_event.is_set():
             with self._lock:
                 healthy_peers = [p for p in self._peers.values() if p.healthy]
@@ -387,12 +567,14 @@ class ClusterManager:
                 replicas = self.shard_manager.get_replicas(h)
                 for peer_id in replicas:
                     if peer_id == self.node_id:
+                        # Skip ourselves.
                         continue
-                    # Check if peer already has it
                     client = self.get_peer_client(peer_id)
                     if client is None:
                         continue
                     try:
+                        # Ask the peer whether it already holds
+                        # the fragment; if not, replicate it.
                         existing = client.retrieve_fragment(h)
                         if existing is None:
                             frag = self.node.retrieve(h)
@@ -400,6 +582,8 @@ class ClusterManager:
                                 client.request_replicate(frag)
                                 logger.debug("Replicated %s to %s", h, peer_id)
                     except Exception as exc:
-                        logger.debug("Replication of %s to %s failed: %s", h, peer_id, exc)
+                        logger.debug(
+                            "Replication of %s to %s failed: %s", h, peer_id, exc
+                        )
 
             self._stop_event.wait(timeout=self.config.gossip_interval_sec)

@@ -1,21 +1,32 @@
 """Membrane CLI: production command-line interface with live dashboard.
 
 Commands:
-  membrane serve        Start a Membrane server
-  membrane status       Show server status and metrics
-  membrane dashboard    Open live TUI dashboard
-  membrane config       Show current configuration
 
-Example:
-  membrane serve --node-id n1 --port 8080 --transport http --compute gpu
-  membrane dashboard --host localhost --port 8080
+* ``membrane serve`` — start a Membrane server.
+* ``membrane dashboard`` — open a live TUI dashboard.
+* ``membrane cluster-status`` — show cluster membership.
+* ``membrane llm-status`` — show LLM backend status.
+* ``membrane config`` — show static configuration.
+
+Example::
+
+    membrane serve --node-id n1 --port 8080 --transport http --compute gpu
+    membrane dashboard --host localhost --port 8080
+
+The CLI is built on :mod:`typer` (commands and option parsing)
+and :mod:`rich` (TUI rendering). It exposes two TUI dashboards:
+
+* :func:`dashboard` — standalone mode that polls a remote
+  server's ``/heartbeat`` endpoint.
+* :func:`_run_dashboard` — local mode attached to a running
+  :class:`MembraneServer` instance, with full event-log
+  visibility.
 """
 
 import json
 import logging
 import sys
 import time
-from pathlib import Path
 from typing import Any
 
 import typer
@@ -24,7 +35,6 @@ from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import BarColumn, Progress, TextColumn
 from rich.table import Table
 from rich.text import Text
 
@@ -45,6 +55,15 @@ console = Console()
 # ------------------------------------------------------------------
 
 def fmt_bytes(n: int) -> str:
+    """Format an integer byte count using human-readable units.
+
+    Args:
+        n: Byte count.
+
+    Returns:
+        str: ``"{value:.1f} {unit}"`` where ``unit`` is one of
+        ``B``, ``KiB``, ``MiB``, ``GiB``, ``TiB``, ``PiB``.
+    """
     size = float(n)
     for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
         if abs(size) < 1024.0:
@@ -54,6 +73,14 @@ def fmt_bytes(n: int) -> str:
 
 
 def fmt_duration(seconds: float) -> str:
+    """Format a duration in seconds as ``Ns`` / ``Nm`` / ``Nh``.
+
+    Args:
+        seconds: Duration in seconds.
+
+    Returns:
+        str: Compact duration string.
+    """
     if seconds < 60:
         return f"{seconds:.0f}s"
     if seconds < 3600:
@@ -66,7 +93,19 @@ def fmt_duration(seconds: float) -> str:
 # ------------------------------------------------------------------
 
 def _interactive_setup() -> dict[str, Any]:
-    """Ask the user configuration questions interactively."""
+    """Prompt the user for configuration values interactively.
+
+    Each question shows the current default in brackets; pressing
+    Enter accepts the default. Invalid values are re-prompted
+    until a valid one is supplied.
+
+    Returns:
+        dict[str, Any]: Configuration dictionary with the
+        following keys: ``node_id``, ``host``, ``port``,
+        ``transport``, ``compute``, ``llm_url``, ``llm_model``,
+        ``api_key``, ``redis_url``, ``peers``, ``max_memory``,
+        ``log_level``.
+    """
     console.print("[bold cyan]Membrane Setup Wizard[/bold cyan]")
     console.print("Press Enter to accept defaults (shown in brackets).\n")
 
@@ -91,10 +130,16 @@ def _interactive_setup() -> dict[str, Any]:
         console.print("[red]Invalid transport. Choose 'http' or 'grpc'.[/red]")
         transport = ask("Transport (http/grpc)", "http")
 
-    compute = ask("Compute backend (cpu/gpu/ollama/openai/anthropic/transformers)", "cpu")
+    compute = ask(
+        "Compute backend (cpu/gpu/ollama/openai/anthropic/transformers)",
+        "cpu",
+    )
     valid_backends = ("cpu", "gpu", "ollama", "openai", "anthropic", "transformers")
     while compute not in valid_backends:
-        console.print("[red]Invalid compute. Choose one of: cpu, gpu, ollama, openai, anthropic, transformers.[/red]")
+        console.print(
+            "[red]Invalid compute. Choose one of: "
+            "cpu, gpu, ollama, openai, anthropic, transformers.[/red]"
+        )
         compute = ask("Compute backend", "cpu")
 
     llm_url = ""
@@ -117,7 +162,10 @@ def _interactive_setup() -> dict[str, Any]:
     if use_redis:
         redis_url = ask("Redis URL", "redis://localhost:6379/0")
 
-    peers_input = ask("Seed peers (comma-separated host:port, or leave empty)", "")
+    peers_input = ask(
+        "Seed peers (comma-separated host:port, or leave empty)",
+        "",
+    )
     peers = [p.strip() for p in peers_input.split(",") if p.strip()]
 
     max_memory = int(ask("Max memory (bytes)", str(1 << 30)))
@@ -164,20 +212,31 @@ def serve(
     llm_model: str = typer.Option("", "--llm-model", help="Model name (e.g. llama3.2, gpt-4o-mini, claude-3-sonnet)"),
     api_key: str = typer.Option("", "--api-key", help="API key for OpenAI / Anthropic"),
 ) -> None:
-    """Start a Membrane production server."""
-    if interactive or (sys.stdin.isatty() and all(v == default for v, default in [
-        (node_id, "membrane-0"),
-        (host, "0.0.0.0"),
-        (port, 8080),
-        (transport, "http"),
-        (compute, "cpu"),
-        (redis_url, ""),
-        (max_memory, 1 << 30),
-        (log_level, "INFO"),
-        (llm_url, ""),
-        (llm_model, ""),
-        (api_key, ""),
-    ])):
+    """Start a Membrane production server.
+
+    When invoked with all defaults in a TTY, the interactive
+    setup wizard is launched automatically. Pass ``--interactive``
+    explicitly to force the wizard; pass ``--daemon`` to run
+    without the TUI dashboard.
+    """
+    # Decide whether to launch the interactive wizard.
+    defaults_match = all(
+        v == default
+        for v, default in [
+            (node_id, "membrane-0"),
+            (host, "0.0.0.0"),
+            (port, 8080),
+            (transport, "http"),
+            (compute, "cpu"),
+            (redis_url, ""),
+            (max_memory, 1 << 30),
+            (log_level, "INFO"),
+            (llm_url, ""),
+            (llm_model, ""),
+            (api_key, ""),
+        ]
+    )
+    if interactive or (sys.stdin.isatty() and defaults_match):
         cfg = _interactive_setup()
         node_id = cfg["node_id"]
         host = cfg["host"]
@@ -197,6 +256,8 @@ def serve(
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
+    # Only build cluster config when at least one seed peer is
+    # supplied — single-node mode skips cluster bootstrapping.
     cluster_config = None
     if peer:
         cluster_config = ClusterConfig(
@@ -243,7 +304,7 @@ def serve(
             server.stop()
             console.print("[bold red]Server stopped.[/bold red]")
     else:
-        # Launch live dashboard
+        # Launch the local TUI dashboard.
         _run_dashboard(server)
 
 
@@ -257,14 +318,27 @@ def dashboard(
     port: int = typer.Option(8080, "--port", "-p", help="Server port to monitor"),
     refresh: float = typer.Option(1.0, "--refresh", help="Refresh interval seconds"),
 ) -> None:
-    """Open a live TUI dashboard connected to a running Membrane server."""
+    """Open a live TUI dashboard connected to a running Membrane server.
+
+    The dashboard polls the ``/heartbeat`` endpoint at the
+    configured interval and renders metrics in a Rich-based
+    full-screen layout. Exit with Ctrl+C.
+    """
     import urllib.request
 
     def fetch_json(path: str) -> dict:
+        """Fetch a JSON payload from the remote server.
+
+        Args:
+            path: URL path appended to the server base URL.
+
+        Returns:
+            dict: Parsed JSON payload, or an empty dict on any
+            error (network failure, non-JSON response).
+        """
         url = f"http://{host}:{port}{path}"
         try:
             with urllib.request.urlopen(url, timeout=2) as resp:
-                import json
                 return json.loads(resp.read().decode())
         except Exception:
             return {}
@@ -281,6 +355,7 @@ def dashboard(
     )
 
     def make_header(data: dict) -> Panel:
+        """Render the dashboard header panel."""
         node_id = data.get("node_id", "unknown")
         healthy = data.get("healthy", False)
         status = "[green]HEALTHY[/green]" if healthy else "[red]UNHEALTHY[/red]"
@@ -292,6 +367,7 @@ def dashboard(
         return Panel(Align.center(text), style="bold white on blue")
 
     def make_metrics(data: dict) -> Panel:
+        """Render the metrics panel."""
         table = Table(show_header=False, box=None)
         table.add_column("Metric", style="cyan")
         table.add_column("Value", style="magenta")
@@ -302,17 +378,19 @@ def dashboard(
         return Panel(table, title="[bold]Metrics[/bold]", border_style="green")
 
     def make_connected(data: dict) -> Panel:
-        # In standalone mode we don't have a local event log;
-        # just show a placeholder or try to infer from metrics
-        text = Text("Connect to a local server with 'membrane serve' for full diagnostics.")
+        """Render the diagnostics panel for standalone mode."""
+        text = Text(
+            "Connect to a local server with 'membrane serve' for full diagnostics."
+        )
         return Panel(text, title="[bold]Diagnostics[/bold]", border_style="yellow")
 
     def make_footer() -> Panel:
+        """Render the dashboard footer."""
         text = Text("[Q]uit  |  Refresh: ", style="dim")
         return Panel(Align.center(text), style="dim")
 
     console.print("[bold cyan]Connecting to Membrane server...[/bold cyan]")
-    with Live(layout, refresh_per_second=1 / refresh, screen=True) as live:
+    with Live(layout, refresh_per_second=1 / refresh, screen=True):
         while True:
             data = fetch_json("/heartbeat")
             layout["header"].update(make_header(data))
@@ -327,7 +405,14 @@ def dashboard(
 # ------------------------------------------------------------------
 
 def _run_dashboard(server: MembraneServer) -> None:
-    """Render a live Rich dashboard for the local MembraneServer."""
+    """Render a live Rich dashboard for the local ``MembraneServer``.
+
+    Unlike :func:`dashboard` (which polls a remote server over
+    HTTP), this version has full access to the in-process
+    :class:`MembraneServer`'s diagnostics and event log. It is
+    the default when ``membrane serve`` is invoked without
+    ``--daemon``.
+    """
     layout = Layout()
     layout.split_column(
         Layout(name="header", size=3),
@@ -344,6 +429,7 @@ def _run_dashboard(server: MembraneServer) -> None:
     )
 
     def make_header(diag) -> Panel:
+        """Render the local-dashboard header."""
         status = "[green]HEALTHY[/green]" if diag.load < 0.9 else "[yellow]WARNING[/yellow]"
         text = Text.assemble(
             "Membrane Server  |  ",
@@ -354,6 +440,7 @@ def _run_dashboard(server: MembraneServer) -> None:
         return Panel(Align.center(text), style="bold white on blue")
 
     def make_metrics(diag) -> Panel:
+        """Render the local-dashboard metrics table."""
         table = Table(show_header=False, box=None, padding=(0, 1))
         table.add_column("Metric", style="cyan", no_wrap=True)
         table.add_column("Value", style="magenta", no_wrap=True)
@@ -370,8 +457,13 @@ def _run_dashboard(server: MembraneServer) -> None:
         return Panel(table, title="[bold]Server Metrics[/bold]", border_style="green")
 
     def make_peers(server: MembraneServer) -> Panel:
+        """Render the connected-peers panel."""
         if not server.connected_nodes:
-            return Panel("[dim]No peers connected[/dim]", title="[bold]Peers[/bold]", border_style="dim")
+            return Panel(
+                "[dim]No peers connected[/dim]",
+                title="[bold]Peers[/bold]",
+                border_style="dim",
+            )
         table = Table(show_header=True, box=None, padding=(0, 1))
         table.add_column("Node ID", style="cyan")
         table.add_column("Status", style="green")
@@ -380,13 +472,19 @@ def _run_dashboard(server: MembraneServer) -> None:
         return Panel(table, title="[bold]Peers[/bold]", border_style="blue")
 
     def make_events(server: MembraneServer) -> Panel:
+        """Render the recent-events panel (newest first)."""
         events = server.recent_events(n=15)
         if not events:
-            return Panel("[dim]No events yet[/dim]", title="[bold]Event Log[/bold]", border_style="dim")
+            return Panel(
+                "[dim]No events yet[/dim]",
+                title="[bold]Event Log[/bold]",
+                border_style="dim",
+            )
         table = Table(show_header=True, box=None, padding=(0, 1))
         table.add_column("Time", style="dim", no_wrap=True)
         table.add_column("Level", style="bold", no_wrap=True)
         table.add_column("Message", style="white")
+        # Reverse so the newest event is at the top of the table.
         for ev in reversed(events):
             ts = time.strftime("%H:%M:%S", time.localtime(ev.timestamp))
             color = {
@@ -395,14 +493,17 @@ def _run_dashboard(server: MembraneServer) -> None:
                 "info": "green",
                 "debug": "dim",
             }.get(ev.level, "white")
-            table.add_row(ts, f"[{color}]{ev.level.upper()}[/{color}]", ev.message)
+            table.add_row(
+                ts, f"[{color}]{ev.level.upper()}[/{color}]", ev.message
+            )
         return Panel(table, title="[bold]Event Log[/bold]", border_style="yellow")
 
     def make_footer() -> Panel:
+        """Render the local-dashboard footer."""
         text = Text("[Ctrl+C] Stop server  |  Live Dashboard", style="dim")
         return Panel(Align.center(text), style="dim")
 
-    with Live(layout, refresh_per_second=2, screen=True) as live:
+    with Live(layout, refresh_per_second=2, screen=True):
         try:
             while server._running:
                 diag = server.diagnostics()
@@ -428,7 +529,12 @@ def cluster_status(
     host: str = typer.Option("localhost", "--host", help="Server host"),
     port: int = typer.Option(8080, "--port", "-p", help="Server port"),
 ) -> None:
-    """Show cluster membership and peer health."""
+    """Show cluster membership and peer health.
+
+    Connects to ``http://<host>:<port>/peers`` and renders the
+    response as a Rich table. Prints an error message when the
+    server is unreachable.
+    """
     import urllib.request
 
     url = f"http://{host}:{port}/peers"
@@ -446,7 +552,12 @@ def cluster_status(
         table.add_column("Healthy", style="green")
         for p in peers:
             healthy = "[green]YES[/green]" if p.get("healthy") else "[red]NO[/red]"
-            table.add_row(p.get("node_id", "?"), p.get("host", "?"), str(p.get("port", "?")), healthy)
+            table.add_row(
+                p.get("node_id", "?"),
+                p.get("host", "?"),
+                str(p.get("port", "?")),
+                healthy,
+            )
         console.print(table)
     except Exception as exc:
         console.print(f"[red]Could not fetch cluster status: {exc}[/red]")
@@ -461,8 +572,12 @@ def llm_status(
     host: str = typer.Option("localhost", "--host", help="Server host"),
     port: int = typer.Option(8080, "--port", "-p", help="Server port"),
 ) -> None:
-    """Show active LLM backend status and model info."""
-    import json
+    """Show active LLM backend status and model info.
+
+    Connects to ``http://<host>:<port>/metrics`` and renders a
+    summary of the active compute backend. Prints an error
+    message when the server is unreachable.
+    """
     import urllib.request
 
     url = f"http://{host}:{port}/metrics"
@@ -509,6 +624,7 @@ def config(
 # ------------------------------------------------------------------
 
 def main() -> None:
+    """CLI entry point registered as the ``membrane`` console script."""
     app()
 
 

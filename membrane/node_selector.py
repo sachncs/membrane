@@ -1,8 +1,22 @@
 """NodeSelector: multi-criteria node selection for routing and placement.
 
 Selects optimal nodes from a candidate set based on configurable
-latency, load, memory, and bandwidth scoring.  Supports health
+latency, load, memory, and bandwidth scoring. Supports health
 threshold filtering and topology-aware preference.
+
+Algorithm:
+
+1. Each dimension is clamped to ``[0, 1]`` using its ``max_*``
+   reference value, then multiplied by its ``weight_*``.
+2. Nodes with any dimension above ``health_threshold`` are
+   excluded as unhealthy.
+3. The composite score is the weighted sum of the four
+   normalized dimensions.
+4. :meth:`select` returns the lowest-scoring node;
+   :meth:`select_top_n` returns the ``n`` lowest-scoring nodes.
+
+The selector is stateless; instances are safe to share across
+threads.
 """
 
 import logging
@@ -19,21 +33,29 @@ from membrane.node_telemetry import NodeTelemetry
 class NodeSelectorConfig:
     """Configuration for node-selection scoring.
 
-    Every dimension is clamped to [0, 1] using ``max_*`` reference values,
-    then multiplied by its ``weight_*``.  Nodes with any dimension above
-    ``health_threshold`` are excluded entirely.
+    Every dimension is clamped to ``[0, 1]`` using ``max_*``
+    reference values, then multiplied by its ``weight_*``.
+    Nodes with any dimension above ``health_threshold`` are
+    excluded entirely.
 
     Attributes:
-        max_latency_ms: Latency value that maps to score = 1.0.
-        max_gpu_load: GPU load value that maps to score = 1.0.
-        max_memory_pressure: Memory pressure value that maps to score = 1.0.
-        max_bandwidth_cost: Bandwidth cost value that maps to score = 1.0.
+        max_latency_ms: Latency value that maps to a
+            normalized score of ``1.0``.
+        max_gpu_load: GPU load value that maps to a normalized
+            score of ``1.0``.
+        max_memory_pressure: Memory pressure value that maps to
+            a normalized score of ``1.0``.
+        max_bandwidth_cost: Bandwidth cost value that maps to a
+            normalized score of ``1.0``.
         weight_latency: Weight of the normalized latency term.
         weight_gpu: Weight of the normalized GPU load term.
-        weight_memory: Weight of the normalized memory pressure term.
-        weight_bandwidth: Weight of the normalized bandwidth cost term.
-        health_threshold: Maximum allowed raw value for any dimension.
-            A node exceeding this on *any* dimension is considered unhealthy.
+        weight_memory: Weight of the normalized memory pressure
+            term.
+        weight_bandwidth: Weight of the normalized bandwidth
+            cost term.
+        health_threshold: Maximum allowed raw value for any
+            dimension. A node exceeding this on *any* dimension
+            is considered unhealthy.
     """
 
     max_latency_ms: float = 5000.0
@@ -50,11 +72,22 @@ class NodeSelectorConfig:
 class NodeSelector:
     """Selects the best node(s) from a candidate pool.
 
-    Lower composite scores are better (minimizes cost).  Unhealthy nodes
-    are filtered out before ranking.
+    Lower composite scores are better (minimizes cost).
+    Unhealthy nodes are filtered out before ranking.
+
+    Attributes:
+        config: Normalization, weighting, and health-threshold
+            configuration.
     """
 
     def __init__(self, config: NodeSelectorConfig | None = None) -> None:
+        """Initialize the selector.
+
+        Args:
+            config: Selection configuration. A default
+                :class:`NodeSelectorConfig` is used when
+                ``None``.
+        """
         self.config = config or NodeSelectorConfig()
 
     def select(
@@ -66,10 +99,12 @@ class NodeSelector:
 
         Args:
             candidate_node_ids: Candidate node identifiers.
-            telemetry_map: Node ID -> telemetry snapshot.
+            telemetry_map: ``node_id -> NodeTelemetry``
+            snapshot.
 
         Returns:
-            Best node identifier, or empty string if no healthy candidate.
+            str: Best node identifier, or an empty string if no
+            healthy candidate is available.
         """
         healthy = self.filter_healthy(candidate_node_ids, telemetry_map)
         if not healthy:
@@ -82,15 +117,17 @@ class NodeSelector:
         telemetry_map: dict[str, NodeTelemetry],
         n: int = 3,
     ) -> list[str]:
-        """Return the top *n* best node identifiers in ascending score order.
+        """Return the top ``n`` best node identifiers in ascending score order.
 
         Args:
             candidate_node_ids: Candidate node identifiers.
-            telemetry_map: Node ID -> telemetry snapshot.
+            telemetry_map: ``node_id -> NodeTelemetry``
+            snapshot.
             n: Maximum number of nodes to return.
 
         Returns:
-            List of best node identifiers (may be fewer than *n*).
+            list[str]: Best node identifiers. May be shorter
+            than ``n`` when fewer healthy candidates exist.
         """
         healthy = self.filter_healthy(candidate_node_ids, telemetry_map)
         if not healthy:
@@ -105,12 +142,18 @@ class NodeSelector:
     ) -> list[str]:
         """Remove nodes that exceed the health threshold on any dimension.
 
+        Candidates without telemetry entries are also filtered
+        out — without telemetry there is no way to assess
+        health, so the safe default is to exclude them.
+
         Args:
             candidate_node_ids: Candidate node identifiers.
-            telemetry_map: Node ID -> telemetry snapshot.
+            telemetry_map: ``node_id -> NodeTelemetry``
+            snapshot.
 
         Returns:
-            List of healthy node identifiers.
+            list[str]: Healthy node identifiers in their
+            original order.
         """
         cfg = self.config
         threshold = cfg.health_threshold
@@ -118,7 +161,11 @@ class NodeSelector:
         for nid in candidate_node_ids:
             telem = telemetry_map.get(nid)
             if telem is None:
+                # No telemetry -> cannot assess health -> skip.
                 continue
+            # Compare each dimension's *raw* value against the
+            # threshold. Latency is normalized to the same scale
+            # before the comparison.
             if (
                 telem.gpu_load > threshold
                 or telem.memory_pressure > threshold
@@ -138,16 +185,21 @@ class NodeSelector:
 
         Args:
             node_id: Node to score.
-            telemetry_map: Node ID -> telemetry snapshot.
+            telemetry_map: ``node_id -> NodeTelemetry``
+            snapshot.
 
         Returns:
-            Composite cost.  ``inf`` if telemetry is missing.
+            float: Composite cost. ``+inf`` if telemetry is
+            missing.
         """
         telem = telemetry_map.get(node_id)
         if telem is None:
             return float("inf")
 
         cfg = self.config
+        # Each dimension is normalized to [0, 1] via min() so
+        # values above the reference still saturate at 1 rather
+        # than inflating the weighted sum.
         latency_norm = min(1.0, telem.latency_ms / cfg.max_latency_ms)
         gpu_norm = min(1.0, telem.gpu_load / cfg.max_gpu_load)
         memory_norm = min(1.0, telem.memory_pressure / cfg.max_memory_pressure)

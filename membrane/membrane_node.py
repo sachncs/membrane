@@ -1,4 +1,34 @@
-"""MembraneNode: in-memory fragment storage, TTL, and graph-aware eviction."""
+"""MembraneNode: in-memory fragment storage, TTL, and graph-aware eviction.
+
+This module defines :class:`MembraneNode`, the in-memory serving
+plane node that hosts fragments on a single machine. It owns:
+
+* A :class:`~membrane.fragment.Fragment` dictionary keyed by
+  ``content_hash``.
+* An :class:`~membrane.index_system.IndexSystem` that maintains
+  the four in-memory indexes for the fragments it holds.
+* A :class:`~membrane.graph_manager.GraphManager` used during
+  graph-aware eviction.
+
+The node enforces a ``max_memory_bytes`` budget and supports three
+eviction phases:
+
+1. **TTL expiry** — fragments whose ``ttl`` has elapsed are
+   removed first.
+2. **Weighted LRU** — remaining candidates are sorted by
+   ``last_access / (reuse_score + ε)``; cold fragments with low
+   reuse_score are evicted first.
+3. **Graph-aware co-eviction** — after phases 1 and 2, the node
+   inspects the graph neighbors of the evicted fragments and
+   removes cold neighbors as well, packing the storage more
+   tightly around hot prefixes.
+
+Thread safety:
+    All public methods are protected by a
+    :class:`threading.RLock` so the node can be safely shared
+    across threads (including re-entrant calls from within
+    eviction phases).
+"""
 
 import logging
 
@@ -16,13 +46,14 @@ from membrane.index_system import IndexSystem
 
 @dataclass(frozen=True)
 class NodeStats:
-    """Statistics for a MembraneNode.
+    """Statistics for a :class:`MembraneNode`.
 
     Attributes:
-        memory_used_bytes: Current memory consumption.
-        memory_limit_bytes: Maximum allowed memory.
-        fragment_count: Number of fragments stored.
-        primary_count: Number of primary-owned fragments.
+        memory_used_bytes: Current memory consumption in bytes.
+        memory_limit_bytes: Configured maximum allowed memory.
+        fragment_count: Number of fragments currently stored.
+        primary_count: Number of fragments owned as the primary
+            shard by this node.
     """
 
     memory_used_bytes: int
@@ -31,18 +62,20 @@ class NodeStats:
     primary_count: int
 
 
-#: Small epsilon added to reuse_score in the eviction formula to avoid
-#: division by zero when a fragment has reuse_score == 0.
+#: Small epsilon added to ``reuse_score`` in the eviction formula
+#: to avoid division by zero when a fragment has ``reuse_score == 0``.
 EVICTION_REUSE_EPSILON: float = 0.01
 
 
 class MembraneNode:
     """Serving plane node that holds fragments in memory.
 
-    Supports TTL expiry, LRU eviction weighted by reuse_score, and
-    graph-aware co-eviction via an owned GraphManager.
+    Supports TTL expiry, LRU eviction weighted by ``reuse_score``,
+    and graph-aware co-eviction via an owned
+    :class:`GraphManager`.
 
-    All public methods are thread-safe via an internal ``threading.RLock``.
+    All public methods are thread-safe via an internal
+    :class:`threading.RLock`.
     """
 
     def __init__(
@@ -57,8 +90,10 @@ class MembraneNode:
         Args:
             node_id: Unique identifier for this node.
             max_memory_bytes: Memory budget in bytes.
-            index_system: Optional index system. Creates one if None.
-            graph_manager: Optional graph manager. Creates one if None.
+            index_system: Optional index system. A fresh one is
+                created when ``None``.
+            graph_manager: Optional graph manager. A fresh one is
+                created when ``None``.
         """
         self.node_id = node_id
         self.max_memory_bytes = max_memory_bytes
@@ -76,12 +111,20 @@ class MembraneNode:
     def store(self, fragment: Fragment, is_primary: bool = True) -> bool:
         """Store a fragment in this node.
 
+        Performs capacity-driven eviction when needed, registers
+        the fragment in the index and graph systems, and updates
+        access/insertion timestamps.
+
         Args:
             fragment: Fragment to store.
-            is_primary: Whether this node owns the primary shard.
+            is_primary: Whether this node owns the primary shard
+                for the fragment.
 
         Returns:
-            True if stored, False if fragment exceeds max_memory_bytes.
+            bool: True if the fragment is stored (or was already
+            present and refreshed), False if the fragment is
+            larger than ``max_memory_bytes`` or eviction could not
+            free enough space.
         """
         if fragment.size > self.max_memory_bytes:
             logger.warning(
@@ -99,6 +142,7 @@ class MembraneNode:
             if fragment.content_hash not in self.fragments:
                 required = self.memory_usage + fragment.size
                 if required > self.max_memory_bytes:
+                    # Try to make room by evicting.
                     freed = self.evict(fragment.size)
                     if self.memory_usage + fragment.size > self.max_memory_bytes:
                         logger.warning(
@@ -133,13 +177,15 @@ class MembraneNode:
     def retrieve(self, content_hash: str) -> Fragment | None:
         """Retrieve a fragment by content hash.
 
-        Evicts the fragment if its TTL has expired (background TTL cleanup).
+        Performs opportunistic TTL cleanup: if the fragment has
+        expired, it is removed before returning ``None``.
 
         Args:
             content_hash: Hash to look up.
 
         Returns:
-            Fragment if present and not expired, else None.
+            Fragment | None: The fragment if present and not
+            expired, otherwise ``None``.
         """
         with self._lock:
             fragment = self.fragments.get(content_hash)
@@ -149,6 +195,8 @@ class MembraneNode:
             now = time.time()
             age = now - self.insertion_times.get(content_hash, now)
             if age > fragment.ttl:
+                # Background TTL cleanup: remove the expired entry
+                # rather than returning a stale fragment.
                 logger.debug("Evicting expired fragment %s from %s", content_hash, self.node_id)
                 self.remove_fragment(content_hash)
                 return None
@@ -160,11 +208,15 @@ class MembraneNode:
     def remove_fragment(self, content_hash: str) -> Fragment:
         """Remove a fragment from internal state and return it.
 
+        Caller is responsible for ensuring the fragment is present
+        (the implementation pops without guarding against
+        ``KeyError``).
+
         Args:
             content_hash: Hash of the fragment to remove.
 
         Returns:
-            The removed fragment.
+            Fragment: The removed fragment.
         """
         with self._lock:
             frag = self.fragments.pop(content_hash)
@@ -186,7 +238,8 @@ class MembraneNode:
             now: Current timestamp.
 
         Returns:
-            Tuple of (evicted_hashes, freed_bytes).
+            tuple[list[str], int]: ``(evicted_hashes, freed_bytes)``.
+            Stops as soon as ``freed_bytes >= target_bytes``.
         """
         with self._lock:
             evicted: list[str] = []
@@ -210,15 +263,16 @@ class MembraneNode:
         now: float,
         already_evicted: set[str],
     ) -> tuple[list[str], int]:
-        """Phase 2: evict fragments by LRU weighted by reuse_score.
+        """Phase 2: evict fragments by LRU weighted by ``reuse_score``.
 
         Args:
             target_bytes: Number of bytes to free.
             now: Current timestamp.
-            already_evicted: Set of hashes already evicted in prior phases.
+            already_evicted: Set of hashes already evicted in
+                prior phases; these are skipped.
 
         Returns:
-            Tuple of (evicted_hashes, freed_bytes).
+            tuple[list[str], int]: ``(evicted_hashes, freed_bytes)``.
         """
         with self._lock:
             evicted: list[str] = []
@@ -228,9 +282,12 @@ class MembraneNode:
             ]
 
             def eviction_score(hash_and_frag: tuple[str, Fragment]) -> float:
-                """Compute eviction priority: lower score = evict first."""
+                """Eviction priority (lower = evict first)."""
                 h, frag = hash_and_frag
                 last_access = self.access_times.get(h, now)
+                # Earlier access and lower reuse_score both push
+                # the score down, making the candidate evict
+                # earlier. The epsilon avoids division by zero.
                 return last_access / (frag.reuse_score + EVICTION_REUSE_EPSILON)
 
             candidates.sort(key=eviction_score)
@@ -250,12 +307,17 @@ class MembraneNode:
     ) -> tuple[list[str], int]:
         """Phase 3: co-evict cold graph neighbors of already-evicted fragments.
 
+        For every seed hash evicted in earlier phases, look up its
+        structural neighbors via
+        :meth:`GraphManager.eviction_candidates` and remove any
+        neighbor that is still resident on this node.
+
         Args:
             target_bytes: Number of bytes to free.
             seed_hashes: Fragments evicted in earlier phases.
 
         Returns:
-            Tuple of (evicted_hashes, freed_bytes).
+            tuple[list[str], int]: ``(evicted_hashes, freed_bytes)``.
         """
         with self._lock:
             evicted: list[str] = []
@@ -279,19 +341,26 @@ class MembraneNode:
         target_bytes: int,
         current_time: float | None = None,
     ) -> list[str]:
-        """Evict fragments until target_bytes are freed.
+        """Evict fragments until ``target_bytes`` are freed.
 
-        Eviction order:
-        1. Expired fragments (past TTL).
-        2. LRU weighted by reuse_score (lower reuse_score = more evictable).
-        3. Graph-aware co-eviction of cold neighbors.
+        Runs the three eviction phases in order:
+
+        1. **Expired** — fragments past their TTL.
+        2. **Weighted LRU** — sorted by
+           ``last_access / (reuse_score + ε)``.
+        3. **Graph-aware co-eviction** — cold neighbors of the
+           already-evicted fragments.
 
         Args:
-            target_bytes: Number of bytes to free.
-            current_time: Optional timestamp for deterministic testing.
+            target_bytes: Number of bytes to free. Non-positive
+                values are a no-op.
+            current_time: Optional timestamp for deterministic
+                testing. Defaults to :func:`time.time`.
 
         Returns:
-            List of evicted content hashes.
+            list[str]: All evicted content hashes, in eviction
+            order. May be empty if the store is already under
+            the target.
         """
         if target_bytes <= 0:
             return []
@@ -301,14 +370,14 @@ class MembraneNode:
             evicted_hashes: list[str] = []
             freed = 0
 
-            # Phase 1: evict expired fragments
+            # Phase 1: evict expired fragments.
             expired_evicted, expired_freed = self.evict_expired(target_bytes, now)
             evicted_hashes.extend(expired_evicted)
             freed += expired_freed
             if freed >= target_bytes:
                 return evicted_hashes
 
-            # Phase 2: LRU weighted by reuse_score
+            # Phase 2: LRU weighted by reuse_score.
             already_evicted = set(evicted_hashes)
             lru_evicted, lru_freed = self.evict_lru(
                 target_bytes - freed, now, already_evicted
@@ -318,7 +387,7 @@ class MembraneNode:
             if freed >= target_bytes:
                 return evicted_hashes
 
-            # Phase 3: graph-aware co-eviction
+            # Phase 3: graph-aware co-eviction.
             graph_evicted, graph_freed = self.evict_graph_neighbors(
                 target_bytes - freed, evicted_hashes
             )
@@ -328,27 +397,44 @@ class MembraneNode:
             return evicted_hashes
 
     def get_memory_usage(self) -> int:
-        """Return current memory consumption in bytes."""
+        """Return current memory consumption in bytes.
+
+        Returns:
+            int: Bytes currently occupied by stored fragments.
+        """
         with self._lock:
             return self.memory_usage
 
     def get_shard_hashes(self) -> set[str]:
-        """Return content hashes owned as primary by this node."""
+        """Return content hashes owned as primary by this node.
+
+        Returns:
+            set[str]: Defensive copy of the primary shard set.
+        """
         with self._lock:
             return set(self.primary_hashes)
 
     def heartbeat(self) -> float:
         """Return node load score between 0.0 and 1.0.
 
+        Defined as ``min(1.0, used / max)``. A node whose
+        ``max_memory_bytes`` is ``0`` always reports ``1.0``
+        (fully loaded) to avoid division by zero.
+
         Returns:
-            Ratio of used memory to max memory.
+            float: Load ratio in ``[0.0, 1.0]``.
         """
         if self.max_memory_bytes == 0:
             return 1.0
         return min(1.0, self.get_memory_usage() / self.max_memory_bytes)
 
     def get_stats(self) -> NodeStats:
-        """Return current node statistics."""
+        """Return current node statistics.
+
+        Returns:
+            NodeStats: Snapshot of memory usage and fragment
+            counts at call time.
+        """
         with self._lock:
             return NodeStats(
                 memory_used_bytes=self.memory_usage,
