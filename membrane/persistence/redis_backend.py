@@ -67,7 +67,7 @@ class RedisBackend:
         self.client = redis.from_url(redis_url, decode_responses=True)
         self.prefix = prefix
 
-    def _key(self, suffix: str) -> str:
+    def key_for(self, suffix: str) -> str:
         """Return the prefixed Redis key for ``suffix``.
 
         Args:
@@ -99,17 +99,17 @@ class RedisBackend:
             bool: True if stored.
         """
         h = fragment.content_hash
-        data = self._serialize(fragment)
+        data = self.serialize_fragment(fragment)
         # Use a pipeline so the fragment, the per-node set, the
         # primary key, and the LRU score are written atomically
         # from the client's perspective.
         pipe = self.client.pipeline()
-        pipe.hset(self._key(f"frag:{h}"), mapping=data)
-        pipe.sadd(self._key(f"node:{node_id}:fragments"), h)
+        pipe.hset(self.key_for(f"frag:{h}"), mapping=data)
+        pipe.sadd(self.key_for(f"node:{node_id}:fragments"), h)
         if is_primary:
-            pipe.set(self._key(f"primary:{h}"), node_id)
+            pipe.set(self.key_for(f"primary:{h}"), node_id)
         # LRU tracking: score = last access time.
-        pipe.zadd(self._key("lru"), {h: time.time()})
+        pipe.zadd(self.key_for("lru"), {h: time.time()})
         pipe.execute()
         logger.debug("Stored fragment %s on node %s", h, node_id)
         return True
@@ -124,13 +124,13 @@ class RedisBackend:
             Fragment | None: The fragment, or ``None`` if not
             stored.
         """
-        data = cast(dict[str, str], self.client.hgetall(self._key(f"frag:{content_hash}")))
+        data = cast(dict[str, str], self.client.hgetall(self.key_for(f"frag:{content_hash}")))
         if not data:
             return None
         # Refresh the LRU score on a hit so frequently accessed
         # fragments are protected from eviction.
-        self.client.zadd(self._key("lru"), {content_hash: time.time()})
-        return self._deserialize(data)
+        self.client.zadd(self.key_for("lru"), {content_hash: time.time()})
+        return self.deserialize_fragment(data)
 
     def delete_fragment(self, content_hash: str) -> bool:
         """Remove a fragment from Redis.
@@ -142,9 +142,9 @@ class RedisBackend:
             bool: True if removed.
         """
         pipe = self.client.pipeline()
-        pipe.delete(self._key(f"frag:{content_hash}"))
-        pipe.delete(self._key(f"primary:{content_hash}"))
-        pipe.zrem(self._key("lru"), content_hash)
+        pipe.delete(self.key_for(f"frag:{content_hash}"))
+        pipe.delete(self.key_for(f"primary:{content_hash}"))
+        pipe.zrem(self.key_for("lru"), content_hash)
         pipe.execute()
         logger.debug("Deleted fragment %s", content_hash)
         return True
@@ -163,10 +163,10 @@ class RedisBackend:
             dict[str, int]: Inventory digest. Empty when the
             node holds no fragments.
         """
-        hashes = cast(set[str], self.client.smembers(self._key(f"node:{node_id}:fragments")))
+        hashes = cast(set[str], self.client.smembers(self.key_for(f"node:{node_id}:fragments")))
         digest: dict[str, int] = {}
         for h in hashes:
-            vid = cast(str | None, self.client.hget(self._key(f"frag:{h}"), "version_id"))
+            vid = cast(str | None, self.client.hget(self.key_for(f"frag:{h}"), "version_id"))
             if vid is not None:
                 digest[h] = int(vid)
         return digest
@@ -180,7 +180,7 @@ class RedisBackend:
         Returns:
             set[str]: Set of content hashes.
         """
-        return cast(set[str], self.client.smembers(self._key(f"node:{node_id}:fragments")))
+        return cast(set[str], self.client.smembers(self.key_for(f"node:{node_id}:fragments")))
 
     # ------------------------------------------------------------------
     # Location / directory
@@ -193,7 +193,7 @@ class RedisBackend:
             content_hash: Fragment hash.
             node_id: Node identifier.
         """
-        self.client.sadd(self._key(f"loc:{content_hash}"), node_id)
+        self.client.sadd(self.key_for(f"loc:{content_hash}"), node_id)
 
     def locate(self, content_hash: str) -> set[str]:
         """Return all nodes holding a fragment.
@@ -204,7 +204,7 @@ class RedisBackend:
         Returns:
             set[str]: Set of node identifiers.
         """
-        return cast(set[str], self.client.smembers(self._key(f"loc:{content_hash}")))
+        return cast(set[str], self.client.smembers(self.key_for(f"loc:{content_hash}")))
 
     def get_primary(self, content_hash: str) -> str | None:
         """Return the primary node for a fragment.
@@ -216,7 +216,7 @@ class RedisBackend:
             str | None: Node identifier, or ``None`` if no
             primary has been declared.
         """
-        return cast(str | None, self.client.get(self._key(f"primary:{content_hash}")))
+        return cast(str | None, self.client.get(self.key_for(f"primary:{content_hash}")))
 
     # ------------------------------------------------------------------
     # LRU eviction support
@@ -235,7 +235,7 @@ class RedisBackend:
         Returns:
             list[str]: Hashes ordered by LRU (oldest first).
         """
-        return cast(list[str], self.client.zrange(self._key("lru"), 0, count - 1))
+        return cast(list[str], self.client.zrange(self.key_for("lru"), 0, count - 1))
 
     # ------------------------------------------------------------------
     # Health
@@ -263,7 +263,7 @@ class RedisBackend:
         not call this in production — it will wipe every
         Membrane fragment held in Redis.
         """
-        for key in self.client.scan_iter(match=self._key("*")):
+        for key in self.client.scan_iter(match=self.key_for("*")):
             self.client.delete(key)
 
     # ------------------------------------------------------------------
@@ -271,7 +271,7 @@ class RedisBackend:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _serialize(fragment: Fragment) -> dict[str, str]:
+    def serialize_fragment(fragment: Fragment) -> dict[str, str]:
         """Serialize a fragment into a flat string-keyed dict.
 
         Args:
@@ -296,11 +296,11 @@ class RedisBackend:
         }
 
     @staticmethod
-    def _deserialize(data: dict[str, str]) -> Fragment:
+    def deserialize_fragment(data: dict[str, str]) -> Fragment:
         """Deserialize a fragment from a flat string-keyed dict.
 
         Args:
-            data: Mapping produced by :meth:`_serialize`.
+            data: Mapping produced by :meth:`serialize_fragment`.
 
         Returns:
             Fragment: Reconstructed fragment instance.

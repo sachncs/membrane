@@ -88,7 +88,7 @@ class GPUBackend(ComputeBackend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = CPUBackend._hash_tokens(chunk)
+            h = CPUBackend.hash_tokens(chunk)
             # Allocate a small GPU tensor for the chunk. The
             # sum() forces a synchronous kernel launch so the
             # simulator actually exercises the GPU even when no

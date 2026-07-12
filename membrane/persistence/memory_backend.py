@@ -228,7 +228,7 @@ class InMemoryBackend:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _serialize(fragment: Fragment) -> dict[str, str]:
+    def serialize_fragment(fragment: Fragment) -> dict[str, str]:
         """Serialize a fragment to a flat string-keyed dict.
 
         Used by backends that need a serialization layer (e.g.,
@@ -258,11 +258,11 @@ class InMemoryBackend:
         }
 
     @staticmethod
-    def _deserialize(data: dict[str, str]) -> Fragment:
+    def deserialize_fragment(data: dict[str, str]) -> Fragment:
         """Deserialize a fragment from a flat string-keyed dict.
 
         Args:
-            data: Mapping produced by :meth:`_serialize`.
+            data: Mapping produced by :meth:`serialize_fragment`.
 
         Returns:
             Fragment: Reconstructed fragment instance.

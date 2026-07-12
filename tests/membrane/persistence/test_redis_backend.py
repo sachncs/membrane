@@ -82,8 +82,8 @@ class TestRedisBackend:
 
     def test_serialization_roundtrip(self):
         frag = make_fragment("round", size=42)
-        data = self.backend._serialize(frag)
-        restored = self.backend._deserialize(data)
+        data = self.backend.serialize_fragment(frag)
+        restored = self.backend.deserialize_fragment(data)
         assert restored.content_hash == frag.content_hash
         assert restored.size == frag.size
         assert restored.embedding == frag.embedding

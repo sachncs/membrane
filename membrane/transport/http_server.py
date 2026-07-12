@@ -22,10 +22,10 @@ Endpoints:
 The implementation has three nested classes:
 
 * :class:`HTTPServer` — public façade used by callers.
-* :class:`_MembraneServer` — ``http.server.HTTPServer``
+* :class:`MembraneStdlibHTTPServer` — ``http.server.HTTPServer``
   subclass that holds references to the local node, compute
   backend, transfer service, and cluster manager.
-* :class:`_MembraneHTTPHandler` — request handler that
+* :class:`MembraneHTTPHandler` — request handler that
   dispatches to one of the ``_handle_*`` methods.
 
 Security:
@@ -51,7 +51,7 @@ from membrane.transfer_service import TransferService
 logger = logging.getLogger(__name__)
 
 
-def _serialize_fragment(frag: Fragment) -> dict[str, Any]:
+def serialize_fragment(frag: Fragment) -> dict[str, Any]:
     """Serialize a fragment to a JSON-compatible dict.
 
     Args:
@@ -73,11 +73,11 @@ def _serialize_fragment(frag: Fragment) -> dict[str, Any]:
     }
 
 
-def _deserialize_fragment(data: dict[str, Any]) -> Fragment:
+def deserialize_fragment(data: dict[str, Any]) -> Fragment:
     """Reconstruct a fragment from its serialized form.
 
     Args:
-        data: Mapping produced by :func:`_serialize_fragment`.
+        data: Mapping produced by :func:`serialize_fragment`.
 
     Returns:
         Fragment: Reconstructed fragment instance.
@@ -97,7 +97,7 @@ def _deserialize_fragment(data: dict[str, Any]) -> Fragment:
     )
 
 
-class _MembraneServer(StdlibHTTPServer):
+class MembraneStdlibHTTPServer(StdlibHTTPServer):
     """Custom HTTPServer that holds references to node, compute, and cluster.
 
     Attributes:
@@ -127,22 +127,22 @@ class _MembraneServer(StdlibHTTPServer):
         self.cluster_manager = cluster_manager
 
 
-class _MembraneHTTPHandler(BaseHTTPRequestHandler):
+class MembraneHTTPHandler(BaseHTTPRequestHandler):
     """Request handler for Membrane HTTP transport.
 
     The handler is a thin dispatcher: it parses the URL path,
     reads any JSON body, and forwards to one of the
     ``_handle_*`` methods. JSON serialization is delegated to
-    :meth:`_send_json` / :meth:`_read_json`.
+    :meth:`send_json` / :meth:`read_json`.
     """
 
-    server: _MembraneServer  # type: ignore[misc]
+    server: MembraneStdlibHTTPServer  # type: ignore[misc]
 
     def log_message(self, fmt: str, *args: Any) -> None:
         """Route stdlib HTTP server logs through the Membrane logger."""
         logger.debug(fmt, *args)
 
-    def _send_json(self, status: int, data: dict[str, Any]) -> None:
+    def send_json(self, status: int, data: dict[str, Any]) -> None:
         """Send a JSON response with the given status code.
 
         Args:
@@ -154,7 +154,7 @@ class _MembraneHTTPHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
-    def _read_json(self) -> dict[str, Any]:
+    def read_json(self) -> dict[str, Any]:
         """Read the request body and parse it as JSON.
 
         Returns:
@@ -169,86 +169,86 @@ class _MembraneHTTPHandler(BaseHTTPRequestHandler):
         """Dispatch GET requests to the appropriate handler."""
         path = self.path.split("?")[0]
         if path == "/retrieve":
-            self._handle_retrieve()
+            self.handle_retrieve()
         elif path == "/inventory":
-            self._handle_inventory()
+            self.handle_inventory()
         elif path == "/heartbeat":
-            self._handle_heartbeat()
+            self.handle_heartbeat()
         elif path == "/metrics":
-            self._handle_metrics()
+            self.handle_metrics()
         elif path == "/peers":
-            self._handle_peers()
+            self.handle_peers()
         else:
-            self._send_json(404, {"error": "not found"})
+            self.send_json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
         """Dispatch POST requests to the appropriate handler."""
         path = self.path.split("?")[0]
         if path == "/store":
-            self._handle_store()
+            self.handle_store()
         elif path == "/sync":
-            self._handle_sync()
+            self.handle_sync()
         elif path == "/prefill":
-            self._handle_prefill()
+            self.handle_prefill()
         elif path == "/join":
-            self._handle_join()
+            self.handle_join()
         elif path == "/leave":
-            self._handle_leave()
+            self.handle_leave()
         elif path == "/gossip":
-            self._handle_gossip()
+            self.handle_gossip()
         elif path == "/replicate":
-            self._handle_replicate()
+            self.handle_replicate()
         else:
-            self._send_json(404, {"error": "not found"})
+            self.send_json(404, {"error": "not found"})
 
-    def _handle_store(self) -> None:
+    def handle_store(self) -> None:
         """Handle ``POST /store``."""
-        data = self._read_json()
+        data = self.read_json()
         try:
-            frag = _deserialize_fragment(data["fragment"])
+            frag = deserialize_fragment(data["fragment"])
             is_primary = data.get("is_primary", False)
             ok = self.server.node.store(frag, is_primary=is_primary) if self.server.node else False
-            self._send_json(200 if ok else 500, {"success": ok, "content_hash": frag.content_hash})
+            self.send_json(200 if ok else 500, {"success": ok, "content_hash": frag.content_hash})
         except Exception as exc:
-            self._send_json(500, {"error": str(exc)})
+            self.send_json(500, {"error": str(exc)})
 
-    def _handle_replicate(self) -> None:
+    def handle_replicate(self) -> None:
         """Handle ``POST /replicate`` — store a fragment as a replica."""
-        data = self._read_json()
+        data = self.read_json()
         try:
-            frag = _deserialize_fragment(data["fragment"])
+            frag = deserialize_fragment(data["fragment"])
             ok = self.server.node.store(frag, is_primary=False) if self.server.node else False
-            self._send_json(200 if ok else 500, {"success": ok, "content_hash": frag.content_hash})
+            self.send_json(200 if ok else 500, {"success": ok, "content_hash": frag.content_hash})
         except Exception as exc:
-            self._send_json(500, {"error": str(exc)})
+            self.send_json(500, {"error": str(exc)})
 
-    def _handle_retrieve(self) -> None:
+    def handle_retrieve(self) -> None:
         """Handle ``GET /retrieve?content_hash=...``."""
         from urllib.parse import parse_qs, urlparse
 
         qs = parse_qs(urlparse(self.path).query)
         h = qs.get("content_hash", [None])[0]
         if not h:
-            self._send_json(400, {"error": "missing content_hash"})
+            self.send_json(400, {"error": "missing content_hash"})
             return
         frag = self.server.node.retrieve(h) if self.server.node else None
         if frag:
-            self._send_json(200, {"found": True, "fragment": _serialize_fragment(frag)})
+            self.send_json(200, {"found": True, "fragment": serialize_fragment(frag)})
         else:
-            self._send_json(404, {"found": False, "fragment": None})
+            self.send_json(404, {"found": False, "fragment": None})
 
-    def _handle_inventory(self) -> None:
+    def handle_inventory(self) -> None:
         """Handle ``GET /inventory``."""
         digest = {h: frag.version_id for h, frag in (self.server.node.fragments.items() if self.server.node else {})}
-        self._send_json(200, {"node_id": self.server.node.node_id if self.server.node else "", "digest": digest})
+        self.send_json(200, {"node_id": self.server.node.node_id if self.server.node else "", "digest": digest})
 
-    def _handle_heartbeat(self) -> None:
+    def handle_heartbeat(self) -> None:
         """Handle ``GET /heartbeat``."""
         if not self.server.node:
-            self._send_json(500, {"error": "no node"})
+            self.send_json(500, {"error": "no node"})
             return
         stats = self.server.node.get_stats()
-        self._send_json(200, {
+        self.send_json(200, {
             "node_id": self.server.node.node_id,
             "load": self.server.node.heartbeat(),
             "memory_used_bytes": stats.memory_used_bytes,
@@ -257,13 +257,13 @@ class _MembraneHTTPHandler(BaseHTTPRequestHandler):
             "healthy": True,
         })
 
-    def _handle_metrics(self) -> None:
+    def handle_metrics(self) -> None:
         """Handle ``GET /metrics`` — extended metrics payload."""
         if not self.server.node:
-            self._send_json(500, {"error": "no node"})
+            self.send_json(500, {"error": "no node"})
             return
         stats = self.server.node.get_stats()
-        self._send_json(200, {
+        self.send_json(200, {
             "node_id": self.server.node.node_id,
             "memory_used_bytes": stats.memory_used_bytes,
             "memory_limit_bytes": stats.memory_limit_bytes,
@@ -272,7 +272,7 @@ class _MembraneHTTPHandler(BaseHTTPRequestHandler):
             "load": self.server.node.heartbeat(),
         })
 
-    def _handle_sync(self) -> None:
+    def handle_sync(self) -> None:
         """Handle ``POST /sync`` — pull missing fragments from a source URL.
 
         Reads ``source_url`` from the body, fetches the remote
@@ -281,10 +281,10 @@ class _MembraneHTTPHandler(BaseHTTPRequestHandler):
         ``GET /retrieve``. Each successfully pulled fragment is
         stored locally as a non-primary replica.
         """
-        data = self._read_json()
+        data = self.read_json()
         source_url = data.get("source_url", "")
         if not source_url:
-            self._send_json(400, {"error": "missing source_url"})
+            self.send_json(400, {"error": "missing source_url"})
             return
         try:
             # Pull inventory from remote and transfer missing fragments.
@@ -301,16 +301,16 @@ class _MembraneHTTPHandler(BaseHTTPRequestHandler):
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     remote_frag_data = json.loads(resp.read().decode())
                 if remote_frag_data.get("found"):
-                    frag = _deserialize_fragment(remote_frag_data["fragment"])
+                    frag = deserialize_fragment(remote_frag_data["fragment"])
                     if self.server.node.store(frag, is_primary=False):
                         transferred.append(h)
-            self._send_json(200, {"success": True, "transferred": transferred})
+            self.send_json(200, {"success": True, "transferred": transferred})
         except Exception as exc:
-            self._send_json(500, {"error": str(exc)})
+            self.send_json(500, {"error": str(exc)})
 
-    def _handle_prefill(self) -> None:
+    def handle_prefill(self) -> None:
         """Handle ``POST /prefill`` — run prefill and store fragments as primary."""
-        data = self._read_json()
+        data = self.read_json()
         tokens = data.get("prompt_tokens", [])
         model_id = data.get("model_id", "default")
         backend = self.server.compute_backend or CPUBackend()
@@ -319,57 +319,57 @@ class _MembraneHTTPHandler(BaseHTTPRequestHandler):
             for frag in fragments:
                 if self.server.node:
                     self.server.node.store(frag, is_primary=True)
-            self._send_json(200, {
+            self.send_json(200, {
                 "success": True,
-                "fragments": [_serialize_fragment(f) for f in fragments],
+                "fragments": [serialize_fragment(f) for f in fragments],
             })
         except Exception as exc:
-            self._send_json(500, {"error": str(exc)})
+            self.send_json(500, {"error": str(exc)})
 
-    def _handle_join(self) -> None:
+    def handle_join(self) -> None:
         """Handle ``POST /join``."""
-        data = self._read_json()
+        data = self.read_json()
         node_id = data.get("node_id", "")
         host = data.get("host", "")
         port = data.get("port", 0)
         if not node_id or not host or not port:
-            self._send_json(400, {"error": "missing node_id, host, or port"})
+            self.send_json(400, {"error": "missing node_id, host, or port"})
             return
         if self.server.cluster_manager:
             result = self.server.cluster_manager.on_peer_join(node_id, host, port)
-            self._send_json(200, result)
+            self.send_json(200, result)
         else:
-            self._send_json(503, {"error": "cluster manager not enabled"})
+            self.send_json(503, {"error": "cluster manager not enabled"})
 
-    def _handle_leave(self) -> None:
+    def handle_leave(self) -> None:
         """Handle ``POST /leave``."""
-        data = self._read_json()
+        data = self.read_json()
         node_id = data.get("node_id", "")
         if not node_id:
-            self._send_json(400, {"error": "missing node_id"})
+            self.send_json(400, {"error": "missing node_id"})
             return
         if self.server.cluster_manager:
             self.server.cluster_manager.on_peer_leave(node_id)
-            self._send_json(200, {"success": True})
+            self.send_json(200, {"success": True})
         else:
-            self._send_json(503, {"error": "cluster manager not enabled"})
+            self.send_json(503, {"error": "cluster manager not enabled"})
 
-    def _handle_gossip(self) -> None:
+    def handle_gossip(self) -> None:
         """Handle ``POST /gossip``."""
-        data = self._read_json()
+        data = self.read_json()
         if self.server.cluster_manager:
             result = self.server.cluster_manager.on_gossip(data)
-            self._send_json(200, result)
+            self.send_json(200, result)
         else:
-            self._send_json(503, {"error": "cluster manager not enabled"})
+            self.send_json(503, {"error": "cluster manager not enabled"})
 
-    def _handle_peers(self) -> None:
+    def handle_peers(self) -> None:
         """Handle ``GET /peers``."""
         if self.server.cluster_manager:
             peers = self.server.cluster_manager.get_peers()
-            self._send_json(200, {"peers": peers})
+            self.send_json(200, {"peers": peers})
         else:
-            self._send_json(503, {"error": "cluster manager not enabled"})
+            self.send_json(503, {"error": "cluster manager not enabled"})
 
 
 class HTTPServer:
@@ -412,7 +412,7 @@ class HTTPServer:
         self.compute_backend = compute_backend
         self.transfer_service = transfer_service or TransferService()
         self.cluster_manager = cluster_manager
-        self._server: _MembraneServer | None = None
+        self._server: MembraneStdlibHTTPServer | None = None
 
     def start(self) -> None:
         """Start the HTTP server (blocking).
@@ -422,9 +422,9 @@ class HTTPServer:
         :meth:`stop` from another thread to terminate the
         serve loop.
         """
-        self._server = _MembraneServer(
+        self._server = MembraneStdlibHTTPServer(
             (self.host, self.port),
-            _MembraneHTTPHandler,
+            MembraneHTTPHandler,
             node=self.node,
             compute_backend=self.compute_backend,
             transfer_service=self.transfer_service,

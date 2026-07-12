@@ -156,7 +156,7 @@ class GossipRequest(BaseModel):
 # Serialization helpers
 # ------------------------------------------------------------------
 
-def _serialize_fragment(frag: Fragment) -> dict[str, Any]:
+def serialize_fragment(frag: Fragment) -> dict[str, Any]:
     """Serialize a fragment to a JSON-compatible dict.
 
     Args:
@@ -178,7 +178,7 @@ def _serialize_fragment(frag: Fragment) -> dict[str, Any]:
     }
 
 
-def _deserialize_fragment(data: FragmentPayload) -> Fragment:
+def deserialize_fragment(data: FragmentPayload) -> Fragment:
     """Reconstruct a fragment from a Pydantic payload.
 
     Args:
@@ -271,7 +271,7 @@ def create_app(
             return {"found": False, "fragment": None}
         frag = app.state.node.retrieve(content_hash)
         if frag:
-            return {"found": True, "fragment": _serialize_fragment(frag)}
+            return {"found": True, "fragment": serialize_fragment(frag)}
         return {"found": False, "fragment": None}
 
     @app.get("/inventory")
@@ -297,7 +297,7 @@ def create_app(
     def store(req: StoreRequest) -> dict[str, Any]:
         """``POST /store`` — store a fragment on the local node."""
         try:
-            frag = _deserialize_fragment(req.fragment)
+            frag = deserialize_fragment(req.fragment)
             ok = (
                 app.state.node.store(frag, is_primary=req.is_primary)
                 if app.state.node
@@ -312,7 +312,7 @@ def create_app(
     def replicate(req: ReplicateRequest) -> dict[str, Any]:
         """``POST /replicate`` — store a fragment as a non-primary replica."""
         try:
-            frag = _deserialize_fragment(req.fragment)
+            frag = deserialize_fragment(req.fragment)
             ok = app.state.node.store(frag, is_primary=False) if app.state.node else False
             return {"success": ok, "content_hash": frag.content_hash}
         except Exception as exc:
@@ -342,7 +342,7 @@ def create_app(
                 with urllib.request.urlopen(ret_req, timeout=5) as resp:
                     remote_frag_data = json.loads(resp.read().decode())
                 if remote_frag_data.get("found"):
-                    frag = _deserialize_fragment(FragmentPayload(**remote_frag_data["fragment"]))
+                    frag = deserialize_fragment(FragmentPayload(**remote_frag_data["fragment"]))
                     if app.state.node.store(frag, is_primary=False):
                         transferred.append(h)
             return {"success": True, "transferred": transferred}
@@ -361,7 +361,7 @@ def create_app(
                     app.state.node.store(frag, is_primary=True)
             return {
                 "success": True,
-                "fragments": [_serialize_fragment(f) for f in fragments],
+                "fragments": [serialize_fragment(f) for f in fragments],
             }
         except Exception as exc:
             logger.exception("prefill failed")

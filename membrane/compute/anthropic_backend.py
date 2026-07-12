@@ -74,7 +74,7 @@ class AnthropicBackend(ComputeBackend):
         except ImportError:
             logger.warning("AnthropicBackend: httpx not installed")
 
-    def _hash_tokens(self, tokens: list[int]) -> str:
+    def hash_tokens(self, tokens: list[int]) -> str:
         """MD5-hash a token chunk.
 
         Args:
@@ -107,7 +107,7 @@ class AnthropicBackend(ComputeBackend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self._hash_tokens(chunk)
+            h = self.hash_tokens(chunk)
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),

@@ -19,7 +19,7 @@ Failure modes:
   tokenizer remain ``None``; prefill and generate fall back to a
   small simulation.
 * The forward pass raises for any reason → the prefill result is
-  produced by :meth:`_simulate_prefill` and a warning is logged.
+  produced by :meth:`simulate_prefill` and a warning is logged.
 
 The embedding is truncated to 256 dimensions to keep
 :attr:`membrane.fragment.Fragment.embedding` bounded regardless
@@ -68,9 +68,9 @@ class TransformersBackend(ComputeBackend):
         self._tokenizer: Any | None = None
         self._torch: Any | None = None
         self._actual_device: str = "cpu"
-        self._load_model()
+        self.load_model()
 
-    def _load_model(self) -> None:
+    def load_model(self) -> None:
         """Load ``model_id`` and its tokenizer.
 
         All failures (missing dependencies, network errors,
@@ -100,7 +100,7 @@ class TransformersBackend(ComputeBackend):
         except Exception as exc:
             logger.warning("TransformersBackend: failed to load model (%s)", exc)
 
-    def _hash_tokens(self, tokens: list[int]) -> str:
+    def hash_tokens(self, tokens: list[int]) -> str:
         """MD5-hash a token chunk.
 
         Args:
@@ -129,7 +129,7 @@ class TransformersBackend(ComputeBackend):
             list[Fragment]: One fragment per 128-token window.
         """
         if self._model is None or self._tokenizer is None:
-            return self._simulate_prefill(prompt_tokens, model_id)
+            return self.simulate_prefill(prompt_tokens, model_id)
 
         try:
             import torch
@@ -153,13 +153,13 @@ class TransformersBackend(ComputeBackend):
             logger.warning(
                 "Transformers forward pass failed (%s); falling back to simulation", exc
             )
-            return self._simulate_prefill(prompt_tokens, model_id)
+            return self.simulate_prefill(prompt_tokens, model_id)
 
         window_size = 128
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self._hash_tokens(chunk)
+            h = self.hash_tokens(chunk)
             # Average embeddings over the chunk window so each
             # fragment is represented by a single fixed-size
             # vector.
@@ -251,7 +251,7 @@ class TransformersBackend(ComputeBackend):
             return "transformers(unloaded)"
         return f"transformers({self.model_id},{self._actual_device})"
 
-    def _simulate_prefill(
+    def simulate_prefill(
         self,
         prompt_tokens: list[int],
         model_id: str,
@@ -271,7 +271,7 @@ class TransformersBackend(ComputeBackend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self._hash_tokens(chunk)
+            h = self.hash_tokens(chunk)
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),
