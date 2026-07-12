@@ -14,7 +14,8 @@ class TestGrpcServer:
     """Test suite for gRPC transport."""
 
     @pytest.fixture(scope="class")
-    def server(self):
+    @classmethod
+    def server(cls):
         node = MembraneNode("grpc-test", max_memory_bytes=10000)
         backend = CPUBackend()
         srv = GrpcServer(node=node, host="127.0.0.1", port=50053, compute_backend=backend)
