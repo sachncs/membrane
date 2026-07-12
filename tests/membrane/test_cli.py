@@ -1,7 +1,12 @@
 """Tests for Membrane CLI."""
 
+import os
 import subprocess
 import sys
+
+# Force a wide terminal width so Rich's --help output is not
+# truncated on narrow CI terminals (default 80 columns).
+_TEST_ENV = {**os.environ, "COLUMNS": "200"}
 
 
 class TestCLI:
@@ -12,6 +17,7 @@ class TestCLI:
             [sys.executable, "-m", "membrane.cli", "config"],
             capture_output=True,
             text=True,
+            env=_TEST_ENV,
         )
         assert result.returncode == 0
         assert "Membrane Configuration" in result.stdout
@@ -21,6 +27,7 @@ class TestCLI:
             [sys.executable, "-m", "membrane.cli", "serve", "--help"],
             capture_output=True,
             text=True,
+            env=_TEST_ENV,
         )
         assert result.returncode == 0
         assert "--peer" in result.stdout
@@ -32,6 +39,7 @@ class TestCLI:
             [sys.executable, "-m", "membrane.cli", "cluster-status", "--help"],
             capture_output=True,
             text=True,
+            env=_TEST_ENV,
         )
         assert result.returncode == 0
         assert "--host" in result.stdout
@@ -42,6 +50,7 @@ class TestCLI:
             [sys.executable, "-m", "membrane.cli", "llm-status", "--help"],
             capture_output=True,
             text=True,
+            env=_TEST_ENV,
         )
         assert result.returncode == 0
         assert "--host" in result.stdout
@@ -52,6 +61,7 @@ class TestCLI:
             [sys.executable, "-m", "membrane.cli", "serve", "--help"],
             capture_output=True,
             text=True,
+            env=_TEST_ENV,
         )
         assert result.returncode == 0
         assert "--compute" in result.stdout
