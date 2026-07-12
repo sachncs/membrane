@@ -7,7 +7,6 @@ import pytest
 from membrane.compute.transformers_backend import TransformersBackend
 from membrane.fragment import Fragment
 
-
 # Skip the success-path test when torch is not installed. The
 # generate() implementation imports torch to set up the
 # torch.no_grad() context manager; without torch the call falls
