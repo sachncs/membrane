@@ -28,7 +28,8 @@ class TestHTTPServer:
     """Test suite for HTTPServer."""
 
     @pytest.fixture(scope="class")
-    def server(self):
+    @classmethod
+    def server(cls):
         node = MembraneNode("test-http", max_memory_bytes=10000)
         srv = HTTPServer(node=node, host="127.0.0.1", port=18080, compute_backend=CPUBackend())
         srv.run_in_thread()
