@@ -64,9 +64,11 @@ class GrpcServer:
         self._server: Any | None = None
         self._grpc: Any | None = None
         try:
-            import grpc  # type: ignore[import-untyped]
+            # gRPC lacks type stubs, hence the type: ignore on the
+            # import. The alias is captured for later use.
+            import grpc as grpc_module  # type: ignore[import-untyped]
 
-            self._grpc = grpc
+            self._grpc = grpc_module
         except ImportError:
             logger.warning(
                 "grpcio not installed; GrpcServer will not function. "

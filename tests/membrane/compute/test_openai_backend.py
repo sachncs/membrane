@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from membrane.compute.openai_backend import OpenAIBackend
@@ -51,7 +52,12 @@ class TestOpenAIBackend:
 
     def test_generate_failure(self, backend):
         mock_client = MagicMock()
-        mock_client.post.side_effect = Exception("rate limit")
+        # Simulate an HTTP error returned by the server (e.g. 429).
+        mock_client.post.side_effect = httpx.HTTPStatusError(
+            "rate limit",
+            request=MagicMock(),
+            response=MagicMock(status_code=429),
+        )
         backend._client = mock_client
 
         result = backend.generate([1, 2], "m")
@@ -67,6 +73,7 @@ class TestOpenAIBackend:
 
     def test_available_when_unhealthy(self, backend):
         mock_client = MagicMock()
-        mock_client.get.side_effect = Exception("timeout")
+        # Simulate a network timeout during the availability probe.
+        mock_client.get.side_effect = httpx.TimeoutException("timeout")
         backend._client = mock_client
         assert backend.available() is False

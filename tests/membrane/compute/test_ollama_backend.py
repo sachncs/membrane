@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from membrane.compute.ollama_backend import OllamaBackend
@@ -51,7 +52,9 @@ class TestOllamaBackend:
 
     def test_generate_failure(self, backend):
         mock_client = MagicMock()
-        mock_client.post.side_effect = Exception("timeout")
+        # Simulate a network timeout. httpx.TimeoutException is the
+        # concrete exception httpx raises for read/write timeouts.
+        mock_client.post.side_effect = httpx.TimeoutException("timeout")
         backend._client = mock_client
 
         result = backend.generate([1, 2], "m")
@@ -67,6 +70,7 @@ class TestOllamaBackend:
 
     def test_available_when_unhealthy(self, backend):
         mock_client = MagicMock()
-        mock_client.get.side_effect = Exception("connection refused")
+        # Simulate a refused connection with httpx.ConnectError.
+        mock_client.get.side_effect = httpx.ConnectError("connection refused")
         backend._client = mock_client
         assert backend.available() is False

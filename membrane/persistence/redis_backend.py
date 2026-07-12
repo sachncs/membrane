@@ -67,6 +67,10 @@ class RedisBackend:
         self.client = redis.from_url(redis_url, decode_responses=True)
         self.prefix = prefix
 
+        # Expose RedisError so callers can narrow exception handling
+        # without re-importing redis themselves.
+        self.RedisError = redis.RedisError
+
     def key_for(self, suffix: str) -> str:
         """Return the prefixed Redis key for ``suffix``.
 
@@ -253,7 +257,10 @@ class RedisBackend:
         """
         try:
             return cast(bool, self.client.ping())
-        except Exception:
+        except (self.RedisError, OSError):
+            # Connection refused, timeout, or any other Redis/network
+            # failure translates to "not reachable" from the caller's
+            # perspective.
             return False
 
     def flush(self) -> None:
