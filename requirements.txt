@@ -1,6 +1,6 @@
 # Membrane — Core dependencies
 typer>=0.26.7
-rich>=13.0
+rich>=15.0.0
 
 # Dev dependencies
 pytest>=7.0
