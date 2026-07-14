@@ -28,7 +28,7 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
    ```
 3. **Add upstream remote**:
    ```bash
-   git remote add upstream https://github.com/sachn-cs/membrane.git
+   git remote add upstream https://github.com/sachncs/membrane.git
    ```
 4. **Create a feature branch** from `master`:
    ```bash
@@ -192,4 +192,4 @@ python -m mypy membrane/
 
 ## Questions?
 
-Open a [GitHub Discussion](https://github.com/sachn-cs/membrane/discussions) if you have questions or need help getting started.
+Open a [GitHub Discussion](https://github.com/sachncs/membrane/discussions) if you have questions or need help getting started.

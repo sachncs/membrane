@@ -9,7 +9,7 @@ Membrane is a **Global Contextual Memory Fabric** for LLM inference. It provides
 ### 1. Install
 
 ```bash
-git clone https://github.com/sachn-cs/membrane.git
+git clone https://github.com/sachncs/membrane.git
 cd membrane
 python -m venv .venv
 source .venv/bin/activate
