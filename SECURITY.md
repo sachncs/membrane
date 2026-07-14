@@ -12,7 +12,7 @@ If you discover a security vulnerability within Membrane, please report it respo
 
 **Please do NOT report security vulnerabilities through public GitHub issues.**
 
-Instead, please report them via [GitHub Security Advisories](https://github.com/sachn-cs/membrane/security/advisories/new).
+Instead, please report them via [GitHub Security Advisories](https://github.com/sachncs/membrane/security/advisories/new).
 
 ### What to include
 

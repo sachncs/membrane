@@ -117,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI with live TUI dashboard, cluster status, and interactive setup wizard.
 - Comprehensive test suite (548+ tests) and CI pipeline for Python 3.10–3.13.
 
-[Unreleased]: https://github.com/sachn-cs/membrane/compare/v0.1.2...HEAD
-[0.1.2]: https://github.com/sachn-cs/membrane/compare/v0.1.1...v0.1.2
-[0.1.1]: https://github.com/sachn-cs/membrane/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/sachn-cs/membrane/releases/tag/v0.1.0
+[Unreleased]: https://github.com/sachncs/membrane/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/sachncs/membrane/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/sachncs/membrane/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/sachncs/membrane/releases/tag/v0.1.0

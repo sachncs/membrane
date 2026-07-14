@@ -8,7 +8,7 @@ Membrane can be deployed as a **library**, **simulator**, or **containerized ser
 
 ```bash
 # Clone and install in editable mode
-git clone https://github.com/sachn-cs/membrane.git
+git clone https://github.com/sachncs/membrane.git
 cd membrane
 pip install -e ".[dev]"
 

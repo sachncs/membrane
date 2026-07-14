@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "sachn-cs"},
+    {name = "Sachin <sachncs@gmail.com>"},
 ]
 keywords = ["llm", "inference", "serving", "disaggregation", "simulation", "kv-cache", "memory-fabric"]
 classifiers = [
@@ -30,11 +30,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sachn-cs/membrane"
-Repository = "https://github.com/sachn-cs/membrane"
-Issues = "https://github.com/sachn-cs/membrane/issues"
-Changelog = "https://github.com/sachn-cs/membrane/blob/master/CHANGELOG.md"
-Documentation = "https://github.com/sachn-cs/membrane/tree/master/docs"
+Homepage = "https://github.com/sachncs/membrane"
+Repository = "https://github.com/sachncs/membrane"
+Issues = "https://github.com/sachncs/membrane/issues"
+Changelog = "https://github.com/sachncs/membrane/blob/master/CHANGELOG.md"
+Documentation = "https://github.com/sachncs/membrane/tree/master/docs"
 
 [project.optional-dependencies]
 dev = [
