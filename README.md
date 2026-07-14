@@ -5,6 +5,7 @@
     <a href="#installation"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue" alt="Python"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
     <a href="https://github.com/sachncs/membrane/actions"><img src="https://img.shields.io/github/actions/workflow/status/sachncs/membrane/ci.yml?branch=master" alt="CI"></a>
+    <a href="https://pypi.org/project/membrane/"><img src="https://img.shields.io/pypi/v/membrane" alt="PyPI"></a>
     <a href="https://github.com/sachncs/membrane/stargazers"><img src="https://img.shields.io/github/stars/sachncs/membrane" alt="Stars"></a>
     <a href="https://mypy-lang.org/"><img src="https://img.shields.io/badge/mypy-strict-green.svg" alt="Checked with mypy"></a>
   </p>
@@ -41,6 +42,12 @@ reconstruction-driven retrieval.
 
 ## Installation
 
+### From PyPI
+
+```bash
+pip install membrane
+```
+
 ### From source
 
 ```bash
@@ -68,26 +75,6 @@ pip install -e ".[local-llm]"
 
 ## Quick Start
 
-### Python API
-
-```python
-import membrane
-from membrane.fragment import Fragment
-from membrane.fragment_store import FragmentStore
-from membrane.structural_signature import StructuralSignature
-
-# Verify install and inspect the public surface.
-print(f"{len(membrane.__all__)} exports available")
-
-# Create a fragment store and store a fragment.
-sig = StructuralSignature(model="llama-3", layer=0, token_span=(0, 128))
-frag = Fragment(content=b"kv-data", signature=sig)
-
-store = FragmentStore()
-store.put(frag)
-retrieved = store.get(frag.content_hash)
-```
-
 ### CLI
 
 ```bash
@@ -108,6 +95,26 @@ membrane cluster-status
 membrane llm-status
 ```
 
+### Python API
+
+```python
+import membrane
+from membrane.fragment import Fragment
+from membrane.fragment_store import FragmentStore
+from membrane.structural_signature import StructuralSignature
+
+# Verify install and inspect the public surface.
+print(f"{len(membrane.__all__)} exports available")
+
+# Create a fragment store and store a fragment.
+sig = StructuralSignature(model="llama-3", layer=0, token_span=(0, 128))
+frag = Fragment(content=b"kv-data", signature=sig)
+
+store = FragmentStore()
+store.put(frag)
+retrieved = store.get(frag.content_hash)
+```
+
 ### Docker
 
 ```bash
@@ -124,12 +131,15 @@ docker compose --profile test run --rm membrane-tests
 
 ### Compute and transport
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--compute` | `cpu` | `cpu`, `gpu`, `ollama`, `openai`, `anthropic`, `transformers` |
-| `--transport` | `http` | `http` (FastAPI), `stdlib` (stdlib HTTP), or `grpc` |
-| `--redis` | _disabled_ | Redis URL when set, e.g. `redis://localhost:6379/0` |
-| `--max-memory` | `1<<30` | Per-node memory budget in bytes |
+| Flag | Env Variable | Default | Description |
+|------|--------------|---------|-------------|
+| `--compute` | `MEMBRANE_COMPUTE` | `cpu` | `cpu`, `gpu`, `ollama`, `openai`, `anthropic`, `transformers` |
+| `--transport` | `MEMBRANE_TRANSPORT` | `http` | `http` (FastAPI), `stdlib` (stdlib HTTP), or `grpc` |
+| `--redis` | `MEMBRANE_REDIS_URL` | _disabled_ | Redis URL when set, e.g. `redis://localhost:6379/0` |
+| `--max-memory` | — | `1<<30` | Per-node memory budget in bytes |
+| `--port` | `MEMBRANE_PORT` | `8080` | Server listen port |
+| `--host` | `MEMBRANE_HOST` | `0.0.0.0` | Server bind host |
+| `--node-id` | `MEMBRANE_NODE_ID` | `membrane-0` | Unique node identifier |
 
 ### Cluster and replication
 
@@ -149,20 +159,56 @@ docker compose --profile test run --rm membrane-tests
 | `--llm-model` | _none_ | Model identifier (e.g. `llama3.2`, `gpt-4o-mini`, `claude-3-sonnet`) |
 | `--api-key` | _none_ | API key for OpenAI / Anthropic |
 
-### Environment variables
+### Logging
 
-See [`.env.example`](.env.example) for the full list. The most
-commonly-used entries are:
+| Variable | Env Variable | Default | Description |
+|----------|--------------|---------|-------------|
+| Log level | `MEMBRANE_LOG_LEVEL` | `INFO` | Logging level |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MEMBRANE_LOG_LEVEL` | `INFO` | Logging level |
-| `MEMBRANE_REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
-| `MEMBRANE_NODE_ID` | `membrane-0` | Unique node identifier |
-| `MEMBRANE_TRANSPORT` | `http` | Transport protocol |
-| `MEMBRANE_COMPUTE` | `cpu` | Compute backend |
-| `MEMBRANE_PORT` | `8080` | Server listen port |
-| `MEMBRANE_HOST` | `0.0.0.0` | Server bind host |
+See [`.env.example`](.env.example) for the full list.
+
+---
+
+## API
+
+| Symbol | Type | Description |
+|--------|------|-------------|
+| `Fragment` | class | Content-addressed KV segment with a `StructuralSignature` |
+| `FragmentStore` | class | Tiered-eviction content-addressed store |
+| `StructuralSignature` | dataclass | Token-span + layer metadata for fragments |
+| `IndexSystem` | class | Facade over exact, semantic, positional, and co-access indices |
+| `ReconstructionEngine` | class | Rebuilds a context from fragments, falls back to prefill |
+| `ClusterManager` | class | Bootstrap, heartbeat, gossip, replication, failure detection |
+| `ShardManager` | class | Consistent-hash shard assignment with rebalancing |
+| `EconomicRouter` | class | `argmax(value_density - cost)` routing policy |
+| `LatencyRouter` | class | Lowest-latency holder routing policy |
+| `JointOptimizer` | class | Joint compute + memory placement optimiser |
+| `MembraneServer` | class | Unified server (CLI + transports) |
+
+---
+
+## Examples
+
+```bash
+# 1. Reproduce the paper's analytical throughput curves.
+python scripts/demo.py
+
+# 2. Run the dual-timescale scheduler simulator end-to-end.
+python scripts/demo_full.py
+
+# 3. Spin up a single-node server with the TUI dashboard.
+membrane serve --node-id n1 --port 8080 --transport http --compute cpu
+membrane dashboard --host localhost --port 8080
+
+# 4. Three-node cluster with the CPU backend.
+membrane serve --node-id n1 --port 8080 --transport http --peer localhost:8081 --peer localhost:8082
+membrane serve --node-id n2 --port 8081 --transport http --peer localhost:8080 --peer localhost:8082
+membrane serve --node-id n3 --port 8082 --transport http --peer localhost:8080 --peer localhost:8081
+membrane cluster-status --host localhost --port 8080
+```
+
+The [`docs/`](docs/) directory hosts architecture notes, deployment recipes,
+and an FAQ.
 
 ---
 
@@ -338,6 +384,31 @@ refactor: convert semi-private attributes to public API
 test: add parity tests for cache vs streamed memory
 chore: update ruff config
 ```
+
+---
+
+## Testing
+
+```bash
+pytest tests/ -v
+pytest tests/ --cov=membrane --cov-report=term-missing
+```
+
+---
+
+## Build
+
+```bash
+python -m build
+```
+
+---
+
+## Release
+
+See [docs/release.md](docs/release.md) — version is bumped in `pyproject.toml`,
+the changelog updated, a `vX.Y.Z` tag is cut, and the PyPI publishing workflow
+publishes the source and wheel distributions.
 
 ---
 
