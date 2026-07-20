@@ -42,7 +42,7 @@ dev = [
     "pytest-cov>=4.0",
     "mypy>=2.1.0",
     "redis>=8.0.1",
-    "ruff>=0.15.21",
+    "ruff>=0.15.22",
     # Server extras are needed at test-collection time because the
     # compute-backend tests import httpx and the integration /
     # transport tests import fastapi and grpcio.
