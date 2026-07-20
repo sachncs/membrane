@@ -40,7 +40,7 @@ Documentation = "https://github.com/sachncs/membrane/tree/master/docs"
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=4.0",
-    "mypy>=2.1.0",
+    "mypy>=2.3.0",
     "redis>=8.0.1",
     "ruff>=0.15.21",
     # Server extras are needed at test-collection time because the
