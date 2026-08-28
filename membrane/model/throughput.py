@@ -40,7 +40,7 @@ def kv_throughput(length: int) -> float:
     Returns:
         float: KV throughput in Gbps.
     """
-    return profiler.kv_throughput_gbps(length)
+    return profiler.kv_throughput(length)
 
 
 def stage_throughput_membrane(
@@ -70,8 +70,8 @@ def stage_throughput_membrane(
     Returns:
         float: Membrane throughput in requests per second.
     """
-    compute_limit = num_instances / profiler.prefill_time_seconds(long_length, compute_scale)
-    size_mib = profiler.kv_size_mib(long_length)
+    compute_limit = num_instances / profiler.prefill_time(long_length, compute_scale)
+    size_mib = profiler.kv_size(long_length)
     # Convert Gbps to MiB/s: 1 Gbps = 1e9 bits/s = 1e9/8 bytes/s
     # = 1e9/8/1024/1024 MiB/s.
     bandwidth_mib_per_s = egress_bandwidth_gbps * 1e9 / 8.0 / (1024.0 * 1024.0)
@@ -81,7 +81,7 @@ def stage_throughput_membrane(
     return min(compute_limit, bandwidth_limit)
 
 
-def stage_throughput_pd_p(
+def prefill_throughput(
     num_instances: int,
     short_length: int,
     compute_scale: float = 1.0,
@@ -103,10 +103,10 @@ def stage_throughput_pd_p(
     Returns:
         float: PD-P throughput in requests per second.
     """
-    return num_instances / profiler.prefill_time_seconds(short_length, compute_scale)
+    return num_instances / profiler.prefill_time(short_length, compute_scale)
 
 
-def stage_throughput_pd_d(
+def decode_throughput(
     num_instances: int,
     max_batch_size: int,
     decode_time_seconds: float,

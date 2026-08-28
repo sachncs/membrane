@@ -19,7 +19,7 @@ class EmptyFragmentAdapter(Adapter):
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> PrefillResult:
         return PrefillResult(
-            kv_size_mib=0.0,
+            kv_size=0.0,
             latency_seconds=0.0,
             routing_decision=None,
             fragments=[],
@@ -54,7 +54,7 @@ class ControlledAdapter(Adapter):
             version_id=1,
         )
         return PrefillResult(
-            kv_size_mib=1.0,
+            kv_size=1.0,
             latency_seconds=0.01,
             routing_decision=None,
             fragments=[frag],
@@ -81,7 +81,7 @@ async def test_fastest_node_wins_race():
     assert fast.retrieve("fast-10") is not None
     # Slower nodes may or may not have stored depending on cancellation timing,
     # but the *returned* result must come from the winning adapter call.
-    assert result.kv_size_mib == 1.0
+    assert result.kv_size == 1.0
     assert result.fragments[0].content_hash == "fast-10"
 
 
@@ -158,7 +158,7 @@ async def test_empty_fragments_treated_as_failure():
             self.calls += 1
             if self.calls == 1:
                 return PrefillResult(
-                    kv_size_mib=0.0,
+                    kv_size=0.0,
                     latency_seconds=0.0,
                     routing_decision=None,
                     fragments=[],

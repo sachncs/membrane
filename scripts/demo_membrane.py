@@ -70,7 +70,7 @@ def main():
     logger.info("Fragment 0 located on nodes: %s", locations)
 
     # Optimal nodes for reconstruction
-    optimal = directory.optimal_nodes_for_reconstruction(
+    optimal = directory.best_nodes(
         prompt_tokens, model_id="kimi-linear-1t", k=2
     )
     logger.info("Optimal nodes for reconstruction: %s", optimal)

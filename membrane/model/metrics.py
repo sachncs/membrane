@@ -49,11 +49,11 @@ def compute_ttft(
     Returns:
         float: Estimated TTFT in seconds.
     """
-    prefill = profiler.prefill_time_seconds(length, compute_scale)
+    prefill = profiler.prefill_time(length, compute_scale)
     if target == "pd-p":
         return prefill
 
-    size_mib = profiler.kv_size_mib(length)
+    size_mib = profiler.kv_size(length)
     # MiB -> Gbit: size_mib * 1024 * 1024 * 8 / 1e9.
     size_gbit = size_mib * 1024.0 * 1024.0 * 8.0 / 1e9
     transfer_time = size_gbit / membrane_bandwidth_gbps
@@ -131,8 +131,8 @@ def bandwidth_utilization(
     if fraction_to_membrane <= 0.0:
         return 0.0
 
-    size_mib = profiler.kv_size_mib(mean_long_length)
-    time_s = profiler.prefill_time_seconds(mean_long_length)
+    size_mib = profiler.kv_size(mean_long_length)
+    time_s = profiler.prefill_time(mean_long_length)
     # MiB per second for all offloaded requests.
     mib_per_s = lambda_rate * fraction_to_membrane * size_mib / time_s
     # Convert to Gbps: 1 MiB/s = 1024*1024*8/1e9 Gbps.

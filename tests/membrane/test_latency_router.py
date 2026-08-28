@@ -27,21 +27,21 @@ class TestLatencyRouter:
         local = Node("local")
         local.store(make_fragment("abc"))
         router = Latency()
-        node_id = router.route_local_or_replica("abc", local, [])
+        node_id = router.pick_target("abc", local, [])
         assert node_id == "local"
 
     def test_route_fallback_to_origin_when_no_candidates(self):
         """When no candidate has the fragment, should fall back to origin."""
         local = Node("local")
         router = Latency(origin_node_id="origin-1")
-        node_id = router.route_local_or_replica("abc", local, [])
+        node_id = router.pick_target("abc", local, [])
         assert node_id == "origin-1"
 
     def test_route_fallback_to_local_when_no_origin_set(self):
         """When no origin is configured, fallback to local node."""
         local = Node("local")
         router = Latency()
-        node_id = router.route_local_or_replica("abc", local, [])
+        node_id = router.pick_target("abc", local, [])
         assert node_id == "local"
 
     def test_route_nearest_replica(self):
@@ -51,7 +51,7 @@ class TestLatencyRouter:
         r1.store(make_fragment("abc"))
         r2.store(make_fragment("abc"))
         router = Latency(latency_table={"replica-east": 10.0, "replica-west": 50.0})
-        node_id = router.route_local_or_replica("abc", local, [r1, r2])
+        node_id = router.pick_target("abc", local, [r1, r2])
         assert node_id == "replica-east"
 
     def test_add_latency_updates_table(self):
@@ -69,14 +69,14 @@ class TestLatencyRouter:
         r1 = Node("replica")
         r1.store(make_fragment("abc"))
         router = Latency(latency_table={"local": 100.0, "replica": 1.0})
-        node_id = router.route_local_or_replica("abc", local, [r1])
+        node_id = router.pick_target("abc", local, [r1])
         assert node_id == "local"
 
     def test_origin_fallback_overrides_local_when_no_replica(self):
         """Origin fallback should be preferred over local when no replica holds fragment."""
         local = Node("local")
         router = Latency(origin_node_id="origin-1")
-        node_id = router.route_local_or_replica("abc", local, [])
+        node_id = router.pick_target("abc", local, [])
         assert node_id == "origin-1"
 
     def test_origin_id_stored_in_attribute(self):

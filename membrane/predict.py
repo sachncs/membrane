@@ -6,7 +6,7 @@ staging decisions:
 
 * :meth:`predict_kv_size` — expected KV cache footprint in MiB
   for a prompt of a given length, derived from the analytical
-  :func:`membrane.model.profiler.kv_size_mib` formula.
+  :func:`membrane.model.profiler.kv_size` formula.
 * :meth:`predict_reuse_probability` — heuristic probability that
   a fragment will be reused based on recent session activity.
 * :meth:`predict_optimal_region` — best node to serve a prompt
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 from membrane.node import Node
-from membrane.model.profiler import kv_size_mib
+from membrane.model.profiler import kv_size
 
 
 class Predict:
@@ -55,7 +55,7 @@ class Predict:
             float: Estimated KV size in MiB after applying
             ``kv_size_bias``.
         """
-        return kv_size_mib(len(prompt_tokens)) * self.kv_size_bias
+        return kv_size(len(prompt_tokens)) * self.kv_size_bias
 
     def predict_reuse_probability(
         self,

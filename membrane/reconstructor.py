@@ -69,7 +69,7 @@ class ReconstructorConfig:
         max_prefix_attempts: Maximum number of prefix lengths
             scanned when searching for an exact match. Caps the
             worst-case cost of
-            :meth:`Reconstructor.find_longest_exact_match`.
+            :meth:`Reconstructor.longest_match`.
     """
 
     max_gap_tokens: int = 256
@@ -143,7 +143,7 @@ class Reconstructor:
         coverage = [False] * length
 
         # Step 1: longest exact prefix match.
-        longest = self.find_longest_exact_match(prompt_tokens, model_id)
+        longest = self.longest_match(prompt_tokens, model_id)
         if longest is not None:
             assembled.append(longest)
             start, end = longest.structural_signature.token_span
@@ -217,7 +217,7 @@ class Reconstructor:
             prefill_invoked=prefill_invoked,
         )
 
-    def find_longest_exact_match(
+    def longest_match(
         self,
         prompt_tokens: list[int],
         model_id: str,

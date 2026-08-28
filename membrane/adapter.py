@@ -32,7 +32,7 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.fragmenter import Fragmenter
-from membrane.model.profiler import kv_size_mib, prefill_time_seconds
+from membrane.model.profiler import kv_size, prefill_time
 from membrane.model.router import Router, RoutingDecision
 
 
@@ -41,7 +41,7 @@ class PrefillResult:
     """Outcome of a simulated prefill operation.
 
     Attributes:
-        kv_size_mib: Estimated KV cache size in MiB.
+        kv_size: Estimated KV cache size in MiB.
         latency_seconds: Estimated prefill latency in seconds.
         routing_decision: Optional routing decision from
             :class:`Router`. ``None`` when no router is
@@ -49,7 +49,7 @@ class PrefillResult:
         fragments: Fragments produced from the KV output.
     """
 
-    kv_size_mib: float
+    kv_size: float
     latency_seconds: float
     routing_decision: RoutingDecision | None
     fragments: list[Fragment]
@@ -106,39 +106,39 @@ class Adapter:
             chain.
         """
         length = len(prompt_tokens)
-        size = kv_size_mib(length)
-        latency = prefill_time_seconds(length, self.compute_scale)
+        size = kv_size(length)
+        latency = prefill_time(length, self.compute_scale)
 
         decision = None
         if self.router is not None:
             decision = self.router.route(length)
 
-        fragments = self.convert_kv_to_fragments(prompt_tokens, model_id, size)
+        fragments = self.kv_fragments(prompt_tokens, model_id, size)
 
         return PrefillResult(
-            kv_size_mib=size,
+            kv_size=size,
             latency_seconds=latency,
             routing_decision=decision,
             fragments=fragments,
         )
 
-    def convert_kv_to_fragments(
+    def kv_fragments(
         self,
         prompt_tokens: list[int],
         model_id: str,
-        kv_size_mib: float,
+        kv_size: float,
     ) -> list[Fragment]:
         """Convert simulated KV output into content-addressed fragments.
 
         The fragment chain mirrors the prompt windows produced by
         :class:`Fragmenter`. Each fragment's ``size``
         is set to reflect its share of the total estimated KV
-        footprint (``kv_size_mib`` distributed by token count).
+        footprint (``kv_size`` distributed by token count).
 
         Args:
             prompt_tokens: Input token IDs.
             model_id: Model identifier.
-            kv_size_mib: Total KV size to distribute across
+            kv_size: Total KV size to distribute across
                 fragments.
 
         Returns:
@@ -157,7 +157,7 @@ class Adapter:
         # Distribute the estimated KV size uniformly across
         # tokens, then size each fragment by its token span.
         total_prompt_tokens = len(prompt_tokens)
-        bytes_per_token = (kv_size_mib * 1024.0 * 1024.0) / total_prompt_tokens
+        bytes_per_token = (kv_size * 1024.0 * 1024.0) / total_prompt_tokens
 
         sized_frags = []
         for frag in frags:

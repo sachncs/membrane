@@ -8,7 +8,7 @@ holding each fragment. Unlike
 membership and placement tables directly in memory.
 
 The directory also exposes a higher-level helper,
-:meth:`optimal_nodes_for_reconstruction`, which scores each
+:meth:`best_nodes`, which scores each
 registered node by an estimate of how many of the prompt's
 prefix-length sub-hashes it already holds, adjusted by a small
 load penalty derived from the node's heart beat.
@@ -21,7 +21,7 @@ Complexity:
     * :meth:`register_node`, :meth:`unregister_node`,
       :meth:`record_fragment_location`, :meth:`locate_fragment` —
       O(1) amortized.
-    * :meth:`optimal_nodes_for_reconstruction` — O(N · H) where
+    * :meth:`best_nodes` — O(N · H) where
       ``N`` is the number of registered nodes and ``H`` is the
       number of prefix hashes sampled from the prompt. The
       ``max_prefix_attempts`` cap bounds ``H``.
@@ -108,7 +108,7 @@ class Registry:
         """
         return set(self.fragment_locations.get(content_hash, set()))
 
-    def optimal_nodes_for_reconstruction(
+    def best_nodes(
         self,
         prompt_tokens: list[int],
         model_id: str,

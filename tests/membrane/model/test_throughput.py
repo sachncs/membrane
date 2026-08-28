@@ -52,13 +52,13 @@ def test_stage_membrane_compute_bound():
 
 def test_pd_p_throughput():
     """PD-P throughput should equal N_p / T_prefill(l_short)."""
-    theta = throughput.stage_throughput_pd_p(3, 8192)
+    theta = throughput.prefill_throughput(3, 8192)
     expected = 3.0 / 0.72
     assert math.isclose(theta, expected, rel_tol=1e-9)
 
 
 def test_pd_d_throughput():
     """PD-D throughput should equal N_d * BS_max / (T_decode * L_out)."""
-    theta = throughput.stage_throughput_pd_d(5, 20, 0.025, 1024)
+    theta = throughput.decode_throughput(5, 20, 0.025, 1024)
     expected = (5.0 * 20.0) / (0.025 * 1024.0)
     assert math.isclose(theta, expected, rel_tol=1e-9)

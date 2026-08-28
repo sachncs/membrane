@@ -75,7 +75,7 @@ class TestMembraneIntegration:
 
         dispatcher = PrefillRemote()
         result = dispatcher.dispatch(list(range(100)), "m", remote)
-        assert result.kv_size_mib > 0.0
+        assert result.kv_size > 0.0
 
     def test_phase_4_directory_resolution(self):
         ring = Ring()

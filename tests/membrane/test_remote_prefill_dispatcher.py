@@ -37,5 +37,5 @@ class TestRemotePrefillDispatcher:
         dispatcher = PrefillRemote()
         target = Node("target")
         result = dispatcher.dispatch(list(range(512)), "model-a", target)
-        assert result.kv_size_mib > 0.0
+        assert result.kv_size > 0.0
         assert result.latency_seconds > 0.0

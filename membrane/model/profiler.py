@@ -11,9 +11,9 @@ References:
 
 The module exposes three public estimators:
 
-* :func:`kv_size_mib` — KV cache size in MiB.
-* :func:`prefill_time_seconds` — prefill latency in seconds.
-* :func:`kv_throughput_gbps` — per-instance KV throughput in
+* :func:`kv_size` — KV cache size in MiB.
+* :func:`prefill_time` — prefill latency in seconds.
+* :func:`kv_throughput` — per-instance KV throughput in
   Gbps, derived from the other two.
 
 The internal :func:`interpolate` helper performs the piecewise
@@ -40,7 +40,7 @@ MEASURED_PREFILL_TIMES: Sequence[float] = (0.44, 0.72, 1.84, 7.40)
 MEASURED_KV_THROUGHPUTS: Sequence[float] = (3.61, 3.59, 3.19, 2.62)
 
 
-def kv_size_mib(length: int) -> float:
+def kv_size(length: int) -> float:
     """Return interpolated KVCache size in MiB for ``length``.
 
     Args:
@@ -54,7 +54,7 @@ def kv_size_mib(length: int) -> float:
     return interpolate(length, MEASURED_LENGTHS, MEASURED_KV_SIZES_MIB)
 
 
-def prefill_time_seconds(length: int, compute_scale: float = 1.0) -> float:
+def prefill_time(length: int, compute_scale: float = 1.0) -> float:
     """Return interpolated prefill latency for ``length``.
 
     Args:
@@ -72,7 +72,7 @@ def prefill_time_seconds(length: int, compute_scale: float = 1.0) -> float:
     return base * compute_scale
 
 
-def kv_throughput_gbps(length: int) -> float:
+def kv_throughput(length: int) -> float:
     """Return per-instance KV throughput in Gbps for ``length``.
 
     Computed as ``S_kv(l) / T_prefill(l)`` and converted from
@@ -86,8 +86,8 @@ def kv_throughput_gbps(length: int) -> float:
     Returns:
         float: KV throughput in Gbps.
     """
-    size_mib = kv_size_mib(length)
-    time_s = prefill_time_seconds(length)
+    size_mib = kv_size(length)
+    time_s = prefill_time(length)
     # MiB -> bits: size_mib * 1024 * 1024 * 8.
     # bits/s -> Gbps: / 1e9.
     gbps = (size_mib * 1024.0 * 1024.0 * 8.0) / (time_s * 1e9)

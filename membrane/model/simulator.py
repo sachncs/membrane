@@ -101,8 +101,8 @@ def run_membrane_pd(
         long_len,
         compute_scale=1.0,
     )
-    theta_pd_p = throughput.stage_throughput_pd_p(best_n_p, short_len, compute_scale=optimizer.H20_COMPUTE_SCALE)
-    theta_pd_d = throughput.stage_throughput_pd_d(
+    theta_pd_p = throughput.prefill_throughput(best_n_p, short_len, compute_scale=optimizer.H20_COMPUTE_SCALE)
+    theta_pd_d = throughput.decode_throughput(
         best_n_d,
         optimizer.MAX_BATCH_SIZE,
         optimizer.DECODE_TIME_SECONDS,
@@ -158,8 +158,8 @@ def run_homogeneous_pd(
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
     length = int(round(mean_length)) if mean_length > 0 else 32768
 
-    theta_pd_p = throughput.stage_throughput_pd_p(best_n_p, length, compute_scale=optimizer.H20_COMPUTE_SCALE)
-    theta_pd_d = throughput.stage_throughput_pd_d(
+    theta_pd_p = throughput.prefill_throughput(best_n_p, length, compute_scale=optimizer.H20_COMPUTE_SCALE)
+    theta_pd_d = throughput.decode_throughput(
         best_n_d,
         optimizer.MAX_BATCH_SIZE,
         optimizer.DECODE_TIME_SECONDS,
@@ -211,7 +211,7 @@ def run_naive_heterogeneous_pd(
         optimizer.EGRESS_BANDWIDTH_GBPS,
         length,
     )
-    theta_pd_d = throughput.stage_throughput_pd_d(
+    theta_pd_d = throughput.decode_throughput(
         optimizer.TOTAL_PD_INSTANCES,
         optimizer.MAX_BATCH_SIZE,
         optimizer.DECODE_TIME_SECONDS,

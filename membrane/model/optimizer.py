@@ -85,12 +85,12 @@ def evaluate_configuration(
         long_len,
         compute_scale=1.0,
     )
-    theta_pd_p = throughput.stage_throughput_pd_p(
+    theta_pd_p = throughput.prefill_throughput(
         num_pd_p,
         short_len,
         compute_scale=H20_COMPUTE_SCALE,
     )
-    theta_pd_d = throughput.stage_throughput_pd_d(
+    theta_pd_d = throughput.decode_throughput(
         num_pd_d,
         MAX_BATCH_SIZE,
         DECODE_TIME_SECONDS,
@@ -162,8 +162,8 @@ def optimal_homogeneous_pd(
 
     for n_p in range(1, total_instances):
         n_d = total_instances - n_p
-        theta_pd_p = throughput.stage_throughput_pd_p(n_p, length, compute_scale=H20_COMPUTE_SCALE)
-        theta_pd_d = throughput.stage_throughput_pd_d(n_d, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH)
+        theta_pd_p = throughput.prefill_throughput(n_p, length, compute_scale=H20_COMPUTE_SCALE)
+        theta_pd_d = throughput.decode_throughput(n_d, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH)
         # Membrane is unreachable in this baseline, so its
         # contribution is +inf and the min() picks the PD
         # bottleneck.
@@ -201,7 +201,7 @@ def naive_heterogeneous_pd(
     length = int(round(mean_length)) if mean_length > 0 else 32768
 
     theta_membrane = throughput.stage_throughput_membrane(membrane_instances, EGRESS_BANDWIDTH_GBPS, length)
-    theta_pd_d = throughput.stage_throughput_pd_d(
+    theta_pd_d = throughput.decode_throughput(
         pd_instances, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH
     )
     # fraction_to_membrane = 1.0 means PD-P's contribution is

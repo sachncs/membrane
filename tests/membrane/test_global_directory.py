@@ -61,13 +61,13 @@ def test_optimal_nodes_ranked_by_coverage():
     gd.register_node(n1)
     gd.register_node(n2)
 
-    ranked = gd.optimal_nodes_for_reconstruction(tokens, "m", k=2)
+    ranked = gd.best_nodes(tokens, "m", k=2)
     assert len(ranked) > 0
 
 
 def test_optimal_nodes_empty():
     gd = Registry()
-    assert gd.optimal_nodes_for_reconstruction([1, 2, 3], "m") == []
+    assert gd.best_nodes([1, 2, 3], "m") == []
 
 
 def test_node_load_influences_ranking():
@@ -81,7 +81,7 @@ def test_node_load_influences_ranking():
     gd.register_node(n2)
 
     tokens = list(range(20))
-    ranked = gd.optimal_nodes_for_reconstruction(tokens, "m", k=2)
+    ranked = gd.best_nodes(tokens, "m", k=2)
     # n1 is heavily loaded (100% memory), n2 is lightly loaded
     # Both have similar coverage but n1 gets load penalty
     if len(ranked) == 2:

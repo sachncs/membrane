@@ -120,7 +120,7 @@ class Offload:
         """
         length = len(prompt_tokens)
         local_load = local_node.heartbeat()
-        local_cost = self.cost_model.precompute_cost_seconds(length)
+        local_cost = self.cost_model.prefill_cost(length)
         cfg = self.config
 
         # Fast path: short prompts on a quiet local node are
@@ -151,12 +151,12 @@ class Offload:
             """Score offload target (lower is better)."""
             load = node.heartbeat()
             memory_headroom = 1.0 - load
-            remote_cost = self.cost_model.precompute_cost_seconds(length)
+            remote_cost = self.cost_model.prefill_cost(length)
             # Penalize high load and low memory headroom.
             return remote_cost * load + (1.0 / (memory_headroom + 0.01))
 
         best = min(candidate_nodes, key=score)
-        best_cost = self.cost_model.precompute_cost_seconds(length)
+        best_cost = self.cost_model.prefill_cost(length)
 
         return OffloadResult(
             target_node_id=best.node_id,

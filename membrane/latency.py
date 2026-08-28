@@ -68,7 +68,7 @@ class Latency:
         """
         self.latency_table[node_id] = latency_ms
 
-    def route_local_or_replica(
+    def pick_target(
         self,
         content_hash: str,
         local_node: Node,
