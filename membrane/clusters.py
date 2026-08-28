@@ -6,11 +6,11 @@ threshold. The clustering is intended for low-cardinality workloads
 (``k`` in the hundreds to low thousands); for larger collections
 swap in a proper clustering algorithm (DBSCAN, HDBSCAN, k-means)
 or rely on
-:class:`~membrane.semantic_index.SemanticIndex`'s top-K search.
+:class:`~membrane.semantic_index.Semantics`'s top-K search.
 
 Algorithm:
     1. Insert every fragment into the supplied
-       :class:`~membrane.semantic_index.SemanticIndex` for fast
+       :class:`~membrane.semantic_index.Semantics` for fast
        neighbor lookup.
     2. Repeatedly pick the lowest-index unassigned fragment as the
        *seed* of a new cluster.
@@ -33,28 +33,28 @@ logger = logging.getLogger(__name__)
 
 
 from membrane.fragment import Fragment
-from membrane.semantics import SemanticIndex
+from membrane.semantics import Semantics
 
 
 class SemanticCluster:
     """Groups fragments into clusters based on embedding similarity.
 
     The class is intentionally stateless beyond its
-    :class:`~membrane.semantic_index.SemanticIndex` reference, so
+    :class:`~membrane.semantic_index.Semantics` reference, so
     instances can be shared across threads as long as the supplied
     index is itself thread-safe (it is not).
     """
 
-    def __init__(self, semantic_index: SemanticIndex | None = None) -> None:
+    def __init__(self, semantic_index: Semantics | None = None) -> None:
         """Initialize the clusterer with an optional semantic index.
 
         Args:
             semantic_index: Index for similarity lookups. A
                 default empty
-                :class:`~membrane.semantic_index.SemanticIndex` is
+                :class:`~membrane.semantic_index.Semantics` is
                 created when ``None``.
         """
-        self.semantic_index = semantic_index or SemanticIndex()
+        self.semantic_index = semantic_index or Semantics()
 
     def cluster(
         self,

@@ -1,4 +1,4 @@
-"""EconomicRouter: route to argmax(value_density − cost) node.
+"""Economic: route to argmax(value_density − cost) node.
 
 All cost components are normalized to ``[0, 1]`` using configurable
 maximum reference values, then combined with configurable weights.
@@ -8,7 +8,7 @@ of scale differences.
 Algorithm:
     For each candidate node:
 
-    * The fragment's :class:`~membrane.value_density.ValueDensity`
+    * The fragment's :class:`~membrane.value_density.density`
       is computed once and shared across all candidates.
     * The node's cost is the weighted sum of four normalized
       dimensions: latency, bandwidth, GPU load, and memory
@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.telemetry import NodeTelemetry
-from membrane.density import ValueDensity
+from membrane.telemetry import Telemetry
+from membrane.density import density
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ class EconomicRouterConfig:
     weight_memory: float = 1.0
 
 
-class EconomicRouter:
+class Economic:
     """Routes fragments to the node maximizing value density minus cost.
 
     Cost is a weighted sum of normalized telemetry dimensions so
@@ -68,33 +68,33 @@ class EconomicRouter:
     units.
 
     Attributes:
-        value_density: :class:`ValueDensity` calculator used to
+        value_density: :class:`density` calculator used to
             score the fragment's expected utility.
         config: Normalization and weighting parameters.
     """
 
     def __init__(
         self,
-        value_density: ValueDensity | None = None,
+        value_density: object | None = None,
         config: EconomicRouterConfig | None = None,
     ) -> None:
         """Initialize with optional value density calculator and config.
 
         Args:
-            value_density: ValueDensity instance. A default is
+            value_density: density instance. A default is
                 created when ``None``.
             config: Normalization and weighting parameters. A
                 default :class:`EconomicRouterConfig` is used
                 when ``None``.
         """
-        self.value_density = value_density or ValueDensity()
+        self.value_density = value_density
         self.config = config or EconomicRouterConfig()
 
     def route(
         self,
         fragment: Fragment,
         candidate_node_ids: list[str],
-        telemetry_map: dict[str, NodeTelemetry],
+        telemetry_map: dict[str, Telemetry],
         access_history: list[str],
     ) -> str:
         """Select the best node for ``fragment``.
@@ -102,10 +102,10 @@ class EconomicRouter:
         Args:
             fragment: Fragment to place.
             candidate_node_ids: Candidate node identifiers.
-            telemetry_map: ``node_id -> NodeTelemetry`` snapshot.
+            telemetry_map: ``node_id -> Telemetry`` snapshot.
             access_history: Recent access history for reuse
                 estimation; passed to
-                :meth:`ValueDensity.compute`.
+                :meth:`density.compute`.
 
         Returns:
             str: Selected node identifier, or an empty string if
@@ -117,7 +117,8 @@ class EconomicRouter:
 
         # Compute the value density once — it does not depend on
         # the candidate and can therefore be shared.
-        vd = self.value_density.compute(fragment, access_history)
+        from membrane.density import density as density_fn
+        vd = density_fn(fragment, access_history)
         cfg = self.config
 
         def normalized_cost(node_id: str) -> float:

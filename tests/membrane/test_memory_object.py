@@ -3,12 +3,12 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.memobj import MemoryObject
-from membrane.signature import StructuralSignature
+from membrane.memobj import Memobj
+from membrane.signature import Signature
 
 
 class MockMemoryObject:
-    """Concrete implementation of MemoryObject for testing."""
+    """Concrete implementation of Memobj for testing."""
 
     def __init__(
         self,
@@ -28,7 +28,7 @@ class MockMemoryObject:
         return Fragment(
             content_hash=self.content_hash,
             embedding=(0.0,),
-            structural_signature=StructuralSignature(model_id="mock", layer_range=(0, 0), token_span=(0, 0)),
+            structural_signature=Signature(model_id="mock", layer_range=(0, 0), token_span=(0, 0)),
             size=self.size_bytes,
             ttl=3600.0,
             reuse_score=self.reuse_score,
@@ -47,11 +47,11 @@ class MockMemoryObject:
 
 
 class TestMemoryObject:
-    """Test suite for MemoryObject protocol."""
+    """Test suite for Memobj protocol."""
 
     def test_isinstance_protocol(self):
         obj = MockMemoryObject("h1", "sh1", 100, 10, 0.5)
-        assert isinstance(obj, MemoryObject)
+        assert isinstance(obj, Memobj)
 
     def test_materialize_returns_fragment(self):
         obj = MockMemoryObject("h1", "sh1", 100, 10, 0.5)
@@ -65,7 +65,7 @@ class TestMemoryObject:
         frag = Fragment(
             content_hash="h2",
             embedding=(0.0,),
-            structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
+            structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
             size=50,
             ttl=3600.0,
             reuse_score=0.8,
@@ -86,4 +86,4 @@ class TestMemoryObject:
         class Bad:
             pass
 
-        assert not isinstance(Bad(), MemoryObject)
+        assert not isinstance(Bad(), Memobj)

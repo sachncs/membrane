@@ -1,11 +1,11 @@
-"""Tests for ToolTrace memory object."""
+"""Tests for Trace memory object."""
 
 from membrane.fragmenter import compute_content_hash
-from membrane.trace import ToolTrace
+from membrane.trace import Trace
 
 
 def test_tool_trace_creation():
-    t = ToolTrace(
+    t = Trace(
         tool_name="calculator",
         input_hash="ih123",
         output_hash="oh123",
@@ -20,7 +20,7 @@ def test_tool_trace_creation():
 
 
 def test_tool_trace_materialize():
-    t = ToolTrace(
+    t = Trace(
         tool_name="search",
         input_hash="ih",
         output_hash="oh",
@@ -35,7 +35,7 @@ def test_tool_trace_materialize():
 
 
 def test_tool_trace_from_fragment():
-    t = ToolTrace(
+    t = Trace(
         tool_name="t",
         input_hash="i",
         output_hash="o",
@@ -46,6 +46,6 @@ def test_tool_trace_from_fragment():
         reuse_score=0.3,
     )
     frag = t.materialize()
-    recon = ToolTrace.from_fragment(frag)
+    recon = Trace.from_fragment(frag)
     assert recon.content_hash == "ch"
     assert recon.size_bytes == 16

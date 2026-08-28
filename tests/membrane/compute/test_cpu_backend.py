@@ -1,21 +1,21 @@
-"""Tests for CPUBackend."""
+"""Tests for CPU."""
 
-from membrane.compute.cpu import CPUBackend
+from membrane.compute.cpu import CPU
 
 
 class TestCPUBackend:
-    """Test suite for CPUBackend."""
+    """Test suite for CPU."""
 
     def test_available(self):
-        backend = CPUBackend()
+        backend = CPU()
         assert backend.available()
 
     def test_device_name(self):
-        backend = CPUBackend()
+        backend = CPU()
         assert backend.device_name() == "cpu"
 
     def test_prefill_returns_fragments(self):
-        backend = CPUBackend()
+        backend = CPU()
         tokens = list(range(512))
         frags = backend.prefill(tokens, "test-model")
         assert len(frags) > 0
@@ -23,7 +23,7 @@ class TestCPUBackend:
         assert all(f.structural_signature.model_id == "test-model" for f in frags)
 
     def test_prefill_window_size(self):
-        backend = CPUBackend()
+        backend = CPU()
         tokens = list(range(300))
         frags = backend.prefill(tokens, "m")
         assert len(frags) == 3  # 128 + 128 + 44

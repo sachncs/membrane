@@ -1,9 +1,9 @@
-"""KVSegment: per-layer per-head KV cache slice as a memory object.
+"""Segment: per-layer per-head KV cache slice as a memory object.
 
-This module defines :class:`KVSegment`, the canonical addressable unit
+This module defines :class:`Segment`, the canonical addressable unit
 for a *physical* KV-cache tensor slice in Membrane. Whereas
 :class:`~membrane.prefix.Prefix` represents the logical token sequence
-that may be reused, a ``KVSegment`` represents the concrete per-layer
+that may be reused, a ``Segment`` represents the concrete per-layer
 / per-head KV tensors produced for that prefix by a particular model.
 
 Each segment is independently addressable so that the reconstruction
@@ -16,7 +16,7 @@ requests, models, and nodes.
 Lifecycle:
     1. A compute backend (CPU/GPU/Transformers) produces a tensor for
        a specific ``(layer, head, token_span)``.
-    2. The backend wraps the tensor in a :class:`KVSegment` with a
+    2. The backend wraps the tensor in a :class:`Segment` with a
        content hash and registers it with the canonical store.
     3. The fragment store and indexes make it discoverable to other
        nodes.
@@ -33,11 +33,11 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.fragmenter import generate_embedding
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
 @dataclass(frozen=True)
-class KVSegment:
+class Segment:
     """A per-layer per-head KV cache slice.
 
     A segment captures the smallest independently reusable KV-cache
@@ -71,7 +71,7 @@ class KVSegment:
             higher values bias placement toward hotter tiers.
 
     Example:
-        >>> seg = KVSegment(
+        >>> seg = Segment(
         ...     layer=12,
         ...     head=0,
         ...     token_span=(0, 127),
@@ -114,7 +114,7 @@ class KVSegment:
         embedding = generate_embedding(tuple(self.tensor_shape), 128)
         # The synthetic "kv" model_id distinguishes segment-level
         # fragments from prefix-level fragments in the indexes.
-        signature = StructuralSignature(
+        signature = Signature(
             model_id="kv",
             layer_range=(self.layer, self.layer),
             token_span=self.token_span,
@@ -130,8 +130,8 @@ class KVSegment:
         )
 
     @classmethod
-    def from_fragment(cls, fragment: Fragment) -> "KVSegment":
-        """Reconstruct a :class:`KVSegment` from a stored :class:`Fragment`.
+    def from_fragment(cls, fragment: Fragment) -> "Segment":
+        """Reconstruct a :class:`Segment` from a stored :class:`Fragment`.
 
         Used when a fragment is retrieved from the store whose
         origin is a KV segment. The original tensor data is not
@@ -144,7 +144,7 @@ class KVSegment:
                 compatible signature).
 
         Returns:
-            KVSegment: A segment with placeholder ``head`` and
+            Segment: A segment with placeholder ``head`` and
             ``tensor_shape`` and preserved ``content_hash``,
             ``token_span``, ``size_bytes``, and ``reuse_score``.
         """

@@ -22,7 +22,7 @@ from typing import Any
 
 from membrane.errors import SchemaError
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 SCHEMA_VERSION: int = 1
 
@@ -76,7 +76,7 @@ def from_dict(data: dict[str, Any]) -> Fragment:
             f"expected {SCHEMA_VERSION}"
         )
     try:
-        signature = StructuralSignature(
+        signature = Signature(
             model_id=data["model_id"],
             layer_range=(int(data["layer_start"]), int(data["layer_end"])),
             token_span=(int(data["token_start"]), int(data["token_end"])),

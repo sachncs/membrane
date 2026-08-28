@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane.ring import HashRing
+from membrane.ring import Ring
 from membrane.supernode import Supernode
 
 
@@ -27,7 +27,7 @@ class TestSupernode:
         assert "h" not in sn.fragment_locations
 
     def test_resolve_via_ring(self):
-        ring = HashRing()
+        ring = Ring()
         ring.add_node("node-a")
         sn = Supernode("sn-1", hash_ring=ring)
         assert sn.resolve_via_ring("abc") == "node-a"

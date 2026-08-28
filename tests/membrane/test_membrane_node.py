@@ -1,14 +1,14 @@
-"""Tests for MembraneNode."""
+"""Tests for Node."""
 
 import time
 
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.signature import StructuralSignature
+from membrane.node import Node
+from membrane.signature import Signature
 
 
 def make_fragment(content_hash: str, size: int, reuse_score: float = 0.5, ttl: float = 3600.0) -> Fragment:
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    sig = Signature("m", (0, 1), (0, 10))
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1, 0.2, 0.3),
@@ -21,14 +21,14 @@ def make_fragment(content_hash: str, size: int, reuse_score: float = 0.5, ttl: f
 
 
 def test_store_increases_memory():
-    node = MembraneNode("n1", max_memory_bytes=1_000_000)
+    node = Node("n1", max_memory_bytes=1_000_000)
     frag = make_fragment("h1", 1000)
     assert node.store(frag)
     assert node.get_memory_usage() == 1000
 
 
 def test_retrieve_correct_fragment():
-    node = MembraneNode("n1", max_memory_bytes=1_000_000)
+    node = Node("n1", max_memory_bytes=1_000_000)
     frag = make_fragment("h1", 1000)
     node.store(frag)
     result = node.retrieve("h1")
@@ -36,12 +36,12 @@ def test_retrieve_correct_fragment():
 
 
 def test_retrieve_missing_returns_none():
-    node = MembraneNode("n1", max_memory_bytes=1_000_000)
+    node = Node("n1", max_memory_bytes=1_000_000)
     assert node.retrieve("missing") is None
 
 
 def test_evict_respects_max_memory():
-    node = MembraneNode("n1", max_memory_bytes=500)
+    node = Node("n1", max_memory_bytes=500)
     a = make_fragment("a", 200, reuse_score=0.1)
     b = make_fragment("b", 200, reuse_score=0.9)
     c = make_fragment("c", 200, reuse_score=0.5)
@@ -52,7 +52,7 @@ def test_evict_respects_max_memory():
 
 
 def test_ttl_expiry_evicts_first():
-    node = MembraneNode("n1", max_memory_bytes=1_000_000)
+    node = Node("n1", max_memory_bytes=1_000_000)
     expired = make_fragment("old", 100, ttl=0.01)
     fresh = make_fragment("new", 100, ttl=3600.0)
     node.store(expired)
@@ -64,7 +64,7 @@ def test_ttl_expiry_evicts_first():
 
 
 def test_graph_aware_eviction():
-    node = MembraneNode("n1", max_memory_bytes=1_000_000)
+    node = Node("n1", max_memory_bytes=1_000_000)
     a = make_fragment("a", 100, reuse_score=0.1)
     b = make_fragment("b", 100, reuse_score=0.1)
     node.store(a)
@@ -76,13 +76,13 @@ def test_graph_aware_eviction():
 
 
 def test_store_rejects_too_large():
-    node = MembraneNode("n1", max_memory_bytes=100)
+    node = Node("n1", max_memory_bytes=100)
     frag = make_fragment("big", 200)
     assert not node.store(frag)
 
 
 def test_shard_ownership_tracked():
-    node = MembraneNode("n1", max_memory_bytes=1_000_000)
+    node = Node("n1", max_memory_bytes=1_000_000)
     frag = make_fragment("h1", 100)
     node.store(frag, is_primary=True)
     assert node.get_shard_hashes() == {"h1"}
@@ -91,12 +91,12 @@ def test_shard_ownership_tracked():
 
 
 def test_heartbeat_empty_node():
-    node = MembraneNode("n1", max_memory_bytes=1_000_000)
+    node = Node("n1", max_memory_bytes=1_000_000)
     assert node.heartbeat() == 0.0
 
 
 def test_mixed_stores_and_evictions():
-    node = MembraneNode("n1", max_memory_bytes=300)
+    node = Node("n1", max_memory_bytes=300)
     frags = [make_fragment(f"h{i}", 100, reuse_score=0.5 / (i + 1)) for i in range(5)]
     for f in frags:
         node.store(f)
@@ -106,7 +106,7 @@ def test_mixed_stores_and_evictions():
 
 def test_retrieve_evicts_expired_fragment():
     """Background TTL expiry: retrieve should evict expired fragments."""
-    node = MembraneNode("n1", max_memory_bytes=1_000_000)
+    node = Node("n1", max_memory_bytes=1_000_000)
     frag = make_fragment("old", 100, ttl=0.01)
     node.store(frag)
     time.sleep(0.02)
@@ -116,7 +116,7 @@ def test_retrieve_evicts_expired_fragment():
 
 
 def test_retrieve_does_not_evict_fresh_fragment():
-    node = MembraneNode("n1", max_memory_bytes=1_000_000)
+    node = Node("n1", max_memory_bytes=1_000_000)
     frag = make_fragment("fresh", 100, ttl=3600.0)
     node.store(frag)
     result = node.retrieve("fresh")

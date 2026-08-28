@@ -3,10 +3,10 @@
 This module defines :class:`TransferService`, the in-process
 *transfer plane* used by
 :class:`~membrane.delta_sync.DeltaSync`,
-:class:`~membrane.cluster_replicator.ClusterReplicator`,
-:class:`~membrane.origin_node.OriginNode`, and
-:class:`~membrane.replica_node.ReplicaNode` to move fragments
-between :class:`~membrane.membrane_node.MembraneNode` instances.
+:class:`~membrane.cluster_replicator.Replicator`,
+:class:`~membrane.origin_node.Origin`, and
+:class:`~membrane.replica_node.Replica` to move fragments
+between :class:`~membrane.membrane_node.Node` instances.
 
 The service exposes three primitives:
 
@@ -24,7 +24,7 @@ operation.
 
 Thread safety:
     The class is stateless; safety is inherited from the
-    :class:`MembraneNode` instances passed in.
+    :class:`Node` instances passed in.
 """
 
 import logging
@@ -32,7 +32,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.node import MembraneNode
+from membrane.node import Node
 
 
 class TransferService:
@@ -43,7 +43,7 @@ class TransferService:
         logger.info("Initialized %s", self.__class__.__name__)
         pass
 
-    def inventory_digest(self, node: MembraneNode) -> dict[str, int]:
+    def inventory_digest(self, node: Node) -> dict[str, int]:
         """Build a ``content_hash -> version_id`` digest for ``node``.
 
         The digest is constructed by iterating over the node's
@@ -87,14 +87,14 @@ class TransferService:
 
     def transfer_fragment(
         self,
-        source: MembraneNode,
-        target: MembraneNode,
+        source: Node,
+        target: Node,
         content_hash: str,
     ) -> bool:
         """Copy a fragment from ``source`` to ``target``.
 
-        Uses :meth:`MembraneNode.retrieve` on the source and
-        :meth:`MembraneNode.store` on the target. The target
+        Uses :meth:`Node.retrieve` on the source and
+        :meth:`Node.store` on the target. The target
         receives the fragment as a non-primary replica.
 
         Args:
@@ -116,8 +116,8 @@ class TransferService:
 
     def sync_nodes(
         self,
-        source: MembraneNode,
-        target: MembraneNode,
+        source: Node,
+        target: Node,
     ) -> list[str]:
         """Synchronize all missing fragments from ``source`` to ``target``.
 

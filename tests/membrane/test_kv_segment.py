@@ -1,11 +1,11 @@
-"""Tests for KVSegment memory object."""
+"""Tests for Segment memory object."""
 
 from membrane.fragmenter import compute_content_hash
-from membrane.segment import KVSegment
+from membrane.segment import Segment
 
 
 def test_kv_segment_creation():
-    seg = KVSegment(
+    seg = Segment(
         layer=3,
         head=7,
         token_span=(0, 127),
@@ -21,7 +21,7 @@ def test_kv_segment_creation():
 
 
 def test_kv_segment_materialize():
-    seg = KVSegment(
+    seg = Segment(
         layer=1,
         head=0,
         token_span=(0, 63),
@@ -37,7 +37,7 @@ def test_kv_segment_materialize():
 
 
 def test_kv_segment_from_fragment():
-    seg = KVSegment(
+    seg = Segment(
         layer=2,
         head=4,
         token_span=(10, 20),
@@ -48,6 +48,6 @@ def test_kv_segment_from_fragment():
         reuse_score=0.3,
     )
     frag = seg.materialize()
-    recon = KVSegment.from_fragment(frag)
+    recon = Segment.from_fragment(frag)
     assert recon.layer == 2
     assert recon.size_bytes == 128

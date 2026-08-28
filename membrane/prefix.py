@@ -8,7 +8,7 @@ for storage in the fragment store.
 
 In the broader Membrane design, a prefix represents a *logical* unit of
 memory (a sequence of tokens that may be reused across requests). The
-companion :class:`~membrane.kv_segment.KVSegment` represents the
+companion :class:`~membrane.kv_segment.Segment` represents the
 *physical* KV-cache tensors produced for that prefix by a particular
 model. The two are linked through ``content_hash`` and the model's
 structural signature.
@@ -20,7 +20,7 @@ Typical lifecycle:
     3. When a request arrives, the prefix is materialized into a
        :class:`~membrane.fragment.Fragment` whose underlying bytes are
        the actual KV tensors (handled by the
-       :class:`~membrane.reconstruction_engine.ReconstructionEngine`).
+       :class:`~membrane.reconstruction_engine.Reconstructor`).
 """
 
 import logging
@@ -32,7 +32,7 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.fragmenter import generate_embedding
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ class Prefix:
             :func:`membrane.fragmentation_engine.compute_content_hash`.
         semantic_hash: Approximate (LSH-style) hash of the embedding
             of the tokens. Used by
-            :class:`~membrane.semantic_index.SemanticIndex` for
+            :class:`~membrane.semantic_index.Semantics` for
             similarity lookups without exposing the raw embedding.
         size_bytes: Estimated serialized storage footprint of the
             prefix metadata and (eventually) its KV payload.
@@ -123,8 +123,8 @@ class Prefix:
         # The synthetic "prefix" model id marks the fragment as a
         # logical (not model-specific) unit of memory. Real KV
         # fragments produced by a compute backend carry the actual
-        # model id in their StructuralSignature.
-        signature = StructuralSignature(
+        # model id in their Signature.
+        signature = Signature(
             model_id="prefix",
             layer_range=(0, 0),
             token_span=(0, self.token_count - 1),

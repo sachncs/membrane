@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from membrane.compute.cpu import CPUBackend
-from membrane.node import MembraneNode
+from membrane.compute.cpu import CPU
+from membrane.node import Node
 from membrane.transport.grpc import GrpcServer
 
 
@@ -16,8 +16,8 @@ class TestGrpcServer:
     @pytest.fixture(scope="class")
     @classmethod
     def server(cls):
-        node = MembraneNode("grpc-test", max_memory_bytes=10000)
-        backend = CPUBackend()
+        node = Node("grpc-test", max_memory_bytes=10000)
+        backend = CPU()
         srv = GrpcServer(node=node, host="127.0.0.1", port=50053, compute_backend=backend)
         t = threading.Thread(target=srv.start, daemon=True)
         t.start()

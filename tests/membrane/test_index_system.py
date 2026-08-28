@@ -1,11 +1,11 @@
 from membrane.fragment import Fragment
-from membrane.index import IndexSystem
-from membrane.signature import StructuralSignature
+from membrane.index import Index
+from membrane.signature import Signature
 
 
 def test_cross_index_query():
-    sys = IndexSystem()
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    sys = Index()
+    sig = Signature("m", (0, 1), (0, 10))
     frag = Fragment("h1", (0.1, 0.0, 0.0), sig, 10, 60.0, 0.5, 1)
     sys.insert(frag, {"node-a"})
 
@@ -19,8 +19,8 @@ def test_cross_index_query():
 
 
 def test_batch_insert_and_query():
-    sys = IndexSystem()
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    sys = Index()
+    sig = Signature("m", (0, 1), (0, 10))
     for i in range(5):
         frag = Fragment(f"h{i}", (float(i), 0.0, 0.0), sig, 10, 60.0, 0.5, 1)
         sys.insert(frag, {"node-a"})
@@ -31,6 +31,6 @@ def test_batch_insert_and_query():
 
 
 def test_co_access_through_facade():
-    sys = IndexSystem()
+    sys = Index()
     sys.record_co_access("a", "b")
     assert sys.co_access_neighbors("a") == {"b"}

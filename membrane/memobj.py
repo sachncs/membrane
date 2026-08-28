@@ -1,9 +1,9 @@
-"""MemoryObject: protocol for addressable, comparable, materializable memory.
+"""Memobj: protocol for addressable, comparable, materializable memory.
 
-This module defines :class:`MemoryObject`, the unifying *duck-typed*
+This module defines :class:`Memobj`, the unifying *duck-typed*
 protocol for every kind of addressable memory unit in Membrane — be it
 a token sequence (:class:`~membrane.prefix.Prefix`), a KV-cache segment
-(:class:`~membrane.kv_segment.KVSegment`), an artifact
+(:class:`~membrane.kv_segment.Segment`), an artifact
 (:class:`~membrane.artifact.Artifact`), or any future first-class
 memory type.
 
@@ -18,13 +18,13 @@ The protocol captures the invariants the rest of the system relies on:
 * **Lifecycle-aware**: ``reuse_score`` biases placement and eviction.
 * **Materializable**: Any memory object can be converted into the
   canonical on-disk representation (:class:`~membrane.fragment.Fragment`)
-  via :meth:`MemoryObject.materialize`.
+  via :meth:`Memobj.materialize`.
 
-Because :class:`MemoryObject` is decorated with
+Because :class:`Memobj` is decorated with
 :func:`typing.runtime_checkable`, callers can use ``isinstance(obj,
-MemoryObject)`` for cheap structural checks. The protocol is also
+Memobj)`` for cheap structural checks. The protocol is also
 reversible: every implementation must provide a
-:meth:`MemoryObject.from_fragment` classmethod that round-trips a
+:meth:`Memobj.from_fragment` classmethod that round-trips a
 :class:`~membrane.fragment.Fragment` back into a typed object.
 """
 
@@ -39,14 +39,14 @@ from membrane.fragment import Fragment
 
 
 @runtime_checkable
-class MemoryObject(Protocol):
+class Memobj(Protocol):
     """Protocol for all first-class memory objects in Membrane.
 
     Any class that satisfies this structural protocol can be used
     interchangeably by the canonical store, indexes, and routing
     layers. Concrete implementations include
     :class:`~membrane.prefix.Prefix`,
-    :class:`~membrane.kv_segment.KVSegment`, and
+    :class:`~membrane.kv_segment.Segment`, and
     :class:`~membrane.artifact.Artifact`.
 
     Implementations must:
@@ -91,7 +91,7 @@ class MemoryObject(Protocol):
         ...
 
     @classmethod
-    def from_fragment(cls, fragment: Fragment) -> "MemoryObject":
+    def from_fragment(cls, fragment: Fragment) -> "Memobj":
         """Reconstruct a typed memory object from a stored Fragment.
 
         Used when the canonical store or a remote peer returns a
@@ -106,7 +106,7 @@ class MemoryObject(Protocol):
                 compatible signature).
 
         Returns:
-            MemoryObject: A typed instance of the concrete class,
+            Memobj: A typed instance of the concrete class,
             with metadata fields preserved and any non-serializable
             fields filled with deterministic placeholders.
         """

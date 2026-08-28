@@ -1,4 +1,4 @@
-"""OpenAIBackend: compute backend that delegates to OpenAI API.
+"""OpenAI: compute backend that delegates to OpenAI API.
 
 Requires ``httpx`` (installed via ``pip install membrane[server]``).
 
@@ -32,14 +32,14 @@ from typing import Any
 
 import httpx
 
-from membrane.compute.base import ComputeBackend
+from membrane.compute.base import Backend
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 logger = logging.getLogger(__name__)
 
 
-class OpenAIBackend(ComputeBackend):
+class OpenAI(Backend):
     """Compute backend using OpenAI API for embeddings and generation.
 
     Args:
@@ -80,7 +80,7 @@ class OpenAIBackend(ComputeBackend):
                 timeout=60.0,
             )
         except ImportError:
-            logger.warning("OpenAIBackend: httpx not installed")
+            logger.warning("OpenAI: httpx not installed")
 
     def hash_tokens(self, tokens: list[int]) -> str:
         """MD5-hash a token chunk.
@@ -142,7 +142,7 @@ class OpenAIBackend(ComputeBackend):
             frag = Fragment(
                 content_hash=h,
                 embedding=tuple(emb_slice),
-                structural_signature=StructuralSignature(
+                structural_signature=Signature(
                     model_id=model_id,
                     layer_range=(0, 1),
                     token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
@@ -154,7 +154,7 @@ class OpenAIBackend(ComputeBackend):
             )
             fragments.append(frag)
         logger.debug(
-            "OpenAIBackend: prefill %s tokens into %s fragments",
+            "OpenAI: prefill %s tokens into %s fragments",
             len(prompt_tokens),
             len(fragments),
         )
@@ -245,7 +245,7 @@ class OpenAIBackend(ComputeBackend):
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),
-                structural_signature=StructuralSignature(
+                structural_signature=Signature(
                     model_id=model_id,
                     layer_range=(0, 1),
                     token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),

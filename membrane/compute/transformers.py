@@ -1,16 +1,16 @@
-"""TransformersBackend: compute backend loading real HuggingFace model weights.
+"""Transformers: compute backend loading real HuggingFace model weights.
 
 Requires ``transformers`` and ``torch`` (installed via
 ``pip install membrane[local-llm]``).
 
 This backend wraps a HuggingFace Transformers model and tokenizer
 and exposes the standard :class:`~membrane.compute.backend
-.ComputeBackend` interface. On
-:meth:`TransformersBackend.prefill` it runs a forward pass and
+.Backend` interface. On
+:meth:`Transformers.prefill` it runs a forward pass and
 uses the last hidden state as the fragment embedding — the
 average over each 128-token window becomes the embedding for
 that fragment's :class:`~membrane.fragment.Fragment`. On
-:meth:`TransformersBackend.generate` it invokes
+:meth:`Transformers.generate` it invokes
 ``model.generate`` and decodes the freshly produced tokens.
 
 Failure modes:
@@ -30,14 +30,14 @@ import hashlib
 import logging
 from typing import Any
 
-from membrane.compute.base import ComputeBackend
+from membrane.compute.base import Backend
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 logger = logging.getLogger(__name__)
 
 
-class TransformersBackend(ComputeBackend):
+class Transformers(Backend):
     """Compute backend using HuggingFace Transformers for local inference.
 
     Loads a real model and tokenizer, runs forward passes to
@@ -93,17 +93,17 @@ class TransformersBackend(ComputeBackend):
             else:
                 self._actual_device = self.device
 
-            logger.info("TransformersBackend: loading %s on %s", self.model_id, self._actual_device)
+            logger.info("Transformers: loading %s on %s", self.model_id, self._actual_device)
             self._tokenizer = AutoTokenizer.from_pretrained(self.model_id)
             self._model = AutoModel.from_pretrained(self.model_id)
             self._model.to(self._actual_device)
             self._model.eval()
-            logger.info("TransformersBackend: loaded %s", self.model_id)
+            logger.info("Transformers: loaded %s", self.model_id)
         except ImportError:
-            logger.warning("TransformersBackend: transformers or torch not installed")
+            logger.warning("Transformers: transformers or torch not installed")
         except (OSError, RuntimeError, ValueError) as exc:
             # Network errors, OOM, or invalid model IDs land here.
-            logger.warning("TransformersBackend: failed to load model (%s)", exc)
+            logger.warning("Transformers: failed to load model (%s)", exc)
 
     def hash_tokens(self, tokens: list[int]) -> str:
         """MD5-hash a token chunk.
@@ -173,7 +173,7 @@ class TransformersBackend(ComputeBackend):
                 # Cap the embedding at 256 dimensions regardless
                 # of the model's hidden size.
                 embedding=tuple(avg_emb[:256]),
-                structural_signature=StructuralSignature(
+                structural_signature=Signature(
                     model_id=model_id,
                     layer_range=(0, 1),
                     token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
@@ -185,7 +185,7 @@ class TransformersBackend(ComputeBackend):
             )
             fragments.append(frag)
         logger.debug(
-            "TransformersBackend: prefill %s tokens into %s fragments",
+            "Transformers: prefill %s tokens into %s fragments",
             len(prompt_tokens),
             len(fragments),
         )
@@ -273,7 +273,7 @@ class TransformersBackend(ComputeBackend):
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),
-                structural_signature=StructuralSignature(
+                structural_signature=Signature(
                     model_id=model_id,
                     layer_range=(0, 1),
                     token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),

@@ -1,6 +1,6 @@
 """Co-access index: graph backbone tracking fragments accessed together.
 
-This module implements :class:`CoAccessIndex`, an undirected graph
+This module implements :class:`Coaccess`, an undirected graph
 structure that records which fragments are accessed together in the
 same request. The resulting co-access relationships power two
 optimizations in Membrane:
@@ -34,7 +34,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class CoAccessIndex:
+class Coaccess:
     """In-memory co-access index using adjacency sets.
 
     Records which content hashes are accessed together and supports

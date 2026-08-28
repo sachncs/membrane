@@ -2,17 +2,17 @@
 
 import pytest
 
-from membrane.replicator import ClusterReplicator
+from membrane.replicator import Replicator
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.signature import StructuralSignature
+from membrane.node import Node
+from membrane.signature import Signature
 
 
 def make_fragment(content_hash, size=10):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.0,),
-        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
+        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
         size=size,
         ttl=3600.0,
         reuse_score=0.5,
@@ -21,13 +21,13 @@ def make_fragment(content_hash, size=10):
 
 
 class TestClusterReplicator:
-    """Test suite for ClusterReplicator."""
+    """Test suite for Replicator."""
 
     def test_replicate_cluster_to_targets(self):
-        cr = ClusterReplicator()
-        source = MembraneNode("source")
-        t1 = MembraneNode("t1")
-        t2 = MembraneNode("t2")
+        cr = Replicator()
+        source = Node("source")
+        t1 = Node("t1")
+        t2 = Node("t2")
         f1 = make_fragment("a", size=10)
         f2 = make_fragment("b", size=10)
         source.store(f1, is_primary=True)
@@ -39,9 +39,9 @@ class TestClusterReplicator:
         assert t2.retrieve("b") is not None
 
     def test_replicate_cluster_partial(self):
-        cr = ClusterReplicator()
-        source = MembraneNode("source")
-        t1 = MembraneNode("t1", max_memory_bytes=15)
+        cr = Replicator()
+        source = Node("source")
+        t1 = Node("t1", max_memory_bytes=15)
         f1 = make_fragment("a", size=10)
         f2 = make_fragment("b", size=10)
         source.store(f1, is_primary=True)
@@ -50,8 +50,8 @@ class TestClusterReplicator:
         assert len(results["t1"]) >= 1
 
     def test_replicate_cluster_empty_component(self):
-        cr = ClusterReplicator()
-        source = MembraneNode("source")
-        t1 = MembraneNode("t1")
+        cr = Replicator()
+        source = Node("source")
+        t1 = Node("t1")
         results = cr.replicate_cluster(set(), source, [t1])
         assert results["t1"] == []

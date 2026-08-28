@@ -1,6 +1,6 @@
-"""LatencyRouter: route requests by latency to local, replica, or origin.
+"""Latency: route requests by latency to local, replica, or origin.
 
-This module defines :class:`LatencyRouter`, a request-time router
+This module defines :class:`Latency`, a request-time router
 that picks the lowest-latency node holding a requested fragment.
 
 The priority order is:
@@ -23,10 +23,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.node import MembraneNode
+from membrane.node import Node
 
 
-class LatencyRouter:
+class Latency:
     """Routes fragment lookups based on latency tiers.
 
     Priority:
@@ -71,8 +71,8 @@ class LatencyRouter:
     def route_local_or_replica(
         self,
         content_hash: str,
-        local_node: MembraneNode,
-        candidate_nodes: list[MembraneNode],
+        local_node: Node,
+        candidate_nodes: list[Node],
     ) -> str:
         """Select the best node to serve a fragment lookup.
 
@@ -102,7 +102,7 @@ class LatencyRouter:
             logger.debug("No replica for %s; falling back to %s", content_hash, fallback)
             return fallback
 
-        def latency_key(node: MembraneNode) -> float:
+        def latency_key(node: Node) -> float:
             """Latency score (lower is better); infinity if unknown."""
             return self.latency_table.get(node.node_id, float("inf"))
 

@@ -1,8 +1,8 @@
-"""CPUBackend: prefill simulation using CPU (numpy/torch CPU).
+"""CPU: prefill simulation using CPU (numpy/torch CPU).
 
-This module defines :class:`CPUBackend`, the always-available
+This module defines :class:`CPU`, the always-available
 reference implementation of :class:`~membrane.compute.backend
-.ComputeBackend`. It splits a prompt into fixed-size windows and
+.Backend`. It splits a prompt into fixed-size windows and
 produces a content-addressable fragment per window without
 loading any actual model weights.
 
@@ -18,12 +18,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.compute.base import ComputeBackend
+from membrane.compute.base import Backend
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
-class CPUBackend(ComputeBackend):
+class CPU(Backend):
     """CPU-based compute backend.
 
     Simulates prefill by converting prompt tokens into fragments.
@@ -64,7 +64,7 @@ class CPUBackend(ComputeBackend):
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),
-                structural_signature=StructuralSignature(
+                structural_signature=Signature(
                     model_id=model_id,
                     layer_range=(0, 1),
                     token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
@@ -78,7 +78,7 @@ class CPUBackend(ComputeBackend):
             )
             fragments.append(frag)
         logger.debug(
-            "CPUBackend: prefill %s tokens into %s fragments",
+            "CPU: prefill %s tokens into %s fragments",
             len(prompt_tokens),
             len(fragments),
         )

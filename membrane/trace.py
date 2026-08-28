@@ -1,13 +1,13 @@
-"""ToolTrace: structured tool output as a memory object.
+"""Trace: structured tool output as a memory object.
 
-This module defines :class:`ToolTrace`, the addressable memory
+This module defines :class:`Trace`, the addressable memory
 representation of a structured tool invocation result. It allows
 Membrane to cache and reuse tool outputs across requests — for
 example, the result of a database query, an HTTP fetch, or a code
 execution — in the same content-addressed fabric that caches
 prefixes and KV segments.
 
-A ``ToolTrace`` carries enough metadata to:
+A ``Trace`` carries enough metadata to:
 
 * Identify the originating tool (``tool_name``).
 * Detect when the same input is reused (``input_hash``).
@@ -25,11 +25,11 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.fragmenter import generate_embedding
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
 @dataclass(frozen=True)
-class ToolTrace:
+class Trace:
     """A structured output from a tool invocation.
 
     A trace captures one (tool, input) → output mapping. Two traces
@@ -58,7 +58,7 @@ class ToolTrace:
             ``[0, 1]``.
 
     Example:
-        >>> trace = ToolTrace(
+        >>> trace = Trace(
         ...     tool_name="wikipedia.search",
         ...     input_hash="i1",
         ...     output_hash="o1",
@@ -103,7 +103,7 @@ class ToolTrace:
         # The synthetic "tool" model_id marks the fragment as a tool
         # trace, allowing downstream routing/eviction logic to treat
         # it differently from prefix or KV fragments if needed.
-        signature = StructuralSignature(
+        signature = Signature(
             model_id="tool",
             layer_range=(0, 0),
             # Use max(0, len-1) so empty outputs produce a valid
@@ -121,8 +121,8 @@ class ToolTrace:
         )
 
     @classmethod
-    def from_fragment(cls, fragment: Fragment) -> "ToolTrace":
-        """Reconstruct a :class:`ToolTrace` from a stored :class:`Fragment`.
+    def from_fragment(cls, fragment: Fragment) -> "Trace":
+        """Reconstruct a :class:`Trace` from a stored :class:`Fragment`.
 
         ``tool_name``, ``input_hash``, and ``structured_output`` are
         not preserved on a fragment. They are recovered as empty
@@ -136,7 +136,7 @@ class ToolTrace:
                 compatible signature).
 
         Returns:
-            ToolTrace: A trace with preserved ``output_hash``,
+            Trace: A trace with preserved ``output_hash``,
             ``content_hash``, ``size_bytes``, ``reuse_score``, and
             empty strings for the non-serializable fields.
         """

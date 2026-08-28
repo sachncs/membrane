@@ -1,15 +1,15 @@
-"""Tests for ReconstructionEngine."""
+"""Tests for Reconstructor."""
 
 from membrane.fragment import Fragment
-from membrane.fragmenter import FragmentationEngine
-from membrane.index import IndexSystem
-from membrane.adapter import PrefillAdapter
-from membrane.reconstructor import ReconstructionConfig, ReconstructionEngine
-from membrane.signature import StructuralSignature
+from membrane.fragmenter import Fragmenter
+from membrane.index import Index
+from membrane.adapter import Adapter
+from membrane.reconstructor import ReconstructorConfig, Reconstructor
+from membrane.signature import Signature
 
 
 def make_fragment(content_hash: str, token_span: tuple[int, int], model_id: str = "m") -> Fragment:
-    sig = StructuralSignature(model_id, (0, 1), token_span)
+    sig = Signature(model_id, (0, 1), token_span)
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1, 0.2, 0.3),
@@ -22,9 +22,9 @@ def make_fragment(content_hash: str, token_span: tuple[int, int], model_id: str 
 
 
 def test_full_exact_match_no_prefill():
-    index = IndexSystem()
-    adapter = PrefillAdapter()
-    engine = ReconstructionEngine(index, adapter)
+    index = Index()
+    adapter = Adapter()
+    engine = Reconstructor(index, adapter)
     tokens = list(range(100))
     frag = make_fragment("match", (0, 99))
     index.insert(frag, {"n1"})
@@ -36,9 +36,9 @@ def test_full_exact_match_no_prefill():
 
 
 def test_partial_match_with_positional_extension():
-    index = IndexSystem()
-    adapter = PrefillAdapter()
-    engine = ReconstructionEngine(index, adapter, config=ReconstructionConfig(max_gap_tokens=10))
+    index = Index()
+    adapter = Adapter()
+    engine = Reconstructor(index, adapter, config=ReconstructorConfig(max_gap_tokens=10))
     tokens = list(range(100))
     a = make_fragment("a", (0, 39))
     b = make_fragment("b", (40, 99))
@@ -51,9 +51,9 @@ def test_partial_match_with_positional_extension():
 
 
 def test_gap_filled_by_semantic_similarity():
-    index = IndexSystem()
-    adapter = PrefillAdapter()
-    engine = ReconstructionEngine(index, adapter)
+    index = Index()
+    adapter = Adapter()
+    engine = Reconstructor(index, adapter)
     tokens = list(range(100))
 
     from membrane.fragmenter import generate_embedding
@@ -63,7 +63,7 @@ def test_gap_filled_by_semantic_similarity():
     gap_frag = Fragment(
         content_hash="gap",
         embedding=gap_embedding,
-        structural_signature=StructuralSignature("m", (0, 1), (40, 59)),
+        structural_signature=Signature("m", (0, 1), (40, 59)),
         size=100,
         ttl=3600.0,
         reuse_score=0.5,
@@ -81,9 +81,9 @@ def test_gap_filled_by_semantic_similarity():
 
 
 def test_large_gap_triggers_prefill():
-    index = IndexSystem()
-    adapter = PrefillAdapter()
-    engine = ReconstructionEngine(index, adapter, config=ReconstructionConfig(max_gap_tokens=10))
+    index = Index()
+    adapter = Adapter()
+    engine = Reconstructor(index, adapter, config=ReconstructorConfig(max_gap_tokens=10))
     tokens = list(range(100))
     a = make_fragment("a", (0, 19))
     b = make_fragment("b", (80, 99))
@@ -96,27 +96,27 @@ def test_large_gap_triggers_prefill():
 
 
 def test_empty_prompt():
-    index = IndexSystem()
-    adapter = PrefillAdapter()
-    engine = ReconstructionEngine(index, adapter)
+    index = Index()
+    adapter = Adapter()
+    engine = Reconstructor(index, adapter)
     result = engine.rebuild_context([], "m")
     assert result.coverage_ratio == 1.0
     assert result.fragments == []
 
 
 def test_missing_index_triggers_prefill():
-    index = IndexSystem()
-    adapter = PrefillAdapter()
-    engine = ReconstructionEngine(index, adapter, config=ReconstructionConfig(max_gap_tokens=5))
+    index = Index()
+    adapter = Adapter()
+    engine = Reconstructor(index, adapter, config=ReconstructorConfig(max_gap_tokens=5))
     tokens = list(range(50))
     result = engine.rebuild_context(tokens, "m")
     assert result.prefill_invoked
 
 
 def test_coverage_ratio_accuracy():
-    index = IndexSystem()
-    adapter = PrefillAdapter()
-    engine = ReconstructionEngine(index, adapter, config=ReconstructionConfig(max_gap_tokens=100))
+    index = Index()
+    adapter = Adapter()
+    engine = Reconstructor(index, adapter, config=ReconstructorConfig(max_gap_tokens=100))
     tokens = list(range(100))
     a = make_fragment("a", (0, 49))
     index.insert(a, {"n1"})
@@ -126,9 +126,9 @@ def test_coverage_ratio_accuracy():
 
 
 def test_graph_links_recorded():
-    index = IndexSystem()
-    adapter = PrefillAdapter()
-    engine = ReconstructionEngine(index, adapter, config=ReconstructionConfig(max_gap_tokens=10))
+    index = Index()
+    adapter = Adapter()
+    engine = Reconstructor(index, adapter, config=ReconstructorConfig(max_gap_tokens=10))
     tokens = list(range(50))
     a = make_fragment("a", (0, 24))
     b = make_fragment("b", (25, 49))

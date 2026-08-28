@@ -2,42 +2,42 @@
 
 import pytest
 
-from membrane.canonical import CanonicalStore
-from membrane.chunks import ChunkedTransfer
-from membrane.replicator import ClusterReplicator
+from membrane.canonical import Canonical
+from membrane.chunks import Chunks
+from membrane.replicator import Replicator
 from membrane.delta import DeltaEncoder
-from membrane.directory import DistributedDirectory
-from membrane.roles import DynamicRoleManager, NodeRole, SystemState
-from membrane.economic import EconomicRouter
+from membrane.directory import Directory
+from membrane.roles import Roles, NodeRole, SystemState
+from membrane.economic import Economic
 from membrane.fragment import Fragment
-from membrane.ring import HashRing
-from membrane.joint import JointOptimizer
-from membrane.kv import KVCacheManager
-from membrane.latency import LatencyRouter
-from membrane.node import MembraneNode
-from membrane.telemetry import NodeTelemetry
-from membrane.offload import OffloadDecisionEngine
-from membrane.origin import OriginNode
-from membrane.versions import PrefixVersionChain
-from membrane.policy import PromotionPolicy
-from membrane.prefill_remote import RemotePrefillDispatcher
-from membrane.replica import ReplicaNode
+from membrane.ring import Ring
+from membrane.joint import Joint
+from membrane.kv import KVCache
+from membrane.latency import Latency
+from membrane.node import Node
+from membrane.telemetry import Telemetry
+from membrane.offload import Offload
+from membrane.origin import Origin
+from membrane.versions import Versions
+from membrane.policy import Promotion
+from membrane.prefill_remote import PrefillRemote
+from membrane.replica import Replica
 from membrane.clusters import SemanticCluster
-from membrane.sessions import SessionTracker
-from membrane.signature import StructuralSignature
-from membrane._subgraph_retrieval import SubgraphRetrieval
+from membrane.sessions import Sessions
+from membrane.signature import Signature
+from membrane._subgraph_retrieval import _SubgraphRetrieval
 from membrane.supernode import Supernode
-from membrane.isolation import TenantIsolation, TenantPolicy
-from membrane.density import ValueDensity
-from membrane.weighted import WeightedGraph
-from membrane.workload import WorkloadAnalyzer
+from membrane.isolation import Isolation, Tenant
+from membrane.density import density
+from membrane.weighted import Weighted
+from membrane.workload import Workload
 
 
 def make_fragment(content_hash, embedding=(0.0, 0.0), reuse_score=0.5, size=10):
     return Fragment(
         content_hash=content_hash,
         embedding=embedding,
-        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
+        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
         size=size,
         ttl=3600.0,
         reuse_score=reuse_score,
@@ -49,7 +49,7 @@ class TestMembraneIntegration:
     """End-to-end integration tests across all 10 phases."""
 
     def test_phase_1_cache_hit_tracking(self):
-        mgr = KVCacheManager()
+        mgr = KVCache()
         frag = make_fragment("h1")
         mgr.store_kv("p1", [frag])
         result = mgr.lookup_kv("p1")
@@ -58,8 +58,8 @@ class TestMembraneIntegration:
         assert mgr.get_hit_rate() == 1.0
 
     def test_phase_2_origin_replica_promotion(self):
-        origin = OriginNode("origin-1")
-        replica = ReplicaNode("replica-1")
+        origin = Origin("origin-1")
+        replica = Replica("replica-1")
         frag = make_fragment("h1", size=50)
         origin.store(frag, is_primary=True)
         transferred = origin.bulk_promote(["h1"], replica)
@@ -67,22 +67,22 @@ class TestMembraneIntegration:
         assert replica.retrieve("h1") == frag
 
     def test_phase_3_offload_and_ship(self):
-        engine = OffloadDecisionEngine()
-        local = MembraneNode("local")
-        remote = MembraneNode("remote")
+        engine = Offload()
+        local = Node("local")
+        remote = Node("remote")
         decision = engine.decide(list(range(2048)), local, [remote])
         assert not decision.local_compute
 
-        dispatcher = RemotePrefillDispatcher()
+        dispatcher = PrefillRemote()
         result = dispatcher.dispatch(list(range(100)), "m", remote)
         assert result.kv_size_mib > 0.0
 
     def test_phase_4_directory_resolution(self):
-        ring = HashRing()
+        ring = Ring()
         ring.add_node("n1")
         sn = Supernode("sn1", hash_ring=ring)
         sn.register_fragment("h1", "n1")
-        dd = DistributedDirectory(hash_ring=ring)
+        dd = Directory(hash_ring=ring)
         dd.register_supernode(sn)
         assert dd.locate("h1") == {"n1"}
         assert dd.locate_nearest("h1", "from") == "n1"
@@ -95,56 +95,56 @@ class TestMembraneIntegration:
         assert enc.decode(base, delta) == new
 
     def test_phase_5_version_chain_ancestor(self):
-        chain = PrefixVersionChain()
+        chain = Versions()
         chain.append_version("h1", 1)
         chain.append_version("h2", 2, parent_version=1)
         chain.append_version("h3", 3, parent_version=1)
         assert chain.get_common_ancestor(2, 3) == 1
 
     def test_phase_6_graph_cluster_replication(self):
-        g = WeightedGraph()
+        g = Weighted()
         g.add_weighted_edge("a", "b", "next", 0.9)
         g.add_weighted_edge("b", "c", "next", 0.9)
-        sr = SubgraphRetrieval(g)
+        sr = _SubgraphRetrieval(g)
         comp = sr.retrieve_component("a", min_weight=0.5, max_depth=2)
         assert comp == {"a", "b", "c"}
 
-        source = MembraneNode("source")
-        t1 = MembraneNode("t1")
+        source = Node("source")
+        t1 = Node("t1")
         for h in comp:
             source.store(make_fragment(h, size=10), is_primary=True)
-        cr = ClusterReplicator()
+        cr = Replicator()
         results = cr.replicate_cluster(comp, source, [t1])
         assert set(results["t1"]) == comp
 
     def test_phase_7_session_and_workload(self):
-        st = SessionTracker()
+        st = Sessions()
         st.record_access("s1", "h1")
         st.record_access("s1", "h2")
         st.record_access("s1", "h1")
         assert st.get_unique_accesses("s1") == {"h1", "h2"}
 
-        wa = WorkloadAnalyzer()
+        wa = Workload()
         log = st.get_session_history("s1")
         ratio = wa.reuse_ratio(log)
         assert ratio > 0.0
 
     def test_phase_8_economic_routing(self):
-        router = EconomicRouter()
+        router = Economic()
         frag = make_fragment("h1", reuse_score=0.9)
         telemetry = {
-            "n1": NodeTelemetry("n1", 1000.0, 0.5, 0.8, 0.8),
-            "n2": NodeTelemetry("n2", 10.0, 0.1, 0.1, 0.1),
+            "n1": Telemetry("n1", 1000.0, 0.5, 0.8, 0.8),
+            "n2": Telemetry("n2", 10.0, 0.1, 0.1, 0.1),
         }
         best = router.route(frag, ["n1", "n2"], telemetry, [])
         assert best == "n2"
 
     def test_phase_9_tenant_canonical_store(self):
-        ti = TenantIsolation()
+        ti = Isolation()
         frag = make_fragment("h1", reuse_score=0.9)
         assert ti.can_share(frag, "t1", "t2")
 
-        cs = CanonicalStore()
+        cs = Canonical()
         cs.store_canonical(frag, "t1")
         cs.store_canonical(frag, "t2")
         shared = cs.get_shared_fragments("t1")
@@ -152,8 +152,8 @@ class TestMembraneIntegration:
         assert shared[0].content_hash == "h1"
 
     def test_phase_10_role_and_joint_optimization(self):
-        mgr = DynamicRoleManager()
-        node = MembraneNode("n1", max_memory_bytes=100)
+        mgr = Roles()
+        node = Node("n1", max_memory_bytes=100)
         from tests.membrane.test_cluster_replicator import make_fragment as mkfrag
 
         f = mkfrag("x", size=80)
@@ -162,8 +162,8 @@ class TestMembraneIntegration:
         role = mgr.evaluate_role(node, state)
         assert role == NodeRole.MEMORY_HOST
 
-        opt = JointOptimizer()
+        opt = Joint()
         frag = make_fragment("h1")
-        decision = opt.optimize(frag, [node], {"n1": NodeTelemetry("n1", 10.0, 0.0, 0.0, 0.0)})
+        decision = opt.optimize(frag, [node], {"n1": Telemetry("n1", 10.0, 0.0, 0.0, 0.0)})
         assert decision.compute_node_id == "n1"
         assert decision.memory_node_id == "n1"

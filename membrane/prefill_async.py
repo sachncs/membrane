@@ -1,6 +1,6 @@
-"""AsyncRemotePrefillDispatcher: concurrent prefill dispatch with timeout and fallback.
+"""PrefillAsync: concurrent prefill dispatch with timeout and fallback.
 
-This module defines :class:`AsyncRemotePrefillDispatcher`, which
+This module defines :class:`PrefillAsync`, which
 races prefill requests across multiple candidate nodes and returns
 the first successful result. If every remote attempt fails or
 times out, the dispatcher falls back to a local prefill (if a
@@ -22,8 +22,8 @@ network RTT measurement layer.
 import asyncio
 import logging
 
-from membrane.node import MembraneNode
-from membrane.adapter import PrefillAdapter, PrefillResult
+from membrane.node import Node
+from membrane.adapter import Adapter, PrefillResult
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class NodePrefillError(Exception):
     """Raised internally when a single node's prefill attempt fails."""
 
 
-class AsyncRemotePrefillDispatcher:
+class PrefillAsync:
     """Dispatches prefill requests concurrently to multiple candidate nodes.
 
     Races remote nodes and returns the first successful result.
@@ -57,7 +57,7 @@ class AsyncRemotePrefillDispatcher:
 
     def __init__(
         self,
-        prefill_adapter: PrefillAdapter | None = None,
+        prefill_adapter: Adapter | None = None,
         timeout_seconds: float = 5.0,
         latency_provider: dict[str, float] | None = None,
     ) -> None:
@@ -65,14 +65,14 @@ class AsyncRemotePrefillDispatcher:
 
         Args:
             prefill_adapter: Adapter used for prefill simulation.
-                A default :class:`PrefillAdapter` is created
+                A default :class:`Adapter` is created
                 when ``None``.
             timeout_seconds: Max seconds to wait for each
                 remote node.
             latency_provider: Mapping
                 ``node_id -> latency_seconds``.
         """
-        self.prefill_adapter = prefill_adapter or PrefillAdapter()
+        self.prefill_adapter = prefill_adapter or Adapter()
         self.timeout_seconds = timeout_seconds
         self.latency_provider = latency_provider or {}
 
@@ -80,8 +80,8 @@ class AsyncRemotePrefillDispatcher:
         self,
         prompt_tokens: list[int],
         model_id: str,
-        candidate_nodes: list[MembraneNode],
-        local_node: MembraneNode | None = None,
+        candidate_nodes: list[Node],
+        local_node: Node | None = None,
     ) -> PrefillResult:
         """Race remote nodes, fall back to local on failure.
 
@@ -152,7 +152,7 @@ class AsyncRemotePrefillDispatcher:
         self,
         prompt_tokens: list[int],
         model_id: str,
-        node: MembraneNode,
+        node: Node,
     ) -> PrefillResult:
         """Attempt prefill on a single node, simulating network latency.
 
@@ -192,7 +192,7 @@ class AsyncRemotePrefillDispatcher:
         self,
         prompt_tokens: list[int],
         model_id: str,
-        local_node: MembraneNode,
+        local_node: Node,
     ) -> PrefillResult:
         """Run prefill locally and store fragments as primary.
 

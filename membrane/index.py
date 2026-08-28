@@ -1,16 +1,16 @@
-"""IndexSystem: facade over all four in-memory indices.
+"""Index: facade over all four in-memory indices.
 
-This module defines :class:`IndexSystem`, a thin aggregate that
+This module defines :class:`Index`, a thin aggregate that
 coordinates the four specialized index structures that ship with
 Membrane:
 
-* :class:`~membrane.exact_index.ExactIndex` — primary
+* :class:`~membrane.exact_index.Exacts` — primary
   ``content_hash`` lookup with replica tracking.
-* :class:`~membrane.semantic_index.SemanticIndex` — embedding-based
+* :class:`~membrane.semantic_index.Semantics` — embedding-based
   similarity search.
-* :class:`~membrane.positional_index.PositionalIndex` — token-span
+* :class:`~membrane.positional_index._PositionalIndex` — token-span
   overlap and adjacency queries.
-* :class:`~membrane.co_access_index.CoAccessIndex` — undirected
+* :class:`~membrane.co_access_index.Coaccess` — undirected
   graph of fragments accessed together.
 
 The facade ensures that *every* sub-index stays in sync whenever a
@@ -18,7 +18,7 @@ fragment is inserted or removed, and exposes a single set of
 query methods that map to the most appropriate sub-index.
 
 Because the underlying indexes are independent data structures,
-:class:`IndexSystem` can be initialized lazily in tests or replaced
+:class:`Index` can be initialized lazily in tests or replaced
 with mocks that satisfy
 :class:`~membrane.protocols.IndexProtocol`.
 
@@ -37,14 +37,14 @@ logger = logging.getLogger(__name__)
 
 from collections.abc import Sequence
 
-from membrane.coaccess import CoAccessIndex
-from membrane.exacts import ExactIndex, IndexEntry
+from membrane.coaccess import Coaccess
+from membrane.exacts import Exacts, IndexEntry
 from membrane.fragment import Fragment
-from membrane.positions import PositionalIndex
-from membrane.semantics import SemanticIndex
+from membrane.positions import _PositionalIndex
+from membrane.semantics import Semantics
 
 
-class IndexSystem:
+class Index:
     """Manages exact, semantic, positional, and co-access indices.
 
     Provides incremental updates and supports distributed queries
@@ -60,10 +60,10 @@ class IndexSystem:
     def __init__(self) -> None:
         """Initialize empty sub-indices and log the lifecycle event."""
         logger.info("Initialized %s", self.__class__.__name__)
-        self.exact = ExactIndex()
-        self.semantic = SemanticIndex()
-        self.positional = PositionalIndex()
-        self.co_access = CoAccessIndex()
+        self.exact = Exacts()
+        self.semantic = Semantics()
+        self.positional = _PositionalIndex()
+        self.co_access = Coaccess()
 
     def insert(self, fragment: Fragment, locations: set[str]) -> None:
         """Insert a fragment into all indices.

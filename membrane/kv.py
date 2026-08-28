@@ -1,15 +1,15 @@
-"""KVCacheManager: dedicated cache layer with hit/miss tracking.
+"""KVCache: dedicated cache layer with hit/miss tracking.
 
-This module defines :class:`KVCacheManager`, a single-region
+This module defines :class:`KVCache`, a single-region
 memory cache that bundles a
-:class:`~membrane.index_system.IndexSystem`, an LRU eviction
+:class:`~membrane.index_system.Index`, an LRU eviction
 front, and a :class:`~membrane.cache_metrics.CacheMetrics`
 tracker.
 
 The cache layer separates three concerns:
 
 * **Prefill** — long context processing lives elsewhere (see
-  :class:`~membrane.prefill_adapter.PrefillAdapter`); the cache
+  :class:`~membrane.prefill_adapter.Adapter`); the cache
   only stores the resulting fragments.
 * **Decode** — request-time decoding reads fragments via
   :meth:`lookup_kv`.
@@ -29,15 +29,15 @@ logger = logging.getLogger(__name__)
 
 from membrane._cache_metrics import CacheMetrics
 from membrane.fragment import Fragment
-from membrane.index import IndexSystem
-from membrane.tracker import LRUCache
+from membrane.index import Index
+from membrane.tracker import LRUTracker
 
 
-class KVCacheManager:
+class KVCache:
     """Single-region memory cache that separates prefill, decode, and cache.
 
     Tracks cache hit rates and routes lookups through an owned
-    :class:`IndexSystem`. Maintains a mapping from prefix hash to
+    :class:`Index`. Maintains a mapping from prefix hash to
     the fragment hashes that were stored together so that lookup
     by prefix works correctly.
 
@@ -49,14 +49,14 @@ class KVCacheManager:
         metrics: Cache hit/miss statistics.
         prefix_to_fragments: Mapping from prefix hash to the
             list of fragment hashes stored for that prefix.
-        lru: :class:`LRUCache` used to bound ``prefix_to_fragments``.
+        lru: :class:`LRUTracker` used to bound ``prefix_to_fragments``.
         max_prefixes: Configured upper bound on prefixes
             (``None`` for unbounded).
     """
 
     def __init__(
         self,
-        index_system: IndexSystem | None = None,
+        index_system: Index | None = None,
         max_prefixes: int | None = None,
     ) -> None:
         """Initialize with an optional index system.
@@ -68,10 +68,10 @@ class KVCacheManager:
                 retain. ``None`` means unbounded (LRU tracking
                 remains active but no eviction is triggered).
         """
-        self.index_system = index_system or IndexSystem()
+        self.index_system = index_system or Index()
         self.metrics = CacheMetrics()
         self.prefix_to_fragments: dict[str, list[str]] = {}
-        self.lru = LRUCache(capacity=max_prefixes)
+        self.lru = LRUTracker(capacity=max_prefixes)
         self.max_prefixes = max_prefixes
         logger.info("Initialized %s", self.__class__.__name__)
 

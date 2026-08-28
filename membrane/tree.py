@@ -5,7 +5,7 @@ insertion and deletion.  This is a reusable, self-contained data
 structure.
 
 The tree is keyed by interval ``[start, end]`` (taken from each
-fragment's :class:`~membrane.structural_signature.StructuralSignature
+fragment's :class:`~membrane.structural_signature.Signature
 .token_span`). Each node is augmented with the maximum ``end`` value
 in its subtree so that range queries can prune entire subtrees
 without visiting them.
@@ -61,7 +61,7 @@ class IntervalNode:
         left: Left child, or ``None``.
         right: Right child, or ``None``.
         height: Height of the subtree rooted at this node.
-            Updated by :meth:`IntervalTree.update` after every
+            Updated by :meth:`Tree.update` after every
             mutation. Height ``1`` corresponds to a leaf.
     """
 
@@ -83,7 +83,7 @@ class IntervalNode:
         return self.fragment.content_hash
 
 
-class IntervalTree:
+class Tree:
     """Self-balancing interval tree (AVL-based) with max-end augmentation.
 
     The tree provides both **overlap** queries (find all intervals

@@ -1,7 +1,7 @@
-"""ReconstructionEngine: rebuild context via exact/positional/semantic lookup.
+"""Reconstructor: rebuild context via exact/positional/semantic lookup.
 
-This module defines :class:`ReconstructionEngine` and the supporting
-:class:`ReconstructionResult` and :class:`ReconstructionConfig`
+This module defines :class:`Reconstructor` and the supporting
+:class:`ReconstructorResult` and :class:`ReconstructorConfig`
 dataclasses. The engine is responsible for assembling a fragment
 chain that covers as much of a prompt as possible, falling back to
 prefill computation when the cache cannot satisfy the request.
@@ -14,15 +14,15 @@ Workflow:
 3. **Semantic fill** — search the semantic index for fragments
    that cover any remaining gaps.
 4. **Prefill fallback** — when a gap is too large to ignore,
-   delegate to a :class:`~membrane.prefill_adapter.PrefillAdapter`
+   delegate to a :class:`~membrane.prefill_adapter.Adapter`
    to compute the missing tokens and index the new fragments.
 5. **Post-processing** — deduplicate, sort by token span, and
    record co-access edges between the assembled fragments.
 
 The engine is content-agnostic: it operates on whatever fragments
 are present in the supplied :class:`~membrane.index_system
-.IndexSystem`. Callers that need model-specific behavior should
-select a :class:`PrefillAdapter` accordingly.
+.Index`. Callers that need model-specific behavior should
+select a :class:`Adapter` accordingly.
 """
 
 import logging
@@ -34,12 +34,12 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.fragmenter import compute_content_hash, generate_embedding
-from membrane.index import IndexSystem
-from membrane.adapter import PrefillAdapter
+from membrane.index import Index
+from membrane.adapter import Adapter
 
 
 @dataclass(frozen=True)
-class ReconstructionResult:
+class ReconstructorResult:
     """Outcome of a context reconstruction attempt.
 
     Attributes:
@@ -60,7 +60,7 @@ class ReconstructionResult:
 
 
 @dataclass(frozen=True)
-class ReconstructionConfig:
+class ReconstructorConfig:
     """Configuration for context reconstruction thresholds.
 
     Attributes:
@@ -69,14 +69,14 @@ class ReconstructionConfig:
         max_prefix_attempts: Maximum number of prefix lengths
             scanned when searching for an exact match. Caps the
             worst-case cost of
-            :meth:`ReconstructionEngine.find_longest_exact_match`.
+            :meth:`Reconstructor.find_longest_exact_match`.
     """
 
     max_gap_tokens: int = 256
     max_prefix_attempts: int = 128
 
 
-class ReconstructionEngine:
+class Reconstructor:
     """Reconstructs a prompt context from fragments.
 
     Workflow:
@@ -93,9 +93,9 @@ class ReconstructionEngine:
 
     def __init__(
         self,
-        index_system: IndexSystem,
-        prefill_adapter: PrefillAdapter,
-        config: ReconstructionConfig | None = None,
+        index_system: Index,
+        prefill_adapter: Adapter,
+        config: ReconstructorConfig | None = None,
     ) -> None:
         """Initialize the engine.
 
@@ -104,19 +104,19 @@ class ReconstructionEngine:
                 exact/semantic/positional lookup.
             prefill_adapter: Adapter for prefill fallback.
             config: Reconstruction thresholds. A default
-                :class:`ReconstructionConfig` is used when
+                :class:`ReconstructorConfig` is used when
                 ``None``.
         """
         self.index_system = index_system
         self.prefill_adapter = prefill_adapter
-        self.config = config or ReconstructionConfig()
+        self.config = config or ReconstructorConfig()
         logger.info("Initialized %s", self.__class__.__name__)
 
     def rebuild_context(
         self,
         prompt_tokens: list[int],
         model_id: str,
-    ) -> ReconstructionResult:
+    ) -> ReconstructorResult:
         """Rebuild context for a prompt.
 
         Args:
@@ -124,12 +124,12 @@ class ReconstructionEngine:
             model_id: Model identifier.
 
         Returns:
-            ReconstructionResult: Assembled fragments plus
+            ReconstructorResult: Assembled fragments plus
             coverage statistics and prefill bookkeeping.
         """
         if not prompt_tokens:
             # Trivial case: an empty prompt is "fully covered".
-            return ReconstructionResult(
+            return ReconstructorResult(
                 fragments=[],
                 coverage_ratio=1.0,
                 missing_segments=[],
@@ -210,7 +210,7 @@ class ReconstructionEngine:
         covered_count = sum(coverage)
         coverage_ratio = covered_count / length if length > 0 else 1.0
 
-        return ReconstructionResult(
+        return ReconstructorResult(
             fragments=assembled,
             coverage_ratio=coverage_ratio,
             missing_segments=missing_segments,

@@ -1,4 +1,4 @@
-"""GPUBackend: prefill using GPU (torch CUDA) if available.
+"""GPU: prefill using GPU (torch CUDA) if available.
 
 Falls back to CPU if CUDA is unavailable. This is an optional
 backend that requires ``torch`` to be installed.
@@ -10,10 +10,10 @@ records one of three states:
   is ``True`` → use CUDA.
 * **CPU fallback**: ``torch`` missing or CUDA unavailable →
   delegate every call to a held
-  :class:`~membrane.compute.cpu_backend.CPUBackend`.
+  :class:`~membrane.compute.cpu_backend.CPU`.
 
 This means callers do not need to special-case missing CUDA —
-they can simply instantiate ``GPUBackend()`` and rely on the
+they can simply instantiate ``GPU()`` and rely on the
 backend's automatic degradation.
 
 Limitations:
@@ -28,16 +28,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.compute.base import ComputeBackend
-from membrane.compute.cpu import CPUBackend
+from membrane.compute.base import Backend
+from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
-class GPUBackend(ComputeBackend):
+class GPU(Backend):
     """GPU-based compute backend using PyTorch CUDA.
 
-    Falls back to :class:`CPUBackend` if ``torch`` is not
+    Falls back to :class:`CPU` if ``torch`` is not
     installed or CUDA is unavailable.
 
     Attributes:
@@ -45,7 +45,7 @@ class GPUBackend(ComputeBackend):
             unavailable.
         _device: Device string (``"cuda"``) or ``None`` when
             unavailable.
-        _fallback: :class:`CPUBackend` used when GPU is
+        _fallback: :class:`CPU` used when GPU is
             unavailable.
     """
 
@@ -53,20 +53,20 @@ class GPUBackend(ComputeBackend):
         """Probe the runtime and select GPU or CPU fallback."""
         self._torch = None
         self._device: str | None = None
-        self._fallback: CPUBackend | None = None
+        self._fallback: CPU | None = None
         try:
             import torch
 
             if torch.cuda.is_available():
                 self._torch = torch
                 self._device = "cuda"
-                logger.info("GPUBackend: using %s", torch.cuda.get_device_name(0))
+                logger.info("GPU: using %s", torch.cuda.get_device_name(0))
             else:
-                logger.warning("GPUBackend: CUDA unavailable, will use fallback")
-                self._fallback = CPUBackend()
+                logger.warning("GPU: CUDA unavailable, will use fallback")
+                self._fallback = CPU()
         except ImportError:
-            logger.warning("GPUBackend: torch not installed, using CPU fallback")
-            self._fallback = CPUBackend()
+            logger.warning("GPU: torch not installed, using CPU fallback")
+            self._fallback = CPU()
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Run prefill on GPU (or fallback to CPU).
@@ -88,7 +88,7 @@ class GPUBackend(ComputeBackend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = CPUBackend.hash_tokens(chunk)
+            h = CPU.hash_tokens(chunk)
             # Allocate a small GPU tensor for the chunk. The
             # sum() forces a synchronous kernel launch so the
             # simulator actually exercises the GPU even when no
@@ -98,7 +98,7 @@ class GPUBackend(ComputeBackend):
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),
-                structural_signature=StructuralSignature(
+                structural_signature=Signature(
                     model_id=model_id,
                     layer_range=(0, 1),
                     token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
@@ -110,7 +110,7 @@ class GPUBackend(ComputeBackend):
             )
             fragments.append(frag)
         logger.debug(
-            "GPUBackend: prefill %s tokens into %s fragments on %s",
+            "GPU: prefill %s tokens into %s fragments on %s",
             len(prompt_tokens),
             len(fragments),
             self._device,

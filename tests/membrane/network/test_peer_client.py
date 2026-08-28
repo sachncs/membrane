@@ -1,17 +1,17 @@
-"""Tests for PeerClient."""
+"""Tests for Peer."""
 
 from unittest.mock import MagicMock, patch
 
 from membrane.fragment import Fragment
-from membrane.network.peer import PeerClient
-from membrane.signature import StructuralSignature
+from membrane.network.peer import Peer
+from membrane.signature import Signature
 
 
 def make_fragment(content_hash: str = "h1"):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1, 0.2),
-        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
+        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
         size=100,
         ttl=3600.0,
         reuse_score=0.5,
@@ -29,10 +29,10 @@ def _mock_response(body: bytes):
 
 
 class TestPeerClient:
-    """Test suite for PeerClient HTTP transport."""
+    """Test suite for Peer HTTP transport."""
 
     def test_heartbeat_success(self):
-        client = PeerClient("http://127.0.0.1:8080")
+        client = Peer("http://127.0.0.1:8080")
         mock_resp = _mock_response(b'{"node_id": "n1", "healthy": true}')
         with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
             result = client.heartbeat()
@@ -40,13 +40,13 @@ class TestPeerClient:
         assert result["healthy"] is True
 
     def test_heartbeat_retry_then_fail(self):
-        client = PeerClient("http://127.0.0.1:8080", max_retries=2, retry_delay_sec=0.01)
+        client = Peer("http://127.0.0.1:8080", max_retries=2, retry_delay_sec=0.01)
         with patch("membrane.network.peer.urllib.request.urlopen", side_effect=Exception("timeout")):
             result = client.heartbeat()
         assert result is None
 
     def test_store_fragment_success(self):
-        client = PeerClient("http://127.0.0.1:8080")
+        client = Peer("http://127.0.0.1:8080")
         frag = make_fragment("abc")
         mock_resp = _mock_response(b'{"success": true, "content_hash": "abc"}')
         with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
@@ -54,7 +54,7 @@ class TestPeerClient:
         assert ok is True
 
     def test_retrieve_fragment_success(self):
-        client = PeerClient("http://127.0.0.1:8080")
+        client = Peer("http://127.0.0.1:8080")
         mock_resp = _mock_response(
             b'{"found": true, "fragment": {"content_hash": "abc", "embedding": [0.1], '
             b'"model_id": "m", "layer_range": [0, 1], "token_span": [0, 10], '
@@ -66,14 +66,14 @@ class TestPeerClient:
         assert frag.content_hash == "abc"
 
     def test_retrieve_fragment_not_found(self):
-        client = PeerClient("http://127.0.0.1:8080")
+        client = Peer("http://127.0.0.1:8080")
         mock_resp = _mock_response(b'{"found": false}')
         with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
             frag = client.retrieve_fragment("missing")
         assert frag is None
 
     def test_join_cluster(self):
-        client = PeerClient("http://127.0.0.1:8080")
+        client = Peer("http://127.0.0.1:8080")
         mock_resp = _mock_response(b'{"success": true, "peers": []}')
         with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
             result = client.join_cluster("n1", "127.0.0.1", 8080)
@@ -81,14 +81,14 @@ class TestPeerClient:
         assert result["success"] is True
 
     def test_leave_cluster(self):
-        client = PeerClient("http://127.0.0.1:8080")
+        client = Peer("http://127.0.0.1:8080")
         mock_resp = _mock_response(b'{"success": true}')
         with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
             ok = client.leave_cluster("n1")
         assert ok is True
 
     def test_gossip(self):
-        client = PeerClient("http://127.0.0.1:8080")
+        client = Peer("http://127.0.0.1:8080")
         mock_resp = _mock_response(b'{"node_id": "n2", "timestamp": 1000.0}')
         with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
             result = client.gossip({"node_id": "n1", "timestamp": 500.0})

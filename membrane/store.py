@@ -1,4 +1,4 @@
-"""FragmentStore: unified content-addressed fragment storage with multi-factor eviction.
+"""Store: unified content-addressed fragment storage with multi-factor eviction.
 
 Implements a size-bounded, content-addressed store with TTL expiry and
 tiered eviction that combines LRU, reuse-score weighting, and value-density
@@ -26,7 +26,7 @@ import time
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.density import ValueDensity
+from membrane.density import density
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,8 @@ CAPACITY_PRESSURE_THRESHOLD: float = 0.90
 
 
 @dataclass
-class FragmentStoreMetrics:
-    """Runtime metrics for a :class:`FragmentStore`.
+class StoreMetrics:
+    """Runtime metrics for a :class:`Store`.
 
     Attributes:
         stored_count: Current number of fragments held in the
@@ -65,7 +65,7 @@ class FragmentStoreMetrics:
     miss_count: int = 0
 
 
-class FragmentStore:
+class Store:
     """Content-addressed fragment store with tiered eviction.
 
     All fragments are keyed by ``content_hash``.  The store enforces
@@ -80,7 +80,7 @@ class FragmentStore:
         warm_ttl: Seconds after which a fragment drops from Warm to
             Cold.
         value_density: Optional
-            :class:`~membrane.value_density.ValueDensity` calculator
+            :func:`~membrane.density.density` calculator
             for eviction ranking. A default is used if omitted.
     """
 
@@ -90,7 +90,7 @@ class FragmentStore:
         max_count: int = 10_000,
         hot_ttl: float = 60.0,
         warm_ttl: float = 300.0,
-        value_density: ValueDensity | None = None,
+        value_density: object | None = None,
     ) -> None:
         """Initialize the store with the supplied configuration.
 
@@ -102,12 +102,12 @@ class FragmentStore:
         self.max_count = max_count
         self.hot_ttl = hot_ttl
         self.warm_ttl = warm_ttl
-        self.value_density = value_density or ValueDensity()
+        self.value_density = value_density
 
         self.fragments: dict[str, Fragment] = {}
         self.access_times: dict[str, float] = {}
         self.insertion_times: dict[str, float] = {}
-        self.metrics = FragmentStoreMetrics(max_bytes=max_bytes, max_count=max_count)
+        self.metrics = StoreMetrics(max_bytes=max_bytes, max_count=max_count)
 
     # ------------------------------------------------------------------
     # Core operations
@@ -278,7 +278,7 @@ class FragmentStore:
         if cold:
             h = min(
                 cold,
-                key=lambda h: self.value_density.compute(self.fragments[h], []),
+                key=lambda h: density(self.fragments[h], []),
             )
             frag = self.remove(h)
             if frag is not None:

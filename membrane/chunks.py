@@ -1,7 +1,7 @@
-"""ChunkedTransfer: split fragments into chunks for partial retrieval.
+"""Chunks: split fragments into chunks for partial retrieval.
 
 This module implements a minimal chunked-transfer protocol used when
-moving fragments between :class:`~membrane.membrane_node.MembraneNode`
+moving fragments between :class:`~membrane.membrane_node.Node`
 instances. Large payloads can be split into fixed-size chunks so that
 partial progress is preserved across connection failures and so that
 remote peers only need to fetch the chunks they are missing.
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
+from membrane.node import Node
 
 
 @dataclass(frozen=True)
@@ -53,12 +53,12 @@ class Chunk:
     chunk_data: bytes
 
 
-class ChunkedTransfer:
+class Chunks:
     """Splits fragments into chunks and transfers missing chunks incrementally.
 
     The class is stateless beyond its configured ``chunk_size``. It
     acts as a thin coordinator between two
-    :class:`~membrane.membrane_node.MembraneNode` instances, deciding
+    :class:`~membrane.membrane_node.Node` instances, deciding
     which chunks still need to flow across the network.
 
     Attributes:
@@ -113,8 +113,8 @@ class ChunkedTransfer:
 
     def transfer_missing_chunks(
         self,
-        source: MembraneNode,
-        target: MembraneNode,
+        source: Node,
+        target: Node,
         chunks: list[Chunk],
     ) -> list[Chunk]:
         """Transfer chunks that are missing on the target node.
@@ -127,13 +127,13 @@ class ChunkedTransfer:
 
         Args:
             source: Node holding the parent fragment. Its
-                :meth:`~membrane.membrane_node.MembraneNode.retrieve`
+                :meth:`~membrane.membrane_node.Node.retrieve`
                 method must return the parent for the transfer to
                 proceed.
             target: Node that should receive missing chunks. It must
-                expose :meth:`~membrane.membrane_node.MembraneNode
+                expose :meth:`~membrane.membrane_node.Node
                 .store` and
-                :meth:`~membrane.membrane_node.MembraneNode.retrieve`.
+                :meth:`~membrane.membrane_node.Node.retrieve`.
             chunks: The full chunk list for the fragment. Only the
                 first chunk is inspected to recover the parent
                 ``content_hash``.

@@ -1,4 +1,4 @@
-"""MembraneServer: unified production server orchestrating transport, compute, and persistence.
+"""Server: unified production server orchestrating transport, compute, and persistence.
 
 Wraps an HTTP (stdlib or FastAPI) or gRPC transport, a compute
 backend (CPU/GPU/Transformers/OpenAI/Anthropic/Ollama), and an
@@ -8,12 +8,12 @@ service.
 The server is also the entry point for the CLI's ``serve``
 command and the TUI dashboard. It owns:
 
-* A :class:`MembraneNode` instance.
-* A :class:`ComputeBackend`.
-* A persistence backend (:class:`InMemoryBackend` or
-  :class:`RedisBackend`).
-* An optional :class:`ClusterManager` and matching
-  :class:`RemoteTransferService`.
+* A :class:`Node` instance.
+* A :class:`Backend`.
+* A persistence backend (:class:`Memory` or
+  :class:`Redis`).
+* An optional :class:`Cluster` and matching
+  :class:`Transfer`.
 * An in-memory event log surfaced via
   :meth:`recent_events` for the dashboard.
 """
@@ -24,15 +24,15 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from membrane.compute.base import ComputeBackend
-from membrane.compute.cpu import CPUBackend
-from membrane.compute.gpu import GPUBackend
-from membrane.node import MembraneNode
-from membrane.network.cluster import ClusterManager
+from membrane.compute.base import Backend
+from membrane.compute.cpu import CPU
+from membrane.compute.gpu import GPU
+from membrane.node import Node
+from membrane.network.cluster import Cluster
 from membrane.network.config import ClusterConfig
-from membrane.network.transfer import RemoteTransferService
-from membrane.persistence.memory import InMemoryBackend
-from membrane.persistence.redis import RedisBackend
+from membrane.network.transfer import Transfer
+from membrane.persistence.memory import Memory
+from membrane.persistence.redis import Redis
 from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.http import HTTPServer
 
@@ -100,11 +100,11 @@ class ServerDiagnostics:
     load: float
 
 
-class MembraneServer:
+class Server:
     """Unified production server for Membrane.
 
     Args:
-        node: MembraneNode instance.
+        node: Node instance.
         transport: ``"http"`` (FastAPI), ``"stdlib"`` (stdlib
             HTTP), or ``"grpc"``.
         compute: ``"cpu"``, ``"gpu"``, ``"ollama"``,
@@ -121,7 +121,7 @@ class MembraneServer:
 
     def __init__(
         self,
-        node: MembraneNode,
+        node: Node,
         transport: str = "http",
         compute: str = "cpu",
         redis_url: str = "",
@@ -165,7 +165,7 @@ class MembraneServer:
         llm_url: str,
         llm_model: str,
         api_key: str,
-    ) -> ComputeBackend:
+    ) -> Backend:
         """Construct the compute backend matching ``compute``.
 
         Args:
@@ -175,33 +175,33 @@ class MembraneServer:
             api_key: API key (used for OpenAI / Anthropic).
 
         Returns:
-            ComputeBackend: The constructed backend instance.
+            Backend: The constructed backend instance.
         """
         if compute == "gpu":
-            return GPUBackend()
+            return GPU()
         if compute == "ollama":
-            from membrane.compute.ollama import OllamaBackend
+            from membrane.compute.ollama import Ollama
 
             url = llm_url or "http://localhost:11434"
             model = llm_model or "llama3.2"
-            return OllamaBackend(base_url=url, model=model)
+            return Ollama(base_url=url, model=model)
         if compute == "openai":
-            from membrane.compute.openai import OpenAIBackend
+            from membrane.compute.openai import OpenAI
 
             model = llm_model or "gpt-4o-mini"
-            return OpenAIBackend(api_key=api_key, model=model)
+            return OpenAI(api_key=api_key, model=model)
         if compute == "anthropic":
-            from membrane.compute.anthropic import AnthropicBackend
+            from membrane.compute.anthropic import Anthropic
 
             model = llm_model or "claude-3-sonnet-20240229"
-            return AnthropicBackend(api_key=api_key, model=model)
+            return Anthropic(api_key=api_key, model=model)
         if compute == "transformers":
-            from membrane.compute.transformers import TransformersBackend
+            from membrane.compute.transformers import Transformers
 
             model = llm_model or "gpt2"
-            return TransformersBackend(model_id=model)
+            return Transformers(model_id=model)
         # Default: CPU backend.
-        return CPUBackend()
+        return CPU()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -213,10 +213,10 @@ class MembraneServer:
         When ``redis_url`` is set and reachable, use Redis;
         otherwise fall back to the in-memory backend.
         """
-        self.persistence: Any = InMemoryBackend()
+        self.persistence: Any = Memory()
         if redis_url:
             try:
-                redis_backend = RedisBackend(redis_url)
+                redis_backend = Redis(redis_url)
                 if redis_backend.ping():
                     self.persistence = redis_backend
                     logger.info("Redis connected at %s", redis_url)
@@ -232,13 +232,13 @@ class MembraneServer:
         port: int,
     ) -> None:
         """Initialize the cluster manager and transfer service."""
-        self.cluster_manager: ClusterManager | None = None
-        self.transfer_service = RemoteTransferService(
+        self.cluster_manager: Cluster | None = None
+        self.transfer_service = Transfer(
             cluster_manager=self.cluster_manager,
             local_node=self.node,
         )
         if cluster_config is not None:
-            self.cluster_manager = ClusterManager(
+            self.cluster_manager = Cluster(
                 node_id=self.node.node_id,
                 host=host,
                 port=port,
@@ -301,7 +301,7 @@ class MembraneServer:
     def start(self) -> None:
         """Start the server in a background thread.
 
-        Also starts the :class:`ClusterManager` (if configured)
+        Also starts the :class:`Cluster` (if configured)
         in its own background threads.
         """
         self._running = True
@@ -398,7 +398,7 @@ class MembraneServer:
             error_count=self.error_count,
             connected_nodes=connected,
             backend_name=self.compute_backend.device_name(),
-            redis_connected=isinstance(self.persistence, RedisBackend) and self.persistence.ping(),
+            redis_connected=isinstance(self.persistence, Redis) and self.persistence.ping(),
             load=self.node.heartbeat(),
         )
 

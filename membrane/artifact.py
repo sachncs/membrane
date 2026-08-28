@@ -7,7 +7,7 @@ an external source (web fetch, RAG corpus, file ingestion).
 
 Artifacts are conceptually different from
 :class:`~membrane.prefix.Prefix` and
-:class:`~membrane.kv_segment.KVSegment`:
+:class:`~membrane.kv_segment.Segment`:
 
 * A prefix is a *logical* token sequence produced by a tokenizer.
 * A KV segment is the *physical* KV-cache tensor for a model.
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
 @dataclass(frozen=True)
@@ -94,10 +94,10 @@ class Artifact:
             Fragment: An immutable fragment carrying the artifact's
             identity, embedding, and lifecycle metadata. The
             embedding is preserved as-is (not re-generated from
-            shape, unlike :meth:`~membrane.kv_segment.KVSegment
+            shape, unlike :meth:`~membrane.kv_segment.Segment
             .materialize`).
         """
-        signature = StructuralSignature(
+        signature = Signature(
             model_id="artifact",
             layer_range=(0, 0),
             token_span=(0, self.token_count - 1),

@@ -1,4 +1,4 @@
-"""PeerClient: HTTP client for inter-node communication.
+"""Peer: HTTP client for inter-node communication.
 
 Uses the standard library ``urllib.request`` so the network
 layer has zero external dependencies. Requests carry a
@@ -27,7 +27,7 @@ import urllib.request
 from typing import Any
 
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def deserialize_fragment(data: dict[str, Any]) -> Fragment:
     return Fragment(
         content_hash=data["content_hash"],
         embedding=tuple(data["embedding"]),
-        structural_signature=StructuralSignature(
+        structural_signature=Signature(
             model_id=data["model_id"],
             layer_range=tuple(data["layer_range"]),
             token_span=tuple(data["token_span"]),
@@ -78,7 +78,7 @@ def deserialize_fragment(data: dict[str, Any]) -> Fragment:
     )
 
 
-class PeerClient:
+class Peer:
     """HTTP client for a single Membrane peer.
 
     Args:

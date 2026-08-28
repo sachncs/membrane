@@ -1,14 +1,14 @@
-"""SubgraphRetrieval: retrieve connected components around a seed fragment.
+"""_SubgraphRetrieval: retrieve connected components around a seed fragment.
 
 This module implements a small BFS-style traversal on top of
-:class:`~membrane.weighted_graph.WeightedGraph`. Given a seed node,
+:class:`~membrane.weighted_graph.Weighted`. Given a seed node,
 :meth:`retrieve_component` returns the set of hashes reachable
 within ``max_depth`` hops following edges whose weight meets or
 exceeds ``min_weight``.
 
 The retrieval is *weakly connected* in the sense that it follows
 edges in both directions implicitly (because
-:meth:`WeightedGraph.get_strong_neighbors` already aggregates over
+:meth:`Weighted.get_strong_neighbors` already aggregates over
 all edge types originating at a node). For directed analyses
 where direction matters, build a one-sided weighted graph first.
 
@@ -25,19 +25,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.weighted import WeightedGraph
+from membrane.weighted import Weighted
 
 
-class SubgraphRetrieval:
+class _SubgraphRetrieval:
     """Retrieves connected components from a weighted graph.
 
     The class is a thin façade; all state lives in the supplied
-    :class:`~membrane.weighted_graph.WeightedGraph`, so instances
+    :class:`~membrane.weighted_graph.Weighted`, so instances
     are safe to share across threads as long as the underlying
     graph itself is.
     """
 
-    def __init__(self, graph: WeightedGraph) -> None:
+    def __init__(self, graph: Weighted) -> None:
         """Initialize with a weighted graph.
 
         Args:

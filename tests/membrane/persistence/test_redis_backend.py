@@ -3,15 +3,15 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.persistence.redis import RedisBackend
-from membrane.signature import StructuralSignature
+from membrane.persistence.redis import Redis
+from membrane.signature import Signature
 
 
 def make_fragment(content_hash: str = "h1", size: int = 100):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1, 0.2),
-        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
+        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
         size=size,
         ttl=3600.0,
         reuse_score=0.5,
@@ -20,11 +20,11 @@ def make_fragment(content_hash: str = "h1", size: int = 100):
 
 
 class TestRedisBackend:
-    """Test suite for RedisBackend."""
+    """Test suite for Redis."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.backend = RedisBackend()
+        self.backend = Redis()
         if not self.backend.ping():
             pytest.skip("Redis server not available")
         self.backend.flush()

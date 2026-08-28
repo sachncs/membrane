@@ -1,16 +1,16 @@
-"""DynamicRoleManager: node dynamically switches role based on system state.
+"""Roles: node dynamically switches role based on system state.
 
 This module implements a small role-assignment policy that
-:class:`~membrane.membrane_node.MembraneNode` instances can use to
+:class:`~membrane.membrane_node.Node` instances can use to
 decide whether to behave as a *memory host*, *prefill worker*, or
 *decode worker* in a disaggregated inference cluster.
 
 The manager is intentionally simple: it inspects the node's
 current memory pressure (via
-:meth:`MembraneNode.heartbeat`) and the cluster's average GPU
+:meth:`Node.heartbeat`) and the cluster's average GPU
 load, then picks a role from a fixed decision table. Callers that
 need richer policies can subclass and override
-:meth:`DynamicRoleManager.evaluate_role`.
+:meth:`Roles.evaluate_role`.
 
 Heuristic summary:
 
@@ -30,11 +30,11 @@ logger = logging.getLogger(__name__)
 
 from enum import Enum
 
-from membrane.node import MembraneNode
+from membrane.node import Node
 
 
 class NodeRole(Enum):
-    """Possible roles for a :class:`MembraneNode`.
+    """Possible roles for a :class:`Node`.
 
     * ``MEMORY_HOST`` — primarily stores fragments and serves
       reads.
@@ -81,11 +81,11 @@ class SystemState:
         self.average_gpu_load = average_gpu_load
 
 
-class DynamicRoleManager:
+class Roles:
     """Evaluates and assigns dynamic roles to nodes.
 
     The manager is stateless; instances are safe to share across
-    threads as long as the underlying ``MembraneNode`` references
+    threads as long as the underlying ``Node`` references
     are themselves safe to query concurrently.
     """
 
@@ -95,7 +95,7 @@ class DynamicRoleManager:
 
     def evaluate_role(
         self,
-        node: MembraneNode,
+        node: Node,
         system_state: SystemState,
     ) -> NodeRole:
         """Decide the best role for ``node`` given ``system_state``.

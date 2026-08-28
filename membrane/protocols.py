@@ -35,11 +35,11 @@ class IndexProtocol(Protocol):
     The protocol captures the union of operations provided by the
     four in-memory indexes used in Membrane: exact, semantic,
     positional, and co-access. Concrete implementations include
-    :class:`~membrane.exact_index.ExactIndex`,
-    :class:`~membrane.semantic_index.SemanticIndex`,
-    :class:`~membrane.positional_index.PositionalIndex`, and
-    :class:`~membrane.co_access_index.CoAccessIndex`, as well as the
-    aggregate :class:`~membrane.index_system.IndexSystem`.
+    :class:`~membrane.exact_index.Exacts`,
+    :class:`~membrane.semantic_index.Semantics`,
+    :class:`~membrane.positional_index._PositionalIndex`, and
+    :class:`~membrane.co_access_index.Coaccess`, as well as the
+    aggregate :class:`~membrane.index_system.Index`.
 
     Implementations are expected to be safe to call concurrently from
     a single writer thread and multiple reader threads; concurrent
@@ -156,9 +156,9 @@ class RouterProtocol(Protocol):
 
     Implementations encapsulate the placement policy used by the
     system. Concrete examples include
-    :class:`~membrane.latency_router.LatencyRouter`,
-    :class:`~membrane.economic_router.EconomicRouter`, and the
-    :class:`~membrane.joint_optimizer.JointOptimizer`.
+    :class:`~membrane.latency_router.Latency`,
+    :class:`~membrane.economic_router.Economic`, and the
+    :class:`~membrane.joint_optimizer.Joint`.
 
     A router is invoked whenever the system needs to decide *where*
     a fragment should live (initial placement, replication, or
@@ -201,8 +201,8 @@ class DirectoryProtocol(Protocol):
     Implementations map fragment ``content_hash`` values to the set
     of node IDs that hold a replica, and node IDs to their current
     membership status. Concrete implementations include
-    :class:`~membrane.distributed_directory.DistributedDirectory` and
-    :class:`~membrane.global_directory.GlobalDirectory`.
+    :class:`~membrane.distributed_directory.Directory` and
+    :class:`~membrane.global_directory.Registry`.
     """
 
     def register_node(self, node) -> None:
@@ -255,7 +255,7 @@ class TransportProtocol(Protocol):
     Implementations encapsulate the network-level mechanics of
     moving fragment payloads and reconciling node state. Concrete
     implementations include
-    :class:`~membrane.network.peer_client.PeerClient` and
+    :class:`~membrane.network.peer_client.Peer` and
     :class:`~membrane.transfer_service.TransferService`.
     """
 

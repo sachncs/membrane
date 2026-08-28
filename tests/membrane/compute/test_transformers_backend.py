@@ -1,10 +1,10 @@
-"""Tests for TransformersBackend."""
+"""Tests for Transformers."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from membrane.compute.transformers import TransformersBackend
+from membrane.compute.transformers import Transformers
 from membrane.fragment import Fragment
 
 # Skip the success-path test when torch is not installed. The
@@ -19,25 +19,25 @@ class TestTransformersBackend:
     """Test suite for HuggingFace Transformers backend."""
 
     def test_device_name_unloaded(self):
-        backend = TransformersBackend(model_id="gpt2")
+        backend = Transformers(model_id="gpt2")
         backend._model = None
         assert backend.device_name() == "transformers(unloaded)"
 
     def test_prefill_simulation_when_model_none(self):
-        backend = TransformersBackend(model_id="gpt2")
+        backend = Transformers(model_id="gpt2")
         backend._model = None
         frags = backend.prefill([1, 2, 3, 4], "m")
         assert len(frags) == 1
         assert frags[0].embedding == (0.0, 4.0)
 
     def test_generate_when_model_none(self):
-        backend = TransformersBackend(model_id="gpt2")
+        backend = Transformers(model_id="gpt2")
         backend._model = None
         result = backend.generate([1, 2], "m")
         assert result["text"] == ""
 
     def test_generate_success(self):
-        backend = TransformersBackend(model_id="gpt2")
+        backend = Transformers(model_id="gpt2")
 
         mock_tensor = MagicMock()
         mock_tensor.tolist.return_value = [100, 101, 102]
@@ -62,12 +62,12 @@ class TestTransformersBackend:
         assert result["tokens"] == [100, 101, 102]
 
     def test_available_when_loaded(self):
-        backend = TransformersBackend(model_id="gpt2")
+        backend = Transformers(model_id="gpt2")
         backend._model = MagicMock()
         backend._tokenizer = MagicMock()
         assert backend.available() is True
 
     def test_available_when_unloaded(self):
-        backend = TransformersBackend(model_id="gpt2")
+        backend = Transformers(model_id="gpt2")
         backend._model = None
         assert backend.available() is False

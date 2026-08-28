@@ -5,7 +5,7 @@ service that aggregates fragment-location information for a slice
 of the cluster. A deployment typically runs several supernodes,
 each covering a subset of the hash ring; together they form a
 *hierarchical directory* that the
-:class:`~membrane.distributed_directory.DistributedDirectory`
+:class:`~membrane.distributed_directory.Directory`
 queries in parallel.
 
 The supernode is intentionally minimal:
@@ -14,7 +14,7 @@ The supernode is intentionally minimal:
   :meth:`unregister_fragment`).
 * It answers "who holds this fragment?" queries
   (:meth:`resolve`).
-* It maintains a consistent :class:`~membrane.hash_ring.HashRing`
+* It maintains a consistent :class:`~membrane.hash_ring.Ring`
   so it can fall back to placement-based answers when gossip
   state is incomplete (:meth:`resolve_via_ring`).
 
@@ -28,7 +28,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.ring import HashRing
+from membrane.ring import Ring
 
 
 class Supernode:
@@ -45,7 +45,7 @@ class Supernode:
             set of node IDs holding a replica.
     """
 
-    def __init__(self, supernode_id: str, hash_ring: HashRing | None = None) -> None:
+    def __init__(self, supernode_id: str, hash_ring: Ring | None = None) -> None:
         """Initialize the supernode.
 
         Args:
@@ -55,7 +55,7 @@ class Supernode:
                 ``None``.
         """
         self.supernode_id = supernode_id
-        self.hash_ring = hash_ring or HashRing()
+        self.hash_ring = hash_ring or Ring()
         self.fragment_locations: dict[str, set[str]] = {}
 
     def register_fragment(self, content_hash: str, node_id: str) -> None:

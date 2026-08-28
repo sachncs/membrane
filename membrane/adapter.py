@@ -1,6 +1,6 @@
-"""PrefillAdapter: wraps the Membrane analytical model.
+"""Adapter: wraps the Membrane analytical model.
 
-This module defines :class:`PrefillAdapter` and the supporting
+This module defines :class:`Adapter` and the supporting
 :class:`PrefillResult` dataclass. The adapter is the bridge
 between the analytical throughput model from the
 "Prefill-as-a-Service" paper (see
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.fragmenter import FragmentationEngine
+from membrane.fragmenter import Fragmenter
 from membrane.model.profiler import kv_size_mib, prefill_time_seconds
 from membrane.model.router import Router, RoutingDecision
 
@@ -55,7 +55,7 @@ class PrefillResult:
     fragments: list[Fragment]
 
 
-class PrefillAdapter:
+class Adapter:
     """Adapts the Membrane analytical model for integration.
 
     Treats profiler functions as a model-based prefill service.
@@ -75,7 +75,7 @@ class PrefillAdapter:
         self,
         router: Router | None = None,
         compute_scale: float = 1.0,
-        fragmentation_engine: FragmentationEngine | None = None,
+        fragmentation_engine: Fragmenter | None = None,
     ) -> None:
         """Initialize the adapter.
 
@@ -86,12 +86,12 @@ class PrefillAdapter:
                 (``1.0`` corresponds to the H200 reference).
             fragmentation_engine: Engine to convert KV output
                 into fragments. A default
-                :class:`FragmentationEngine` is used when
+                :class:`Fragmenter` is used when
                 ``None``.
         """
         self.router = router
         self.compute_scale = compute_scale
-        self.fragmentation_engine = fragmentation_engine or FragmentationEngine()
+        self.fragmentation_engine = fragmentation_engine or Fragmenter()
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> PrefillResult:
         """Simulate prefill and return KV metadata plus fragments.
@@ -131,7 +131,7 @@ class PrefillAdapter:
         """Convert simulated KV output into content-addressed fragments.
 
         The fragment chain mirrors the prompt windows produced by
-        :class:`FragmentationEngine`. Each fragment's ``size``
+        :class:`Fragmenter`. Each fragment's ``size``
         is set to reflect its share of the total estimated KV
         footprint (``kv_size_mib`` distributed by token count).
 

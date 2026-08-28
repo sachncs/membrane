@@ -1,6 +1,6 @@
 """Positional index: token_span interval lookup for adjacency/overlap.
 
-This module wraps :class:`~membrane.interval_tree.IntervalTree` to
+This module wraps :class:`~membrane.interval_tree.Tree` to
 provide a fragment-keyed positional index. It answers two kinds of
 queries efficiently:
 
@@ -31,10 +31,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 from membrane.fragment import Fragment
-from membrane.tree import IntervalTree
+from membrane.tree import Tree
 
 
-class PositionalIndex:
+class _PositionalIndex:
     """In-memory positional index using an interval tree for overlap queries.
 
     Provides O(log n + m) overlap and adjacency lookups via an
@@ -48,7 +48,7 @@ class PositionalIndex:
 
     def __init__(self) -> None:
         """Initialize an empty positional index backed by an interval tree."""
-        self.tree = IntervalTree()
+        self.tree = Tree()
 
     def insert(self, fragment: Fragment) -> None:
         """Insert a fragment into the index.

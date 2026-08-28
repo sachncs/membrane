@@ -1,13 +1,13 @@
-"""MembraneNode: in-memory fragment storage, TTL, and graph-aware eviction.
+"""Node: in-memory fragment storage, TTL, and graph-aware eviction.
 
-This module defines :class:`MembraneNode`, the in-memory serving
+This module defines :class:`Node`, the in-memory serving
 plane node that hosts fragments on a single machine. It owns:
 
 * A :class:`~membrane.fragment.Fragment` dictionary keyed by
   ``content_hash``.
-* An :class:`~membrane.index_system.IndexSystem` that maintains
+* An :class:`~membrane.index_system.Index` that maintains
   the four in-memory indexes for the fragments it holds.
-* A :class:`~membrane.graph_manager.GraphManager` used during
+* A :class:`~membrane.graph_manager._GraphManager` used during
   graph-aware eviction.
 
 The node enforces a ``max_memory_bytes`` budget and supports three
@@ -40,13 +40,13 @@ import time
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane._graph_manager import GraphManager
-from membrane.index import IndexSystem
+from membrane._graph_manager import _GraphManager
+from membrane.index import Index
 
 
 @dataclass(frozen=True)
-class NodeStats:
-    """Statistics for a :class:`MembraneNode`.
+class Stats:
+    """Statistics for a :class:`Node`.
 
     Attributes:
         memory_used_bytes: Current memory consumption in bytes.
@@ -67,12 +67,12 @@ class NodeStats:
 EVICTION_REUSE_EPSILON: float = 0.01
 
 
-class MembraneNode:
+class Node:
     """Serving plane node that holds fragments in memory.
 
     Supports TTL expiry, LRU eviction weighted by ``reuse_score``,
     and graph-aware co-eviction via an owned
-    :class:`GraphManager`.
+    :class:`_GraphManager`.
 
     All public methods are thread-safe via an internal
     :class:`threading.RLock`.
@@ -82,8 +82,8 @@ class MembraneNode:
         self,
         node_id: str,
         max_memory_bytes: int = 1 << 30,
-        index_system: IndexSystem | None = None,
-        graph_manager: GraphManager | None = None,
+        index_system: Index | None = None,
+        graph_manager: _GraphManager | None = None,
     ) -> None:
         """Initialize the node.
 
@@ -97,8 +97,8 @@ class MembraneNode:
         """
         self.node_id = node_id
         self.max_memory_bytes = max_memory_bytes
-        self.index_system = index_system or IndexSystem()
-        self.graph_manager = graph_manager or GraphManager()
+        self.index_system = index_system or Index()
+        self.graph_manager = graph_manager or _GraphManager()
 
         self.fragments: dict[str, Fragment] = {}
         self.primary_hashes: set[str] = set()
@@ -301,7 +301,7 @@ class MembraneNode:
 
         For every seed hash evicted in earlier phases, look up its
         structural neighbors via
-        :meth:`GraphManager.eviction_candidates` and remove any
+        :meth:`_GraphManager.eviction_candidates` and remove any
         neighbor that is still resident on this node.
 
         Args:
@@ -416,15 +416,15 @@ class MembraneNode:
             return 1.0
         return min(1.0, self.get_memory_usage() / self.max_memory_bytes)
 
-    def get_stats(self) -> NodeStats:
+    def get_stats(self) -> Stats:
         """Return current node statistics.
 
         Returns:
-            NodeStats: Snapshot of memory usage and fragment
+            Stats: Snapshot of memory usage and fragment
             counts at call time.
         """
         with self._lock:
-            return NodeStats(
+            return Stats(
                 memory_used_bytes=self.memory_usage,
                 memory_limit_bytes=self.max_memory_bytes,
                 fragment_count=len(self.fragments),

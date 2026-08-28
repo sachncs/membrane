@@ -3,35 +3,35 @@
 
 import logging
 
-from membrane.canonical import CanonicalStore
-from membrane.chunks import ChunkedTransfer
-from membrane.replicator import ClusterReplicator
+from membrane.canonical import Canonical
+from membrane.chunks import Chunks
+from membrane.replicator import Replicator
 from membrane.delta import DeltaEncoder
-from membrane.directory import DistributedDirectory
-from membrane.roles import DynamicRoleManager, NodeRole, SystemState
-from membrane.economic import EconomicRouter
+from membrane.directory import Directory
+from membrane.roles import Roles, NodeRole, SystemState
+from membrane.economic import Economic
 from membrane.fragment import Fragment
-from membrane.ring import HashRing
-from membrane.joint import JointOptimizer
-from membrane.kv import KVCacheManager
-from membrane.latency import LatencyRouter
-from membrane.node import MembraneNode
-from membrane.telemetry import NodeTelemetry
-from membrane.offload import OffloadDecisionEngine
-from membrane.origin import OriginNode
-from membrane.versions import PrefixVersionChain
-from membrane.policy import PromotionPolicy
-from membrane.prefill_remote import RemotePrefillDispatcher
-from membrane.replica import ReplicaNode
+from membrane.ring import Ring
+from membrane.joint import Joint
+from membrane.kv import KVCache
+from membrane.latency import Latency
+from membrane.node import Node
+from membrane.telemetry import Telemetry
+from membrane.offload import Offload
+from membrane.origin import Origin
+from membrane.versions import Versions
+from membrane.policy import Promotion
+from membrane.prefill_remote import PrefillRemote
+from membrane.replica import Replica
 from membrane.clusters import SemanticCluster
-from membrane.sessions import SessionTracker
-from membrane.signature import StructuralSignature
-from membrane._subgraph_retrieval import SubgraphRetrieval
+from membrane.sessions import Sessions
+from membrane.signature import Signature
+from membrane._subgraph_retrieval import _SubgraphRetrieval
 from membrane.supernode import Supernode
-from membrane.isolation import TenantIsolation, TenantPolicy
-from membrane.density import ValueDensity
-from membrane.weighted import WeightedGraph
-from membrane.workload import WorkloadAnalyzer
+from membrane.isolation import Isolation, Tenant
+from membrane.density import density
+from membrane.weighted import Weighted
+from membrane.workload import Workload
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def make_fragment(content_hash, embedding=(0.0, 0.0), reuse_score=0.5, size=10):
     return Fragment(
         content_hash=content_hash,
         embedding=embedding,
-        structural_signature=StructuralSignature(
+        structural_signature=Signature(
             model_id="m", layer_range=(0, 1), token_span=(0, 1)
         ),
         size=size,
@@ -55,7 +55,7 @@ def main():
 
     # Phase 1: Single-Region Cache
     logger.info("[Phase 1] KV Cache Manager")
-    cache = KVCacheManager()
+    cache = KVCache()
     frag = make_fragment("demo-1")
     cache.store_kv("prefix-1", [frag])
     hit = cache.lookup_kv("demo-1")
@@ -65,27 +65,27 @@ def main():
 
     # Phase 2: Regional Replication
     logger.info("[Phase 2] Origin → Replica Promotion")
-    origin = OriginNode("origin-us")
-    replica = ReplicaNode("replica-eu")
+    origin = Origin("origin-us")
+    replica = Replica("replica-eu")
     origin.store(frag, is_primary=True)
     transferred = origin.bulk_promote(["demo-1"], replica)
     logger.info(f"  Transferred to replica: {transferred}\n")
 
     # Phase 3: Selective KV Offload
     logger.info("[Phase 3] Offload Decision")
-    engine = OffloadDecisionEngine()
-    local = MembraneNode("local")
-    remote = MembraneNode("remote")
+    engine = Offload()
+    local = Node("local")
+    remote = Node("remote")
     decision = engine.decide(list(range(2048)), local, [remote])
     logger.info(f"  Offload to {decision.target_node_id}, reason={decision.reason}\n")
 
     # Phase 4: Global Directory
     logger.info("[Phase 4] Distributed Directory")
-    ring = HashRing()
+    ring = Ring()
     ring.add_node("n1")
     sn = Supernode("sn1", hash_ring=ring)
     sn.register_fragment("demo-1", "n1")
-    dd = DistributedDirectory(hash_ring=ring)
+    dd = Directory(hash_ring=ring)
     dd.register_supernode(sn)
     logger.info(f"  Locate demo-1: {dd.locate('demo-1')}\n")
 
@@ -102,64 +102,64 @@ def main():
 
     # Phase 6: Context Graph
     logger.info("[Phase 6] Weighted Graph + Cluster Replication")
-    g = WeightedGraph()
+    g = Weighted()
     g.add_weighted_edge("a", "b", "next", 0.9)
     g.add_weighted_edge("b", "c", "next", 0.9)
-    sr = SubgraphRetrieval(g)
+    sr = _SubgraphRetrieval(g)
     comp = sr.retrieve_component("a", min_weight=0.5, max_depth=2)
     logger.info(f"  Component from a: {comp}")
-    source = MembraneNode("source")
-    target = MembraneNode("target")
+    source = Node("source")
+    target = Node("target")
     for h in comp:
         source.store(make_fragment(h, size=10), is_primary=True)
-    cr = ClusterReplicator()
+    cr = Replicator()
     results = cr.replicate_cluster(comp, source, [target])
     logger.info(f"  Replicated to target: {set(results.get('target', []))}\n")
 
     # Phase 7: Predictive Routing
     logger.info("[Phase 7] Session Tracking + Workload Analysis")
-    st = SessionTracker()
+    st = Sessions()
     st.record_access("session-1", "h1")
     st.record_access("session-1", "h2")
     st.record_access("session-1", "h1")
-    wa = WorkloadAnalyzer()
+    wa = Workload()
     ratio = wa.reuse_ratio(st.get_session_history("session-1"))
     logger.info(f"  Session history: {st.get_session_history('session-1')}")
     logger.info(f"  Reuse ratio: {ratio:.2f}\n")
 
     # Phase 8: Economic Scheduler
     logger.info("[Phase 8] Economic Router")
-    router = EconomicRouter()
+    router = Economic()
     frag2 = make_fragment("high-value", reuse_score=0.9)
     telemetry = {
-        "n1": NodeTelemetry("n1", 1000.0, 0.5, 0.8, 0.8),
-        "n2": NodeTelemetry("n2", 10.0, 0.1, 0.1, 0.1),
+        "n1": Telemetry("n1", 1000.0, 0.5, 0.8, 0.8),
+        "n2": Telemetry("n2", 10.0, 0.1, 0.1, 0.1),
     }
     best = router.route(frag2, ["n1", "n2"], telemetry, [])
     logger.info(f"  Best node for high-value fragment: {best}\n")
 
     # Phase 9: Multi-Tenant Deduplication
     logger.info("[Phase 9] Tenant Isolation + Canonical Store")
-    ti = TenantIsolation(policy=TenantPolicy(allow_tool_traces=True))
+    ti = Isolation(policy=Tenant(allow_tool_traces=True))
     sharedmake_fragment = make_fragment("shared", reuse_score=0.9)
     logger.info(f"  Can share across tenants: {ti.can_share(sharedmake_fragment, 't1', 't2')}")
-    cs = CanonicalStore()
+    cs = Canonical()
     cs.store_canonical(sharedmake_fragment, "t1")
     cs.store_canonical(sharedmake_fragment, "t2")
     logger.info(f"  Shared fragments for t1: {len(cs.get_shared_fragments('t1'))}\n")
 
     # Phase 10: Compute-Memory Convergence
     logger.info("[Phase 10] Dynamic Role + Joint Optimization")
-    mgr = DynamicRoleManager()
-    node = MembraneNode("n1", max_memory_bytes=100)
+    mgr = Roles()
+    node = Node("n1", max_memory_bytes=100)
     f = make_fragment("load", size=80)
     node.store(f, is_primary=True)
     state = SystemState(average_gpu_load=0.1)
     role = mgr.evaluate_role(node, state)
     logger.info(f"  Node role: {role.value}")
-    opt = JointOptimizer()
+    opt = Joint()
     decision = opt.optimize(
-        sharedmake_fragment, [node], {"n1": NodeTelemetry("n1", 10.0, 0.0, 0.0, 0.0)}
+        sharedmake_fragment, [node], {"n1": Telemetry("n1", 10.0, 0.0, 0.0, 0.0)}
     )
     logger.info(
         f"  Placement: compute={decision.compute_node_id}, memory={decision.memory_node_id}"

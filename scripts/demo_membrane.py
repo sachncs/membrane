@@ -2,11 +2,11 @@
 
 import logging
 
-from membrane.fragmenter import FragmentationConfig, FragmentationEngine
-from membrane.registry import GlobalDirectory
-from membrane.node import MembraneNode
-from membrane.adapter import PrefillAdapter
-from membrane.reconstructor import ReconstructionEngine
+from membrane.fragmenter import FragmenterConfig, Fragmenter
+from membrane.registry import Registry
+from membrane.node import Node
+from membrane.adapter import Adapter
+from membrane.reconstructor import Reconstructor
 from membrane.transfer import TransferService
 
 logger = logging.getLogger(__name__)
@@ -17,18 +17,18 @@ def main():
     logger.info("=== Membrane Multi-Node Demo ===")
 
     # Create 3 nodes in different regions
-    node0 = MembraneNode("us-east-1", max_memory_bytes=1 << 20)
-    node1 = MembraneNode("us-west-2", max_memory_bytes=1 << 20)
-    node2 = MembraneNode("eu-west-1", max_memory_bytes=1 << 20)
+    node0 = Node("us-east-1", max_memory_bytes=1 << 20)
+    node1 = Node("us-west-2", max_memory_bytes=1 << 20)
+    node2 = Node("eu-west-1", max_memory_bytes=1 << 20)
 
     # Global directory tracks locations
-    directory = GlobalDirectory()
+    directory = Registry()
     directory.register_node(node0)
     directory.register_node(node1)
     directory.register_node(node2)
 
     # Fragment a prompt into windows
-    engine = FragmentationEngine(FragmentationConfig(window_size=128))
+    engine = Fragmenter(FragmenterConfig(window_size=128))
     prompt_tokens = list(range(512))
     frags = engine.create_windows(prompt_tokens, model_id="kimi-linear-1t")
     logger.info("Prompt fragmented into %s windows", len(frags))
@@ -52,12 +52,12 @@ def main():
     logger.info("Transferred %s fragments to node-2", len(transferred))
 
     # Reconstruct the prompt from node-2
-    adapter = PrefillAdapter()
-    from membrane.reconstructor import ReconstructionConfig
-    recon = ReconstructionEngine(
+    adapter = Adapter()
+    from membrane.reconstructor import ReconstructorConfig
+    recon = Reconstructor(
         node2.index_system,
         adapter,
-        config=ReconstructionConfig(max_gap_tokens=50),
+        config=ReconstructorConfig(max_gap_tokens=50),
     )
     result = recon.rebuild_context(prompt_tokens, model_id="kimi-linear-1t")
 

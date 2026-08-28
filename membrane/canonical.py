@@ -1,6 +1,6 @@
-"""CanonicalStore: deduplicated shared KV pool across tenants.
+"""Canonical: deduplicated shared KV pool across tenants.
 
-This module defines :class:`CanonicalStore` and its supporting
+This module defines :class:`Canonical` and its supporting
 :class:`CanonicalRef` dataclass. The canonical store is the
 *cross-tenant* layer of the deduplication fabric: a single
 physical fragment is shared by every tenant that has produced or
@@ -12,7 +12,7 @@ The store maintains three pieces of state:
   payloads, keyed by ``content_hash``.
 * ``tenant_refs`` — the set of tenants that currently reference
   each canonical hash.
-* An :class:`LRUCache` used to bound the store when
+* An :class:`LRUTracker` used to bound the store when
   ``max_entries`` is configured.
 
 References returned by :meth:`store_canonical` carry the
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.tracker import LRUCache
+from membrane.tracker import LRUTracker
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,7 @@ class CanonicalRef:
     tenant_ids: frozenset[str]
 
 
-class CanonicalStore:
+class Canonical:
     """Shared deduplicated pool of fragments across multiple tenants.
 
     Stores one physical copy per unique content hash and tracks
@@ -63,7 +63,7 @@ class CanonicalStore:
             canonical :class:`Fragment`.
         tenant_refs: Mapping from ``content_hash`` to the set of
             tenant IDs that reference it.
-        lru: :class:`LRUCache` used to bound the store when
+        lru: :class:`LRUTracker` used to bound the store when
             ``max_entries`` is set.
         max_entries: Configured upper bound on canonical entries
             (or ``None`` for unbounded).
@@ -79,7 +79,7 @@ class CanonicalStore:
         """
         self.canonical_fragments: dict[str, Fragment] = {}
         self.tenant_refs: dict[str, set[str]] = {}
-        self.lru = LRUCache(capacity=max_entries)
+        self.lru = LRUTracker(capacity=max_entries)
         self.max_entries = max_entries
 
     def store_canonical(

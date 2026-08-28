@@ -1,6 +1,6 @@
 """Exact index: content_hash -> Fragment + location set.
 
-This module implements :class:`ExactIndex`, the simplest of the
+This module implements :class:`Exacts`, the simplest of the
 four in-memory lookup structures that ship with Membrane. It maps a
 fragment's ``content_hash`` to the fragment itself together with the
 set of node IDs currently holding a replica of it.
@@ -33,7 +33,7 @@ from membrane.fragment import Fragment
 
 @dataclass(frozen=True)
 class IndexEntry:
-    """Entry stored in the :class:`ExactIndex`.
+    """Entry stored in the :class:`Exacts`.
 
     The combination of a fragment and the set of nodes that hold a
     replica is sufficient to answer both "do I have the metadata?"
@@ -51,7 +51,7 @@ class IndexEntry:
     locations: frozenset[str]
 
 
-class ExactIndex:
+class Exacts:
     """In-memory exact index keyed by ``content_hash``.
 
     .. note::
@@ -62,7 +62,7 @@ class ExactIndex:
 
     The index is intentionally minimal — it does not store the
     fragment payload. The payload lives in the
-    :class:`~membrane.fragment_store.FragmentStore`; this index
+    :class:`~membrane.fragment_store.Store`; this index
     only records *where* the metadata and payload live.
     """
 

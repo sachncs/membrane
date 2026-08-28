@@ -1,9 +1,9 @@
-"""RemoteTransferService: network-aware fragment transfer.
+"""Transfer: network-aware fragment transfer.
 
-This module defines :class:`RemoteTransferService`, a subclass of
+This module defines :class:`Transfer`, a subclass of
 :class:`~membrane.transfer_service.TransferService` that can move
 fragments between a mix of local
-:class:`~membrane.membrane_node.MembraneNode` instances and
+:class:`~membrane.membrane_node.Node` instances and
 remote peers (identified by their ``node_id`` string).
 
 Routing rules:
@@ -11,7 +11,7 @@ Routing rules:
 * ``source`` and ``target`` both local → delegate to the base
   :class:`TransferService`.
 * ``source`` is a remote id → fetch the fragment via the peer's
-  :class:`~membrane.network.peer_client.PeerClient` and store
+  :class:`~membrane.network.peer_client.Peer` and store
   it on the local target.
 * ``target`` is a remote id → read the fragment locally and push
   it via the peer's ``request_replicate`` verb.
@@ -24,28 +24,28 @@ in the same process or across the network.
 import logging
 from typing import TYPE_CHECKING
 
-from membrane.node import MembraneNode
+from membrane.node import Node
 from membrane.transfer import TransferService
 
 if TYPE_CHECKING:
-    from membrane.network.cluster import ClusterManager
+    from membrane.network.cluster import Cluster
 
 logger = logging.getLogger(__name__)
 
 
-class RemoteTransferService(TransferService):
+class Transfer(TransferService):
     """Transfer service that handles both local and remote nodes.
 
     Args:
-        cluster_manager: :class:`ClusterManager` for resolving
+        cluster_manager: :class:`Cluster` for resolving
             peer clients.
-        local_node: The local :class:`MembraneNode` instance.
+        local_node: The local :class:`Node` instance.
     """
 
     def __init__(
         self,
-        cluster_manager: "ClusterManager | None",
-        local_node: MembraneNode,
+        cluster_manager: "Cluster | None",
+        local_node: Node,
     ) -> None:
         """Initialize the service.
 
@@ -62,13 +62,13 @@ class RemoteTransferService(TransferService):
 
     def transfer_fragment(
         self,
-        source: MembraneNode | str,
-        target: MembraneNode | str,
+        source: Node | str,
+        target: Node | str,
         content_hash: str,
     ) -> bool:
         """Copy a fragment from ``source`` to ``target``.
 
-        Accepts either a :class:`MembraneNode` (local) or a
+        Accepts either a :class:`Node` (local) or a
         string node id (remote). The dispatch logic depends on
         which combination of source/target is local.
 
@@ -83,7 +83,7 @@ class RemoteTransferService(TransferService):
             refused replication).
         """
         # Fast path: both local.
-        if isinstance(source, MembraneNode) and isinstance(target, MembraneNode):
+        if isinstance(source, Node) and isinstance(target, Node):
             return super().transfer_fragment(source, target, content_hash)
 
         if self.cluster_manager is None:
@@ -98,7 +98,7 @@ class RemoteTransferService(TransferService):
             frag = client.retrieve_fragment(content_hash)
             if frag is None:
                 return False
-            if isinstance(target, MembraneNode):
+            if isinstance(target, Node):
                 return target.store(frag, is_primary=False)
             # Remote-to-remote: replicate from source to target
             # via the source's HTTP API.
@@ -122,8 +122,8 @@ class RemoteTransferService(TransferService):
 
     def sync_nodes(
         self,
-        source: MembraneNode | str,
-        target: MembraneNode | str,
+        source: Node | str,
+        target: Node | str,
     ) -> list[str]:
         """Synchronize all missing fragments from ``source`` to ``target``.
 
@@ -141,7 +141,7 @@ class RemoteTransferService(TransferService):
             list[str]: Successfully transferred hashes.
         """
         # Local-to-local fast path.
-        if isinstance(source, MembraneNode) and isinstance(target, MembraneNode):
+        if isinstance(source, Node) and isinstance(target, Node):
             return super().sync_nodes(source, target)
 
         # Remote paths: fetch both inventories via HTTP.
@@ -158,19 +158,19 @@ class RemoteTransferService(TransferService):
         return transferred
 
     def inventory_digest(  # type: ignore[override]
-        self, node: MembraneNode | str
+        self, node: Node | str
     ) -> dict[str, int] | None:
         """Fetch a node's inventory digest.
 
         Args:
-            node: Local :class:`MembraneNode` or remote node id.
+            node: Local :class:`Node` or remote node id.
 
         Returns:
             dict[str, int] | None: ``content_hash -> version_id``
             for the node, or ``None`` when the inventory cannot
             be obtained (missing client, network failure).
         """
-        if isinstance(node, MembraneNode):
+        if isinstance(node, Node):
             return super().inventory_digest(node)
         if self.cluster_manager is None:
             return None

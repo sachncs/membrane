@@ -1,4 +1,4 @@
-"""FragmentationEngine: fixed-size windows, split, and merge.
+"""Fragmenter: fixed-size windows, split, and merge.
 
 This module provides the *mechanics* for turning a token sequence into
 content-addressable fragments and for reshaping fragments at runtime
@@ -6,21 +6,21 @@ when prompts grow or shrink.
 
 The module exposes:
 
-* :class:`FragmentationConfig` — knobs controlling window size,
+* :class:`FragmenterConfig` — knobs controlling window size,
   embedding dimensionality, and merge thresholds.
 * :func:`compute_content_hash` — deterministic MD5 hash over a token
   tuple, used as the canonical ``content_hash`` for fragments.
 * :func:`generate_embedding` — synthetic normalized embedding
   derived deterministically from the token sequence. Used for
   semantic indexing without paying for a real embedding model.
-* :class:`FragmentationEngine` — the high-level façade with three
+* :class:`Fragmenter` — the high-level façade with three
   operations:
 
-  - :meth:`FragmentationEngine.create_windows` — split a prompt into
+  - :meth:`Fragmenter.create_windows` — split a prompt into
     fixed-size fragments.
-  - :meth:`FragmentationEngine.split` — subdivide a fragment at given
+  - :meth:`Fragmenter.split` — subdivide a fragment at given
     token positions.
-  - :meth:`FragmentationEngine.merge` — combine adjacent fragments
+  - :meth:`Fragmenter.merge` — combine adjacent fragments
     into one.
 
 Design rationale:
@@ -55,16 +55,16 @@ import math
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
 @dataclass(frozen=True)
-class FragmentationConfig:
+class FragmenterConfig:
     """Configuration for fragment generation.
 
     Attributes:
         window_size: Number of tokens per initial window created by
-            :meth:`FragmentationEngine.create_windows`. Larger
+            :meth:`Fragmenter.create_windows`. Larger
             windows amortize metadata overhead but reduce
             granularity for partial-prefix reuse.
         embedding_dim: Dimensionality of synthetic embeddings
@@ -72,7 +72,7 @@ class FragmentationConfig:
             consistent across the cluster to keep semantic indexes
             interoperable.
         merge_reuse_threshold: Maximum average ``reuse_score`` for
-            which :meth:`FragmentationEngine.merge` is willing to
+            which :meth:`Fragmenter.merge` is willing to
             combine adjacent fragments. High-reuse fragments are
             kept separate so they can be replicated independently.
     """
@@ -137,24 +137,24 @@ def generate_embedding(tokens: tuple[int, ...], dim: int) -> tuple[float, ...]:
     return tuple(values)
 
 
-class FragmentationEngine:
+class Fragmenter:
     """Splits prompts into fixed-size fragments and supports split/merge.
 
-    The engine is stateless beyond its :class:`FragmentationConfig`.
+    The engine is stateless beyond its :class:`FragmenterConfig`.
     All methods are pure functions of their inputs and the config,
     so a single instance can be shared across threads safely.
     """
 
-    def __init__(self, config: FragmentationConfig | None = None) -> None:
+    def __init__(self, config: FragmenterConfig | None = None) -> None:
         """Initialize the engine with the supplied configuration.
 
         Args:
             config: Fragmentation parameters. When ``None``, a
-                default :class:`FragmentationConfig` is used with
+                default :class:`FragmenterConfig` is used with
                 ``window_size=1024``, ``embedding_dim=128``, and
                 ``merge_reuse_threshold=0.8``.
         """
-        self.config = config or FragmentationConfig()
+        self.config = config or FragmenterConfig()
         logger.info("Initialized %s", self.__class__.__name__)
 
     def create_windows(
@@ -173,7 +173,7 @@ class FragmentationEngine:
             prompt_tokens: Token IDs to fragment. May be empty, in
                 which case an empty list is returned.
             model_id: Model identifier stamped on every fragment's
-                :class:`~membrane.structural_signature.StructuralSignature`.
+                :class:`~membrane.structural_signature.Signature`.
 
         Returns:
             list[Fragment]: Ordered fragments covering the full
@@ -197,7 +197,7 @@ class FragmentationEngine:
 
             content_hash = compute_content_hash(window_tokens)
             embedding = generate_embedding(window_tokens, self.config.embedding_dim)
-            signature = StructuralSignature(
+            signature = Signature(
                 model_id=model_id,
                 layer_range=(0, 0),
                 token_span=(start, end),
@@ -228,7 +228,7 @@ class FragmentationEngine:
         """Split a fragment at given token positions within its span.
 
         Split points are interpreted as absolute token positions
-        (matching ``StructuralSignature.token_span``). Points
+        (matching ``Signature.token_span``). Points
         outside the fragment's span, or duplicates, are ignored.
         Each split point becomes the inclusive start of the next
         sub-fragment.
@@ -292,7 +292,7 @@ class FragmentationEngine:
 
             content_hash = compute_content_hash(sub_tokens)
             embedding = generate_embedding(sub_tokens, len(fragment.embedding))
-            signature = StructuralSignature(
+            signature = Signature(
                 model_id=model_id,
                 layer_range=layer_range,
                 token_span=(sub_start, sub_end),
@@ -403,7 +403,7 @@ class FragmentationEngine:
 
         content_hash = compute_content_hash(merged_tokens)
         embedding = generate_embedding(merged_tokens, len(first.embedding))
-        signature = StructuralSignature(
+        signature = Signature(
             model_id=model_id,
             layer_range=layer_range,
             token_span=(start, end),

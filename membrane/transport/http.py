@@ -22,10 +22,10 @@ Endpoints:
 The implementation has three nested classes:
 
 * :class:`HTTPServer` — public façade used by callers.
-* :class:`MembraneStdlibHTTPServer` — ``http.server.HTTPServer``
+* :class:`StdlibServer` — ``http.server.HTTPServer``
   subclass that holds references to the local node, compute
   backend, transfer service, and cluster manager.
-* :class:`MembraneHTTPHandler` — request handler that
+* :class:`Handler` — request handler that
   dispatches to one of the ``_handle_*`` methods.
 
 Security:
@@ -42,11 +42,11 @@ from http.server import BaseHTTPRequestHandler
 from http.server import HTTPServer as StdlibHTTPServer
 from typing import Any
 
-from membrane.compute.base import ComputeBackend
-from membrane.compute.cpu import CPUBackend
+from membrane.compute.base import Backend
+from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.signature import StructuralSignature
+from membrane.node import Node
+from membrane.signature import Signature
 from membrane.transfer import TransferService
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ def deserialize_fragment(data: dict[str, Any]) -> Fragment:
     return Fragment(
         content_hash=data["content_hash"],
         embedding=tuple(data["embedding"]),
-        structural_signature=StructuralSignature(
+        structural_signature=Signature(
             model_id=data["model_id"],
             layer_range=tuple(data["layer_range"]),
             token_span=tuple(data["token_span"]),
@@ -98,12 +98,12 @@ def deserialize_fragment(data: dict[str, Any]) -> Fragment:
     )
 
 
-class MembraneStdlibHTTPServer(StdlibHTTPServer):
+class StdlibServer(StdlibHTTPServer):
     """Custom HTTPServer that holds references to node, compute, and cluster.
 
     Attributes:
-        node: Local :class:`MembraneNode`.
-        compute_backend: Optional :class:`ComputeBackend` used by
+        node: Local :class:`Node`.
+        compute_backend: Optional :class:`Backend` used by
             ``POST /prefill``.
         transfer_service: Transfer service used by
             ``POST /sync``.
@@ -115,8 +115,8 @@ class MembraneStdlibHTTPServer(StdlibHTTPServer):
         self,
         server_address,
         handler_class,
-        node: MembraneNode,
-        compute_backend: ComputeBackend | None,
+        node: Node,
+        compute_backend: Backend | None,
         transfer_service: TransferService,
         cluster_manager: Any | None,
     ) -> None:
@@ -128,7 +128,7 @@ class MembraneStdlibHTTPServer(StdlibHTTPServer):
         self.cluster_manager = cluster_manager
 
 
-class MembraneHTTPHandler(BaseHTTPRequestHandler):
+class Handler(BaseHTTPRequestHandler):
     """Request handler for Membrane HTTP transport.
 
     The handler is a thin dispatcher: it parses the URL path,
@@ -137,7 +137,7 @@ class MembraneHTTPHandler(BaseHTTPRequestHandler):
     :meth:`send_json` / :meth:`read_json`.
     """
 
-    server: MembraneStdlibHTTPServer  # type: ignore[misc]
+    server: StdlibServer  # type: ignore[misc]
 
     def log_message(self, fmt: str, *args: Any) -> None:
         """Route stdlib HTTP server logs through the Membrane logger."""
@@ -321,7 +321,7 @@ class MembraneHTTPHandler(BaseHTTPRequestHandler):
         data = self.read_json()
         tokens = data.get("prompt_tokens", [])
         model_id = data.get("model_id", "default")
-        backend = self.server.compute_backend or CPUBackend()
+        backend = self.server.compute_backend or CPU()
         try:
             fragments = backend.prefill(tokens, model_id)
             for frag in fragments:
@@ -384,10 +384,10 @@ class MembraneHTTPHandler(BaseHTTPRequestHandler):
 
 
 class HTTPServer:
-    """Production HTTP server wrapping a MembraneNode.
+    """Production HTTP server wrapping a Node.
 
     Args:
-        node: MembraneNode to serve.
+        node: Node to serve.
         host: Bind address.
         port: Listen port.
         compute_backend: Optional compute backend for prefill.
@@ -398,17 +398,17 @@ class HTTPServer:
 
     def __init__(
         self,
-        node: MembraneNode,
+        node: Node,
         host: str = "0.0.0.0",
         port: int = 8080,
-        compute_backend: ComputeBackend | None = None,
+        compute_backend: Backend | None = None,
         transfer_service: TransferService | None = None,
         cluster_manager: Any | None = None,
     ) -> None:
         """Initialize the HTTP server wrapper.
 
         Args:
-            node: MembraneNode to serve.
+            node: Node to serve.
             host: Bind address.
             port: Listen port.
             compute_backend: Optional compute backend.
@@ -423,7 +423,7 @@ class HTTPServer:
         self.compute_backend = compute_backend
         self.transfer_service = transfer_service or TransferService()
         self.cluster_manager = cluster_manager
-        self._server: MembraneStdlibHTTPServer | None = None
+        self._server: StdlibServer | None = None
 
     def start(self) -> None:
         """Start the HTTP server (blocking).
@@ -433,9 +433,9 @@ class HTTPServer:
         :meth:`stop` from another thread to terminate the
         serve loop.
         """
-        self._server = MembraneStdlibHTTPServer(
+        self._server = StdlibServer(
             (self.host, self.port),
-            MembraneHTTPHandler,
+            Handler,
             node=self.node,
             compute_backend=self.compute_backend,
             transfer_service=self.transfer_service,

@@ -1,8 +1,8 @@
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
 def test_create_signature():
-    sig = StructuralSignature(
+    sig = Signature(
         model_id="kimi-linear-1t",
         layer_range=(0, 3),
         token_span=(1024, 2048),
@@ -13,13 +13,13 @@ def test_create_signature():
 
 
 def test_signature_is_hashable():
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    sig = Signature("m", (0, 1), (0, 10))
     assert hash(sig) == hash(("m", (0, 1), (0, 10)))
 
 
 def test_signature_equality():
-    a = StructuralSignature("m", (0, 1), (0, 10))
-    b = StructuralSignature("m", (0, 1), (0, 10))
-    c = StructuralSignature("m", (0, 2), (0, 10))
+    a = Signature("m", (0, 1), (0, 10))
+    b = Signature("m", (0, 1), (0, 10))
+    c = Signature("m", (0, 2), (0, 10))
     assert a == b
     assert a != c

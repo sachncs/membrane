@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class GrpcServer:
     """gRPC server wrapper for Membrane.
 
     Args:
-        node: MembraneNode to serve.
+        node: Node to serve.
         host: Bind address.
         port: Listen port.
     """
@@ -50,7 +50,7 @@ class GrpcServer:
         """Initialize the gRPC server wrapper.
 
         Args:
-            node: MembraneNode to serve.
+            node: Node to serve.
             host: Bind address.
             port: Listen port.
             compute_backend: Optional compute backend used by
@@ -85,7 +85,7 @@ class GrpcServer:
 
         from membrane.transport.proto import membrane_pb2_grpc
 
-        servicer = MembraneServicer(self.node, self.compute_backend)
+        servicer = Handler(self.node, self.compute_backend)
         self._server = grpc_module.server(thread_pool=ThreadPoolExecutor(max_workers=10))
         membrane_pb2_grpc.add_MembraneServicer_to_server(servicer, self._server)
         # Insecure port for local development. For production
@@ -107,12 +107,12 @@ class GrpcServer:
             logger.info("gRPC server stopped")
 
 
-class MembraneServicer:
+class Handler:
     """Implementation of the Membrane gRPC service.
 
     Attributes:
-        node: Local :class:`MembraneNode` instance.
-        compute_backend: Optional :class:`ComputeBackend`.
+        node: Local :class:`Node` instance.
+        compute_backend: Optional :class:`Backend`.
         _pb2: Lazily imported ``membrane_pb2`` module.
     """
 
@@ -120,7 +120,7 @@ class MembraneServicer:
         """Initialize the servicer with the local node.
 
         Args:
-            node: Local :class:`MembraneNode`.
+            node: Local :class:`Node`.
             compute_backend: Optional compute backend.
         """
         self.node = node
@@ -245,7 +245,7 @@ class MembraneServicer:
         return Fragment(
             content_hash=msg.content_hash,
             embedding=tuple(msg.embedding),
-            structural_signature=StructuralSignature(
+            structural_signature=Signature(
                 model_id=msg.model_id,
                 layer_range=(msg.layer_start, msg.layer_end),
                 token_span=(msg.token_start, msg.token_end),

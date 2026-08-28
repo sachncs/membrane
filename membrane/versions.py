@@ -1,4 +1,4 @@
-"""PrefixVersionChain: maintain version lineage for incremental sync.
+"""Versions: maintain version lineage for incremental sync.
 
 This module defines a small append-only version chain used by
 :class:`~membrane.delta_sync.DeltaSync` and the canonical store to
@@ -45,7 +45,7 @@ class VersionEntry:
     parent_version: int | None
 
 
-class PrefixVersionChain:
+class Versions:
     """Incremental version chain for a single prefix.
 
     Supports append-only versioning and common-ancestor queries.

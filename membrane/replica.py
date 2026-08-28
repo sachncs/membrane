@@ -1,14 +1,14 @@
-"""ReplicaNode: hot regional cache with warming support.
+"""Replica: hot regional cache with warming support.
 
-This module defines :class:`ReplicaNode`, a specialized
-:class:`~membrane.membrane_node.MembraneNode` that holds
+This module defines :class:`Replica`, a specialized
+:class:`~membrane.membrane_node.Node` that holds
 *non-primary* copies of fragments. Replicas exist to reduce read
 latency for nearby clients and to absorb traffic from the origin.
 
 Two mechanisms are exposed:
 
 * :meth:`warm_from_origin` — proactively pull a batch of hashes
-  from an :class:`~membrane.origin_node.OriginNode` so that the
+  from an :class:`~membrane.origin_node.Origin` so that the
   replica is ready to serve them when requests arrive.
 * :meth:`store` — overridden to force ``is_primary=False``,
   preventing the replica from accidentally claiming primary
@@ -25,12 +25,12 @@ logger = logging.getLogger(__name__)
 
 
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.origin import OriginNode
+from membrane.node import Node
+from membrane.origin import Origin
 from membrane.transfer import TransferService
 
 
-class ReplicaNode(MembraneNode):
+class Replica(Node):
     """Hot regional cache that holds non-primary copies of fragments.
 
     Supports warming from an origin node on demand or
@@ -62,7 +62,7 @@ class ReplicaNode(MembraneNode):
 
     def warm_from_origin(
         self,
-        origin: OriginNode,
+        origin: Origin,
         content_hashes: list[str],
     ) -> list[str]:
         """Bulk-fetch fragments from the origin to warm the cache.
@@ -88,7 +88,7 @@ class ReplicaNode(MembraneNode):
         """Store a fragment. Replicas never own primary shards.
 
         The ``is_primary`` argument is accepted for API symmetry
-        with :meth:`MembraneNode.store` but is always overridden
+        with :meth:`Node.store` but is always overridden
         to ``False`` so a replica cannot accidentally mark
         itself as the canonical owner of a fragment.
 

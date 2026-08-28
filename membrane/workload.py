@@ -1,6 +1,6 @@
-"""WorkloadAnalyzer: detect patterns in access logs.
+"""Workload: detect patterns in access logs.
 
-This module defines :class:`WorkloadAnalyzer`, a small helper
+This module defines :class:`Workload`, a small helper
 that summarizes a stream of ``content_hash`` accesses. It exposes
 three operations:
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 from collections import Counter
 
 
-class WorkloadAnalyzer:
+class Workload:
     """Analyzes access logs to detect repeated prefix patterns."""
 
     def __init__(self) -> None:

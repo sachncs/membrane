@@ -1,7 +1,7 @@
 """Public type façade for Membrane.
 
-The 40+ deep imports of ``Fragment`` (and similar for ``MembraneNode``,
-``StructuralSignature``, etc.) scattered through the codebase made every rename
+The 40+ deep imports of ``Fragment`` (and similar for ``Node``,
+``Signature``, etc.) scattered through the codebase made every rename
 painful. This module re-exports the core data model from a single, stable
 location so internal layout changes do not ripple into every consumer.
 
@@ -17,23 +17,23 @@ over::
 from __future__ import annotations
 
 from membrane.fragment import Fragment
-from membrane.segment import KVSegment
+from membrane.segment import Segment
 from membrane.network.config import ClusterConfig
 from membrane.network.gossip import GossipState, PeerEndpoint
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 from membrane.transfer import TransferService
 
 __all__ = [
     "ClusterConfig",
     "Fragment",
     "GossipState",
-    "KVSegment",
+    "Segment",
     "PeerEndpoint",
     "Signature",
-    "StructuralSignature",
+    "Signature",
     "TransferService",
 ]
 
 
-Signature = StructuralSignature
-"""Alias for ``StructuralSignature`` so call sites read ``membrane.types.Signature``."""
+Signature = Signature
+"""Alias for ``Signature`` so call sites read ``membrane.types.Signature``."""

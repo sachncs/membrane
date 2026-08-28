@@ -1,9 +1,9 @@
-"""GlobalDirectory: resolves fragment locations and returns optimal node sets.
+"""Registry: resolves fragment locations and returns optimal node sets.
 
-This module defines :class:`GlobalDirectory`, the routing-plane
+This module defines :class:`Registry`, the routing-plane
 registry that tracks cluster membership and the set of nodes
 holding each fragment. Unlike
-:class:`~membrane.distributed_directory.DistributedDirectory`
+:class:`~membrane.distributed_directory.Directory`
 (which delegates to supernodes), this implementation stores the
 membership and placement tables directly in memory.
 
@@ -33,10 +33,10 @@ logger = logging.getLogger(__name__)
 
 
 from membrane.fragmenter import compute_content_hash
-from membrane.node import MembraneNode
+from membrane.node import Node
 
 
-class GlobalDirectory:
+class Registry:
     """Routing plane registry that tracks nodes and fragment placements.
 
     Supports locating fragments and ranking nodes by
@@ -44,7 +44,7 @@ class GlobalDirectory:
 
     Attributes:
         nodes: Mapping from ``node_id`` to the registered
-            :class:`~membrane.membrane_node.MembraneNode`.
+            :class:`~membrane.membrane_node.Node`.
         fragment_locations: Mapping from ``content_hash`` to the
             set of node IDs holding a replica.
     """
@@ -52,14 +52,14 @@ class GlobalDirectory:
     def __init__(self) -> None:
         """Initialize an empty directory."""
         logger.info("Initialized %s", self.__class__.__name__)
-        self.nodes: dict[str, MembraneNode] = {}
+        self.nodes: dict[str, Node] = {}
         self.fragment_locations: dict[str, set[str]] = {}
 
-    def register_node(self, node: MembraneNode) -> None:
+    def register_node(self, node: Node) -> None:
         """Register a node in the global directory.
 
         Args:
-            node: MembraneNode to register. Indexed by its
+            node: Node to register. Indexed by its
                 ``node_id`` attribute.
         """
         self.nodes[node.node_id] = node

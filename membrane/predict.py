@@ -1,6 +1,6 @@
-"""Predictor: lightweight heuristic model for proactive memory staging.
+"""Predict: lightweight heuristic model for proactive memory staging.
 
-This module defines :class:`Predictor`, a small utility that
+This module defines :class:`Predict`, a small utility that
 provides three quick estimates useful for proactive memory
 staging decisions:
 
@@ -23,11 +23,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.node import MembraneNode
+from membrane.node import Node
 from membrane.model.profiler import kv_size_mib
 
 
-class Predictor:
+class Predict:
     """Lightweight heuristic predictor for KV size, reuse probability, and optimal region.
 
     Attributes:
@@ -88,15 +88,15 @@ class Predictor:
     def predict_optimal_region(
         self,
         prompt_tokens: list[int],
-        nodes: list[MembraneNode],
+        nodes: list[Node],
     ) -> str:
         """Predict the optimal node for a prompt based on load and capacity.
 
         The current heuristic picks the node with the lowest
         memory pressure (``heartbeat()``). It does not consider
         GPU load or latency; callers that need a richer signal
-        should use :class:`~membrane.economic_router.EconomicRouter`
-        or :class:`~membrane.joint_optimizer.JointOptimizer`
+        should use :class:`~membrane.economic_router.Economic`
+        or :class:`~membrane.joint_optimizer.Joint`
         instead.
 
         Args:

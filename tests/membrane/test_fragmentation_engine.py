@@ -1,16 +1,16 @@
-"""Tests for FragmentationEngine."""
+"""Tests for Fragmenter."""
 
 from membrane.fragmenter import (
-    FragmentationConfig,
-    FragmentationEngine,
+    FragmenterConfig,
+    Fragmenter,
     compute_content_hash,
     generate_embedding,
 )
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
 def test_create_windows_produces_correct_spans():
-    engine = FragmentationEngine(FragmentationConfig(window_size=4))
+    engine = Fragmenter(FragmenterConfig(window_size=4))
     tokens = list(range(10))
     frags = engine.create_windows(tokens, model_id="m")
     assert len(frags) == 3
@@ -20,12 +20,12 @@ def test_create_windows_produces_correct_spans():
 
 
 def test_create_windows_empty_prompt():
-    engine = FragmentationEngine()
+    engine = Fragmenter()
     assert engine.create_windows([], model_id="m") == []
 
 
 def test_split_preserves_coverage():
-    engine = FragmentationEngine(FragmentationConfig(window_size=8))
+    engine = Fragmenter(FragmenterConfig(window_size=8))
     tokens = list(range(8))
     frags = engine.create_windows(tokens, model_id="m")
     parent = frags[0]
@@ -36,7 +36,7 @@ def test_split_preserves_coverage():
 
 
 def test_split_generates_new_hashes():
-    engine = FragmentationEngine(FragmentationConfig(window_size=4))
+    engine = Fragmenter(FragmenterConfig(window_size=4))
     tokens = list(range(4))
     frags = engine.create_windows(tokens, model_id="m")
     parent = frags[0]
@@ -47,7 +47,7 @@ def test_split_generates_new_hashes():
 
 
 def test_merge_combines_adjacent():
-    engine = FragmentationEngine(FragmentationConfig(window_size=4))
+    engine = Fragmenter(FragmenterConfig(window_size=4))
     tokens = list(range(8))
     frags = engine.create_windows(tokens, model_id="m")
     merged = engine.merge(frags)
@@ -56,21 +56,21 @@ def test_merge_combines_adjacent():
 
 
 def test_merge_rejects_non_adjacent():
-    engine = FragmentationEngine(FragmentationConfig(window_size=4))
+    engine = Fragmenter(FragmenterConfig(window_size=4))
     a = engine.create_windows(list(range(4)), model_id="m")[0]
     b = engine.create_windows(list(range(10, 14)), model_id="m")[0]
     assert engine.merge([a, b]) is None
 
 
 def test_merge_rejects_different_model():
-    engine = FragmentationEngine(FragmentationConfig(window_size=4))
+    engine = Fragmenter(FragmenterConfig(window_size=4))
     a = engine.create_windows(list(range(4)), model_id="m1")[0]
     b = engine.create_windows(list(range(4, 8)), model_id="m2")[0]
     assert engine.merge([a, b]) is None
 
 
 def test_merge_rejects_high_reuse():
-    engine = FragmentationEngine(FragmentationConfig(window_size=4))
+    engine = Fragmenter(FragmenterConfig(window_size=4))
     a = engine.create_windows(list(range(4)), model_id="m")[0]
     b = engine.create_windows(list(range(4, 8)), model_id="m")[0]
     # Manually create high-reuse copies

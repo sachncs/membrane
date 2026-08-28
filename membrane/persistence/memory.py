@@ -1,14 +1,14 @@
-"""InMemoryBackend: zero-dependency persistence fallback.
+"""Memory: zero-dependency persistence fallback.
 
 When Redis is unavailable (or the user opts out), this backend
 stores fragments, inventory, and metadata in plain Python
 objects.
 
 The backend is a thin convenience layer used by the
-:class:`~membrane.fragment_store.FragmentStore` and similar
+:class:`~membrane.fragment_store.Store` and similar
 components to abstract over the *physical* storage. It is
 process-local and loses all state when the process exits — use
-:class:`~membrane.persistence.redis_backend.RedisBackend` when
+:class:`~membrane.persistence.redis_backend.Redis` when
 durability or cross-process sharing is required.
 
 Thread safety:
@@ -19,10 +19,10 @@ Thread safety:
 import time
 
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
-class InMemoryBackend:
+class Memory:
     """In-memory persistence layer for Membrane fragments.
 
     This is the default fallback when Redis is not installed or
@@ -233,7 +233,7 @@ class InMemoryBackend:
         Used by backends that need a serialization layer (e.g.,
         Redis). The in-memory backend never calls this method
         itself; it is provided for parity with
-        :class:`RedisBackend`.
+        :class:`Redis`.
 
         Args:
             fragment: Fragment to serialize.
@@ -271,7 +271,7 @@ class InMemoryBackend:
         return Fragment(
             content_hash=data["content_hash"],
             embedding=tuple(json.loads(data["embedding"])),
-            structural_signature=StructuralSignature(
+            structural_signature=Signature(
                 model_id=data["model_id"],
                 layer_range=(int(data["layer_start"]), int(data["layer_end"])),
                 token_span=(int(data["token_start"]), int(data["token_end"])),

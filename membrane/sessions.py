@@ -1,6 +1,6 @@
-"""SessionTracker: per-session context history.
+"""Sessions: per-session context history.
 
-This module provides :class:`SessionTracker` and its supporting
+This module provides :class:`Sessions` and its supporting
 :class:`Session` dataclass. The tracker keeps an in-memory history of
 which content hashes each active session has accessed in temporal
 order, and exposes it to other components for prediction and value
@@ -8,11 +8,11 @@ estimation.
 
 Typical consumers:
 
-* :class:`~membrane.predictor.Predictor` uses session histories to
+* :class:`~membrane.predictor.Predict` uses session histories to
   forecast the next likely prefix for a given session.
-* :class:`~membrane.value_density.ValueDensity` reads recent
+* :class:`~membrane.value_density.density` reads recent
   accesses when computing the value of a candidate fragment.
-* The :class:`~membrane.co_access_index.CoAccessIndex` ingests
+* The :class:`~membrane.co_access_index.Coaccess` ingests
   session-level access patterns to learn which fragments are
   frequently accessed together.
 
@@ -46,7 +46,7 @@ class Session:
             derived from the upstream chat/orchestration layer.
         access_history: Ordered list of ``content_hash`` values
             accessed during the session, oldest first. The list is
-            mutated in place by :meth:`SessionTracker.record_access`;
+            mutated in place by :meth:`Sessions.record_access`;
             callers should not rely on it being immutable.
     """
 
@@ -54,7 +54,7 @@ class Session:
     access_history: list[str] = field(default_factory=list)
 
 
-class SessionTracker:
+class Sessions:
     """Tracks per-session context history for prediction.
 
     The tracker is a thin wrapper around a ``dict[session_id,
@@ -82,7 +82,7 @@ class SessionTracker:
         to the tail of the session's history; no deduplication is
         performed — repeated accesses will produce repeated entries,
         which is the desired input for downstream components such as
-        :class:`~membrane.value_density.ValueDensity` that compute
+        :class:`~membrane.value_density.density` that compute
         frequency-weighted scores.
 
         Args:

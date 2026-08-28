@@ -1,13 +1,13 @@
 """Tests for TransferService."""
 
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.signature import StructuralSignature
+from membrane.node import Node
+from membrane.signature import Signature
 from membrane.transfer import TransferService
 
 
 def make_fragment(content_hash: str, size: int = 100) -> Fragment:
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    sig = Signature("m", (0, 1), (0, 10))
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1, 0.2, 0.3),
@@ -21,7 +21,7 @@ def make_fragment(content_hash: str, size: int = 100) -> Fragment:
 
 def test_inventory_digest_reflects_state():
     svc = TransferService()
-    node = MembraneNode("n1")
+    node = Node("n1")
     node.store(make_fragment("h1"))
     node.store(make_fragment("h2", size=200))
     digest = svc.inventory_digest(node)
@@ -52,8 +52,8 @@ def test_compare_detects_newer_version():
 
 def test_transfer_fragment_copies():
     svc = TransferService()
-    source = MembraneNode("s1")
-    target = MembraneNode("t1")
+    source = Node("s1")
+    target = Node("t1")
     frag = make_fragment("h1")
     source.store(frag)
     assert svc.transfer_fragment(source, target, "h1")
@@ -62,15 +62,15 @@ def test_transfer_fragment_copies():
 
 def test_transfer_missing_returns_false():
     svc = TransferService()
-    source = MembraneNode("s1")
-    target = MembraneNode("t1")
+    source = Node("s1")
+    target = Node("t1")
     assert not svc.transfer_fragment(source, target, "missing")
 
 
 def test_sync_nodes_transfers_all():
     svc = TransferService()
-    source = MembraneNode("s1")
-    target = MembraneNode("t1")
+    source = Node("s1")
+    target = Node("t1")
     source.store(make_fragment("h1"))
     source.store(make_fragment("h2"))
     transferred = svc.sync_nodes(source, target)
@@ -81,8 +81,8 @@ def test_sync_nodes_transfers_all():
 
 def test_sync_nodes_is_idempotent():
     svc = TransferService()
-    source = MembraneNode("s1")
-    target = MembraneNode("t1")
+    source = Node("s1")
+    target = Node("t1")
     source.store(make_fragment("h1"))
     svc.sync_nodes(source, target)
     second = svc.sync_nodes(source, target)

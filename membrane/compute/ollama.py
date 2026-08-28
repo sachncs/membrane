@@ -1,9 +1,9 @@
-"""OllamaBackend: compute backend that delegates to a local Ollama server.
+"""Ollama: compute backend that delegates to a local Ollama server.
 
 Requires ``httpx`` (installed via ``pip install membrane[server]``).
 
 The backend exposes the standard
-:class:`~membrane.compute.backend.ComputeBackend` interface and
+:class:`~membrane.compute.backend.Backend` interface and
 backs it with HTTP calls to a locally running Ollama daemon:
 
 * :meth:`prefill` — calls ``POST /api/embeddings`` to fetch a
@@ -26,14 +26,14 @@ from typing import Any
 
 import httpx
 
-from membrane.compute.base import ComputeBackend
+from membrane.compute.base import Backend
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 logger = logging.getLogger(__name__)
 
 
-class OllamaBackend(ComputeBackend):
+class Ollama(Backend):
     """Compute backend using Ollama API for embeddings and generation.
 
     Args:
@@ -57,7 +57,7 @@ class OllamaBackend(ComputeBackend):
 
             self._client = httpx.Client(timeout=30.0)
         except ImportError:
-            logger.warning("OllamaBackend: httpx not installed")
+            logger.warning("Ollama: httpx not installed")
 
     def hash_tokens(self, tokens: list[int]) -> str:
         """MD5-hash a token chunk.
@@ -118,7 +118,7 @@ class OllamaBackend(ComputeBackend):
             frag = Fragment(
                 content_hash=h,
                 embedding=tuple(emb_slice),
-                structural_signature=StructuralSignature(
+                structural_signature=Signature(
                     model_id=model_id,
                     layer_range=(0, 1),
                     token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
@@ -130,7 +130,7 @@ class OllamaBackend(ComputeBackend):
             )
             fragments.append(frag)
         logger.debug(
-            "OllamaBackend: prefill %s tokens into %s fragments",
+            "Ollama: prefill %s tokens into %s fragments",
             len(prompt_tokens),
             len(fragments),
         )
@@ -219,7 +219,7 @@ class OllamaBackend(ComputeBackend):
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),
-                structural_signature=StructuralSignature(
+                structural_signature=Signature(
                     model_id=model_id,
                     layer_range=(0, 1),
                     token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),

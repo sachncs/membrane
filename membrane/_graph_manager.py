@@ -1,7 +1,7 @@
-"""GraphManager: maintains the fragment relationship graph.
+"""_GraphManager: maintains the fragment relationship graph.
 
-This module defines :class:`GraphManager`, the application-level
-wrapper around :class:`~membrane.fragment_graph.FragmentGraph`.
+This module defines :class:`_GraphManager`, the application-level
+wrapper around :class:`~membrane.fragment_graph.Graph`.
 It exposes three operations that higher-level Membrane components
 care about:
 
@@ -14,7 +14,7 @@ care about:
   eviction from the graph.
 
 The manager does not own the graph — it delegates every operation
-to an internal :class:`~membrane.fragment_graph.FragmentGraph`.
+to an internal :class:`~membrane.fragment_graph.Graph`.
 This separation keeps the data structure reusable independently
 of the manager's higher-level semantics.
 
@@ -30,15 +30,15 @@ logger = logging.getLogger(__name__)
 
 
 from membrane.fragment import Fragment
-from membrane.graph import FragmentGraph
+from membrane.graph import Graph
 
 
-class GraphManager:
+class _GraphManager:
     """Manages the fragment graph for prefetch, replication, and eviction.
 
     Attributes:
         graph: The underlying
-            :class:`~membrane.fragment_graph.FragmentGraph`. Held
+            :class:`~membrane.fragment_graph.Graph`. Held
             by reference so callers may iterate it directly when
             they need lower-level access.
     """
@@ -46,7 +46,7 @@ class GraphManager:
     def __init__(self) -> None:
         """Initialize the manager with an empty fragment graph."""
         logger.info("Initialized %s", self.__class__.__name__)
-        self.graph = FragmentGraph()
+        self.graph = Graph()
 
     def register(self, fragment: Fragment) -> None:
         """Register a fragment in the graph.
@@ -61,7 +61,7 @@ class GraphManager:
 
         The edge is directed. Endpoints do not need to exist in
         the graph ahead of time — the underlying
-        :class:`~membrane.fragment_graph.FragmentGraph` will lazily
+        :class:`~membrane.fragment_graph.Graph` will lazily
         create empty adjacency entries.
 
         Args:

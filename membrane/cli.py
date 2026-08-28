@@ -19,7 +19,7 @@ and :mod:`rich` (TUI rendering). It exposes two TUI dashboards:
 * :func:`dashboard` — standalone mode that polls a remote
   server's ``/heartbeat`` endpoint.
 * :func:`run_dashboard` — local mode attached to a running
-  :class:`MembraneServer` instance, with full event-log
+  :class:`Server` instance, with full event-log
   visibility.
 """
 
@@ -38,9 +38,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from membrane.node import MembraneNode
+from membrane.node import Node
 from membrane.network.config import ClusterConfig
-from membrane.server import MembraneServer
+from membrane.server import Server
 
 app = typer.Typer(
     name="membrane",
@@ -275,8 +275,8 @@ def serve(
             failure_remove_threshold=failure_remove_threshold,
         )
 
-    node = MembraneNode(node_id=node_id, max_memory_bytes=max_memory)
-    server = MembraneServer(
+    node = Node(node_id=node_id, max_memory_bytes=max_memory)
+    server = Server(
         node=node,
         transport=transport,
         compute=compute,
@@ -408,12 +408,12 @@ def dashboard(
 # ------------------------------------------------------------------
 
 
-def run_dashboard(server: MembraneServer) -> None:
-    """Render a live Rich dashboard for the local ``MembraneServer``.
+def run_dashboard(server: Server) -> None:
+    """Render a live Rich dashboard for the local ``Server``.
 
     Unlike :func:`dashboard` (which polls a remote server over
     HTTP), this version has full access to the in-process
-    :class:`MembraneServer`'s diagnostics and event log. It is
+    :class:`Server`'s diagnostics and event log. It is
     the default when ``membrane serve`` is invoked without
     ``--daemon``.
     """
@@ -460,7 +460,7 @@ def run_dashboard(server: MembraneServer) -> None:
         table.add_row("Errors", str(diag.error_count))
         return Panel(table, title="[bold]Server Metrics[/bold]", border_style="green")
 
-    def make_peers(server: MembraneServer) -> Panel:
+    def make_peers(server: Server) -> Panel:
         """Render the connected-peers panel."""
         if not server.connected_nodes:
             return Panel(
@@ -475,7 +475,7 @@ def run_dashboard(server: MembraneServer) -> None:
             table.add_row(nid, "connected")
         return Panel(table, title="[bold]Peers[/bold]", border_style="blue")
 
-    def make_events(server: MembraneServer) -> Panel:
+    def make_events(server: Server) -> Panel:
         """Render the recent-events panel (newest first)."""
         events = server.recent_events(n=15)
         if not events:

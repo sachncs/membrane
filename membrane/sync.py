@@ -17,7 +17,7 @@ Both classes contribute to the same estimated byte count, and
 Thread safety:
     The class itself is stateless; thread safety depends on the
     underlying :class:`TransferService` and the
-    :class:`MembraneNode` references passed in.
+    :class:`Node` references passed in.
 """
 
 import logging
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 from dataclasses import dataclass, field
 
-from membrane.node import MembraneNode
+from membrane.node import Node
 from membrane.transfer import TransferService
 
 
@@ -88,8 +88,8 @@ class DeltaSync:
 
     def build_plan(
         self,
-        source: MembraneNode,
-        target: MembraneNode,
+        source: Node,
+        target: Node,
     ) -> SyncPlan:
         """Compute the minimal sync plan from ``source`` to ``target``.
 
@@ -137,8 +137,8 @@ class DeltaSync:
     def execute_plan(
         self,
         plan: SyncPlan,
-        source: MembraneNode,
-        target: MembraneNode,
+        source: Node,
+        target: Node,
     ) -> SyncResult:
         """Execute a sync plan and return results.
 
@@ -184,8 +184,8 @@ class DeltaSync:
 
     def sync(
         self,
-        source: MembraneNode,
-        target: MembraneNode,
+        source: Node,
+        target: Node,
     ) -> SyncResult:
         """One-shot build + execute sync from ``source`` to ``target``.
 
@@ -202,8 +202,8 @@ class DeltaSync:
 
     def batch_sync(
         self,
-        source: MembraneNode,
-        targets: list[MembraneNode],
+        source: Node,
+        targets: list[Node],
     ) -> dict[str, SyncResult]:
         """Sync ``source`` to every ``target`` in sequence.
 

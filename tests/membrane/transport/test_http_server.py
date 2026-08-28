@@ -5,10 +5,10 @@ import urllib.request
 
 import pytest
 
-from membrane.compute.cpu import CPUBackend
+from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.signature import StructuralSignature
+from membrane.node import Node
+from membrane.signature import Signature
 from membrane.transport.http import HTTPServer
 
 
@@ -16,7 +16,7 @@ def make_fragment(content_hash: str = "h1"):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1,),
-        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
+        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
         size=10,
         ttl=3600.0,
         reuse_score=0.5,
@@ -30,8 +30,8 @@ class TestHTTPServer:
     @pytest.fixture(scope="class")
     @classmethod
     def server(cls):
-        node = MembraneNode("test-http", max_memory_bytes=10000)
-        srv = HTTPServer(node=node, host="127.0.0.1", port=18080, compute_backend=CPUBackend())
+        node = Node("test-http", max_memory_bytes=10000)
+        srv = HTTPServer(node=node, host="127.0.0.1", port=18080, compute_backend=CPU())
         srv.run_in_thread()
         import time
 

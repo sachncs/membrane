@@ -1,6 +1,6 @@
-"""FragmentGraph: nodes = fragments, edges = typed relationships.
+"""Graph: nodes = fragments, edges = typed relationships.
 
-This module defines :class:`FragmentGraph`, the structural graph
+This module defines :class:`Graph`, the structural graph
 that backs Membrane's relationship reasoning. Nodes are fragments
 keyed by ``content_hash``; edges are typed relationships
 (``"co_access"``, ``"semantic"``, ``"positional"``, etc.) recorded
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 from membrane.fragment import Fragment
 
 
-class FragmentGraph:
+class Graph:
     """Directed typed graph over fragments.
 
     Nodes are keyed by ``content_hash``. Edges are keyed by

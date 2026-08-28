@@ -1,7 +1,7 @@
-"""PromotionPolicy: promote fragments to replicas based on demand.
+"""Promotion: promote fragments to replicas based on demand.
 
-This module defines :class:`PromotionPolicy` and its supporting
-:class:`PromotionDecision` and :class:`PromotionConfig`
+This module defines :class:`Promotion` and its supporting
+:class:`PromotionResult` and :class:`PromotionConfig`
 dataclasses. The policy decides whether a fragment should be
 replicated to additional regions, and if so, to which ones.
 
@@ -30,7 +30,7 @@ from membrane.fragment import Fragment
 
 
 @dataclass(frozen=True)
-class PromotionDecision:
+class PromotionResult:
     """Outcome of a promotion evaluation.
 
     Attributes:
@@ -63,7 +63,7 @@ class PromotionConfig:
     max_replicas: int = 3
 
 
-class PromotionPolicy:
+class Promotion:
     """Decides when and where to promote fragments to replicas.
 
     Rules:
@@ -86,7 +86,7 @@ class PromotionPolicy:
         fragment: Fragment,
         access_counts_by_region: dict[str, int],
         existing_replicas: list[str],
-    ) -> PromotionDecision:
+    ) -> PromotionResult:
         """Evaluate whether a fragment should be promoted.
 
         Args:
@@ -96,14 +96,14 @@ class PromotionPolicy:
             existing_replicas: Current replica node IDs.
 
         Returns:
-            PromotionDecision: Selected targets and a reason
+            PromotionResult: Selected targets and a reason
             explaining the verdict (positive or negative).
         """
         cfg = self.config
 
         # Gate 1: hot enough to be worth replicating?
         if fragment.reuse_score < cfg.reuse_threshold:
-            return PromotionDecision(
+            return PromotionResult(
                 should_promote=False,
                 target_replicas=[],
                 reason="reuse_score below threshold",
@@ -112,7 +112,7 @@ class PromotionPolicy:
         # Gate 2: enough cross-region demand to justify a copy?
         total_demand = sum(access_counts_by_region.values())
         if total_demand < cfg.demand_threshold:
-            return PromotionDecision(
+            return PromotionResult(
                 should_promote=False,
                 target_replicas=[],
                 reason="demand below threshold",
@@ -120,7 +120,7 @@ class PromotionPolicy:
 
         # Gate 3: room to add replicas?
         if len(existing_replicas) >= cfg.max_replicas:
-            return PromotionDecision(
+            return PromotionResult(
                 should_promote=False,
                 target_replicas=[],
                 reason="max replicas reached",
@@ -145,13 +145,13 @@ class PromotionPolicy:
             # Demand exists but no region is a viable target
             # (e.g., all are already replicated or have zero
             # recent accesses).
-            return PromotionDecision(
+            return PromotionResult(
                 should_promote=False,
                 target_replicas=[],
                 reason="no suitable regions",
             )
 
-        return PromotionDecision(
+        return PromotionResult(
             should_promote=True,
             target_replicas=targets,
             reason="high reuse and multi-region demand",

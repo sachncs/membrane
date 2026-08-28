@@ -1,6 +1,6 @@
 """Semantic index: brute-force cosine similarity over embeddings.
 
-This module implements :class:`SemanticIndex`, a small in-memory
+This module implements :class:`Semantics`, a small in-memory
 nearest-neighbor index over fragment embeddings. It uses brute-force
 cosine similarity — every query scores against every indexed
 fragment — which is appropriate when the number of fragments is
@@ -13,7 +13,7 @@ similarity computation only needs to multiply the query embedding
 by each fragment embedding, rather than recomputing norms.
 
 Thread safety:
-    Like :class:`~membrane.exact_index.ExactIndex`, this class is
+    Like :class:`~membrane.exact_index.Exacts`, this class is
     **not thread-safe**. The fragments list and the norms dict are
     mutated without locks. Callers must provide external
     synchronization when sharing across threads.
@@ -58,7 +58,7 @@ def compute_norm(embedding: Sequence[float]) -> float:
     return norm if norm > 0.0 else 1.0
 
 
-class SemanticIndex:
+class Semantics:
     """In-memory semantic index using brute-force cosine similarity.
 
     No external dependencies. Optional faiss integration belongs in

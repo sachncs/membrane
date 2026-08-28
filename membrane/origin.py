@@ -1,7 +1,7 @@
-"""OriginNode: canonical memory authority that propagates to replicas.
+"""Origin: canonical memory authority that propagates to replicas.
 
-This module defines :class:`OriginNode`, a specialized
-:class:`~membrane.membrane_node.MembraneNode` that acts as the
+This module defines :class:`Origin`, a specialized
+:class:`~membrane.membrane_node.Node` that acts as the
 canonical authority for a region. In addition to the regular
 in-memory store, an origin can push fragments to replica nodes
 via a :class:`~membrane.transfer_service.TransferService`.
@@ -19,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
+from membrane.node import Node
 from membrane.transfer import TransferService
 
 
-class OriginNode(MembraneNode):
+class Origin(Node):
     """Canonical memory authority in a regional topology.
 
     Receives all primary writes and can propagate fragments to
@@ -57,7 +57,7 @@ class OriginNode(MembraneNode):
     def promote_to_replica(
         self,
         fragment: Fragment,
-        replica: MembraneNode,
+        replica: Node,
     ) -> bool:
         """Push a fragment to a replica node.
 
@@ -81,7 +81,7 @@ class OriginNode(MembraneNode):
     def bulk_promote(
         self,
         content_hashes: list[str],
-        replica: MembraneNode,
+        replica: Node,
     ) -> list[str]:
         """Push multiple fragments to a replica.
 

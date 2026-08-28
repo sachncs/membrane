@@ -1,7 +1,7 @@
-"""WeightedGraph: graph edges with co-occurrence probabilities.
+"""Weighted: graph edges with co-occurrence probabilities.
 
-This module defines :class:`WeightedGraph`, a thin wrapper around
-:class:`~membrane.fragment_graph.FragmentGraph` that adds
+This module defines :class:`Weighted`, a thin wrapper around
+:class:`~membrane.fragment_graph.Graph` that adds
 **typed edges with float weights** on top of the plain structural
 graph. Weights typically encode co-occurrence or reuse
 probabilities, allowing downstream components to reason about
@@ -31,10 +31,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.graph import FragmentGraph
+from membrane.graph import Graph
 
 
-class WeightedGraph:
+class Weighted:
     """Directed typed graph where edges carry float weights.
 
     Weights represent co-occurrence or reuse probability in
@@ -44,7 +44,7 @@ class WeightedGraph:
 
     Attributes:
         graph: The underlying structural
-            :class:`~membrane.fragment_graph.FragmentGraph`. It
+            :class:`~membrane.fragment_graph.Graph`. It
             stores fragments as nodes; this wrapper adds the
             typed, weighted edges.
         weights: Nested mapping ``weights[source][edge_type][target]
@@ -54,7 +54,7 @@ class WeightedGraph:
 
     def __init__(self) -> None:
         """Initialize an empty weighted graph."""
-        self.graph = FragmentGraph()
+        self.graph = Graph()
         self.weights: dict[str, dict[str, dict[str, float]]] = {}
 
     def ensure_node(self, content_hash: str) -> None:
@@ -73,12 +73,12 @@ class WeightedGraph:
         # Local imports keep this module importable without the
         # full data-model dependency graph at module load time.
         from membrane.fragment import Fragment
-        from membrane.signature import StructuralSignature
+        from membrane.signature import Signature
 
         dummy = Fragment(
             content_hash=content_hash,
             embedding=(0.0,),
-            structural_signature=StructuralSignature(
+            structural_signature=Signature(
                 model_id="weighted_graph",
                 layer_range=(0, 0),
                 token_span=(0, 0),

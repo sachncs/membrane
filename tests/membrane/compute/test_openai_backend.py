@@ -1,11 +1,11 @@
-"""Tests for OpenAIBackend."""
+"""Tests for OpenAI."""
 
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
 
-from membrane.compute.openai import OpenAIBackend
+from membrane.compute.openai import OpenAI
 from membrane.fragment import Fragment
 
 
@@ -14,7 +14,7 @@ class TestOpenAIBackend:
 
     @pytest.fixture
     def backend(self):
-        return OpenAIBackend(api_key="sk-test", model="gpt-4o-mini")
+        return OpenAI(api_key="sk-test", model="gpt-4o-mini")
 
     def test_device_name(self, backend):
         assert backend.device_name() == "openai(gpt-4o-mini)"

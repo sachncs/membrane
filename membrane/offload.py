@@ -1,6 +1,6 @@
-"""OffloadDecisionEngine: route prefill based on length, bandwidth, and cost.
+"""Offload: route prefill based on length, bandwidth, and cost.
 
-This module defines :class:`OffloadDecisionEngine`, which decides
+This module defines :class:`Offload`, which decides
 whether a prefill should run locally or be offloaded to a remote
 Membrane node. The decision balances four signals:
 
@@ -13,7 +13,7 @@ Membrane node. The decision balances four signals:
 * **Memory headroom on the target** — the candidate score
   penalizes targets with little free memory.
 
-The engine produces an :class:`OffloadDecision` describing the
+The engine produces an :class:`OffloadResult` describing the
 chosen target node, whether local compute was selected, the
 estimated cost, and a human-readable reason — useful for logging
 and post-hoc tuning.
@@ -27,11 +27,11 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.cost import CostModel
-from membrane.node import MembraneNode
+from membrane.node import Node
 
 
 @dataclass(frozen=True)
-class OffloadDecision:
+class OffloadResult:
     """Outcome of an offload routing decision.
 
     Attributes:
@@ -50,7 +50,7 @@ class OffloadDecision:
 
 
 @dataclass(frozen=True)
-class OffloadDecisionConfig:
+class OffloadConfig:
     """Configuration for offload decision thresholds.
 
     Attributes:
@@ -66,7 +66,7 @@ class OffloadDecisionConfig:
     local_load_threshold: float = 0.8
 
 
-class OffloadDecisionEngine:
+class Offload:
     """Decides whether to compute locally or offload prefill to a remote node.
 
     Decision factors:
@@ -78,7 +78,7 @@ class OffloadDecisionEngine:
 
     def __init__(
         self,
-        config: OffloadDecisionConfig | None = None,
+        config: OffloadConfig | None = None,
         cost_model: CostModel | None = None,
     ) -> None:
         """Initialize the decision engine.
@@ -92,15 +92,15 @@ class OffloadDecisionEngine:
                 :class:`~membrane.cost_model.CostModel` is used
                 when ``None``.
         """
-        self.config = config or OffloadDecisionConfig()
+        self.config = config or OffloadConfig()
         self.cost_model = cost_model or CostModel()
 
     def decide(
         self,
         prompt_tokens: list[int],
-        local_node: MembraneNode,
-        candidate_nodes: list[MembraneNode],
-    ) -> OffloadDecision:
+        local_node: Node,
+        candidate_nodes: list[Node],
+    ) -> OffloadResult:
         """Select the best node for prefill computation.
 
         Uses the cost model to compare local compute cost
@@ -114,7 +114,7 @@ class OffloadDecisionEngine:
                 prefill.
 
         Returns:
-            OffloadDecision: Selected target, whether the
+            OffloadResult: Selected target, whether the
             decision is local, the estimated cost, and the
             reason.
         """
@@ -126,7 +126,7 @@ class OffloadDecisionEngine:
         # Fast path: short prompts on a quiet local node are
         # handled locally.
         if length <= cfg.short_prompt_threshold and local_load < cfg.local_load_threshold:
-            return OffloadDecision(
+            return OffloadResult(
                 target_node_id=local_node.node_id,
                 local_compute=True,
                 estimated_cost_seconds=local_cost,
@@ -136,7 +136,7 @@ class OffloadDecisionEngine:
         if not candidate_nodes:
             # No remote candidates; stay local even though it
             # may not be the cheapest choice.
-            return OffloadDecision(
+            return OffloadResult(
                 target_node_id=local_node.node_id,
                 local_compute=True,
                 estimated_cost_seconds=local_cost,
@@ -147,7 +147,7 @@ class OffloadDecisionEngine:
         # memory pressure. The 1/(headroom + 0.01) term grows
         # rapidly as headroom shrinks, pushing selection toward
         # nodes with more spare memory.
-        def score(node: MembraneNode) -> float:
+        def score(node: Node) -> float:
             """Score offload target (lower is better)."""
             load = node.heartbeat()
             memory_headroom = 1.0 - load
@@ -158,7 +158,7 @@ class OffloadDecisionEngine:
         best = min(candidate_nodes, key=score)
         best_cost = self.cost_model.precompute_cost_seconds(length)
 
-        return OffloadDecision(
+        return OffloadResult(
             target_node_id=best.node_id,
             local_compute=False,
             estimated_cost_seconds=best_cost,

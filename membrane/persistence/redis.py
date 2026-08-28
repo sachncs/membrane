@@ -1,4 +1,4 @@
-"""RedisBackend: production-grade persistence for fragments and metadata.
+"""Redis: production-grade persistence for fragments and metadata.
 
 Uses Redis hash sets, sorted sets, and keys for fragment
 storage, inventory tracking, and LRU eviction.
@@ -34,12 +34,12 @@ import time
 from typing import Any, cast
 
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 logger = logging.getLogger(__name__)
 
 
-class RedisBackend:
+class Redis:
     """Redis-backed persistence layer for Membrane fragments.
 
     Args:
@@ -319,7 +319,7 @@ class RedisBackend:
         return Fragment(
             content_hash=data["content_hash"],
             embedding=tuple(json.loads(data["embedding"])),
-            structural_signature=StructuralSignature(
+            structural_signature=Signature(
                 model_id=data["model_id"],
                 layer_range=(int(data["layer_start"]), int(data["layer_end"])),
                 token_span=(int(data["token_start"]), int(data["token_end"])),

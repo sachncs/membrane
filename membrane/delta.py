@@ -10,7 +10,7 @@ reconstructs ``new`` from ``base`` plus the delta.
 The codec is intentionally simple — it does not attempt to handle
 non-prefix insertions or internal edits. For richer edit
 operations, layer a Myers diff or use
-:class:`~membrane.prefix_version_chain.PrefixVersionChain` to
+:class:`~membrane.prefix_version_chain.Versions` to
 track arbitrary lineage.
 
 Use cases:

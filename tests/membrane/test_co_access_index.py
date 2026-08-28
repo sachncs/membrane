@@ -1,8 +1,8 @@
-from membrane.coaccess import CoAccessIndex
+from membrane.coaccess import Coaccess
 
 
 def test_record_and_lookup():
-    idx = CoAccessIndex()
+    idx = Coaccess()
     idx.record_access("a", "b")
     idx.record_access("a", "c")
     neighbors = idx.lookup("a")
@@ -10,18 +10,18 @@ def test_record_and_lookup():
 
 
 def test_record_batch():
-    idx = CoAccessIndex()
+    idx = Coaccess()
     idx.record_batch(["a", "b", "c"])
     assert idx.lookup("a") == {"b", "c"}
     assert idx.lookup("b") == {"a", "c"}
 
 
 def test_self_access_ignored():
-    idx = CoAccessIndex()
+    idx = Coaccess()
     idx.record_access("a", "a")
     assert idx.lookup("a") == set()
 
 
 def test_lookup_missing():
-    idx = CoAccessIndex()
+    idx = Coaccess()
     assert idx.lookup("z") == set()

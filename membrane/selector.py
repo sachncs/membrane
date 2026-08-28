@@ -1,4 +1,4 @@
-"""NodeSelector: multi-criteria node selection for routing and placement.
+"""Selector: multi-criteria node selection for routing and placement.
 
 Selects optimal nodes from a candidate set based on configurable
 latency, load, memory, and bandwidth scoring. Supports health
@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 
 from dataclasses import dataclass
 
-from membrane.telemetry import NodeTelemetry
+from membrane.telemetry import Telemetry
 
 
 @dataclass(frozen=True)
-class NodeSelectorConfig:
+class SelectorConfig:
     """Configuration for node-selection scoring.
 
     Every dimension is clamped to ``[0, 1]`` using ``max_*``
@@ -69,7 +69,7 @@ class NodeSelectorConfig:
     health_threshold: float = 0.95
 
 
-class NodeSelector:
+class Selector:
     """Selects the best node(s) from a candidate pool.
 
     Lower composite scores are better (minimizes cost).
@@ -80,26 +80,26 @@ class NodeSelector:
             configuration.
     """
 
-    def __init__(self, config: NodeSelectorConfig | None = None) -> None:
+    def __init__(self, config: SelectorConfig | None = None) -> None:
         """Initialize the selector.
 
         Args:
             config: Selection configuration. A default
-                :class:`NodeSelectorConfig` is used when
+                :class:`SelectorConfig` is used when
                 ``None``.
         """
-        self.config = config or NodeSelectorConfig()
+        self.config = config or SelectorConfig()
 
     def select(
         self,
         candidate_node_ids: list[str],
-        telemetry_map: dict[str, NodeTelemetry],
+        telemetry_map: dict[str, Telemetry],
     ) -> str:
         """Return the single best node identifier.
 
         Args:
             candidate_node_ids: Candidate node identifiers.
-            telemetry_map: ``node_id -> NodeTelemetry``
+            telemetry_map: ``node_id -> Telemetry``
             snapshot.
 
         Returns:
@@ -114,14 +114,14 @@ class NodeSelector:
     def select_top_n(
         self,
         candidate_node_ids: list[str],
-        telemetry_map: dict[str, NodeTelemetry],
+        telemetry_map: dict[str, Telemetry],
         n: int = 3,
     ) -> list[str]:
         """Return the top ``n`` best node identifiers in ascending score order.
 
         Args:
             candidate_node_ids: Candidate node identifiers.
-            telemetry_map: ``node_id -> NodeTelemetry``
+            telemetry_map: ``node_id -> Telemetry``
             snapshot.
             n: Maximum number of nodes to return.
 
@@ -138,7 +138,7 @@ class NodeSelector:
     def filter_healthy(
         self,
         candidate_node_ids: list[str],
-        telemetry_map: dict[str, NodeTelemetry],
+        telemetry_map: dict[str, Telemetry],
     ) -> list[str]:
         """Remove nodes that exceed the health threshold on any dimension.
 
@@ -148,7 +148,7 @@ class NodeSelector:
 
         Args:
             candidate_node_ids: Candidate node identifiers.
-            telemetry_map: ``node_id -> NodeTelemetry``
+            telemetry_map: ``node_id -> Telemetry``
             snapshot.
 
         Returns:
@@ -179,13 +179,13 @@ class NodeSelector:
     def score(
         self,
         node_id: str,
-        telemetry_map: dict[str, NodeTelemetry],
+        telemetry_map: dict[str, Telemetry],
     ) -> float:
         """Compute composite cost score for a node (lower is better).
 
         Args:
             node_id: Node to score.
-            telemetry_map: ``node_id -> NodeTelemetry``
+            telemetry_map: ``node_id -> Telemetry``
             snapshot.
 
         Returns:

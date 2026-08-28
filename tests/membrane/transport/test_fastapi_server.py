@@ -5,10 +5,10 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from membrane.compute.cpu import CPUBackend
+from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.signature import StructuralSignature
+from membrane.node import Node
+from membrane.signature import Signature
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer, create_app
 
@@ -17,7 +17,7 @@ def make_fragment(content_hash: str = "h1"):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1, 0.2),
-        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
+        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
         size=100,
         ttl=3600.0,
         reuse_score=0.5,
@@ -30,8 +30,8 @@ class TestFastAPIServer:
 
     @pytest.fixture
     def client(self):
-        node = MembraneNode("n1", max_memory_bytes=10000)
-        backend = CPUBackend()
+        node = Node("n1", max_memory_bytes=10000)
+        backend = CPU()
         transfer = TransferService()
         app = create_app(node=node, compute_backend=backend, transfer_service=transfer, cluster_manager=None)
         return TestClient(app)
@@ -154,8 +154,8 @@ class TestFastAPIServer:
         assert resp.json()["error"] == "cluster manager not enabled"
 
     def test_join_with_cluster_manager(self):
-        node = MembraneNode("n1", max_memory_bytes=10000)
-        backend = CPUBackend()
+        node = Node("n1", max_memory_bytes=10000)
+        backend = CPU()
         transfer = TransferService()
         cluster = MagicMock()
         cluster.on_peer_join.return_value = {"success": True, "peers": []}
@@ -167,7 +167,7 @@ class TestFastAPIServer:
         cluster.on_peer_join.assert_called_once_with("n2", "127.0.0.1", 8081)
 
     def test_server_start_stop(self):
-        node = MembraneNode("n1", max_memory_bytes=10000)
+        node = Node("n1", max_memory_bytes=10000)
         srv = FastAPIServer(node=node, host="127.0.0.1", port=18080)
         import threading
 

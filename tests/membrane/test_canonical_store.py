@@ -2,16 +2,16 @@
 
 import pytest
 
-from membrane.canonical import CanonicalRef, CanonicalStore
+from membrane.canonical import CanonicalRef, Canonical
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
 def make_fragment(content_hash):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.0,),
-        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
+        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
         size=10,
         ttl=3600.0,
         reuse_score=0.5,
@@ -20,17 +20,17 @@ def make_fragment(content_hash):
 
 
 class TestCanonicalStore:
-    """Test suite for CanonicalStore."""
+    """Test suite for Canonical."""
 
     def test_store_canonical_new(self):
-        cs = CanonicalStore()
+        cs = Canonical()
         frag = make_fragment("h1")
         ref = cs.store_canonical(frag, "t1")
         assert ref.canonical_hash == "h1"
         assert "t1" in ref.tenant_ids
 
     def test_store_canonical_deduplicates(self):
-        cs = CanonicalStore()
+        cs = Canonical()
         frag = make_fragment("h1")
         cs.store_canonical(frag, "t1")
         cs.store_canonical(frag, "t2")
@@ -39,19 +39,19 @@ class TestCanonicalStore:
         assert len(cs.canonical_fragments) == 1
 
     def test_retrieve_canonical(self):
-        cs = CanonicalStore()
+        cs = Canonical()
         frag = make_fragment("h1")
         ref = cs.store_canonical(frag, "t1")
         retrieved = cs.retrieve_canonical(ref)
         assert retrieved == frag
 
     def test_retrieve_canonical_missing(self):
-        cs = CanonicalStore()
+        cs = Canonical()
         ref = CanonicalRef("missing", frozenset())
         assert cs.retrieve_canonical(ref) is None
 
     def test_get_shared_fragments(self):
-        cs = CanonicalStore()
+        cs = Canonical()
         f1 = make_fragment("h1")
         f2 = make_fragment("h2")
         cs.store_canonical(f1, "t1")
@@ -62,13 +62,13 @@ class TestCanonicalStore:
         assert shared[0].content_hash == "h1"
 
     def test_get_shared_fragments_no_match(self):
-        cs = CanonicalStore()
+        cs = Canonical()
         f1 = make_fragment("h1")
         cs.store_canonical(f1, "t1")
         assert cs.get_shared_fragments("t2") == []
 
     def test_lru_eviction_on_overflow(self):
-        cs = CanonicalStore(max_entries=2)
+        cs = Canonical(max_entries=2)
         cs.store_canonical(make_fragment("a"), "t1")
         cs.store_canonical(make_fragment("b"), "t1")
         cs.store_canonical(make_fragment("c"), "t1")
@@ -76,7 +76,7 @@ class TestCanonicalStore:
         assert "a" not in cs.canonical_fragments
 
     def test_lru_keeps_recently_accessed(self):
-        cs = CanonicalStore(max_entries=2)
+        cs = Canonical(max_entries=2)
         cs.store_canonical(make_fragment("a"), "t1")
         cs.store_canonical(make_fragment("b"), "t1")
         # Access "a" to make it recently used

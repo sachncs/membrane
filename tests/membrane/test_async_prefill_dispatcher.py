@@ -1,20 +1,20 @@
-"""Tests for AsyncRemotePrefillDispatcher designed to break the algorithm."""
+"""Tests for PrefillAsync designed to break the algorithm."""
 
 import asyncio
 
 import pytest
 
 from membrane.prefill_async import (
-    AsyncRemotePrefillDispatcher,
+    PrefillAsync,
     PrefillFallbackError,
 )
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.adapter import PrefillAdapter, PrefillResult
-from membrane.signature import StructuralSignature
+from membrane.node import Node
+from membrane.adapter import Adapter, PrefillResult
+from membrane.signature import Signature
 
 
-class EmptyFragmentAdapter(PrefillAdapter):
+class EmptyFragmentAdapter(Adapter):
     """Adapter that always returns empty fragments."""
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> PrefillResult:
@@ -26,14 +26,14 @@ class EmptyFragmentAdapter(PrefillAdapter):
         )
 
 
-class ExplodingAdapter(PrefillAdapter):
+class ExplodingAdapter(Adapter):
     """Adapter that always raises."""
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> PrefillResult:
         raise RuntimeError("simulated prefill failure")
 
 
-class ControlledAdapter(PrefillAdapter):
+class ControlledAdapter(Adapter):
     """Adapter that returns a predictable fragment."""
 
     def __init__(self, hash_prefix: str = "ctrl") -> None:
@@ -47,7 +47,7 @@ class ControlledAdapter(PrefillAdapter):
         frag = Fragment(
             content_hash=f"{self.hash_prefix}-{length}",
             embedding=(0.1,),
-            structural_signature=StructuralSignature(model_id=model_id, layer_range=(0, 1), token_span=(0, length - 1)),
+            structural_signature=Signature(model_id=model_id, layer_range=(0, 1), token_span=(0, length - 1)),
             size=10,
             ttl=3600.0,
             reuse_score=0.5,
@@ -65,15 +65,15 @@ class ControlledAdapter(PrefillAdapter):
 async def test_fastest_node_wins_race():
     """When nodes have different latencies, the fastest should win."""
     adapter = ControlledAdapter("fast")
-    dispatcher = AsyncRemotePrefillDispatcher(
+    dispatcher = PrefillAsync(
         prefill_adapter=adapter,
         timeout_seconds=1.0,
         latency_provider={"fast": 0.01, "medium": 0.05, "slow": 0.10},
     )
 
-    fast = MembraneNode("fast")
-    medium = MembraneNode("medium")
-    slow = MembraneNode("slow")
+    fast = Node("fast")
+    medium = Node("medium")
+    slow = Node("slow")
 
     result = await dispatcher.dispatch(list(range(10)), "m", [fast, medium, slow], local_node=None)
 
@@ -89,14 +89,14 @@ async def test_fastest_node_wins_race():
 async def test_timeout_cancels_slow_node():
     """A node slower than timeout must not win and should be cancelled."""
     adapter = ControlledAdapter("win")
-    dispatcher = AsyncRemotePrefillDispatcher(
+    dispatcher = PrefillAsync(
         prefill_adapter=adapter,
         timeout_seconds=0.03,
         latency_provider={"win": 0.01, "lose": 0.10},
     )
 
-    win = MembraneNode("win")
-    lose = MembraneNode("lose")
+    win = Node("win")
+    lose = Node("lose")
 
     result = await dispatcher.dispatch(list(range(10)), "m", [win, lose], local_node=None)
 
@@ -110,15 +110,15 @@ async def test_timeout_cancels_slow_node():
 async def test_all_timeout_fallback_local():
     """If every remote node times out, fall back to local prefill."""
     adapter = ControlledAdapter("local")
-    dispatcher = AsyncRemotePrefillDispatcher(
+    dispatcher = PrefillAsync(
         prefill_adapter=adapter,
         timeout_seconds=0.01,
         latency_provider={"slow1": 0.10, "slow2": 0.10},
     )
 
-    local = MembraneNode("local")
-    slow1 = MembraneNode("slow1")
-    slow2 = MembraneNode("slow2")
+    local = Node("local")
+    slow1 = Node("slow1")
+    slow2 = Node("slow2")
 
     result = await dispatcher.dispatch(list(range(10)), "m", [slow1, slow2], local_node=local)
 
@@ -131,14 +131,14 @@ async def test_all_timeout_fallback_local():
 async def test_all_timeout_no_local_raises():
     """If all remotes time out and no local node is given, raise."""
     adapter = ControlledAdapter("never")
-    dispatcher = AsyncRemotePrefillDispatcher(
+    dispatcher = PrefillAsync(
         prefill_adapter=adapter,
         timeout_seconds=0.01,
         latency_provider={"slow": 0.10},
     )
 
     with pytest.raises(PrefillFallbackError):
-        await dispatcher.dispatch(list(range(10)), "m", [MembraneNode("slow")], local_node=None)
+        await dispatcher.dispatch(list(range(10)), "m", [Node("slow")], local_node=None)
 
 
 @pytest.mark.anyio
@@ -150,7 +150,7 @@ async def test_empty_fragments_treated_as_failure():
     # adapters on two nodes.  The dispatcher uses a single adapter for all
     # nodes, so we simulate this by having the adapter behave differently
     # per call using a counter.
-    class AlternatingAdapter(PrefillAdapter):
+    class AlternatingAdapter(Adapter):
         def __init__(self) -> None:
             self.calls = 0
 
@@ -166,14 +166,14 @@ async def test_empty_fragments_treated_as_failure():
             return good.prefill(prompt_tokens, model_id)
 
     adapter = AlternatingAdapter()
-    dispatcher = AsyncRemotePrefillDispatcher(
+    dispatcher = PrefillAsync(
         prefill_adapter=adapter,
         timeout_seconds=1.0,
         latency_provider={"bad": 0.01, "good": 0.02},
     )
 
-    bad_node = MembraneNode("bad")
-    good_node = MembraneNode("good")
+    bad_node = Node("bad")
+    good_node = Node("good")
 
     result = await dispatcher.dispatch(list(range(10)), "m", [bad_node, good_node], local_node=None)
 
@@ -186,7 +186,7 @@ async def test_exception_in_prefill_treated_as_failure():
     """A node whose adapter raises should not crash the dispatcher."""
     good = ControlledAdapter("good")
 
-    class AlternatingExplodingAdapter(PrefillAdapter):
+    class AlternatingExplodingAdapter(Adapter):
         def __init__(self) -> None:
             self.calls = 0
 
@@ -197,14 +197,14 @@ async def test_exception_in_prefill_treated_as_failure():
             return good.prefill(prompt_tokens, model_id)
 
     adapter = AlternatingExplodingAdapter()
-    dispatcher = AsyncRemotePrefillDispatcher(
+    dispatcher = PrefillAsync(
         prefill_adapter=adapter,
         timeout_seconds=1.0,
         latency_provider={"bad": 0.01, "good": 0.02},
     )
 
-    bad_node = MembraneNode("bad")
-    good_node = MembraneNode("good")
+    bad_node = Node("bad")
+    good_node = Node("good")
 
     result = await dispatcher.dispatch(list(range(10)), "m", [bad_node, good_node], local_node=None)
 
@@ -215,9 +215,9 @@ async def test_exception_in_prefill_treated_as_failure():
 async def test_no_candidates_uses_local():
     """Empty candidate list with a local node should use local prefill."""
     adapter = ControlledAdapter("local")
-    dispatcher = AsyncRemotePrefillDispatcher(prefill_adapter=adapter)
+    dispatcher = PrefillAsync(prefill_adapter=adapter)
 
-    local = MembraneNode("local")
+    local = Node("local")
     result = await dispatcher.dispatch(list(range(10)), "m", [], local_node=local)
 
     assert result.fragments[0].content_hash == "local-10"
@@ -228,7 +228,7 @@ async def test_no_candidates_uses_local():
 @pytest.mark.anyio
 async def test_no_candidates_no_local_raises():
     """Empty candidate list with no local node should raise."""
-    dispatcher = AsyncRemotePrefillDispatcher()
+    dispatcher = PrefillAsync()
     with pytest.raises(PrefillFallbackError):
         await dispatcher.dispatch(list(range(10)), "m", [], local_node=None)
 
@@ -237,7 +237,7 @@ async def test_no_candidates_no_local_raises():
 async def test_partial_failure_one_succeeds():
     """One node fails, another succeeds; success should be returned."""
 
-    class OneShotFailAdapter(PrefillAdapter):
+    class OneShotFailAdapter(Adapter):
         def __init__(self) -> None:
             self.fail_node_id: str | None = None
 
@@ -252,14 +252,14 @@ async def test_partial_failure_one_succeeds():
             return ControlledAdapter("ok").prefill(prompt_tokens, model_id)
 
     adapter = OneShotFailAdapter()
-    dispatcher = AsyncRemotePrefillDispatcher(
+    dispatcher = PrefillAsync(
         prefill_adapter=adapter,
         timeout_seconds=1.0,
         latency_provider={"fail": 0.01, "ok": 0.02},
     )
 
-    fail_node = MembraneNode("fail")
-    ok_node = MembraneNode("ok")
+    fail_node = Node("fail")
+    ok_node = Node("ok")
 
     result = await dispatcher.dispatch(list(range(10)), "m", [fail_node, ok_node], local_node=None)
 
@@ -271,15 +271,15 @@ async def test_partial_failure_one_succeeds():
 async def test_cancellation_cleanup_on_success():
     """Pending tasks must be cancelled and awaited without leaking exceptions."""
     adapter = ControlledAdapter("win")
-    dispatcher = AsyncRemotePrefillDispatcher(
+    dispatcher = PrefillAsync(
         prefill_adapter=adapter,
         timeout_seconds=1.0,
         latency_provider={"win": 0.01, "pending1": 0.30, "pending2": 0.30},
     )
 
-    win = MembraneNode("win")
-    pending1 = MembraneNode("pending1")
-    pending2 = MembraneNode("pending2")
+    win = Node("win")
+    pending1 = Node("pending1")
+    pending2 = Node("pending2")
 
     # This should complete quickly and not hang waiting for pending nodes.
     result = await dispatcher.dispatch(list(range(10)), "m", [win, pending1, pending2], local_node=None)
@@ -295,14 +295,14 @@ async def test_cancellation_cleanup_on_success():
 async def test_timeout_per_node_not_global():
     """Each node has its own timeout; a global timeout must not starve others."""
     adapter = ControlledAdapter("ok")
-    dispatcher = AsyncRemotePrefillDispatcher(
+    dispatcher = PrefillAsync(
         prefill_adapter=adapter,
         timeout_seconds=0.02,
         latency_provider={"slow": 0.10, "ok": 0.01},
     )
 
-    slow = MembraneNode("slow")
-    ok = MembraneNode("ok")
+    slow = Node("slow")
+    ok = Node("ok")
 
     result = await dispatcher.dispatch(list(range(10)), "m", [slow, ok], local_node=None)
 

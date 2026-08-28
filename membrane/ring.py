@@ -1,7 +1,7 @@
-"""HashRing: consistent hashing for memory ID distribution.
+"""Ring: consistent hashing for memory ID distribution.
 
 This module implements a minimal *consistent hash ring* used by
-:class:`~membrane.shard_manager.ShardManager` to map
+:class:`~membrane.shard_manager.Shard` to map
 ``content_hash`` values to responsible nodes.
 
 Each physical node is replicated across ``virtual_nodes`` points
@@ -44,7 +44,7 @@ class EmptyRingError(ValueError):
     """
 
 
-class HashRing:
+class Ring:
     """Consistent hash ring mapping content hashes to responsible nodes.
 
     Uses MD5 of node IDs placed at multiple virtual points on a
@@ -117,7 +117,7 @@ class HashRing:
         methods stay readable.
         """
         if not self.sorted_keys:
-            raise EmptyRingError("HashRing is empty: add at least one node before lookup")
+            raise EmptyRingError("Ring is empty: add at least one node before lookup")
 
     def get_node(self, content_hash: str) -> str:
         """Return the node responsible for ``content_hash``.

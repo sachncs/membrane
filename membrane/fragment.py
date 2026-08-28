@@ -20,12 +20,12 @@ Design rationale:
       :func:`membrane.fragmentation_engine.compute_content_hash`.
     * **Lifecycle metadata**: ``ttl`` and ``reuse_score`` drive eviction and
       promotion decisions made by
-      :class:`membrane.promotion_policy.PromotionPolicy`.
+      :class:`membrane.promotion_policy.Promotion`.
 
 Limitations:
     * The dataclass holds a *reference* to the underlying bytes; the actual
       payload is owned by the
-      :class:`membrane.fragment_store.FragmentStore` or remote peer.
+      :class:`membrane.fragment_store.Store` or remote peer.
     * ``reuse_score`` is treated as opaque metadata here. Its semantics are
       defined by the producer (e.g., telemetry or predictor output).
 """
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 from dataclasses import dataclass
 
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
 @dataclass(frozen=True)
@@ -82,8 +82,8 @@ class Fragment:
 
     Example:
         >>> from membrane.fragment import Fragment
-        >>> from membrane.signature import StructuralSignature
-        >>> sig = StructuralSignature(
+        >>> from membrane.signature import Signature
+        >>> sig = Signature(
         ...     model_id="llama-3-8b",
         ...     layer_range=(0, 32),
         ...     token_span=(0, 128),
@@ -103,7 +103,7 @@ class Fragment:
 
     content_hash: str
     embedding: tuple[float, ...]
-    structural_signature: StructuralSignature
+    structural_signature: Signature
     size: int
     ttl: float
     reuse_score: float

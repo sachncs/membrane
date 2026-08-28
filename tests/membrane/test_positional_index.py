@@ -1,17 +1,17 @@
-"""Tests for PositionalIndex using an interval tree."""
+"""Tests for _PositionalIndex using an interval tree."""
 
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.positions import PositionalIndex
-from membrane.signature import StructuralSignature
+from membrane.positions import _PositionalIndex
+from membrane.signature import Signature
 
 
 def make_fragment(content_hash, token_span, model_id="m"):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1,),
-        structural_signature=StructuralSignature(model_id=model_id, layer_range=(0, 1), token_span=token_span),
+        structural_signature=Signature(model_id=model_id, layer_range=(0, 1), token_span=token_span),
         size=10,
         ttl=3600.0,
         reuse_score=0.5,
@@ -20,7 +20,7 @@ def make_fragment(content_hash, token_span, model_id="m"):
 
 
 def test_overlap_query():
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     frag = make_fragment("h1", (100, 200))
     idx.insert(frag)
     results = idx.find_overlapping(150, 250)
@@ -29,7 +29,7 @@ def test_overlap_query():
 
 
 def test_adjacent_query():
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     frag = make_fragment("h1", (100, 200))
     idx.insert(frag)
     results = idx.find_adjacent(200, max_gap=10)
@@ -37,7 +37,7 @@ def test_adjacent_query():
 
 
 def test_no_overlap():
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     frag = make_fragment("h1", (100, 200))
     idx.insert(frag)
     assert idx.find_overlapping(300, 400) == []
@@ -47,7 +47,7 @@ def test_no_overlap():
 
 
 def test_remove_existingfragment():
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     frag = make_fragment("h1", (100, 200))
     idx.insert(frag)
     assert idx.remove("h1") is True
@@ -55,13 +55,13 @@ def test_remove_existingfragment():
 
 
 def test_remove_nonexistentfragment():
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     assert idx.remove("missing") is False
 
 
 def test_many_intervals_stress():
     """Insert many intervals and verify all are retrievable."""
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     n = 200
     for i in range(n):
         idx.insert(make_fragment(f"h{i}", (i * 10, i * 10 + 5)))
@@ -72,7 +72,7 @@ def test_many_intervals_stress():
 
 def test_nested_intervals():
     """Nested intervals should all be found."""
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     idx.insert(make_fragment("outer", (0, 100)))
     idx.insert(make_fragment("inner", (40, 60)))
     results = idx.find_overlapping(45, 55)
@@ -82,7 +82,7 @@ def test_nested_intervals():
 
 def test_same_start_different_ends():
     """Multiple intervals with same start but different ends."""
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     idx.insert(make_fragment("a", (50, 60)))
     idx.insert(make_fragment("b", (50, 70)))
     idx.insert(make_fragment("c", (50, 80)))
@@ -93,7 +93,7 @@ def test_same_start_different_ends():
 
 def test_boundary_overlap_exact():
     """Interval [10, 20] should overlap with [20, 30] at point 20."""
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     idx.insert(make_fragment("a", (10, 20)))
     results = idx.find_overlapping(20, 30)
     assert len(results) == 1
@@ -101,14 +101,14 @@ def test_boundary_overlap_exact():
 
 def test_boundary_no_overlap_off_by_one():
     """Interval [10, 20] should NOT overlap with [21, 30]."""
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     idx.insert(make_fragment("a", (10, 20)))
     assert idx.find_overlapping(21, 30) == []
 
 
 def test_adjacent_gap_zero_exact_touch():
     """max_gap=0 means fragments must touch exactly."""
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     idx.insert(make_fragment("a", (10, 20)))
     results = idx.find_adjacent(20, max_gap=0)
     assert len(results) == 1
@@ -116,7 +116,7 @@ def test_adjacent_gap_zero_exact_touch():
 
 def test_adjacent_gap_one_near_touch():
     """max_gap=1 should include fragments 1 token away."""
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     idx.insert(make_fragment("a", (10, 20)))
     results = idx.find_adjacent(22, max_gap=1)
     assert len(results) == 0
@@ -126,7 +126,7 @@ def test_adjacent_gap_one_near_touch():
 
 def test_tree_balance_after_many_insertions():
     """After many insertions in sorted order, tree should still be balanced."""
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     for i in range(100):
         idx.insert(make_fragment(f"h{i}", (i, i + 1)))
     # All should be findable
@@ -136,7 +136,7 @@ def test_tree_balance_after_many_insertions():
 
 def test_remove_and_reinsert():
     """Remove then reinsert should work correctly."""
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     frag = make_fragment("a", (10, 20))
     idx.insert(frag)
     idx.remove("a")
@@ -147,7 +147,7 @@ def test_remove_and_reinsert():
 
 def test_complex_scenario_multiple_operations():
     """Mix of inserts, removes, and queries."""
-    idx = PositionalIndex()
+    idx = _PositionalIndex()
     for i in range(50):
         idx.insert(make_fragment(f"h{i}", (i * 2, i * 2 + 3)))
     # Remove every other

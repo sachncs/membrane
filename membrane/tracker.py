@@ -7,7 +7,7 @@ Unlike a typical :class:`collections.OrderedDict`-based LRU, this
 class is a *tracker* — it does not store values. It records the
 last-access time for each key and tells the caller which key to
 evict when the configured capacity is exceeded. The caller (e.g.,
-:class:`membrane.fragment_store.FragmentStore`) is responsible for
+:class:`membrane.fragment_store.Store`) is responsible for
 deleting the corresponding payload from its own storage.
 
 Thread safety:
@@ -18,7 +18,7 @@ Thread safety:
 import time
 
 
-class LRUCache:
+class LRUTracker:
     """Tracks access times for keys and evicts the oldest when over capacity.
 
     This class does *not* store the values themselves; it only

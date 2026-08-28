@@ -1,6 +1,6 @@
-"""JointOptimizer: jointly optimize memory placement and compute placement.
+"""Joint: jointly optimize memory placement and compute placement.
 
-This module defines :class:`JointOptimizer` and its supporting
+This module defines :class:`Joint` and its supporting
 :class:`PlacementDecision` dataclass. The optimizer picks two
 nodes for a fragment — one to *compute* (prefill or decode) and
 one to *store* the resulting fragments — with the constraint that
@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.telemetry import NodeTelemetry
+from membrane.node import Node
+from membrane.telemetry import Telemetry
 
 
 @dataclass(frozen=True)
@@ -45,11 +45,11 @@ class PlacementDecision:
     estimated_latency_seconds: float
 
 
-class JointOptimizer:
+class Joint:
     """Optimizes both where to compute and where to store results.
 
     The optimizer is stateless; instances are safe to share
-    across threads as long as the supplied ``MembraneNode``
+    across threads as long as the supplied ``Node``
     references are themselves safe to query.
     """
 
@@ -60,8 +60,8 @@ class JointOptimizer:
     def optimize(
         self,
         fragment: Fragment,
-        nodes: list[MembraneNode],
-        telemetry_map: dict[str, NodeTelemetry],
+        nodes: list[Node],
+        telemetry_map: dict[str, Telemetry],
     ) -> PlacementDecision:
         """Jointly select compute node and memory node.
 
@@ -70,7 +70,7 @@ class JointOptimizer:
                 scoring logic but accepted for forward
                 compatibility with fragment-aware heuristics.
             nodes: Candidate nodes.
-            telemetry_map: ``node_id -> NodeTelemetry`` snapshot.
+            telemetry_map: ``node_id -> Telemetry`` snapshot.
 
         Returns:
             PlacementDecision: Selected compute and memory
@@ -89,7 +89,7 @@ class JointOptimizer:
         # Adding latency in seconds (rather than milliseconds)
         # keeps both terms on the same order of magnitude for
         # typical GPU loads in the 0.1-1.0 range.
-        def compute_score(node: MembraneNode) -> float:
+        def compute_score(node: Node) -> float:
             """Score compute suitability (lower is better)."""
             telem = telemetry_map.get(node.node_id)
             if telem is None:
@@ -99,7 +99,7 @@ class JointOptimizer:
         compute_node = min(nodes, key=compute_score)
 
         # Memory node: minimize memory pressure.
-        def memory_score(node: MembraneNode) -> float:
+        def memory_score(node: Node) -> float:
             """Score memory suitability (lower is better)."""
             telem = telemetry_map.get(node.node_id)
             if telem is None:
@@ -122,7 +122,7 @@ class JointOptimizer:
         est_latency = (
             telemetry_map.get(
                 compute_node.node_id,
-                NodeTelemetry(
+                Telemetry(
                     node_id=compute_node.node_id,
                     latency_ms=0.0,
                     bandwidth_cost=0.0,

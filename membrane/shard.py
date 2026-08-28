@@ -1,6 +1,6 @@
-"""ShardManager: consistent-hash shard ownership and replica tracking.
+"""Shard: consistent-hash shard ownership and replica tracking.
 
-Maps content-hash ranges to nodes using a HashRing, tracks primary
+Maps content-hash ranges to nodes using a Ring, tracks primary
 owners and replica sets per shard, and supports rebalancing when
 the topology changes.
 
@@ -8,7 +8,7 @@ The manager maintains two internal maps:
 
 * ``primary_map`` — ``content_hash -> primary_node_id``. Always
   reflects the current state of the underlying
-  :class:`~membrane.hash_ring.HashRing`.
+  :class:`~membrane.hash_ring.Ring`.
 * ``replica_map`` — ``content_hash -> set[replica_node_id]``. The
   primary itself is *not* in this set; replicas are the
   ``replica_count`` distinct nodes that follow the primary on the
@@ -32,35 +32,35 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.ring import HashRing
+from membrane.ring import Ring
 
 
-class ShardManager:
+class Shard:
     """Manages shard-to-node assignments via consistent hashing.
 
-    Each content hash is mapped to a primary node by the HashRing.
+    Each content hash is mapped to a primary node by the Ring.
     Replicas are assigned to the next ``replica_count`` distinct
     nodes in the ring.
 
     Args:
-        hash_ring: HashRing instance for node distribution.
+        hash_ring: Ring instance for node distribution.
         replica_count: Number of replicas per shard (default 2).
     """
 
     def __init__(
         self,
-        hash_ring: HashRing | None = None,
+        hash_ring: Ring | None = None,
         replica_count: int = 2,
     ) -> None:
         """Initialize the manager with an optional hash ring.
 
         Args:
-            hash_ring: HashRing to use for node selection. A
+            hash_ring: Ring to use for node selection. A
                 default empty ring is created when ``None``.
             replica_count: Number of replicas per shard (the
                 primary itself is excluded from this count).
         """
-        self.hash_ring = hash_ring or HashRing()
+        self.hash_ring = hash_ring or Ring()
         self.replica_count = replica_count
         self.primary_map: dict[str, str] = {}
         self.replica_map: dict[str, set[str]] = {}

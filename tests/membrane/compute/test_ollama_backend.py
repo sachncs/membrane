@@ -1,11 +1,11 @@
-"""Tests for OllamaBackend."""
+"""Tests for Ollama."""
 
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
-from membrane.compute.ollama import OllamaBackend
+from membrane.compute.ollama import Ollama
 from membrane.fragment import Fragment
 
 
@@ -14,7 +14,7 @@ class TestOllamaBackend:
 
     @pytest.fixture
     def backend(self):
-        return OllamaBackend(base_url="http://localhost:11434", model="llama3.2")
+        return Ollama(base_url="http://localhost:11434", model="llama3.2")
 
     def test_device_name(self, backend):
         assert backend.device_name() == "ollama(llama3.2)"

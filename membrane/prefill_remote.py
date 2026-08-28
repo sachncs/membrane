@@ -1,8 +1,8 @@
-"""RemotePrefillDispatcher: dispatch prefill to a single chosen remote node.
+"""PrefillRemote: dispatch prefill to a single chosen remote node.
 
-This module defines :class:`RemotePrefillDispatcher`, a
+This module defines :class:`PrefillRemote`, a
 synchronous counterpart to
-:class:`~membrane.async_prefill_dispatcher.AsyncRemotePrefillDispatcher`.
+:class:`~membrane.async_prefill_dispatcher.PrefillAsync`.
 It runs prefill on a single pre-chosen remote node, stores the
 resulting fragments on that node as non-primary replicas, and
 returns the :class:`~membrane.prefill_adapter.PrefillResult`.
@@ -10,7 +10,7 @@ returns the :class:`~membrane.prefill_adapter.PrefillResult`.
 The dispatcher models a remote RPC call with a local simulation
 — the ``target_node`` argument is used to host the resulting
 fragments, but no real network I/O occurs. Use
-:class:`AsyncRemotePrefillDispatcher` when concurrent racing is
+:class:`PrefillAsync` when concurrent racing is
 required.
 """
 
@@ -19,11 +19,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.node import MembraneNode
-from membrane.adapter import PrefillAdapter, PrefillResult
+from membrane.node import Node
+from membrane.adapter import Adapter, PrefillResult
 
 
-class RemotePrefillDispatcher:
+class PrefillRemote:
     """Dispatches prefill requests to a chosen remote node.
 
     In a real system this would be an RPC call. Here it models
@@ -35,21 +35,21 @@ class RemotePrefillDispatcher:
             prefill computation.
     """
 
-    def __init__(self, prefill_adapter: PrefillAdapter | None = None) -> None:
+    def __init__(self, prefill_adapter: Adapter | None = None) -> None:
         """Initialize with an optional prefill adapter.
 
         Args:
             prefill_adapter: Adapter used for remote prefill
-                simulation. A default :class:`PrefillAdapter`
+                simulation. A default :class:`Adapter`
                 is created when ``None``.
         """
-        self.prefill_adapter = prefill_adapter or PrefillAdapter()
+        self.prefill_adapter = prefill_adapter or Adapter()
 
     def dispatch(
         self,
         prompt_tokens: list[int],
         model_id: str,
-        target_node: MembraneNode,
+        target_node: Node,
     ) -> PrefillResult:
         """Simulate remote prefill on ``target_node``.
 

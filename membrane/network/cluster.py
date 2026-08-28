@@ -1,13 +1,13 @@
-"""ClusterManager: peer-to-peer bootstrap, heartbeat, gossip, and replication.
+"""Cluster: peer-to-peer bootstrap, heartbeat, gossip, and replication.
 
 Runs background daemon threads for membership maintenance and
 state exchange.
 
-The :class:`ClusterManager` is the heart of Membrane's runtime:
+The :class:`Cluster` is the heart of Membrane's runtime:
 it owns the cluster-membership tables, the
-:class:`~membrane.hash_ring.HashRing`,
-:class:`~membrane.shard_manager.ShardManager`, and
-:class:`~membrane.global_directory.GlobalDirectory`; runs the
+:class:`~membrane.hash_ring.Ring`,
+:class:`~membrane.shard_manager.Shard`, and
+:class:`~membrane.global_directory.Registry`; runs the
 periodic bootstrap, heartbeat, failure-detection, gossip, and
 replication loops; and exposes a small synchronous API for
 membership queries and event handling.
@@ -27,13 +27,13 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from membrane.registry import GlobalDirectory
-from membrane.ring import HashRing
-from membrane.node import MembraneNode
+from membrane.registry import Registry
+from membrane.ring import Ring
+from membrane.node import Node
 from membrane.network.config import ClusterConfig
 from membrane.network.gossip import GossipState, PeerEndpoint
-from membrane.network.peer import PeerClient
-from membrane.shard import ShardManager
+from membrane.network.peer import Peer
+from membrane.shard import Shard
 
 logger = logging.getLogger(__name__)
 
@@ -81,18 +81,18 @@ class PeerInfo:
         }
 
 
-class ClusterManager:
+class Cluster:
     """Coordinates cluster membership, gossip, and replication.
 
     Args:
         node_id: Identifier for this node.
         host: Bind host.
         port: Listen port.
-        node: Local :class:`MembraneNode`.
+        node: Local :class:`Node`.
         config: Cluster configuration.
-        directory: Optional :class:`GlobalDirectory`.
-        hash_ring: Optional :class:`HashRing`.
-        shard_manager: Optional :class:`ShardManager`.
+        directory: Optional :class:`Registry`.
+        hash_ring: Optional :class:`Ring`.
+        shard_manager: Optional :class:`Shard`.
     """
 
     def __init__(
@@ -100,11 +100,11 @@ class ClusterManager:
         node_id: str,
         host: str,
         port: int,
-        node: MembraneNode,
+        node: Node,
         config: ClusterConfig,
-        directory: GlobalDirectory | None = None,
-        hash_ring: HashRing | None = None,
-        shard_manager: ShardManager | None = None,
+        directory: Registry | None = None,
+        hash_ring: Ring | None = None,
+        shard_manager: Shard | None = None,
     ) -> None:
         """Initialize the cluster manager and internal state."""
         self.node_id = node_id
@@ -112,12 +112,12 @@ class ClusterManager:
         self.port = port
         self.node = node
         self.config = config
-        self.directory = directory or GlobalDirectory()
-        self.hash_ring = hash_ring or HashRing()
-        self.shard_manager = shard_manager or ShardManager(self.hash_ring)
+        self.directory = directory or Registry()
+        self.hash_ring = hash_ring or Ring()
+        self.shard_manager = shard_manager or Shard(self.hash_ring)
 
         self._peers: dict[str, PeerInfo] = {}
-        self._clients: dict[str, PeerClient] = {}
+        self._clients: dict[str, Peer] = {}
         self._lock = threading.RLock()
         self._running = False
         self._threads: list[threading.Thread] = []
@@ -153,7 +153,7 @@ class ClusterManager:
             t.start()
             self._threads.append(t)
 
-        logger.info("ClusterManager started with %s background threads", len(loops))
+        logger.info("Cluster started with %s background threads", len(loops))
 
     def stop(self) -> None:
         """Signal all background threads to exit.
@@ -168,7 +168,7 @@ class ClusterManager:
         self._stop_event.set()
         for t in self._threads:
             t.join(timeout=2.0)
-        logger.info("ClusterManager stopped")
+        logger.info("Cluster stopped")
 
     def join(self) -> None:
         """Block until :meth:`stop` is called.
@@ -201,7 +201,7 @@ class ClusterManager:
                 self._peers[node_id].port = port
                 return
             self._peers[node_id] = PeerInfo(node_id=node_id, host=host, port=port, last_heartbeat=time.time())
-            self._clients[node_id] = PeerClient(f"http://{host}:{port}")
+            self._clients[node_id] = Peer(f"http://{host}:{port}")
             self.hash_ring.add_node(node_id)
             self.shard_manager.add_node(node_id)
             logger.info("Added peer %s at %s:%s", node_id, host, port)
@@ -251,14 +251,14 @@ class ClusterManager:
             p = self._peers.get(node_id)
             return p.healthy if p else False
 
-    def get_peer_client(self, node_id: str) -> PeerClient | None:
+    def get_peer_client(self, node_id: str) -> Peer | None:
         """Return the cached HTTP client for a peer.
 
         Args:
             node_id: Peer node identifier.
 
         Returns:
-            PeerClient | None: The cached client, or ``None``
+            Peer | None: The cached client, or ``None``
             if the peer is unknown.
         """
         with self._lock:
@@ -418,7 +418,7 @@ class ClusterManager:
             if self._stop_event.is_set():
                 return
             try:
-                client = PeerClient(f"http://{seed}")
+                client = Peer(f"http://{seed}")
                 result = client.join_cluster(self.node_id, self.host, self.port)
                 if result and result.get("success"):
                     for peer in result.get("peers", []):
@@ -544,7 +544,7 @@ class ClusterManager:
 
         For every primary hash held locally, ask each replica
         target whether it already has the fragment. If not,
-        push the fragment via :class:`PeerClient`.
+        push the fragment via :class:`Peer`.
         """
         while self._running and not self._stop_event.is_set():
             with self._lock:

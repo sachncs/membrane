@@ -1,11 +1,11 @@
-from membrane.exacts import ExactIndex
+from membrane.exacts import Exacts
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 
 def test_index_and_lookup():
-    idx = ExactIndex()
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    idx = Exacts()
+    sig = Signature("m", (0, 1), (0, 10))
     frag = Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1)
     idx.insert(frag, {"node-a"})
     result = idx.lookup("h1")
@@ -14,8 +14,8 @@ def test_index_and_lookup():
 
 
 def test_insert_overwrites():
-    idx = ExactIndex()
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    idx = Exacts()
+    sig = Signature("m", (0, 1), (0, 10))
     frag = Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1)
     idx.insert(frag, {"node-a"})
     idx.insert(frag, {"node-b"})
@@ -24,8 +24,8 @@ def test_insert_overwrites():
 
 
 def test_add_location_idempotent():
-    idx = ExactIndex()
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    idx = Exacts()
+    sig = Signature("m", (0, 1), (0, 10))
     frag = Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1)
     idx.insert(frag, {"node-a"})
     assert idx.add_location("h1", "node-a")
@@ -34,8 +34,8 @@ def test_add_location_idempotent():
 
 
 def test_add_location_merges():
-    idx = ExactIndex()
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    idx = Exacts()
+    sig = Signature("m", (0, 1), (0, 10))
     frag = Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1)
     idx.insert(frag, {"node-a"})
     assert idx.add_location("h1", "node-b")
@@ -44,10 +44,10 @@ def test_add_location_merges():
 
 
 def test_lookup_missing():
-    idx = ExactIndex()
+    idx = Exacts()
     assert idx.lookup("missing") is None
 
 
 def test_add_location_missing():
-    idx = ExactIndex()
+    idx = Exacts()
     assert not idx.add_location("missing", "node-a")

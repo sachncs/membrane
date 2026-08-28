@@ -1,6 +1,6 @@
-"""DistributedDirectory: client-facing fragment location resolution.
+"""Directory: client-facing fragment location resolution.
 
-This module defines :class:`DistributedDirectory`, the lightweight
+This module defines :class:`Directory`, the lightweight
 front-end that application code uses to answer "where does this
 fragment live?" queries across a Membrane cluster.
 
@@ -24,24 +24,24 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.ring import HashRing
+from membrane.ring import Ring
 from membrane.supernode import Supernode
 
 
-class DistributedDirectory:
+class Directory:
     """Distributed directory that resolves where fragments live.
 
     Combines supernode lookups with consistent hashing for O(1)
     resolution.
 
     Attributes:
-        hash_ring: HashRing used for placement and as a fallback
+        hash_ring: Ring used for placement and as a fallback
             lookup source.
         supernodes: Mapping from ``supernode_id`` to the registered
             :class:`~membrane.supernode.Supernode` instances.
     """
 
-    def __init__(self, hash_ring: HashRing | None = None) -> None:
+    def __init__(self, hash_ring: Ring | None = None) -> None:
         """Initialize the directory.
 
         Args:
@@ -49,7 +49,7 @@ class DistributedDirectory:
                 placement. A default empty ring is created when
                 ``None``.
         """
-        self.hash_ring = hash_ring or HashRing()
+        self.hash_ring = hash_ring or Ring()
         self.supernodes: dict[str, Supernode] = {}
 
     def register_supernode(self, supernode: Supernode) -> None:

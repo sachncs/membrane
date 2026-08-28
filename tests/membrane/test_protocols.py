@@ -2,27 +2,27 @@
 
 import pytest
 
-from membrane.canonical import CanonicalStore
-from membrane.economic import EconomicRouter
-from membrane.registry import GlobalDirectory
-from membrane.index import IndexSystem
-from membrane.node import MembraneNode
+from membrane.canonical import Canonical
+from membrane.economic import Economic
+from membrane.registry import Registry
+from membrane.index import Index
+from membrane.node import Node
 from membrane.protocols import DirectoryProtocol, IndexProtocol, RouterProtocol, TransportProtocol
 from membrane.transfer import TransferService
 
 
 def test_index_system_satisfies_index_protocol():
-    idx = IndexSystem()
+    idx = Index()
     assert isinstance(idx, IndexProtocol)
 
 
 def test_economic_router_satisfies_router_protocol():
-    router = EconomicRouter()
+    router = Economic()
     assert isinstance(router, RouterProtocol)
 
 
 def test_global_directory_satisfies_directory_protocol():
-    gd = GlobalDirectory()
+    gd = Registry()
     assert isinstance(gd, DirectoryProtocol)
 
 
@@ -32,5 +32,5 @@ def test_transfer_service_satisfies_transport_protocol():
 
 
 def test_canonical_store_does_not_satisfy_index_protocol():
-    cs = CanonicalStore()
+    cs = Canonical()
     assert not isinstance(cs, IndexProtocol)

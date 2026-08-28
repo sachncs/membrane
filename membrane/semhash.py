@@ -1,7 +1,7 @@
 """SemanticHash: locality-sensitive hashing for approximate identity.
 
 This module provides two functions used by
-:class:`~membrane.semantic_index.SemanticIndex` to support efficient
+:class:`~membrane.semantic_index.Semantics` to support efficient
 *approximate* similarity lookups across fragments:
 
 * :func:`compute_semantic_hash` — converts a dense embedding into a

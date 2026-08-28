@@ -1,11 +1,11 @@
 from membrane.fragment import Fragment
-from membrane.graph import FragmentGraph
-from membrane.signature import StructuralSignature
+from membrane.graph import Graph
+from membrane.signature import Signature
 
 
 def test_add_node_and_edge():
-    g = FragmentGraph()
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    g = Graph()
+    sig = Signature("m", (0, 1), (0, 10))
     frag = Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1)
     g.add_node(frag)
     g.add_edge("h1", "h2", edge_type="co_access")
@@ -14,8 +14,8 @@ def test_add_node_and_edge():
 
 
 def test_neighbors_by_type():
-    g = FragmentGraph()
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    g = Graph()
+    sig = Signature("m", (0, 1), (0, 10))
     g.add_node(Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1))
     g.add_edge("h1", "h2", "co_access")
     g.add_edge("h1", "h3", "semantic")
@@ -25,8 +25,8 @@ def test_neighbors_by_type():
 
 
 def test_get_fragment():
-    g = FragmentGraph()
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    g = Graph()
+    sig = Signature("m", (0, 1), (0, 10))
     frag = Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1)
     g.add_node(frag)
     assert g.get_fragment("h1") == frag

@@ -1,14 +1,14 @@
-"""StructuralSignature for fragment addressing.
+"""Signature for fragment addressing.
 
-This module defines :class:`StructuralSignature`, an immutable descriptor
+This module defines :class:`Signature`, an immutable descriptor
 that locates a fragment within the *structural* space of a model
 computation graph — i.e., which model produced it, which transformer
 layers it spans, and which token positions it covers.
 
 Unlike ``content_hash`` (which identifies *what* the bytes are),
-``StructuralSignature`` identifies *where* in the computation the bytes
+``Signature`` identifies *where* in the computation the bytes
 belong. The two are complementary: ``content_hash`` drives
-deduplication and canonical storage; ``StructuralSignature`` drives
+deduplication and canonical storage; ``Signature`` drives
 routing, position-aware caching, and graph-level reconstruction.
 
 Use cases:
@@ -17,7 +17,7 @@ Use cases:
     * Model compatibility checks: Two fragments are interchangeable
       only if their ``model_id`` and ``schema_version`` match.
     * Graph traversal:
-      :class:`membrane.fragment_graph.FragmentGraph` uses signatures as
+      :class:`membrane.fragment_graph.Graph` uses signatures as
       node identifiers when reconstructing contexts.
 """
 
@@ -30,7 +30,7 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class StructuralSignature:
+class Signature:
     """Immutable structural signature of a fragment.
 
     The signature describes a fragment's *position* in the model
@@ -59,8 +59,8 @@ class StructuralSignature:
             reconstruction engine to assemble token-aligned contexts.
 
     Example:
-        >>> from membrane.signature import StructuralSignature
-        >>> sig = StructuralSignature(
+        >>> from membrane.signature import Signature
+        >>> sig = Signature(
         ...     model_id="llama-3-8b",
         ...     layer_range=(0, 32),
         ...     token_span=(0, 128),

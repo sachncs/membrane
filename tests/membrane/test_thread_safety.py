@@ -1,4 +1,4 @@
-"""Thread-safety stress tests for MembraneNode."""
+"""Thread-safety stress tests for Node."""
 
 import threading
 import time
@@ -6,15 +6,15 @@ import time
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.signature import StructuralSignature
+from membrane.node import Node
+from membrane.signature import Signature
 
 
 def make_fragment(content_hash: str = "h1", size: int = 100):
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1, 0.2),
-        structural_signature=StructuralSignature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
+        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
         size=size,
         ttl=3600.0,
         reuse_score=0.5,
@@ -26,7 +26,7 @@ class TestThreadSafety:
     """Stress tests for concurrent store/retrieve/evict."""
 
     def test_concurrent_store_and_retrieve(self):
-        node = MembraneNode("stress", max_memory_bytes=10000)
+        node = Node("stress", max_memory_bytes=10000)
         errors: list[Exception] = []
 
         def store_worker(n: int):
@@ -60,7 +60,7 @@ class TestThreadSafety:
         assert stats.fragment_count >= 0
 
     def test_concurrent_evict_during_store(self):
-        node = MembraneNode("stress2", max_memory_bytes=500)
+        node = Node("stress2", max_memory_bytes=500)
         errors: list[Exception] = []
 
         def store_worker():

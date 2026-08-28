@@ -1,11 +1,11 @@
-"""Tests for AnthropicBackend."""
+"""Tests for Anthropic."""
 
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
 
-from membrane.compute.anthropic import AnthropicBackend
+from membrane.compute.anthropic import Anthropic
 
 
 class TestAnthropicBackend:
@@ -13,7 +13,7 @@ class TestAnthropicBackend:
 
     @pytest.fixture
     def backend(self):
-        return AnthropicBackend(api_key="sk-ant-test", model="claude-3-sonnet-20240229")
+        return Anthropic(api_key="sk-ant-test", model="claude-3-sonnet-20240229")
 
     def test_device_name(self, backend):
         assert backend.device_name() == "anthropic(claude-3-sonnet-20240229)"

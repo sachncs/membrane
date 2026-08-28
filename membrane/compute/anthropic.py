@@ -1,11 +1,11 @@
-"""AnthropicBackend: compute backend that delegates to Anthropic API.
+"""Anthropic: compute backend that delegates to Anthropic API.
 
 Requires ``httpx`` (installed via ``pip install membrane[server]``).
 Anthropic has no public embedding endpoint, so prefill falls
 back to hashing the prompt text.
 
 The backend wraps Anthropic's ``/messages`` endpoint and exposes
-the standard :class:`~membrane.compute.backend.ComputeBackend`
+the standard :class:`~membrane.compute.backend.Backend`
 interface:
 
 * :meth:`prefill` — produces content-addressed fragments using a
@@ -30,14 +30,14 @@ from typing import Any
 
 import httpx
 
-from membrane.compute.base import ComputeBackend
+from membrane.compute.base import Backend
 from membrane.fragment import Fragment
-from membrane.signature import StructuralSignature
+from membrane.signature import Signature
 
 logger = logging.getLogger(__name__)
 
 
-class AnthropicBackend(ComputeBackend):
+class Anthropic(Backend):
     """Compute backend using Anthropic API for generation.
 
     Args:
@@ -76,7 +76,7 @@ class AnthropicBackend(ComputeBackend):
                 timeout=60.0,
             )
         except ImportError:
-            logger.warning("AnthropicBackend: httpx not installed")
+            logger.warning("Anthropic: httpx not installed")
 
     def hash_tokens(self, tokens: list[int]) -> str:
         """MD5-hash a token chunk.
@@ -115,7 +115,7 @@ class AnthropicBackend(ComputeBackend):
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),
-                structural_signature=StructuralSignature(
+                structural_signature=Signature(
                     model_id=model_id,
                     layer_range=(0, 1),
                     token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
@@ -127,7 +127,7 @@ class AnthropicBackend(ComputeBackend):
             )
             fragments.append(frag)
         logger.debug(
-            "AnthropicBackend: prefill %s tokens into %s fragments",
+            "Anthropic: prefill %s tokens into %s fragments",
             len(prompt_tokens),
             len(fragments),
         )

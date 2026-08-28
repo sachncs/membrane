@@ -1,6 +1,6 @@
-"""ComputeBackend: abstraction for prefill/inference compute.
+"""Backend: abstraction for prefill/inference compute.
 
-This module defines :class:`ComputeBackend`, the abstract base
+This module defines :class:`Backend`, the abstract base
 class every concrete compute backend must implement. The
 interface is intentionally minimal: prefill, generate, and two
 metadata accessors (availability and device name).
@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from membrane.fragment import Fragment
 
 
-class ComputeBackend(ABC):
+class Backend(ABC):
     """Abstract compute backend for KV-cache prefill and decode.
 
     Implementations may use CPU (numpy/torch CPU) or GPU (CUDA).

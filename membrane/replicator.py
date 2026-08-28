@@ -1,9 +1,9 @@
-"""ClusterReplicator: replicate entire graph clusters instead of isolated items.
+"""Replicator: replicate entire graph clusters instead of isolated items.
 
-This module defines :class:`ClusterReplicator`, a helper that
+This module defines :class:`Replicator`, a helper that
 replicates a *set* of fragments (typically the contents of a
 connected component discovered via
-:class:`~membrane.subgraph_retrieval.SubgraphRetrieval`) from a
+:class:`~membrane.subgraph_retrieval._SubgraphRetrieval`) from a
 source node to multiple target nodes.
 
 The replicator is intentionally thin: it delegates every fragment
@@ -17,11 +17,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.node import MembraneNode
+from membrane.node import Node
 from membrane.transfer import TransferService
 
 
-class ClusterReplicator:
+class Replicator:
     """Replicates connected components of fragments to target nodes.
 
     Attributes:
@@ -44,8 +44,8 @@ class ClusterReplicator:
     def replicate_cluster(
         self,
         component: set[str],
-        source: MembraneNode,
-        targets: list[MembraneNode],
+        source: Node,
+        targets: list[Node],
     ) -> dict[str, list[str]]:
         """Replicate all fragments in ``component`` to each target node.
 

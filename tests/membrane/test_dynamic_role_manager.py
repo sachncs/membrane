@@ -2,16 +2,16 @@
 
 import pytest
 
-from membrane.roles import DynamicRoleManager, NodeRole, SystemState
-from membrane.node import MembraneNode
+from membrane.roles import Roles, NodeRole, SystemState
+from membrane.node import Node
 
 
 class TestDynamicRoleManager:
-    """Test suite for DynamicRoleManager."""
+    """Test suite for Roles."""
 
     def test_high_memory_low_gpu_becomes_memory_host(self):
-        mgr = DynamicRoleManager()
-        node = MembraneNode("n", max_memory_bytes=100)
+        mgr = Roles()
+        node = Node("n", max_memory_bytes=100)
         from tests.membrane.test_cluster_replicator import make_fragment
 
         f = make_fragment("x", size=80)
@@ -21,22 +21,22 @@ class TestDynamicRoleManager:
         assert role == NodeRole.MEMORY_HOST
 
     def test_low_memory_high_gpu_becomes_prefill(self):
-        mgr = DynamicRoleManager()
-        node = MembraneNode("n")
+        mgr = Roles()
+        node = Node("n")
         state = SystemState(average_gpu_load=0.8)
         role = mgr.evaluate_role(node, state)
         assert role == NodeRole.PREFILL_WORKER
 
     def test_balanced_compute_demand_prefers_decode(self):
-        mgr = DynamicRoleManager()
-        node = MembraneNode("n")
+        mgr = Roles()
+        node = Node("n")
         state = SystemState(total_compute_demand=0.8, total_memory_demand=0.2)
         role = mgr.evaluate_role(node, state)
         assert role == NodeRole.DECODE_WORKER
 
     def test_balanced_memory_demand_prefers_memory_host(self):
-        mgr = DynamicRoleManager()
-        node = MembraneNode("n")
+        mgr = Roles()
+        node = Node("n")
         state = SystemState(total_compute_demand=0.2, total_memory_demand=0.8)
         role = mgr.evaluate_role(node, state)
         assert role == NodeRole.MEMORY_HOST

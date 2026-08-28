@@ -1,6 +1,6 @@
-"""KVTransferAfterPrefill: ship KV fragments back to the requester after remote prefill.
+"""KVReturn: ship KV fragments back to the requester after remote prefill.
 
-This module defines :class:`KVTransferAfterPrefill`, a small
+This module defines :class:`KVReturn`, a small
 helper that copies every fragment produced by a remote prefill
 from the compute node back to the requesting node via the
 :class:`~membrane.transfer_service.TransferService`.
@@ -16,12 +16,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.node import MembraneNode
+from membrane.node import Node
 from membrane.adapter import PrefillResult
 from membrane.transfer import TransferService
 
 
-class KVTransferAfterPrefill:
+class KVReturn:
     """Transfers KV fragments from the compute node back to the requester.
 
     Uses :class:`TransferService` to move all fragments produced
@@ -47,8 +47,8 @@ class KVTransferAfterPrefill:
     def ship_kv(
         self,
         prefill_result: PrefillResult,
-        source_node: MembraneNode,
-        target_node: MembraneNode,
+        source_node: Node,
+        target_node: Node,
     ) -> list[str]:
         """Ship every fragment from ``prefill_result`` to ``target_node``.
 

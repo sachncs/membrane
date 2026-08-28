@@ -7,8 +7,8 @@ with identical request/response shapes.
 
 Pydantic models at the top of the module describe the request
 bodies; the application factory :func:`create_app` registers the
-endpoints and attaches the supplied :class:`MembraneNode`,
-:class:`ComputeBackend`, :class:`TransferService`, and optional
+endpoints and attaches the supplied :class:`Node`,
+:class:`Backend`, :class:`TransferService`, and optional
 cluster manager to ``app.state`` for the handlers to consume.
 
 Security:
@@ -22,11 +22,11 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from membrane.compute.base import ComputeBackend
-from membrane.compute.cpu import CPUBackend
+from membrane.compute.base import Backend
+from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
-from membrane.node import MembraneNode
-from membrane.signature import StructuralSignature
+from membrane.node import Node
+from membrane.signature import Signature
 from membrane.transfer import TransferService
 
 logger = logging.getLogger(__name__)
@@ -192,7 +192,7 @@ def deserialize_fragment(data: FragmentPayload) -> Fragment:
     return Fragment(
         content_hash=data.content_hash,
         embedding=tuple(data.embedding),
-        structural_signature=StructuralSignature(
+        structural_signature=Signature(
             model_id=data.model_id,
             layer_range=(data.layer_range[0], data.layer_range[1]),
             token_span=(data.token_span[0], data.token_span[1]),
@@ -210,16 +210,16 @@ def deserialize_fragment(data: FragmentPayload) -> Fragment:
 
 
 def create_app(
-    node: MembraneNode,
-    compute_backend: ComputeBackend | None,
+    node: Node,
+    compute_backend: Backend | None,
     transfer_service: TransferService,
     cluster_manager: Any | None,
 ) -> FastAPI:
     """Build a configured FastAPI application for a Membrane node.
 
     Args:
-        node: Local :class:`MembraneNode`.
-        compute_backend: Optional :class:`ComputeBackend`.
+        node: Local :class:`Node`.
+        compute_backend: Optional :class:`Backend`.
         transfer_service: :class:`TransferService`.
         cluster_manager: Optional cluster manager.
 
@@ -352,7 +352,7 @@ def create_app(
     @app.post("/prefill")
     def prefill(req: PrefillRequest) -> dict[str, Any]:
         """``POST /prefill`` — run prefill and store fragments as primary."""
-        backend = app.state.compute_backend or CPUBackend()
+        backend = app.state.compute_backend or CPU()
         try:
             fragments = backend.prefill(req.prompt_tokens, req.model_id)
             for frag in fragments:
@@ -404,7 +404,7 @@ class FastAPIServer:
     """Production HTTP server using FastAPI + uvicorn.
 
     Args:
-        node: MembraneNode to serve.
+        node: Node to serve.
         host: Bind address.
         port: Listen port.
         compute_backend: Optional compute backend for prefill.
@@ -415,10 +415,10 @@ class FastAPIServer:
 
     def __init__(
         self,
-        node: MembraneNode,
+        node: Node,
         host: str = "0.0.0.0",
         port: int = 8080,
-        compute_backend: ComputeBackend | None = None,
+        compute_backend: Backend | None = None,
         transfer_service: TransferService | None = None,
         cluster_manager: Any | None = None,
     ) -> None:

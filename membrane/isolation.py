@@ -1,7 +1,7 @@
-"""TenantIsolation: cross-tenant sharing policy.
+"""Isolation: cross-tenant sharing policy.
 
-This module defines :class:`TenantIsolation` and its supporting
-:class:`TenantPolicy` dataclass. Together they answer the question
+This module defines :class:`Isolation` and its supporting
+:class:`Tenant` dataclass. Together they answer the question
 "is it safe for tenant A's request to benefit from a fragment that
 tenant B produced?" — a question that must be answered before any
 cross-tenant deduplication, prefetch, or replication is allowed.
@@ -36,7 +36,7 @@ from membrane.fragment import Fragment
 
 
 @dataclass(frozen=True)
-class TenantPolicy:
+class Tenant:
     """Policy governing what can be shared across tenants.
 
     Attributes:
@@ -57,17 +57,17 @@ class TenantPolicy:
     min_reuse_score_for_share: float = 0.6
 
 
-class TenantIsolation:
+class Isolation:
     """Evaluates whether fragments can be shared across tenants."""
 
-    def __init__(self, policy: TenantPolicy | None = None) -> None:
+    def __init__(self, policy: Tenant | None = None) -> None:
         """Initialize with an optional tenant policy.
 
         Args:
             policy: Sharing policy rules. A default
-                :class:`TenantPolicy` is used when ``None``.
+                :class:`Tenant` is used when ``None``.
         """
-        self.policy = policy or TenantPolicy()
+        self.policy = policy or Tenant()
 
     def can_share(
         self,

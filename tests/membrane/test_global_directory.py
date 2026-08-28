@@ -1,13 +1,13 @@
-"""Tests for GlobalDirectory."""
+"""Tests for Registry."""
 
 from membrane.fragment import Fragment
-from membrane.registry import GlobalDirectory
-from membrane.node import MembraneNode
-from membrane.signature import StructuralSignature
+from membrane.registry import Registry
+from membrane.node import Node
+from membrane.signature import Signature
 
 
 def make_fragment(content_hash: str, size: int = 100) -> Fragment:
-    sig = StructuralSignature("m", (0, 1), (0, 10))
+    sig = Signature("m", (0, 1), (0, 10))
     return Fragment(
         content_hash=content_hash,
         embedding=(0.1, 0.2, 0.3),
@@ -20,8 +20,8 @@ def make_fragment(content_hash: str, size: int = 100) -> Fragment:
 
 
 def test_register_and_unregister():
-    gd = GlobalDirectory()
-    node = MembraneNode("n1")
+    gd = Registry()
+    node = Node("n1")
     gd.register_node(node)
     assert "n1" in gd.nodes
     assert gd.unregister_node("n1")
@@ -29,29 +29,29 @@ def test_register_and_unregister():
 
 
 def test_unregister_missing():
-    gd = GlobalDirectory()
+    gd = Registry()
     assert not gd.unregister_node("missing")
 
 
 def test_locate_fragment():
-    gd = GlobalDirectory()
+    gd = Registry()
     gd.record_fragment_location("h1", "n1")
     gd.record_fragment_location("h1", "n2")
     assert gd.locate_fragment("h1") == {"n1", "n2"}
 
 
 def test_locate_missing():
-    gd = GlobalDirectory()
+    gd = Registry()
     assert gd.locate_fragment("missing") == set()
 
 
 def test_optimal_nodes_ranked_by_coverage():
-    from membrane.fragmenter import FragmentationEngine
+    from membrane.fragmenter import Fragmenter
 
-    gd = GlobalDirectory()
-    n1 = MembraneNode("n1", max_memory_bytes=1_000_000)
-    n2 = MembraneNode("n2", max_memory_bytes=1_000_000)
-    engine = FragmentationEngine()
+    gd = Registry()
+    n1 = Node("n1", max_memory_bytes=1_000_000)
+    n2 = Node("n2", max_memory_bytes=1_000_000)
+    engine = Fragmenter()
     tokens = list(range(20))
     frags = engine.create_windows(tokens, model_id="m")
     for f in frags[:2]:
@@ -66,14 +66,14 @@ def test_optimal_nodes_ranked_by_coverage():
 
 
 def test_optimal_nodes_empty():
-    gd = GlobalDirectory()
+    gd = Registry()
     assert gd.optimal_nodes_for_reconstruction([1, 2, 3], "m") == []
 
 
 def test_node_load_influences_ranking():
-    gd = GlobalDirectory()
-    n1 = MembraneNode("n1", max_memory_bytes=1000)
-    n2 = MembraneNode("n2", max_memory_bytes=100_000)
+    gd = Registry()
+    n1 = Node("n1", max_memory_bytes=1000)
+    n2 = Node("n2", max_memory_bytes=100_000)
     for i in range(10):
         n1.store(make_fragment(f"a{i}", size=100))
         n2.store(make_fragment(f"b{i}", size=100))
