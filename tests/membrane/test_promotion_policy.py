@@ -3,7 +3,7 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.policy import PromotionConfig, PromotionResult, Promotion
+from membrane.policy import Promotion, PromotionConfig, PromotionResult
 from membrane.signature import Signature
 
 

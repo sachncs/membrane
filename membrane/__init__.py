@@ -9,22 +9,58 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from membrane.adapter import Adapter
+from membrane.artifact import Artifact
 from membrane.auth import (
-    AuthContext,
-    AuthRequest,
-    Authenticator,
     SCOPES,
+    AuthBackendError,
+    AuthContext,
+    Authenticator,
+    AuthRequest,
     require_scope,
 )
 from membrane.auth.apikey import APIKey, APIKeyAuthenticator, NoopAuthenticator
 from membrane.auth.tls import TLSConfig
-from membrane.resilience import (
-    BulkheadPolicy,
-    CircuitBreakerPolicy,
-    ResiliencePolicy,
-    RetryPolicy,
-    TimeoutPolicy,
+from membrane.canonical import Canonical, CanonicalRef
+from membrane.chunks import Chunk
+from membrane.clusters import SemanticCluster
+from membrane.coaccess import Coaccess
+from membrane.compute.anthropic import Anthropic
+from membrane.compute.base import Backend
+from membrane.compute.cpu import CPU
+from membrane.compute.gpu import GPU
+from membrane.compute.ollama import Ollama
+from membrane.compute.openai import OpenAI
+from membrane.compute.transformers import Transformers
+from membrane.cost import CostModel
+from membrane.delta import Delta
+from membrane.density import density
+from membrane.directory import Directory
+from membrane.economic import Economic
+from membrane.errors import (
+    AuthError,
+    BackendError,
+    CapacityError,
+    ConfigError,
+    Error,
+    MigrationError,
+    NetworkError,
+    PersistenceError,
+    SchemaError,
 )
+from membrane.errors import (
+    ConnectionError as PersistenceConnectionError,
+)
+from membrane.exacts import Exacts
+from membrane.fragment import Fragment
+from membrane.fragmenter import Fragmenter, FragmenterConfig
+from membrane.graph import Graph
+from membrane.index import Index
+from membrane.isolation import Isolation, Tenant
+from membrane.joint import Joint, PlacementDecision
+from membrane.kv import KVCache
+from membrane.latency import Latency
+from membrane.logging import configure_logging, get_logger
 from membrane.metrics import (
     ClusterMetrics,
     Counter,
@@ -36,66 +72,6 @@ from membrane.metrics import (
     TransportMetrics,
     metrics_summary,
 )
-from membrane.errors import (
-    AuthError,
-    BackendError,
-    CapacityError,
-    ConfigError,
-    ConnectionError as PersistenceConnectionError,
-    Error,
-    MigrationError,
-    NetworkError,
-    PersistenceError,
-    SchemaError,
-)
-from membrane.fragment import Fragment
-from membrane.signature import Signature
-from membrane.store import Store, StoreMetrics
-from membrane.graph import Graph
-from membrane.tree import Tree
-from membrane.coaccess import Coaccess
-from membrane.semantics import Semantics
-from membrane.exacts import Exacts
-from membrane.index import Index
-from membrane.chunks import Chunk
-from membrane.delta import Delta
-from membrane.sync import DeltaSync, SyncPlan, SyncResult
-from membrane.transfer import TransferService
-from membrane.ring import Ring
-from membrane.shard import Shard
-from membrane.replica import Replica
-from membrane.origin import Origin
-from membrane.node import Node, Stats
-from membrane.kv import KVCache
-from membrane.segment import Segment
-from membrane.prefill_async import PrefillAsync
-from membrane.prefill_remote import PrefillRemote
-from membrane.adapter import Adapter
-from membrane.reconstructor import Reconstructor, ReconstructorResult
-from membrane.fragmenter import Fragmenter, FragmenterConfig
-from membrane.versions import Versions, VersionEntry
-from membrane.isolation import Isolation, Tenant
-from membrane.policy import Promotion, PromotionConfig, PromotionResult
-from membrane.roles import Roles, NodeRole, SystemState
-from membrane.offload import Offload, OffloadConfig, OffloadResult
-from membrane.joint import Joint, PlacementDecision
-from membrane.selector import Selector, SelectorConfig
-from membrane.telemetry import Telemetry
-from membrane.latency import Latency
-from membrane.economic import Economic
-from membrane.workload import Workload
-from membrane.sessions import Sessions, Session
-from membrane.predict import Predict
-from membrane.trace import Trace
-from membrane.artifact import Artifact
-from membrane.directory import Directory
-from membrane.registry import Registry
-from membrane.canonical import Canonical, CanonicalRef
-from membrane.tracker import LRUTracker
-from membrane.cost import CostModel
-from membrane.density import density
-from membrane.telemetry import telemetry
-from membrane.semhash import compute_semantic_hash, semantic_distance
 from membrane.network.cluster import Cluster, PeerInfo
 from membrane.network.config import ClusterConfig
 from membrane.network.gossip import GossipState, PeerEndpoint
@@ -109,27 +85,53 @@ from membrane.network.strategy import (
     ThresholdDetector,
 )
 from membrane.network.transfer import Transfer as RemoteTransfer
+from membrane.node import Node, Stats
+from membrane.offload import Offload, OffloadConfig, OffloadResult
+from membrane.origin import Origin
 from membrane.persistence.base import PersistenceBackend
 from membrane.persistence.cache import CachingPersistence
 from membrane.persistence.memory import Memory
 from membrane.persistence.redis import Redis
-from membrane.server import Server, ServerDiagnostics, ServerEvent
-from membrane.supernode import Supernode
-from membrane.compute.base import Backend
-from membrane.compute.cpu import CPU
-from membrane.compute.gpu import GPU
-from membrane.compute.ollama import Ollama
-from membrane.compute.openai import OpenAI
-from membrane.compute.anthropic import Anthropic
-from membrane.compute.transformers import Transformers
-from membrane.logging import configure_logging, get_logger
+from membrane.policy import Promotion, PromotionConfig, PromotionResult
+from membrane.predict import Predict
+from membrane.prefill_async import PrefillAsync
+from membrane.prefill_remote import PrefillRemote
 from membrane.prefix import Prefix
-from membrane.clusters import SemanticCluster
-from membrane.weighted import Weighted
-from membrane.transport.http import StdlibServer as StdlibServerTransport
+from membrane.reconstructor import Reconstructor, ReconstructorResult
+from membrane.registry import Registry
+from membrane.replica import Replica
+from membrane.resilience import (
+    BulkheadPolicy,
+    CircuitBreakerPolicy,
+    ResiliencePolicy,
+    RetryPolicy,
+    TimeoutPolicy,
+)
+from membrane.ring import Ring
+from membrane.roles import NodeRole, Roles, SystemState
+from membrane.segment import Segment
+from membrane.selector import Selector, SelectorConfig
+from membrane.semantics import Semantics
+from membrane.semhash import compute_semantic_hash, semantic_distance
+from membrane.server import Server, ServerDiagnostics, ServerEvent
+from membrane.sessions import Session, Sessions
+from membrane.shard import Shard
+from membrane.signature import Signature
+from membrane.store import Store, StoreMetrics
+from membrane.supernode import Supernode
+from membrane.sync import DeltaSync, SyncPlan, SyncResult
+from membrane.telemetry import Telemetry, telemetry
+from membrane.trace import Trace
+from membrane.tracker import LRUTracker
+from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.grpc import GrpcServer
 from membrane.transport.http import HTTPServer
+from membrane.transport.http import StdlibServer as StdlibServerTransport
+from membrane.tree import Tree
+from membrane.versions import VersionEntry, Versions
+from membrane.weighted import Weighted
+from membrane.workload import Workload
 
 __all__ = [
     "configure_logging",
@@ -148,6 +150,7 @@ __all__ = [
     # Authentication
     "APIKey",
     "APIKeyAuthenticator",
+    "AuthBackendError",
     "AuthContext",
     "AuthRequest",
     "Authenticator",

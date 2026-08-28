@@ -1,8 +1,8 @@
 """Tests for Registry."""
 
 from membrane.fragment import Fragment
-from membrane.registry import Registry
 from membrane.node import Node
+from membrane.registry import Registry
 from membrane.signature import Signature
 
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane.canonical import CanonicalRef, Canonical
+from membrane.canonical import Canonical, CanonicalRef
 from membrane.fragment import Fragment
 from membrane.signature import Signature
 

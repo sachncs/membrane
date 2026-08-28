@@ -5,8 +5,8 @@ from fastapi.testclient import TestClient
 
 from membrane.metrics import MetricsCollector
 from membrane.node import Node
-from membrane.transport.fastapi import create_app
 from membrane.transfer import TransferService
+from membrane.transport.fastapi import create_app
 
 
 @pytest.fixture

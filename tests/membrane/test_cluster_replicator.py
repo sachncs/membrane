@@ -2,9 +2,9 @@
 
 import pytest
 
-from membrane.replicator import Replicator
 from membrane.fragment import Fragment
 from membrane.node import Node
+from membrane.replicator import Replicator
 from membrane.signature import Signature
 
 

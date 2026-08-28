@@ -2,9 +2,9 @@
 
 import pytest
 
+from membrane.density import density
 from membrane.fragment import Fragment
 from membrane.signature import Signature
-from membrane.density import density
 
 
 def make_fragment(content_hash="abc", reuse_score=0.5):

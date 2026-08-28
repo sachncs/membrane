@@ -5,8 +5,8 @@ import pytest
 from membrane.fragment import Fragment
 from membrane.joint import Joint, PlacementDecision
 from membrane.node import Node
-from membrane.telemetry import Telemetry
 from membrane.signature import Signature
+from membrane.telemetry import Telemetry
 
 
 def make_fragment():

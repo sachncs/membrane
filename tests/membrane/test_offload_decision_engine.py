@@ -5,9 +5,9 @@ import pytest
 from membrane.cost import CostModel
 from membrane.node import Node
 from membrane.offload import (
-    OffloadResult,
-    OffloadConfig,
     Offload,
+    OffloadConfig,
+    OffloadResult,
 )
 
 

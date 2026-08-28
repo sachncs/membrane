@@ -38,8 +38,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from membrane.node import Node
 from membrane.network.config import ClusterConfig
+from membrane.node import Node
 from membrane.server import Server
 
 app = typer.Typer(

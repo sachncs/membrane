@@ -56,7 +56,7 @@ class AuthRequest:
     client: str = ""
 
 
-class AuthError_(Exception):
+class AuthBackendError(Exception):
     """Raised by authenticators when the request is rejected."""
 
 
@@ -67,7 +67,7 @@ class Authenticator(Protocol):
     Implementations must:
         * Return an :class:`AuthContext` (with ``subject`` and ``scopes``)
           on success.
-        * Raise :class:`AuthError_` with a generic message on failure.
+        * Raise :class:`AuthBackendError` with a generic message on failure.
           The transport translates this to the appropriate status code.
     """
 
@@ -81,7 +81,7 @@ class Authenticator(Protocol):
             AuthContext: The caller's identity and granted scopes.
 
         Raises:
-            AuthError_: If authentication fails.
+            AuthBackendError: If authentication fails.
         """
         ...
 
@@ -95,7 +95,7 @@ SCOPES: dict[str, frozenset[str]] = {
 
 
 def require_scope(context: AuthContext, scope: str) -> None:
-    """Raise :class:`AuthError_` if ``context`` does not have ``scope``.
+    """Raise :class:`AuthBackendError` if ``context`` does not have ``scope``.
 
     Checks the ``SCOPES`` hierarchy so that holding ``admin`` satisfies a
     ``read`` check, and so on.
@@ -105,7 +105,7 @@ def require_scope(context: AuthContext, scope: str) -> None:
         scope: The scope the caller must hold.
 
     Raises:
-        AuthError_: If the caller does not hold ``scope``.
+        AuthBackendError: If the caller does not hold ``scope``.
     """
     if scope in context.scopes:
         return
@@ -113,12 +113,12 @@ def require_scope(context: AuthContext, scope: str) -> None:
     for granted in context.scopes:
         if scope in SCOPES.get(granted, frozenset()):
             return
-    raise AuthError_(f"missing required scope: {scope}")
+    raise AuthBackendError(f"missing required scope: {scope}")
 
 
 __all__ = [
     "AuthContext",
-    "AuthError_",
+    "AuthBackendError",
     "AuthRequest",
     "Authenticator",
     "SCOPES",

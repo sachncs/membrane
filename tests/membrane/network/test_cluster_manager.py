@@ -1,8 +1,8 @@
 """Tests for Cluster."""
 
-from membrane.node import Node
 from membrane.network.cluster import Cluster
 from membrane.network.config import ClusterConfig
+from membrane.node import Node
 
 
 class TestClusterManager:

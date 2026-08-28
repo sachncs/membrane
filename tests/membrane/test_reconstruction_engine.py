@@ -1,10 +1,10 @@
 """Tests for Reconstructor."""
 
+from membrane.adapter import Adapter
 from membrane.fragment import Fragment
 from membrane.fragmenter import Fragmenter
 from membrane.index import Index
-from membrane.adapter import Adapter
-from membrane.reconstructor import ReconstructorConfig, Reconstructor
+from membrane.reconstructor import Reconstructor, ReconstructorConfig
 from membrane.signature import Signature
 
 

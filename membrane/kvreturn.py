@@ -16,8 +16,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.node import Node
 from membrane.adapter import PrefillResult
+from membrane.node import Node
 from membrane.transfer import TransferService
 
 

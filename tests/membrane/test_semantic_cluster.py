@@ -2,8 +2,8 @@
 
 import pytest
 
-from membrane.fragment import Fragment
 from membrane.clusters import SemanticCluster
+from membrane.fragment import Fragment
 from membrane.signature import Signature
 
 

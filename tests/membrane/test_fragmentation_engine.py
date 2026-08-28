@@ -1,8 +1,8 @@
 """Tests for Fragmenter."""
 
 from membrane.fragmenter import (
-    FragmenterConfig,
     Fragmenter,
+    FragmenterConfig,
     compute_content_hash,
     generate_embedding,
 )

@@ -4,10 +4,10 @@ import pytest
 
 from membrane.canonical import Canonical
 from membrane.economic import Economic
-from membrane.registry import Registry
 from membrane.index import Index
 from membrane.node import Node
 from membrane.protocols import DirectoryProtocol, IndexProtocol, RouterProtocol, TransportProtocol
+from membrane.registry import Registry
 from membrane.transfer import TransferService
 
 

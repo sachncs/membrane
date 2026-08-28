@@ -32,10 +32,10 @@ logger = logging.getLogger(__name__)
 
 from dataclasses import dataclass
 
+from membrane.adapter import Adapter
 from membrane.fragment import Fragment
 from membrane.fragmenter import compute_content_hash, generate_embedding
 from membrane.index import Index
-from membrane.adapter import Adapter
 
 
 @dataclass(frozen=True)

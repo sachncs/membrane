@@ -28,11 +28,13 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator, TypeVar
+from typing import Any, TypeVar
 
-from membrane.errors import CapacityError, ConnectionError as PersistenceConnectionError
+from membrane.errors import CapacityError
+from membrane.errors import ConnectionError as PersistenceConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +119,7 @@ class ResiliencePolicy:
     timeout: TimeoutPolicy | None = None
     bulkhead: BulkheadPolicy | None = None
 
-    def with_retry(self, policy: RetryPolicy) -> "ResiliencePolicy":
+    def with_retry(self, policy: RetryPolicy) -> ResiliencePolicy:
         """Return a copy with ``retry`` set."""
         return ResiliencePolicy(
             retry=policy,
@@ -126,7 +128,7 @@ class ResiliencePolicy:
             bulkhead=self.bulkhead,
         )
 
-    def with_breaker(self, policy: CircuitBreakerPolicy) -> "ResiliencePolicy":
+    def with_breaker(self, policy: CircuitBreakerPolicy) -> ResiliencePolicy:
         """Return a copy with ``breaker`` set."""
         return ResiliencePolicy(
             retry=self.retry,
@@ -135,7 +137,7 @@ class ResiliencePolicy:
             bulkhead=self.bulkhead,
         )
 
-    def with_timeout(self, policy: TimeoutPolicy) -> "ResiliencePolicy":
+    def with_timeout(self, policy: TimeoutPolicy) -> ResiliencePolicy:
         """Return a copy with ``timeout`` set."""
         return ResiliencePolicy(
             retry=self.retry,
@@ -144,7 +146,7 @@ class ResiliencePolicy:
             bulkhead=self.bulkhead,
         )
 
-    def with_bulkhead(self, policy: BulkheadPolicy) -> "ResiliencePolicy":
+    def with_bulkhead(self, policy: BulkheadPolicy) -> ResiliencePolicy:
         """Return a copy with ``bulkhead`` set."""
         return ResiliencePolicy(
             retry=self.retry,
@@ -201,9 +203,8 @@ class ResiliencePolicy:
         state is updated. The retry policy is applied separately via
         :meth:`run`.
         """
-        if self._bulkhead_sem is not None:
-            if not self._bulkhead_sem.acquire(blocking=False):
-                raise CapacityError("bulkhead saturated")
+        if self._bulkhead_sem is not None and not self._bulkhead_sem.acquire(blocking=False):
+            raise CapacityError("bulkhead saturated")
         try:
             self._check_breaker()
             yield

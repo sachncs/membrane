@@ -22,8 +22,8 @@ network RTT measurement layer.
 import asyncio
 import logging
 
-from membrane.node import Node
 from membrane.adapter import Adapter, PrefillResult
+from membrane.node import Node
 
 logger = logging.getLogger(__name__)
 

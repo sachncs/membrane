@@ -25,8 +25,8 @@ import logging
 import time
 from dataclasses import dataclass
 
-from membrane.fragment import Fragment
 from membrane.density import density
+from membrane.fragment import Fragment
 
 logger = logging.getLogger(__name__)
 

@@ -2,8 +2,8 @@
 
 import pytest
 
-from membrane.roles import Roles, NodeRole, SystemState
 from membrane.node import Node
+from membrane.roles import NodeRole, Roles, SystemState
 
 
 class TestDynamicRoleManager:

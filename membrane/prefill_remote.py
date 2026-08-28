@@ -19,8 +19,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.node import Node
 from membrane.adapter import Adapter, PrefillResult
+from membrane.node import Node
 
 
 class PrefillRemote:

@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane.versions import Versions, VersionEntry
+from membrane.versions import VersionEntry, Versions
 
 
 class TestPrefixVersionChain:

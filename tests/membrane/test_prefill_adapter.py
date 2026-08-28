@@ -1,7 +1,7 @@
 """Tests for Adapter."""
 
-from membrane.model.router import Router
 from membrane.adapter import Adapter
+from membrane.model.router import Router
 
 
 def test_prefill_returns_reasonable_kv_size():

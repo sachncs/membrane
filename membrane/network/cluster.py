@@ -27,12 +27,12 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from membrane.registry import Registry
-from membrane.ring import Ring
-from membrane.node import Node
 from membrane.network.config import ClusterConfig
 from membrane.network.gossip import GossipState, PeerEndpoint
 from membrane.network.peer import Peer
+from membrane.node import Node
+from membrane.registry import Registry
+from membrane.ring import Ring
 from membrane.shard import Shard
 
 logger = logging.getLogger(__name__)

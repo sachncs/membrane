@@ -27,12 +27,6 @@ from typing import Any
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
 from membrane.compute.gpu import GPU
-from membrane.node import Node
-from membrane.network.cluster import Cluster
-from membrane.network.config import ClusterConfig
-from membrane.network.transfer import Transfer
-from membrane.persistence.memory import Memory
-from membrane.persistence.redis import Redis
 from membrane.metrics import (
     ClusterMetrics,
     MetricsCollector,
@@ -40,6 +34,12 @@ from membrane.metrics import (
     PersistenceMetrics,
     TransportMetrics,
 )
+from membrane.network.cluster import Cluster
+from membrane.network.config import ClusterConfig
+from membrane.network.transfer import Transfer
+from membrane.node import Node
+from membrane.persistence.memory import Memory
+from membrane.persistence.redis import Redis
 from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.http import HTTPServer
 

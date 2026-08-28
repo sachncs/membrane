@@ -17,9 +17,9 @@ over::
 from __future__ import annotations
 
 from membrane.fragment import Fragment
-from membrane.segment import Segment
 from membrane.network.config import ClusterConfig
 from membrane.network.gossip import GossipState, PeerEndpoint
+from membrane.segment import Segment
 from membrane.signature import Signature
 from membrane.transfer import TransferService
 

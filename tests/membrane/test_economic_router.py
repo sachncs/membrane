@@ -4,8 +4,8 @@ import pytest
 
 from membrane.economic import Economic, EconomicRouterConfig
 from membrane.fragment import Fragment
-from membrane.telemetry import Telemetry
 from membrane.signature import Signature
+from membrane.telemetry import Telemetry
 
 
 def make_fragment(reuse_score=0.5):

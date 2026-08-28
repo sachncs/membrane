@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from membrane.auth import AuthContext, AuthError_, AuthRequest, Authenticator
+from membrane.auth import AuthBackendError, AuthContext, Authenticator, AuthRequest
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class APIKeyAuthenticator:
 
     The Authorization header is expected in the form ``Bearer <key>``. Any
     other shape (no header, wrong scheme, unknown key) is rejected with
-    :class:`AuthError_`.
+    :class:`AuthBackendError`.
     """
 
     def __init__(self, keyfile_text: str) -> None:
@@ -88,19 +88,19 @@ class APIKeyAuthenticator:
             AuthContext: The caller's identity and scopes.
 
         Raises:
-            AuthError_: If the header is missing, malformed, or the key
+            AuthBackendError: If the header is missing, malformed, or the key
                 is unknown.
         """
         header = request.headers.get("authorization", "")
         if not header:
-            raise AuthError_("unauthorized")
+            raise AuthBackendError("unauthorized")
         parts = header.split(None, 1)
         if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise AuthError_("unauthorized")
+            raise AuthBackendError("unauthorized")
         key = parts[1].strip()
         record = self._keys.get(key)
         if record is None:
-            raise AuthError_("unauthorized")
+            raise AuthBackendError("unauthorized")
         return AuthContext(subject=record.subject, scopes=record.scopes)
 
 

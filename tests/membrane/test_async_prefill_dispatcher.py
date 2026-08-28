@@ -4,13 +4,13 @@ import asyncio
 
 import pytest
 
+from membrane.adapter import Adapter, PrefillResult
+from membrane.fragment import Fragment
+from membrane.node import Node
 from membrane.prefill_async import (
     PrefillAsync,
     PrefillFallbackError,
 )
-from membrane.fragment import Fragment
-from membrane.node import Node
-from membrane.adapter import Adapter, PrefillResult
 from membrane.signature import Signature
 
 

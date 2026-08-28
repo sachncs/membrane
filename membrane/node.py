@@ -39,8 +39,8 @@ import threading
 import time
 from dataclasses import dataclass
 
-from membrane.fragment import Fragment
 from membrane._graph_manager import _GraphManager
+from membrane.fragment import Fragment
 from membrane.index import Index
 
 

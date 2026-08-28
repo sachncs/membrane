@@ -2,9 +2,9 @@
 
 import pytest
 
+from membrane.adapter import Adapter, PrefillResult
 from membrane.fragment import Fragment
 from membrane.node import Node
-from membrane.adapter import Adapter, PrefillResult
 from membrane.prefill_remote import PrefillRemote
 from membrane.signature import Signature
 

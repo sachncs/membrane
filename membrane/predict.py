@@ -23,8 +23,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.node import Node
 from membrane.model.profiler import kv_size
+from membrane.node import Node
 
 
 class Predict:

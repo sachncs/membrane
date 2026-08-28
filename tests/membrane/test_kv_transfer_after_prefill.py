@@ -2,10 +2,10 @@
 
 import pytest
 
+from membrane.adapter import Adapter
 from membrane.fragment import Fragment
 from membrane.kvreturn import KVReturn
 from membrane.node import Node
-from membrane.adapter import Adapter
 from membrane.signature import Signature
 
 

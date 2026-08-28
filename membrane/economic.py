@@ -29,7 +29,6 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.telemetry import Telemetry
-from membrane.density import density
 
 
 @dataclass(frozen=True)
