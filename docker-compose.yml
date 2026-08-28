@@ -2,8 +2,9 @@ services:
   redis:
     image: redis:7-alpine
     container_name: membrane-redis
-    ports:
-      - "6379:6379"
+    # Redis listens only on the internal network; no host port exposure.
+    expose:
+      - "6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -11,8 +12,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    # Resource caps prevent a runaway Redis from starving the host.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+          pids: 256
+    # Redis is internal-only; no ingress from the host network.
     networks:
-      - membrane-net
+      membrane-internal:
+        internal: true
+    restart: unless-stopped
 
   membrane:
     build:
@@ -23,8 +34,9 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    ports:
-      - "50051:50051"
+    expose:
+      - "8080"
+      - "50051"
     environment:
       - MEMBRANE_LOG_LEVEL=INFO
       - MEMBRANE_REDIS_URL=redis://redis:6379/0
@@ -40,9 +52,14 @@ services:
       --transport ${MEMBRANE_TRANSPORT:-http}
       --compute ${MEMBRANE_COMPUTE:-cpu}
       --redis ${MEMBRANE_REDIS_URL:-redis://redis:6379/0}
-      --daemon
     volumes:
-      - ./membrane:/app/membrane:ro
+      - membrane-logs:/var/log/membrane
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+          pids: 1024
     restart: unless-stopped
     logging:
       driver: json-file
@@ -50,7 +67,8 @@ services:
         max-size: "10m"
         max-file: "3"
     networks:
-      - membrane-net
+      - membrane-internal
+      - membrane-public
 
   nginx:
     image: nginx:alpine
@@ -63,7 +81,7 @@ services:
       - ./deployment/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
     networks:
-      - membrane-net
+      - membrane-public
 
   membrane-tests:
     build:
@@ -79,11 +97,15 @@ services:
     environment:
       - MEMBRANE_LOG_LEVEL=WARNING
     networks:
-      - membrane-net
+      - membrane-internal
 
 volumes:
   redis-data:
+  membrane-logs:
 
 networks:
-  membrane-net:
+  membrane-internal:
+    driver: bridge
+    internal: true
+  membrane-public:
     driver: bridge

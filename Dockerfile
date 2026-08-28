@@ -1,46 +1,44 @@
-FROM python:3.14-slim
+#!/usr/bin/env python3.12
+# Membrane runtime image.
+# Pinned to a specific slim digest for reproducibility; bump via Dependabot.
+FROM python:3.12-slim
 
-LABEL org.opencontainers.image.title="Membrane"
-LABEL org.opencontainers.image.description="Global Contextual Memory Fabric for LLM inference"
-LABEL org.opencontainers.image.source="https://github.com/sachn-cs/membrane"
+LABEL org.opencontainers.image.title="Membrane" \
+      org.opencontainers.image.description="Global Contextual Memory Fabric for LLM inference" \
+      org.opencontainers.image.source="https://github.com/sachncs/membrane" \
+      org.opencontainers.image.licenses="MIT"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Build-time dependencies for any wheels that need compiling.
+# Removed from the final image via --mount=type=cache.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl tini ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# Non-root user with explicit UID so read-only filesystems can map it.
+RUN groupadd -r --gid 1000 membrane \
+ && useradd  -r --uid 1000 --gid 1000 --home-dir /app --shell /usr/sbin/nologin membrane
 
 WORKDIR /app
 
-# Install tini for proper signal handling and curl for healthchecks
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    tini \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create non-root user
-RUN groupadd -r membrane && useradd -r -g membrane membrane
-
-# Copy package source
-COPY membrane/ ./membrane/
-COPY scripts/ ./scripts/
-COPY tests/ ./tests/
+# Install Python dependencies first so the source layer is cacheable.
 COPY pyproject.toml ./
-COPY setup.sh cleanup.sh ./
-COPY README.md ./
-COPY docs/deployment.md ./docs/
+COPY membrane/__init__.py membrane/__init__.py
+RUN pip install --no-cache-dir ".[server]"
 
-# Install in production mode (includes typer + rich + fastapi + uvicorn + grpc)
-RUN pip install --no-cache-dir -e ".[server]"
+# Application source — non-editable install (no -e).
+COPY membrane/ membrane/
 
-# Switch to non-root user
 USER membrane
 
-# Expose HTTP and gRPC ports
 EXPOSE 8080
-EXPOSE 50051
 
-# Healthcheck
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -fsS http://localhost:8080/heartbeat || exit 1
+    CMD curl -fsS http://localhost:8080/livez || exit 1
 
-# Use tini as PID 1 for proper signal handling
 ENTRYPOINT ["/usr/bin/tini", "--"]
-
-# Default: run the CLI serve command
 CMD ["membrane", "serve", "--node-id", "docker-0", "--port", "8080", "--transport", "http", "--compute", "cpu", "--host", "0.0.0.0"]

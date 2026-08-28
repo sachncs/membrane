@@ -1,0 +1,17 @@
+---
+# ServiceMonitor for Prometheus Operator. Scrape /metrics every 15s.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: membrane
+  labels:
+    app: membrane
+spec:
+  selector:
+    matchLabels:
+      app: membrane
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 5s

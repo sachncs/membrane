@@ -1,0 +1,39 @@
+---
+# Headless Service: gives each pod its own stable DNS name
+# (membrane-0.membrane-headless.membrane.svc.cluster.local). The cluster
+# layer uses these for gossip addressing.
+apiVersion: v1
+kind: Service
+metadata:
+  name: membrane-headless
+  labels:
+    app: membrane
+spec:
+  clusterIP: None
+  selector:
+    app: membrane
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+---
+# Ingress Service: round-robin load balancing for clients.
+apiVersion: v1
+kind: Service
+metadata:
+  name: membrane
+  labels:
+    app: membrane
+spec:
+  selector:
+    app: membrane
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: grpc
+      port: 50051
+      targetPort: grpc

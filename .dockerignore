@@ -1,0 +1,41 @@
+# Files / directories excluded from `docker build` context.
+# Keeps the build context small and prevents leakage of .git, caches,
+# IDE config, and test infrastructure into production images.
+
+.git/
+.github/
+.gitignore
+.gitattributes
+.editorconfig
+
+# Build artifacts and caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+coverage.xml
+*.egg-info/
+build/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+
+# Tests, demos, and helper scripts (not used at runtime)
+tests/
+scripts/
+docs/
+
+# Local config and developer-only files
+.env
+.env.local
+.venv/
+venv/
+.idea/
+.vscode/
+.DS_Store
+
+# Benchmark data
+.benchmarks/
+
+# Deployment artifacts (mounted at runtime instead)
+deployment/

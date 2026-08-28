@@ -1,24 +1,41 @@
 [Unit]
-Description=Membrane Global Contextual Memory Fabric
-After=network.target
+Description=Membrane — Global Contextual Memory Fabric
+Documentation=https://github.com/sachncs/membrane
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=membrane
 Group=membrane
 WorkingDirectory=/opt/membrane
-Environment=MEMBRANE_LOG_LEVEL=INFO
 Environment=PYTHONPATH=/opt/membrane
-ExecStart=/opt/membrane/.venv/bin/python scripts/demo_membrane.py
-ExecReload=/bin/kill -HUP $MAINPID
-Restart=on-failure
-RestartSec=5
+Environment=MEMBRANE_LOG_LEVEL=INFO
+EnvironmentFile=-/etc/membrane/membrane.env
+ExecStart=/opt/membrane/.venv/bin/membrane serve --config /etc/membrane/server.yaml
 
-# Security hardening
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=8G
+CPUQuota=400%
+
+# Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/membrane/logs
+ReadWritePaths=/var/log/membrane /var/lib/membrane
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=true
+
+Restart=on-failure
+RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target

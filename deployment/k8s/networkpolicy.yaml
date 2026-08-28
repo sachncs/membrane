@@ -1,0 +1,43 @@
+---
+# NetworkPolicy: default-deny + explicit allowlist. Pods can talk only
+# to Redis on port 6379 and to each other on the cluster ports; nothing
+# else leaves the pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: membrane
+spec:
+  podSelector:
+    matchLabels:
+      app: membrane
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress from ingress controllers / cluster clients on HTTP and gRPC.
+    - ports:
+        - port: 8080
+          protocol: TCP
+        - port: 50051
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress
+  egress:
+    # DNS.
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+      to:
+        - namespaceSelector: {}
+    # Redis.
+    - ports:
+        - port: 6379
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app: redis
