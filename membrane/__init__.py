@@ -9,6 +9,33 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from membrane.auth import (
+    AuthContext,
+    AuthRequest,
+    Authenticator,
+    SCOPES,
+    require_scope,
+)
+from membrane.auth.apikey import APIKey, APIKeyAuthenticator, NoopAuthenticator
+from membrane.auth.tls import TLSConfig
+from membrane.resilience import (
+    BulkheadPolicy,
+    CircuitBreakerPolicy,
+    ResiliencePolicy,
+    RetryPolicy,
+    TimeoutPolicy,
+)
+from membrane.metrics import (
+    ClusterMetrics,
+    Counter,
+    Gauge,
+    Histogram,
+    MetricsCollector,
+    NodeMetrics,
+    PersistenceMetrics,
+    TransportMetrics,
+    metrics_summary,
+)
 from membrane.errors import (
     AuthError,
     BackendError,
@@ -108,6 +135,32 @@ __all__ = [
     "PersistenceConnectionError",
     "PersistenceError",
     "SchemaError",
+    # Authentication
+    "APIKey",
+    "APIKeyAuthenticator",
+    "AuthContext",
+    "AuthRequest",
+    "Authenticator",
+    "NoopAuthenticator",
+    "SCOPES",
+    "TLSConfig",
+    "require_scope",
+    # Resilience
+    "BulkheadPolicy",
+    "CircuitBreakerPolicy",
+    "ResiliencePolicy",
+    "RetryPolicy",
+    "TimeoutPolicy",
+    # Metrics
+    "ClusterMetrics",
+    "Counter",
+    "Gauge",
+    "Histogram",
+    "MetricsCollector",
+    "NodeMetrics",
+    "PersistenceMetrics",
+    "TransportMetrics",
+    "metrics_summary",
     # Core data
     "Artifact",
     "Chunk",
