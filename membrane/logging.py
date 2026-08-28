@@ -1,77 +1,107 @@
-"""Shared logging configuration for Membrane.
+"""Structured logging configuration.
 
-This module is the canonical entry point for setting up logging in
-both the library and CLI. It exposes:
+Two formatters are provided:
 
-* :data:`DEFAULT_FORMAT` — the default log record format.
-* :func:`configure_logging` — idempotent root-logger configuration
-  with environment-variable fallback.
-* :func:`get_logger` — convenience wrapper around
-  :func:`logging.getLogger` that returns a ``membrane.*`` logger.
-
-Usage:
-    >>> from membrane.logging import configure_logging, get_logger
-    >>> configure_logging()  # respects MEMBRANE_LOG_LEVEL env var
-    >>> logger = get_logger(__name__)
-    >>> logger.info("ready")
-
-Design notes:
-    The module deliberately uses the *root* logger rather than a
-    dedicated ``membrane`` logger. This makes it easier for library
-    users to attach their own handlers without Membrane polluting
-    their global logging configuration.
+* :class:`TextFormatter` — the historical human-readable format. Used
+  by default for local development and by the CLI dashboard.
+* :class:`JsonFormatter` — line-delimited JSON with standard fields
+  (timestamp, level, logger, message) and any ``extra={...}`` keys
+  supplied at log call sites. Use this for production: structured
+  logs are far easier to ship to a log aggregator and to filter by
+  request_id, node_id, peer, etc.
 """
 
-import logging
-import os
+from __future__ import annotations
 
-DEFAULT_FORMAT: str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+import json
+import logging
+from datetime import datetime, timezone
+
+from membrane.constants import DEFAULT_LOG_FORMAT, DEFAULT_LOG_LEVEL
+
+_configured = False
+
+
+class TextFormatter(logging.Formatter):
+    """Plain-text formatter (default)."""
+
+    def __init__(self, fmt: str = DEFAULT_LOG_FORMAT) -> None:
+        super().__init__(fmt=fmt)
+
+
+class JsonFormatter(logging.Formatter):
+    """JSON line formatter.
+
+    Emits one JSON object per record. Standard fields are emitted
+    explicitly; any ``extra={...}`` keys supplied at the log call
+    site are merged into the output.
+    """
+
+    RESERVED: frozenset[str] = frozenset({
+        "name", "msg", "args", "levelname", "levelno", "pathname",
+        "filename", "module", "exc_info", "exc_text", "stack_info",
+        "lineno", "funcName", "created", "msecs", "relativeCreated",
+        "thread", "threadName", "processName", "process", "message",
+        "taskName",
+    })
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, object] = {
+            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc"] = self.formatException(record.exc_info)
+        for key, value in record.__dict__.items():
+            if key in self.RESERVED or key in payload:
+                continue
+            payload[key] = value
+        return json.dumps(payload, default=str)
 
 
 def configure_logging(
-    level: int | str | None = None,
+    level: str | None = None,
     fmt: str | None = None,
+    json_mode: bool = False,
 ) -> None:
-    """Configure root logging for Membrane.
-
-    Calls :func:`logging.basicConfig` with the supplied (or
-    defaulted) level and format. Subsequent calls are no-ops if
-    the root logger already has handlers configured, mirroring the
-    behavior of :func:`logging.basicConfig` itself.
+    """Configure the root logger.
 
     Args:
-        level: Logging level. Accepts either a numeric
-            :mod:`logging` constant (e.g., ``logging.DEBUG``) or a
-            level name string (e.g., ``"DEBUG"``). When ``None``,
-            the value of the ``MEMBRANE_LOG_LEVEL`` environment
-            variable is used; if that is unset, ``"INFO"`` is used.
-        fmt: Log record format string. Defaults to
-            :data:`DEFAULT_FORMAT`.
+        level: Log level name (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+            Defaults to ``MEMBRANE_LOG_LEVEL`` env var or ``INFO``.
+        fmt: Format string for text mode. Ignored in JSON mode.
+        json_mode: When ``True``, emit JSON lines instead of text.
     """
-    if level is None:
-        level = os.environ.get("MEMBRANE_LOG_LEVEL", "INFO")
-    if fmt is None:
-        fmt = DEFAULT_FORMAT
-    # basicConfig is idempotent: if the root logger already has
-    # handlers configured (e.g., by an embedding application), this
-    # call is effectively a no-op.
-    logging.basicConfig(level=level, format=fmt)
+    global _configured
+    if _configured:
+        return
+    effective_level = (level or DEFAULT_LOG_LEVEL).upper()
+    handler = logging.StreamHandler()
+    if json_mode:
+        handler.setFormatter(JsonFormatter())
+    else:
+        handler.setFormatter(TextFormatter(fmt or DEFAULT_LOG_FORMAT))
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(effective_level)
+    _configured = True
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Return a logger with the given dotted name.
-
-    Thin wrapper around :func:`logging.getLogger`. Callers should
-    pass ``__name__`` so that the resulting logger is namespaced
-    under the ``membrane`` package.
+    """Return a logger, ensuring logging is configured.
 
     Args:
-        name: Dotted logger name. Conventionally ``__name__`` from
-            the calling module.
+        name: Logger name (typically ``__name__``).
 
     Returns:
-        logging.Logger: A standard library logger that inherits
-        the root configuration established by
-        :func:`configure_logging`.
+        logging.Logger: Configured logger.
     """
+    if not _configured:
+        configure_logging()
     return logging.getLogger(name)
+
+
+__all__ = ["JsonFormatter", "TextFormatter", "configure_logging", "get_logger"]

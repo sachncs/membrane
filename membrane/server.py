@@ -33,6 +33,13 @@ from membrane.network.config import ClusterConfig
 from membrane.network.transfer import Transfer
 from membrane.persistence.memory import Memory
 from membrane.persistence.redis import Redis
+from membrane.metrics import (
+    ClusterMetrics,
+    MetricsCollector,
+    NodeMetrics,
+    PersistenceMetrics,
+    TransportMetrics,
+)
 from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.http import HTTPServer
 
@@ -146,6 +153,14 @@ class Server:
         self.error_count = 0
         self.events: list[ServerEvent] = []
         self.connected_nodes: set[str] = set()
+
+        # Observability — registry is constructed once here and passed
+        # into subsystems that need to record metrics.
+        self.metrics_registry = MetricsCollector()
+        self.metrics_transport = TransportMetrics(self.metrics_registry)
+        self.metrics_cluster = ClusterMetrics(self.metrics_registry)
+        self.metrics_persistence = PersistenceMetrics(self.metrics_registry)
+        self.metrics_node = NodeMetrics(self.metrics_registry)
 
         # Compute backend.
         self.compute_backend = self.make_compute_backend(compute, llm_url, llm_model, api_key)
@@ -271,6 +286,7 @@ class Server:
                 compute_backend=self.compute_backend,
                 transfer_service=self.transfer_service,
                 cluster_manager=self.cluster_manager,
+                metrics_registry=self.metrics_registry,
             )
         elif transport == "stdlib":
             self.transport = HTTPServer(

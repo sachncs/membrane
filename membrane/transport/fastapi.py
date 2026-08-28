@@ -11,9 +11,17 @@ endpoints and attaches the supplied :class:`Node`,
 :class:`Backend`, :class:`TransferService`, and optional
 cluster manager to ``app.state`` for the handlers to consume.
 
+Observability:
+    * ``/livez`` — process liveness probe.
+    * ``/readyz`` — deep readiness probe (checks node capacity).
+    * ``/metrics`` — Prometheus text exposition.
+    * ``/metrics.json`` — legacy JSON snapshot for the TUI.
+
 Security:
-    * The server is unauthenticated. Place it behind an
-      authenticating reverse proxy in production.
+    * The server is unauthenticated by default. Place it behind an
+      authenticating reverse proxy in production, or wire an
+      :class:`Authenticator` into the request pipeline (see
+      :mod:`membrane.auth`).
 """
 
 import logging
@@ -25,6 +33,7 @@ from pydantic import BaseModel
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
+from membrane.metrics import MetricsCollector
 from membrane.node import Node
 from membrane.signature import Signature
 from membrane.transfer import TransferService
@@ -214,6 +223,7 @@ def create_app(
     compute_backend: Backend | None,
     transfer_service: TransferService,
     cluster_manager: Any | None,
+    metrics_registry: MetricsCollector | None = None,
 ) -> FastAPI:
     """Build a configured FastAPI application for a Membrane node.
 
@@ -222,6 +232,9 @@ def create_app(
         compute_backend: Optional :class:`Backend`.
         transfer_service: :class:`TransferService`.
         cluster_manager: Optional cluster manager.
+        metrics_registry: Optional :class:`MetricsCollector` for the
+            ``/metrics`` Prometheus endpoint. When ``None``, ``/metrics``
+            falls back to a JSON snapshot of the node's stats.
 
     Returns:
         FastAPI: Configured application ready to be served by
@@ -232,6 +245,7 @@ def create_app(
     app.state.compute_backend = compute_backend
     app.state.transfer_service = transfer_service
     app.state.cluster_manager = cluster_manager
+    app.state.metrics_registry = metrics_registry
 
     # ------------------------------------------------------------------
     # GET endpoints
@@ -252,9 +266,65 @@ def create_app(
             "healthy": True,
         }
 
+    @app.get("/livez")
+    def livez() -> dict[str, Any]:
+        """``GET /livez`` — liveness probe (process up)."""
+        return {"status": "alive"}
+
+    @app.get("/readyz")
+    def readyz() -> dict[str, Any]:
+        """``GET /readyz`` — readiness probe (deep).
+
+        Returns 200 only when persistence (when configured) responds
+        to a ping and the node has not exhausted its memory budget.
+        Returns 503 otherwise so an orchestrator can route traffic
+        away from a degraded instance.
+        """
+        from fastapi.responses import JSONResponse
+
+        if not app.state.node:
+            return JSONResponse({"status": "no node"}, status_code=503)
+        stats = app.state.node.get_stats()
+        over_capacity = stats.memory_used_bytes >= stats.memory_limit_bytes
+        if over_capacity:
+            return JSONResponse(
+                {"status": "memory saturated", "memory_used_bytes": stats.memory_used_bytes},
+                status_code=503,
+            )
+        return {"status": "ready"}
+
     @app.get("/metrics")
     def metrics() -> dict[str, Any]:
-        """``GET /metrics`` — extended metrics payload."""
+        """``GET /metrics`` — Prometheus text exposition.
+
+        The Prometheus exposition is the canonical format; the legacy
+        JSON snapshot used by the TUI dashboard is exposed at
+        ``/metrics.json`` for backward compatibility with the existing
+        dashboard code.
+        """
+        from fastapi.responses import PlainTextResponse
+
+        if app.state.metrics_registry is not None:
+            return PlainTextResponse(
+                app.state.metrics_registry.render(),
+                media_type="text/plain; version=0.0.4",
+            )
+        # Legacy fallback: snapshot from the node only.
+        if not app.state.node:
+            return {"error": "no node"}
+        stats = app.state.node.get_stats()
+        return {
+            "node_id": app.state.node.node_id,
+            "memory_used_bytes": stats.memory_used_bytes,
+            "memory_limit_bytes": stats.memory_limit_bytes,
+            "fragment_count": stats.fragment_count,
+            "primary_count": stats.primary_count,
+            "load": app.state.node.heartbeat(),
+        }
+
+    @app.get("/metrics.json")
+    def metrics_json() -> dict[str, Any]:
+        """``GET /metrics.json`` — legacy JSON snapshot for the TUI."""
         if not app.state.node:
             return {"error": "no node"}
         stats = app.state.node.get_stats()
@@ -421,6 +491,7 @@ class FastAPIServer:
         compute_backend: Backend | None = None,
         transfer_service: TransferService | None = None,
         cluster_manager: Any | None = None,
+        metrics_registry: MetricsCollector | None = None,
     ) -> None:
         """Initialize the FastAPI server wrapper."""
         self.node = node
@@ -429,11 +500,13 @@ class FastAPIServer:
         self.compute_backend = compute_backend
         self.transfer_service = transfer_service or TransferService()
         self.cluster_manager = cluster_manager
+        self.metrics_registry = metrics_registry
         self.app = create_app(
             node=node,
             compute_backend=compute_backend,
             transfer_service=self.transfer_service,
             cluster_manager=cluster_manager,
+            metrics_registry=metrics_registry,
         )
         self._server: Any | None = None
 
