@@ -12,8 +12,7 @@ class TestDynamicRoleManager:
     def test_high_memory_low_gpu_becomes_memory_host(self):
         mgr = Roles()
         node = Node("n", max_memory_bytes=100)
-        from tests.membrane.test_cluster_replicator import make_fragment
-
+    
         f = make_fragment("x", size=80)
         node.store(f, is_primary=True)
         state = SystemState(average_gpu_load=0.1)

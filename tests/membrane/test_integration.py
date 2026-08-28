@@ -32,19 +32,6 @@ from membrane.versions import Versions
 from membrane.weighted import Weighted
 from membrane.workload import Workload
 
-
-def make_fragment(content_hash, embedding=(0.0, 0.0), reuse_score=0.5, size=10):
-    return Fragment(
-        content_hash=content_hash,
-        embedding=embedding,
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
-        size=size,
-        ttl=3600.0,
-        reuse_score=reuse_score,
-        version_id=1,
-    )
-
-
 class TestMembraneIntegration:
     """End-to-end integration tests across all 10 phases."""
 
@@ -154,9 +141,8 @@ class TestMembraneIntegration:
     def test_phase_10_role_and_joint_optimization(self):
         mgr = Roles()
         node = Node("n1", max_memory_bytes=100)
-        from tests.membrane.test_cluster_replicator import make_fragment as mkfrag
 
-        f = mkfrag("x", size=80)
+        f = make_fragment("x", size=80)
         node.store(f, is_primary=True)
         state = SystemState(average_gpu_load=0.1)
         role = mgr.evaluate_role(node, state)

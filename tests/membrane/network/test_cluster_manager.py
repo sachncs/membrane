@@ -65,19 +65,20 @@ class TestClusterManager:
         )
         mgr = Cluster("n1", "127.0.0.1", 8080, node, cfg)
         mgr.add_peer("n2", "127.0.0.2", 8081)
-        # Simulate missed heartbeats and run one iteration of failure detection
-        with mgr._lock:
-            mgr._peers["n2"].missed_heartbeats = 2
-        # _failure_detection_loop is infinite; test the logic inline
-        to_remove = []
-        with mgr._lock:
-            for node_id, p in list(mgr._peers.items()):
-                if p.missed_heartbeats >= mgr.config.failure_remove_threshold:
-                    to_remove.append(node_id)
-                elif p.missed_heartbeats >= mgr.config.failure_suspect_threshold and not p.suspect:
-                    p.suspect = True
-        for node_id in to_remove:
-            mgr.remove_peer(node_id)
+        # Simulate missed heartbeats by reaching into membership.
+        peer = mgr.membership.find("n2")
+        assert peer is not None
+        peer.missed_heartbeats = 2
+        # Use the Failure subsystem's detector directly.
+        for p in mgr.membership.snapshot():
+            if p.missed_heartbeats >= mgr.config.failure_remove_threshold:
+                if mgr.failure.detector.should_remove(
+                    peer_id=p.node_id,
+                    peer_missed=p.missed_heartbeats,
+                    suspect_votes=0,
+                    healthy_peer_count=len(mgr.membership.healthy()) + 1,
+                ):
+                    mgr.remove_peer(p.node_id)
         assert mgr.get_peers() == []
 
     def test_on_gossip(self):

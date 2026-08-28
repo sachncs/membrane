@@ -11,19 +11,7 @@ from membrane.node import Node
 from membrane.signature import Signature
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer, create_app
-
-
-def make_fragment(content_hash: str = "h1"):
-    return Fragment(
-        content_hash=content_hash,
-        embedding=(0.1, 0.2),
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
-        size=100,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=1,
-    )
-
+from membrane.serialization import to_dict
 
 class TestFastAPIServer:
     """Test suite for FastAPI transport endpoints."""
@@ -53,17 +41,7 @@ class TestFastAPIServer:
     def test_store_and_retrieve(self, client):
         frag = make_fragment("abc")
         payload = {
-            "fragment": {
-                "content_hash": frag.content_hash,
-                "embedding": list(frag.embedding),
-                "model_id": frag.structural_signature.model_id,
-                "layer_range": list(frag.structural_signature.layer_range),
-                "token_span": list(frag.structural_signature.token_span),
-                "size": frag.size,
-                "ttl": frag.ttl,
-                "reuse_score": frag.reuse_score,
-                "version_id": frag.version_id,
-            },
+            "fragment": to_dict(frag),
             "is_primary": True,
         }
         resp = client.post("/store", json=payload)
@@ -86,17 +64,7 @@ class TestFastAPIServer:
         client.post(
             "/store",
             json={
-                "fragment": {
-                    "content_hash": frag.content_hash,
-                    "embedding": list(frag.embedding),
-                    "model_id": frag.structural_signature.model_id,
-                    "layer_range": list(frag.structural_signature.layer_range),
-                    "token_span": list(frag.structural_signature.token_span),
-                    "size": frag.size,
-                    "ttl": frag.ttl,
-                    "reuse_score": frag.reuse_score,
-                    "version_id": frag.version_id,
-                },
+                "fragment": to_dict(frag),
                 "is_primary": True,
             },
         )
@@ -118,17 +86,7 @@ class TestFastAPIServer:
         resp = client.post(
             "/replicate",
             json={
-                "fragment": {
-                    "content_hash": frag.content_hash,
-                    "embedding": list(frag.embedding),
-                    "model_id": frag.structural_signature.model_id,
-                    "layer_range": list(frag.structural_signature.layer_range),
-                    "token_span": list(frag.structural_signature.token_span),
-                    "size": frag.size,
-                    "ttl": frag.ttl,
-                    "reuse_score": frag.reuse_score,
-                    "version_id": frag.version_id,
-                },
+                "fragment": to_dict(frag),
             },
         )
         assert resp.status_code == 200

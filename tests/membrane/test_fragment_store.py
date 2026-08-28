@@ -8,24 +8,6 @@ from membrane.fragment import Fragment
 from membrane.signature import Signature
 from membrane.store import Store
 
-
-def make_fragment(
-    content_hash: str,
-    size: int = 10,
-    reuse_score: float = 0.5,
-    ttl: float = 3600.0,
-):
-    return Fragment(
-        content_hash=content_hash,
-        embedding=(0.1,),
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
-        size=size,
-        ttl=ttl,
-        reuse_score=reuse_score,
-        version_id=1,
-    )
-
-
 class TestFragmentStore:
     """Test suite for Store."""
 

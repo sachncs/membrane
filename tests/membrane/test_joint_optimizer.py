@@ -8,19 +8,6 @@ from membrane.node import Node
 from membrane.signature import Signature
 from membrane.telemetry import Telemetry
 
-
-def make_fragment():
-    return Fragment(
-        content_hash="abc",
-        embedding=(0.0,),
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
-        size=10,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=1,
-    )
-
-
 class TestJointOptimizer:
     """Test suite for Joint."""
 
@@ -34,9 +21,8 @@ class TestJointOptimizer:
         opt = Joint()
         n1 = Node("n1", max_memory_bytes=100)
         n2 = Node("n2", max_memory_bytes=100)
-        from tests.membrane.test_cluster_replicator import make_fragment as mkfrag
 
-        f = mkfrag("x", size=80)
+        f = make_fragment("x", size=80)
         n1.store(f, is_primary=True)
         telemetry = {
             "n1": Telemetry("n1", 10.0, 0.0, 0.9, 0.9),
@@ -50,9 +36,8 @@ class TestJointOptimizer:
         opt = Joint()
         n1 = Node("n1", max_memory_bytes=100)
         n2 = Node("n2", max_memory_bytes=100)
-        from tests.membrane.test_cluster_replicator import make_fragment as mkfrag
 
-        f = mkfrag("x", size=90)
+        f = make_fragment("x", size=90)
         n1.store(f, is_primary=True)
         telemetry = {
             "n1": Telemetry("n1", 10.0, 0.0, 0.9, 0.9),

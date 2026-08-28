@@ -6,19 +6,6 @@ from membrane.fragment import Fragment
 from membrane.isolation import Isolation, Tenant
 from membrane.signature import Signature
 
-
-def make_fragment(model_id="prefix", reuse_score=0.5):
-    return Fragment(
-        content_hash="abc",
-        embedding=(0.0,),
-        structural_signature=Signature(model_id=model_id, layer_range=(0, 1), token_span=(0, 1)),
-        size=10,
-        ttl=3600.0,
-        reuse_score=reuse_score,
-        version_id=1,
-    )
-
-
 class TestTenantIsolation:
     """Test suite for Isolation."""
 

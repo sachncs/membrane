@@ -9,19 +9,6 @@ from membrane.index import Index
 from membrane.kv import KVCache
 from membrane.signature import Signature
 
-
-def make_fragment(token_span=(0, 3), content_hash="abc"):
-    return Fragment(
-        content_hash=content_hash,
-        embedding=(0.1, 0.2),
-        structural_signature=Signature(model_id="test-model", layer_range=(0, 1), token_span=token_span),
-        size=128,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=1,
-    )
-
-
 class TestKVCacheManager:
     """Test suite for KVCache."""
 
@@ -41,7 +28,7 @@ class TestKVCacheManager:
         assert result[0].content_hash == "hit-hash"
         assert mgr.get_hit_rate() == 1.0
 
-    def test_lookup_byfragment_hash_is_miss(self):
+    def test_lookup_by_fragment_hash_is_miss(self):
         """Looking up by fragment content_hash should be a miss;
         the manager keys by prefix_hash, not fragment hash."""
         mgr = KVCache()
@@ -51,7 +38,7 @@ class TestKVCacheManager:
         assert result == []
         assert mgr.get_miss_rate() == 1.0
 
-    def test_multiplefragments_under_same_prefix(self):
+    def test_multiple_fragments_under_same_prefix(self):
         mgr = KVCache()
         f1 = make_fragment(content_hash="f1")
         f2 = make_fragment(content_hash="f2")

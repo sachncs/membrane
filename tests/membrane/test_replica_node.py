@@ -8,19 +8,6 @@ from membrane.origin import Origin
 from membrane.replica import Replica
 from membrane.signature import Signature
 
-
-def make_fragment(content_hash, size=100):
-    return Fragment(
-        content_hash=content_hash,
-        embedding=(0.0, 0.0),
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
-        size=size,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=1,
-    )
-
-
 class TestReplicaNode:
     """Test suite for Replica."""
 

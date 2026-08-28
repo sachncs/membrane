@@ -1,19 +1,32 @@
 """FastAPIServer: production HTTP/REST server using FastAPI + uvicorn.
 
-Replaces the stdlib :mod:`http.server` for high-RPS async
-serving. All endpoints defined by
-:class:`~membrane.transport.http_server.HTTPServer` are preserved
-with identical request/response shapes.
+Mirrors the stdlib HTTP transport in :mod:`membrane.transport.http`
+with identical request/response shapes but native async handlers
+and Pydantic request bodies. The shared business logic lives in
+:mod:`membrane.transport.routes`; this module is purely the
+async transport binding.
 
-Pydantic models at the top of the module describe the request
-bodies; the application factory :func:`create_app` registers the
-endpoints and attaches the supplied :class:`Node`,
-:class:`Backend`, :class:`TransferService`, and optional
-cluster manager to ``app.state`` for the handlers to consume.
+Endpoints (identical contract to the stdlib transport):
+
+* ``POST /store`` — store a fragment.
+* ``GET /retrieve`` — retrieve a fragment by ``content_hash``.
+* ``GET /inventory`` — return the node's inventory digest.
+* ``POST /sync`` — sync missing fragments from a source URL.
+* ``GET /heartbeat`` — node health and load snapshot.
+* ``POST /prefill`` — run prefill and return fragments.
+* ``POST /join`` — join the cluster.
+* ``POST /leave`` — leave the cluster.
+* ``POST /gossip`` — exchange gossip state.
+* ``GET /peers`` — list known peers.
+* ``POST /replicate`` — store a fragment as a replica.
+* ``GET /metrics`` — Prometheus text exposition.
+* ``GET /metrics.json`` — legacy JSON for the TUI.
+* ``GET /livez`` — process liveness probe.
+* ``GET /readyz`` — deep readiness probe.
 
 Observability:
     * ``/livez`` — process liveness probe.
-    * ``/readyz`` — deep readiness probe (checks node capacity).
+    * ``/readyz`` — deep readiness probe.
     * ``/metrics`` — Prometheus text exposition.
     * ``/metrics.json`` — legacy JSON snapshot for the TUI.
 
@@ -24,198 +37,20 @@ Security:
       :mod:`membrane.auth`).
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 
 from fastapi import FastAPI
-from pydantic import BaseModel
 
 from membrane.compute.base import Backend
-from membrane.compute.cpu import CPU
-from membrane.fragment import Fragment
 from membrane.metrics import MetricsCollector
 from membrane.node import Node
-from membrane.signature import Signature
 from membrane.transfer import TransferService
+from membrane.transport.routes_fastapi import register_routes
 
 logger = logging.getLogger(__name__)
-
-
-# ------------------------------------------------------------------
-# Pydantic models
-# ------------------------------------------------------------------
-
-
-class FragmentPayload(BaseModel):
-    """Pydantic representation of a :class:`Fragment` for HTTP transport.
-
-    Attributes:
-        content_hash: Content hash identifying the fragment.
-        embedding: Dense embedding (converted to a tuple on
-            deserialization).
-        model_id: Model identifier.
-        layer_range: ``[start, end]`` layer bounds.
-        token_span: ``[start, end]`` token position bounds.
-        size: Payload size in bytes.
-        ttl: Time-to-live in seconds.
-        reuse_score: Reuse likelihood in ``[0, 1]``.
-        version_id: Monotonic version counter.
-    """
-
-    content_hash: str
-    embedding: list[float]
-    model_id: str
-    layer_range: list[int]
-    token_span: list[int]
-    size: int
-    ttl: float
-    reuse_score: float
-    version_id: int
-
-
-class StoreRequest(BaseModel):
-    """Request body for ``POST /store``.
-
-    Attributes:
-        fragment: Fragment to store.
-        is_primary: Whether the local node should claim primary
-            ownership.
-    """
-
-    fragment: FragmentPayload
-    is_primary: bool = False
-
-
-class ReplicateRequest(BaseModel):
-    """Request body for ``POST /replicate``.
-
-    Attributes:
-        fragment: Fragment to replicate.
-    """
-
-    fragment: FragmentPayload
-
-
-class PrefillRequest(BaseModel):
-    """Request body for ``POST /prefill``.
-
-    Attributes:
-        prompt_tokens: Input token IDs.
-        model_id: Model identifier. Defaults to ``"default"``.
-    """
-
-    prompt_tokens: list[int]
-    model_id: str = "default"
-
-
-class SyncRequest(BaseModel):
-    """Request body for ``POST /sync``.
-
-    Attributes:
-        source_url: Base URL of the remote Membrane node to
-            pull missing fragments from.
-    """
-
-    source_url: str
-
-
-class JoinRequest(BaseModel):
-    """Request body for ``POST /join``.
-
-    Attributes:
-        node_id: Joining node's identifier.
-        host: Joining node's host.
-        port: Joining node's port.
-    """
-
-    node_id: str
-    host: str
-    port: int
-
-
-class LeaveRequest(BaseModel):
-    """Request body for ``POST /leave``.
-
-    Attributes:
-        node_id: Leaving node's identifier.
-    """
-
-    node_id: str
-
-
-class GossipRequest(BaseModel):
-    """Request body for ``POST /gossip``.
-
-    Attributes:
-        node_id: Sender's identifier.
-        timestamp: Sender's wall-clock time.
-        peers: List of known peers.
-        fragment_locations: Sampled fragment-location map.
-        inventory_digest: ``content_hash -> version_id`` for
-            fragments the sender holds locally.
-    """
-
-    node_id: str
-    timestamp: float
-    peers: list[dict[str, Any]] = []
-    fragment_locations: dict[str, list[str]] = {}
-    inventory_digest: dict[str, int] = {}
-
-
-# ------------------------------------------------------------------
-# Serialization helpers
-# ------------------------------------------------------------------
-
-
-def serialize_fragment(frag: Fragment) -> dict[str, Any]:
-    """Serialize a fragment to a JSON-compatible dict.
-
-    Args:
-        frag: Fragment to serialize.
-
-    Returns:
-        dict[str, Any]: Flat dict suitable for HTTP transport.
-    """
-    return {
-        "content_hash": frag.content_hash,
-        "embedding": list(frag.embedding),
-        "model_id": frag.structural_signature.model_id,
-        "layer_range": frag.structural_signature.layer_range,
-        "token_span": frag.structural_signature.token_span,
-        "size": frag.size,
-        "ttl": frag.ttl,
-        "reuse_score": frag.reuse_score,
-        "version_id": frag.version_id,
-    }
-
-
-def deserialize_fragment(data: FragmentPayload) -> Fragment:
-    """Reconstruct a fragment from a Pydantic payload.
-
-    Args:
-        data: ``FragmentPayload`` from the request body.
-
-    Returns:
-        Fragment: Reconstructed fragment instance.
-    """
-    return Fragment(
-        content_hash=data.content_hash,
-        embedding=tuple(data.embedding),
-        structural_signature=Signature(
-            model_id=data.model_id,
-            layer_range=(data.layer_range[0], data.layer_range[1]),
-            token_span=(data.token_span[0], data.token_span[1]),
-        ),
-        size=data.size,
-        ttl=data.ttl,
-        reuse_score=data.reuse_score,
-        version_id=data.version_id,
-    )
-
-
-# ------------------------------------------------------------------
-# FastAPI application factory
-# ------------------------------------------------------------------
 
 
 def create_app(
@@ -247,227 +82,8 @@ def create_app(
     app.state.cluster_manager = cluster_manager
     app.state.metrics_registry = metrics_registry
 
-    # ------------------------------------------------------------------
-    # GET endpoints
-    # ------------------------------------------------------------------
-
-    @app.get("/heartbeat")
-    def heartbeat() -> dict[str, Any]:
-        """``GET /heartbeat`` — node health and load snapshot."""
-        if not app.state.node:
-            return {"error": "no node"}
-        stats = app.state.node.get_stats()
-        return {
-            "node_id": app.state.node.node_id,
-            "load": app.state.node.heartbeat(),
-            "memory_used_bytes": stats.memory_used_bytes,
-            "memory_limit_bytes": stats.memory_limit_bytes,
-            "fragment_count": stats.fragment_count,
-            "healthy": True,
-        }
-
-    @app.get("/livez")
-    def livez() -> dict[str, Any]:
-        """``GET /livez`` — liveness probe (process up)."""
-        return {"status": "alive"}
-
-    @app.get("/readyz")
-    def readyz() -> dict[str, Any]:
-        """``GET /readyz`` — readiness probe (deep).
-
-        Returns 200 only when persistence (when configured) responds
-        to a ping and the node has not exhausted its memory budget.
-        Returns 503 otherwise so an orchestrator can route traffic
-        away from a degraded instance.
-        """
-        from fastapi.responses import JSONResponse
-
-        if not app.state.node:
-            return JSONResponse({"status": "no node"}, status_code=503)
-        stats = app.state.node.get_stats()
-        over_capacity = stats.memory_used_bytes >= stats.memory_limit_bytes
-        if over_capacity:
-            return JSONResponse(
-                {"status": "memory saturated", "memory_used_bytes": stats.memory_used_bytes},
-                status_code=503,
-            )
-        return {"status": "ready"}
-
-    @app.get("/metrics")
-    def metrics() -> dict[str, Any]:
-        """``GET /metrics`` — Prometheus text exposition.
-
-        The Prometheus exposition is the canonical format; the legacy
-        JSON snapshot used by the TUI dashboard is exposed at
-        ``/metrics.json`` for backward compatibility with the existing
-        dashboard code.
-        """
-        from fastapi.responses import PlainTextResponse
-
-        if app.state.metrics_registry is not None:
-            return PlainTextResponse(
-                app.state.metrics_registry.render(),
-                media_type="text/plain; version=0.0.4",
-            )
-        # Legacy fallback: snapshot from the node only.
-        if not app.state.node:
-            return {"error": "no node"}
-        stats = app.state.node.get_stats()
-        return {
-            "node_id": app.state.node.node_id,
-            "memory_used_bytes": stats.memory_used_bytes,
-            "memory_limit_bytes": stats.memory_limit_bytes,
-            "fragment_count": stats.fragment_count,
-            "primary_count": stats.primary_count,
-            "load": app.state.node.heartbeat(),
-        }
-
-    @app.get("/metrics.json")
-    def metrics_json() -> dict[str, Any]:
-        """``GET /metrics.json`` — legacy JSON snapshot for the TUI."""
-        if not app.state.node:
-            return {"error": "no node"}
-        stats = app.state.node.get_stats()
-        return {
-            "node_id": app.state.node.node_id,
-            "memory_used_bytes": stats.memory_used_bytes,
-            "memory_limit_bytes": stats.memory_limit_bytes,
-            "fragment_count": stats.fragment_count,
-            "primary_count": stats.primary_count,
-            "load": app.state.node.heartbeat(),
-        }
-
-    @app.get("/retrieve")
-    def retrieve(content_hash: str) -> dict[str, Any]:
-        """``GET /retrieve?content_hash=...``."""
-        if not app.state.node:
-            return {"found": False, "fragment": None}
-        frag = app.state.node.retrieve(content_hash)
-        if frag:
-            return {"found": True, "fragment": serialize_fragment(frag)}
-        return {"found": False, "fragment": None}
-
-    @app.get("/inventory")
-    def inventory() -> dict[str, Any]:
-        """``GET /inventory`` — return the node's inventory digest."""
-        if not app.state.node:
-            return {"node_id": "", "digest": {}}
-        digest = {h: frag.version_id for h, frag in app.state.node.fragments.items()}
-        return {"node_id": app.state.node.node_id, "digest": digest}
-
-    @app.get("/peers")
-    def peers() -> dict[str, Any]:
-        """``GET /peers`` — return the cluster membership view."""
-        if app.state.cluster_manager:
-            return {"peers": app.state.cluster_manager.get_peers()}
-        return {"error": "cluster manager not enabled"}
-
-    # ------------------------------------------------------------------
-    # POST endpoints
-    # ------------------------------------------------------------------
-
-    @app.post("/store")
-    def store(req: StoreRequest) -> dict[str, Any]:
-        """``POST /store`` — store a fragment on the local node."""
-        try:
-            frag = deserialize_fragment(req.fragment)
-            ok = app.state.node.store(frag, is_primary=req.is_primary) if app.state.node else False
-            return {"success": ok, "content_hash": frag.content_hash}
-        except Exception as exc:
-            logger.exception("store failed")
-            return {"error": str(exc)}
-
-    @app.post("/replicate")
-    def replicate(req: ReplicateRequest) -> dict[str, Any]:
-        """``POST /replicate`` — store a fragment as a non-primary replica."""
-        try:
-            frag = deserialize_fragment(req.fragment)
-            ok = app.state.node.store(frag, is_primary=False) if app.state.node else False
-            return {"success": ok, "content_hash": frag.content_hash}
-        except Exception as exc:
-            logger.exception("replicate failed")
-            return {"error": str(exc)}
-
-    @app.post("/sync")
-    def sync(req: SyncRequest) -> dict[str, Any]:
-        """``POST /sync`` — pull missing fragments from a source URL."""
-        source_url = req.source_url
-        if not source_url:
-            return {"error": "missing source_url"}
-        try:
-            import json
-            import urllib.request
-
-            # Pull remote inventory.
-            inv_req = urllib.request.Request(f"{source_url}/inventory")
-            with urllib.request.urlopen(inv_req, timeout=5) as resp:
-                remote_data = json.loads(resp.read().decode())
-            remote_digest = remote_data.get("digest", {})
-            local_digest = app.state.transfer_service.inventory_digest(app.state.node)
-            missing = app.state.transfer_service.compare_inventories(local_digest, remote_digest)
-            transferred: list[str] = []
-            for h in missing:
-                ret_req = urllib.request.Request(f"{source_url}/retrieve?content_hash={h}")
-                with urllib.request.urlopen(ret_req, timeout=5) as resp:
-                    remote_frag_data = json.loads(resp.read().decode())
-                if remote_frag_data.get("found"):
-                    frag = deserialize_fragment(FragmentPayload(**remote_frag_data["fragment"]))
-                    if app.state.node.store(frag, is_primary=False):
-                        transferred.append(h)
-            return {"success": True, "transferred": transferred}
-        except Exception as exc:
-            logger.exception("sync failed")
-            return {"error": str(exc)}
-
-    @app.post("/prefill")
-    def prefill(req: PrefillRequest) -> dict[str, Any]:
-        """``POST /prefill`` — run prefill and store fragments as primary."""
-        backend = app.state.compute_backend or CPU()
-        try:
-            fragments = backend.prefill(req.prompt_tokens, req.model_id)
-            for frag in fragments:
-                if app.state.node:
-                    app.state.node.store(frag, is_primary=True)
-            return {
-                "success": True,
-                "fragments": [serialize_fragment(f) for f in fragments],
-            }
-        except Exception as exc:
-            logger.exception("prefill failed")
-            return {"error": str(exc)}
-
-    @app.post("/join")
-    def join(req: JoinRequest) -> dict[str, Any]:
-        """``POST /join`` — bootstrap a new peer into the cluster."""
-        if not req.node_id or not req.host or not req.port:
-            return {"error": "missing node_id, host, or port"}
-        if app.state.cluster_manager:
-            return app.state.cluster_manager.on_peer_join(req.node_id, req.host, req.port)
-        return {"error": "cluster manager not enabled"}
-
-    @app.post("/leave")
-    def leave(req: LeaveRequest) -> dict[str, Any]:
-        """``POST /leave`` — remove a peer from the cluster."""
-        if not req.node_id:
-            return {"error": "missing node_id"}
-        if app.state.cluster_manager:
-            app.state.cluster_manager.on_peer_leave(req.node_id)
-            return {"success": True}
-        return {"error": "cluster manager not enabled"}
-
-    @app.post("/gossip")
-    def gossip(req: GossipRequest) -> dict[str, Any]:
-        """``POST /gossip`` — exchange gossip state with the cluster."""
-        if app.state.cluster_manager:
-            return app.state.cluster_manager.on_gossip(req.model_dump())
-        return {"error": "cluster manager not enabled"}
-
+    register_routes(app)
     return app
-
-
-# ------------------------------------------------------------------
-# Server wrapper
-# ------------------------------------------------------------------
 
 
 class FastAPIServer:
@@ -481,6 +97,8 @@ class FastAPIServer:
         transfer_service: Optional transfer service for sync.
         cluster_manager: Optional cluster manager for peer
             management.
+        metrics_registry: Optional :class:`MetricsCollector` for the
+            ``/metrics`` Prometheus endpoint.
     """
 
     def __init__(
@@ -508,14 +126,11 @@ class FastAPIServer:
             cluster_manager=cluster_manager,
             metrics_registry=metrics_registry,
         )
-        self._server: Any | None = None
 
     def start(self) -> None:
-        """Start the uvicorn server (blocking).
+        """Start uvicorn serving the configured app.
 
-        Calls :meth:`uvicorn.Server.run` which blocks until
-        :attr:`should_exit` is set (typically by :meth:`stop`
-        from another thread).
+        Blocks until :meth:`stop` is called.
         """
         import uvicorn
 

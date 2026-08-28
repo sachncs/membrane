@@ -21,7 +21,6 @@ def test_collect_returns_telemetry():
 def test_collect_memory_pressure_with_load():
     """memory_pressure reflects node heartbeat."""
     node = Node("n1", max_memory_bytes=100)
-    from tests.membrane.test_cluster_replicator import make_fragment
 
     f = make_fragment("x", size=50)
     node.store(f, is_primary=True)

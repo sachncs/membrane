@@ -6,26 +6,11 @@ from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.signature import Signature
 
-
-def make_fragment(content_hash: str, size: int, reuse_score: float = 0.5, ttl: float = 3600.0) -> Fragment:
-    sig = Signature("m", (0, 1), (0, 10))
-    return Fragment(
-        content_hash=content_hash,
-        embedding=(0.1, 0.2, 0.3),
-        structural_signature=sig,
-        size=size,
-        ttl=ttl,
-        reuse_score=reuse_score,
-        version_id=1,
-    )
-
-
 def test_store_increases_memory():
     node = Node("n1", max_memory_bytes=1_000_000)
     frag = make_fragment("h1", 1000)
     assert node.store(frag)
     assert node.get_memory_usage() == 1000
-
 
 def test_retrieve_correct_fragment():
     node = Node("n1", max_memory_bytes=1_000_000)
@@ -34,11 +19,9 @@ def test_retrieve_correct_fragment():
     result = node.retrieve("h1")
     assert result == frag
 
-
 def test_retrieve_missing_returns_none():
     node = Node("n1", max_memory_bytes=1_000_000)
     assert node.retrieve("missing") is None
-
 
 def test_evict_respects_max_memory():
     node = Node("n1", max_memory_bytes=500)
@@ -49,7 +32,6 @@ def test_evict_respects_max_memory():
     node.store(b)
     node.store(c)
     assert node.get_memory_usage() <= 500
-
 
 def test_ttl_expiry_evicts_first():
     node = Node("n1", max_memory_bytes=1_000_000)
@@ -62,7 +44,6 @@ def test_ttl_expiry_evicts_first():
     assert "old" in evicted
     assert "new" not in evicted
 
-
 def test_graph_aware_eviction():
     node = Node("n1", max_memory_bytes=1_000_000)
     a = make_fragment("a", 100, reuse_score=0.1)
@@ -74,12 +55,10 @@ def test_graph_aware_eviction():
     # a is evicted because low reuse_score, b may follow via graph-aware
     assert "a" not in node.fragments or "b" not in node.fragments
 
-
 def test_store_rejects_too_large():
     node = Node("n1", max_memory_bytes=100)
     frag = make_fragment("big", 200)
     assert not node.store(frag)
-
 
 def test_shard_ownership_tracked():
     node = Node("n1", max_memory_bytes=1_000_000)
@@ -89,11 +68,9 @@ def test_shard_ownership_tracked():
     node.store(frag, is_primary=False)
     assert node.get_shard_hashes() == {"h1"}
 
-
 def test_heartbeat_empty_node():
     node = Node("n1", max_memory_bytes=1_000_000)
     assert node.heartbeat() == 0.0
-
 
 def test_mixed_stores_and_evictions():
     node = Node("n1", max_memory_bytes=300)
@@ -102,7 +79,6 @@ def test_mixed_stores_and_evictions():
         node.store(f)
     assert node.get_memory_usage() <= 300
     assert len(node.fragments) <= 3
-
 
 def test_retrieve_evicts_expired_fragment():
     """Background TTL expiry: retrieve should evict expired fragments."""
@@ -113,7 +89,6 @@ def test_retrieve_evicts_expired_fragment():
     result = node.retrieve("old")
     assert result is None
     assert "old" not in node.fragments
-
 
 def test_retrieve_does_not_evict_fresh_fragment():
     node = Node("n1", max_memory_bytes=1_000_000)

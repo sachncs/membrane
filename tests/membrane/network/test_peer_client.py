@@ -1,96 +1,102 @@
-"""Tests for Peer."""
+"""Tests for Peer HTTP client.
 
-from unittest.mock import MagicMock, patch
+Exercises the client via a :class:`StubTransport` so no real HTTP
+sockets or stdlib patching is involved.
+"""
+
+from unittest.mock import MagicMock
+
+import pytest
 
 from membrane.fragment import Fragment
-from membrane.network.peer import Peer
+from membrane.serialization import to_dict
 from membrane.signature import Signature
+from membrane.network.peer import Peer, StubTransport
 
 
-def make_fragment(content_hash: str = "h1"):
+def make_fragment(content_hash="abc", embedding=(0.1, 0.2, 0.3)):
     return Fragment(
         content_hash=content_hash,
-        embedding=(0.1, 0.2),
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 10)),
-        size=100,
+        embedding=embedding,
+        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
+        size=10,
         ttl=3600.0,
         reuse_score=0.5,
         version_id=1,
     )
 
 
-def _mock_response(body: bytes):
-    """Return a mock that works as a context manager for urlopen."""
-    mock = MagicMock()
-    mock.read.return_value = body
-    mock.__enter__ = MagicMock(return_value=mock)
-    mock.__exit__ = MagicMock(return_value=False)
-    return mock
-
-
 class TestPeerClient:
-    """Test suite for Peer HTTP transport."""
+    """Test suite for the Peer client."""
 
     def test_heartbeat_success(self):
-        client = Peer("http://127.0.0.1:8080")
-        mock_resp = _mock_response(b'{"node_id": "n1", "healthy": true}')
-        with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
-            result = client.heartbeat()
-        assert result is not None
-        assert result["healthy"] is True
+        """Heartbeat returns the parsed response body."""
+        transport = StubTransport()
+        transport.add("GET", "/heartbeat", {"node_id": "n1", "healthy": True})
+        peer = Peer("http://peer:8080", transport=transport, max_retries=1)
+        resp = peer.heartbeat()
+        assert resp == {"node_id": "n1", "healthy": True}
+        assert transport.calls == [("GET", "/heartbeat", None)]
 
     def test_heartbeat_retry_then_fail(self):
-        client = Peer("http://127.0.0.1:8080", max_retries=2, retry_delay_sec=0.01)
-        with patch("membrane.network.peer.urllib.request.urlopen", side_effect=Exception("timeout")):
-            result = client.heartbeat()
-        assert result is None
+        """Heartbeat retries until exhausted, then returns None on persistent failure."""
+        transport = StubTransport()
+        # No stub response registered → returns None for every attempt
+        peer = Peer("http://peer:8080", transport=transport, max_retries=2, retry_delay_sec=0.001)
+        resp = peer.heartbeat()
+        assert resp is None
+        assert len(transport.calls) == 2
 
     def test_store_fragment_success(self):
-        client = Peer("http://127.0.0.1:8080")
-        frag = make_fragment("abc")
-        mock_resp = _mock_response(b'{"success": true, "content_hash": "abc"}')
-        with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
-            ok = client.store_fragment(frag, is_primary=True)
-        assert ok is True
+        """store_fragment returns True when the peer confirms the store."""
+        transport = StubTransport()
+        transport.add("POST", "/store", {"success": True, "content_hash": "abc"})
+        peer = Peer("http://peer:8080", transport=transport, max_retries=1)
+        assert peer.store_fragment(make_fragment("abc")) is True
+        assert len(transport.calls) == 1
 
     def test_retrieve_fragment_success(self):
-        client = Peer("http://127.0.0.1:8080")
-        mock_resp = _mock_response(
-            b'{"found": true, "fragment": {"content_hash": "abc", "embedding": [0.1], '
-            b'"model_id": "m", "layer_range": [0, 1], "token_span": [0, 10], '
-            b'"size": 100, "ttl": 3600.0, "reuse_score": 0.5, "version_id": 1}}'
+        """retrieve_fragment returns the fragment when found."""
+        frag = make_fragment("r1")
+        transport = StubTransport()
+        transport.add(
+            "GET",
+            "/retrieve?content_hash=r1",
+            {"found": True, "fragment": to_dict(frag)},
         )
-        with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
-            frag = client.retrieve_fragment("abc")
-        assert frag is not None
-        assert frag.content_hash == "abc"
+        peer = Peer("http://peer:8080", transport=transport, max_retries=1)
+        result = peer.retrieve_fragment("r1")
+        assert result is not None
+        assert result.content_hash == "r1"
 
     def test_retrieve_fragment_not_found(self):
-        client = Peer("http://127.0.0.1:8080")
-        mock_resp = _mock_response(b'{"found": false}')
-        with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
-            frag = client.retrieve_fragment("missing")
-        assert frag is None
+        """retrieve_fragment returns None when peer reports missing."""
+        transport = StubTransport()
+        transport.add("GET", "/retrieve?content_hash=missing", {"found": False, "fragment": None})
+        peer = Peer("http://peer:8080", transport=transport, max_retries=1)
+        assert peer.retrieve_fragment("missing") is None
 
     def test_join_cluster(self):
-        client = Peer("http://127.0.0.1:8080")
-        mock_resp = _mock_response(b'{"success": true, "peers": []}')
-        with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
-            result = client.join_cluster("n1", "127.0.0.1", 8080)
-        assert result is not None
-        assert result["success"] is True
+        """join_cluster returns the bootstrap response."""
+        transport = StubTransport()
+        transport.add("POST", "/join", {"success": True, "peers": []})
+        peer = Peer("http://peer:8080", transport=transport, max_retries=1)
+        resp = peer.join_cluster("self", "127.0.0.1", 8080)
+        assert resp["success"] is True
+        assert resp["peers"] == []
 
     def test_leave_cluster(self):
-        client = Peer("http://127.0.0.1:8080")
-        mock_resp = _mock_response(b'{"success": true}')
-        with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
-            ok = client.leave_cluster("n1")
-        assert ok is True
+        """leave_cluster returns True when the peer confirms the leave."""
+        transport = StubTransport()
+        transport.add("POST", "/leave", {"success": True})
+        peer = Peer("http://peer:8080", transport=transport, max_retries=1)
+        assert peer.leave_cluster("self") is True
 
     def test_gossip(self):
-        client = Peer("http://127.0.0.1:8080")
-        mock_resp = _mock_response(b'{"node_id": "n2", "timestamp": 1000.0}')
-        with patch("membrane.network.peer.urllib.request.urlopen", return_value=mock_resp):
-            result = client.gossip({"node_id": "n1", "timestamp": 500.0})
-        assert result is not None
-        assert result["node_id"] == "n2"
+        """gossip returns the response body unchanged."""
+        transport = StubTransport()
+        transport.add("POST", "/gossip", {"peers": [], "inventory_digest": {}})
+        peer = Peer("http://peer:8080", transport=transport, max_retries=1)
+        resp = peer.gossip({"peers": [], "inventory_digest": {}})
+        assert resp is not None
+        assert resp["peers"] == []

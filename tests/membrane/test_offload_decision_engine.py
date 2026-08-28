@@ -35,7 +35,6 @@ class TestOffloadDecisionEngine:
         engine = Offload(config=config)
         local = Node("local", max_memory_bytes=100)
         for i in range(5):
-            from tests.membrane.test_origin_node import make_fragment
 
             f = make_fragment(str(i), size=20)
             local.store(f, is_primary=True)

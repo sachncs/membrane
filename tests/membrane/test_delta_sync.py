@@ -7,19 +7,6 @@ from membrane.node import Node
 from membrane.signature import Signature
 from membrane.sync import DeltaSync, SyncPlan
 
-
-def make_fragment(content_hash: str, size: int = 10, version_id: int = 1):
-    return Fragment(
-        content_hash=content_hash,
-        embedding=(0.1,),
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
-        size=size,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=version_id,
-    )
-
-
 class TestDeltaSync:
     """Test suite for DeltaSync."""
 

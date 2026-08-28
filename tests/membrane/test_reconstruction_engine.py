@@ -7,20 +7,6 @@ from membrane.index import Index
 from membrane.reconstructor import Reconstructor, ReconstructorConfig
 from membrane.signature import Signature
 
-
-def make_fragment(content_hash: str, token_span: tuple[int, int], model_id: str = "m") -> Fragment:
-    sig = Signature(model_id, (0, 1), token_span)
-    return Fragment(
-        content_hash=content_hash,
-        embedding=(0.1, 0.2, 0.3),
-        structural_signature=sig,
-        size=100,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=1,
-    )
-
-
 def test_full_exact_match_no_prefill():
     index = Index()
     adapter = Adapter()
@@ -33,7 +19,6 @@ def test_full_exact_match_no_prefill():
     assert result.coverage_ratio == 1.0
     assert not result.prefill_invoked
     assert len(result.fragments) == 1
-
 
 def test_partial_match_with_positional_extension():
     index = Index()
@@ -48,7 +33,6 @@ def test_partial_match_with_positional_extension():
     result = engine.rebuild_context(tokens, "m")
     assert result.coverage_ratio == 1.0
     assert not result.prefill_invoked
-
 
 def test_gap_filled_by_semantic_similarity():
     index = Index()
@@ -79,7 +63,6 @@ def test_gap_filled_by_semantic_similarity():
     result = engine.rebuild_context(tokens, "m")
     assert result.coverage_ratio == 1.0
 
-
 def test_large_gap_triggers_prefill():
     index = Index()
     adapter = Adapter()
@@ -94,7 +77,6 @@ def test_large_gap_triggers_prefill():
     assert result.prefill_invoked
     assert len(result.missing_segments) > 0
 
-
 def test_empty_prompt():
     index = Index()
     adapter = Adapter()
@@ -103,7 +85,6 @@ def test_empty_prompt():
     assert result.coverage_ratio == 1.0
     assert result.fragments == []
 
-
 def test_missing_index_triggers_prefill():
     index = Index()
     adapter = Adapter()
@@ -111,7 +92,6 @@ def test_missing_index_triggers_prefill():
     tokens = list(range(50))
     result = engine.rebuild_context(tokens, "m")
     assert result.prefill_invoked
-
 
 def test_coverage_ratio_accuracy():
     index = Index()
@@ -123,7 +103,6 @@ def test_coverage_ratio_accuracy():
 
     result = engine.rebuild_context(tokens, "m")
     assert result.coverage_ratio == 0.5
-
 
 def test_graph_links_recorded():
     index = Index()

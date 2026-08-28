@@ -6,19 +6,6 @@ from membrane.fragment import Fragment
 from membrane.policy import Promotion, PromotionConfig, PromotionResult
 from membrane.signature import Signature
 
-
-def make_fragment(reuse_score=0.8):
-    return Fragment(
-        content_hash="abc",
-        embedding=(0.0,),
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
-        size=10,
-        ttl=3600.0,
-        reuse_score=reuse_score,
-        version_id=1,
-    )
-
-
 class TestPromotionPolicy:
     """Test suite for Promotion."""
 

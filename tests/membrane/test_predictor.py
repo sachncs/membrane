@@ -42,8 +42,7 @@ class TestPredictor:
         p = Predict()
         n1 = Node("n1", max_memory_bytes=100)
         n2 = Node("n2", max_memory_bytes=100)
-        from tests.membrane.test_cluster_replicator import make_fragment
-
+    
         f = make_fragment("x", size=90)
         n1.store(f, is_primary=True)
         best = p.predict_optimal_region(list(range(10)), [n1, n2])

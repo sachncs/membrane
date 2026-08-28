@@ -11,19 +11,6 @@ from membrane.node import Node
 from membrane.signature import Signature
 from membrane.transport.http import HTTPServer
 
-
-def make_fragment(content_hash: str = "h1"):
-    return Fragment(
-        content_hash=content_hash,
-        embedding=(0.1,),
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
-        size=10,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=1,
-    )
-
-
 class TestHTTPServer:
     """Test suite for HTTPServer."""
 
@@ -49,19 +36,10 @@ class TestHTTPServer:
 
     def test_store_and_retrieve(self, server):
         frag = make_fragment("store-test")
+        from membrane.serialization import to_dict
         payload = json.dumps(
             {
-                "fragment": {
-                    "content_hash": frag.content_hash,
-                    "embedding": list(frag.embedding),
-                    "model_id": frag.structural_signature.model_id,
-                    "layer_range": list(frag.structural_signature.layer_range),
-                    "token_span": list(frag.structural_signature.token_span),
-                    "size": frag.size,
-                    "ttl": frag.ttl,
-                    "reuse_score": frag.reuse_score,
-                    "version_id": frag.version_id,
-                },
+                "fragment": to_dict(frag),
                 "is_primary": True,
             }
         ).encode()
