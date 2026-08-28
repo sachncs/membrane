@@ -2,8 +2,8 @@
 
 import pytest
 
-from membrane.subgraph_retrieval import SubgraphRetrieval
-from membrane.weighted_graph import WeightedGraph
+from membrane._subgraph_retrieval import SubgraphRetrieval
+from membrane.weighted import WeightedGraph
 
 
 def build_graph():

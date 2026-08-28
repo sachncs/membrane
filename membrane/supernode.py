@@ -28,7 +28,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.hash_ring import HashRing
+from membrane.ring import HashRing
 
 
 class Supernode:

@@ -2,10 +2,10 @@
 
 import pytest
 
-from membrane.delta_sync import DeltaSync, SyncPlan
+from membrane.sync import DeltaSync, SyncPlan
 from membrane.fragment import Fragment
-from membrane.membrane_node import MembraneNode
-from membrane.structural_signature import StructuralSignature
+from membrane.node import MembraneNode
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash: str, size: int = 10, version_id: int = 1):

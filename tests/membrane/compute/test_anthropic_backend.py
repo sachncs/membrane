@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from membrane.compute.anthropic_backend import AnthropicBackend
+from membrane.compute.anthropic import AnthropicBackend
 
 
 class TestAnthropicBackend:

@@ -30,7 +30,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.model import throughput_model, workload
+from membrane.model import throughput, workload
 
 # Hardware constraints from Section 4.1.
 TOTAL_PD_INSTANCES: int = 8  # 64 H20 GPUs / 8 GPUs per instance.
@@ -79,25 +79,25 @@ def evaluate_configuration(
     long_len = int(round(mean_long)) if mean_long > 0 else threshold
     short_len = int(round(mean_short)) if mean_short > 0 else threshold
 
-    theta_membrane = throughput_model.stage_throughput_membrane(
+    theta_membrane = throughput.stage_throughput_membrane(
         MEMBRANE_INSTANCES,
         EGRESS_BANDWIDTH_GBPS,
         long_len,
         compute_scale=1.0,
     )
-    theta_pd_p = throughput_model.stage_throughput_pd_p(
+    theta_pd_p = throughput.stage_throughput_pd_p(
         num_pd_p,
         short_len,
         compute_scale=H20_COMPUTE_SCALE,
     )
-    theta_pd_d = throughput_model.stage_throughput_pd_d(
+    theta_pd_d = throughput.stage_throughput_pd_d(
         num_pd_d,
         MAX_BATCH_SIZE,
         DECODE_TIME_SECONDS,
         OUTPUT_LENGTH,
     )
 
-    return throughput_model.end_to_end_throughput(theta_membrane, theta_pd_p, theta_pd_d, p)
+    return throughput.end_to_end_throughput(theta_membrane, theta_pd_p, theta_pd_d, p)
 
 
 def search(
@@ -162,12 +162,12 @@ def optimal_homogeneous_pd(
 
     for n_p in range(1, total_instances):
         n_d = total_instances - n_p
-        theta_pd_p = throughput_model.stage_throughput_pd_p(n_p, length, compute_scale=H20_COMPUTE_SCALE)
-        theta_pd_d = throughput_model.stage_throughput_pd_d(n_d, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH)
+        theta_pd_p = throughput.stage_throughput_pd_p(n_p, length, compute_scale=H20_COMPUTE_SCALE)
+        theta_pd_d = throughput.stage_throughput_pd_d(n_d, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH)
         # Membrane is unreachable in this baseline, so its
         # contribution is +inf and the min() picks the PD
         # bottleneck.
-        lam = throughput_model.end_to_end_throughput(float("inf"), theta_pd_p, theta_pd_d, 0.0)
+        lam = throughput.end_to_end_throughput(float("inf"), theta_pd_p, theta_pd_d, 0.0)
         if lam > best_lambda:
             best_lambda = lam
             best_n_p = n_p
@@ -200,11 +200,11 @@ def naive_heterogeneous_pd(
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
     length = int(round(mean_length)) if mean_length > 0 else 32768
 
-    theta_membrane = throughput_model.stage_throughput_membrane(membrane_instances, EGRESS_BANDWIDTH_GBPS, length)
-    theta_pd_d = throughput_model.stage_throughput_pd_d(
+    theta_membrane = throughput.stage_throughput_membrane(membrane_instances, EGRESS_BANDWIDTH_GBPS, length)
+    theta_pd_d = throughput.stage_throughput_pd_d(
         pd_instances, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH
     )
     # fraction_to_membrane = 1.0 means PD-P's contribution is
     # +inf; only Membrane and PD-D bottlenecks apply.
-    lam = throughput_model.end_to_end_throughput(theta_membrane, float("inf"), theta_pd_d, 1.0)
+    lam = throughput.end_to_end_throughput(theta_membrane, float("inf"), theta_pd_d, 1.0)
     return lam, 0.0

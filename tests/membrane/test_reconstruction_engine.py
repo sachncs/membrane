@@ -1,11 +1,11 @@
 """Tests for ReconstructionEngine."""
 
 from membrane.fragment import Fragment
-from membrane.fragmentation_engine import FragmentationEngine
-from membrane.index_system import IndexSystem
-from membrane.prefill_adapter import PrefillAdapter
-from membrane.reconstruction_engine import ReconstructionConfig, ReconstructionEngine
-from membrane.structural_signature import StructuralSignature
+from membrane.fragmenter import FragmentationEngine
+from membrane.index import IndexSystem
+from membrane.adapter import PrefillAdapter
+from membrane.reconstructor import ReconstructionConfig, ReconstructionEngine
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash: str, token_span: tuple[int, int], model_id: str = "m") -> Fragment:
@@ -56,7 +56,7 @@ def test_gap_filled_by_semantic_similarity():
     engine = ReconstructionEngine(index, adapter)
     tokens = list(range(100))
 
-    from membrane.fragmentation_engine import generate_embedding
+    from membrane.fragmenter import generate_embedding
 
     gap_tokens = tuple(tokens[40:60])
     gap_embedding = generate_embedding(gap_tokens, 128)

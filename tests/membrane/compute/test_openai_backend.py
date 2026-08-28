@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from membrane.compute.openai_backend import OpenAIBackend
+from membrane.compute.openai import OpenAIBackend
 from membrane.fragment import Fragment
 
 

@@ -2,10 +2,10 @@
 
 import pytest
 
-from membrane.economic_router import EconomicRouter, EconomicRouterConfig
+from membrane.economic import EconomicRouter, EconomicRouterConfig
 from membrane.fragment import Fragment
-from membrane.node_telemetry import NodeTelemetry
-from membrane.structural_signature import StructuralSignature
+from membrane.telemetry import NodeTelemetry
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(reuse_score=0.5):

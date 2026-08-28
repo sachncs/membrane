@@ -1,6 +1,6 @@
 """Tests for semantic_hash module."""
 
-from membrane.semantic_hash import compute_semantic_hash, semantic_distance
+from membrane.semhash import compute_semantic_hash, semantic_distance
 
 
 def test_compute_semantic_hash_is_deterministic():

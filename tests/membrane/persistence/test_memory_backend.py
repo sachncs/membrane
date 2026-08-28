@@ -1,8 +1,8 @@
 """Tests for InMemoryBackend."""
 
 from membrane.fragment import Fragment
-from membrane.persistence.memory_backend import InMemoryBackend
-from membrane.structural_signature import StructuralSignature
+from membrane.persistence.memory import InMemoryBackend
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash: str = "h1", size: int = 100):

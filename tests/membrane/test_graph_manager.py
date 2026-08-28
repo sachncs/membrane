@@ -1,6 +1,6 @@
 from membrane.fragment import Fragment
-from membrane.graph_manager import GraphManager
-from membrane.structural_signature import StructuralSignature
+from membrane._graph_manager import GraphManager
+from membrane.signature import StructuralSignature
 
 
 def test_register_and_prefetch():

@@ -3,9 +3,9 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.latency_router import LatencyRouter
-from membrane.membrane_node import MembraneNode
-from membrane.structural_signature import StructuralSignature
+from membrane.latency import LatencyRouter
+from membrane.node import MembraneNode
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash, size=10):

@@ -24,17 +24,17 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from membrane.compute.backend import ComputeBackend
-from membrane.compute.cpu_backend import CPUBackend
-from membrane.compute.gpu_backend import GPUBackend
-from membrane.membrane_node import MembraneNode
-from membrane.network.cluster_manager import ClusterManager
+from membrane.compute.base import ComputeBackend
+from membrane.compute.cpu import CPUBackend
+from membrane.compute.gpu import GPUBackend
+from membrane.node import MembraneNode
+from membrane.network.cluster import ClusterManager
 from membrane.network.config import ClusterConfig
-from membrane.network.remote_transfer import RemoteTransferService
-from membrane.persistence.memory_backend import InMemoryBackend
-from membrane.persistence.redis_backend import RedisBackend
-from membrane.transport.fastapi_server import FastAPIServer
-from membrane.transport.http_server import HTTPServer
+from membrane.network.transfer import RemoteTransferService
+from membrane.persistence.memory import InMemoryBackend
+from membrane.persistence.redis import RedisBackend
+from membrane.transport.fastapi import FastAPIServer
+from membrane.transport.http import HTTPServer
 
 logger = logging.getLogger(__name__)
 
@@ -180,23 +180,23 @@ class MembraneServer:
         if compute == "gpu":
             return GPUBackend()
         if compute == "ollama":
-            from membrane.compute.ollama_backend import OllamaBackend
+            from membrane.compute.ollama import OllamaBackend
 
             url = llm_url or "http://localhost:11434"
             model = llm_model or "llama3.2"
             return OllamaBackend(base_url=url, model=model)
         if compute == "openai":
-            from membrane.compute.openai_backend import OpenAIBackend
+            from membrane.compute.openai import OpenAIBackend
 
             model = llm_model or "gpt-4o-mini"
             return OpenAIBackend(api_key=api_key, model=model)
         if compute == "anthropic":
-            from membrane.compute.anthropic_backend import AnthropicBackend
+            from membrane.compute.anthropic import AnthropicBackend
 
             model = llm_model or "claude-3-sonnet-20240229"
             return AnthropicBackend(api_key=api_key, model=model)
         if compute == "transformers":
-            from membrane.compute.transformers_backend import TransformersBackend
+            from membrane.compute.transformers import TransformersBackend
 
             model = llm_model or "gpt2"
             return TransformersBackend(model_id=model)
@@ -282,7 +282,7 @@ class MembraneServer:
                 cluster_manager=self.cluster_manager,
             )
         else:
-            from membrane.transport.grpc_server import GrpcServer
+            from membrane.transport.grpc import GrpcServer
 
             self.transport = GrpcServer(
                 node=self.node,

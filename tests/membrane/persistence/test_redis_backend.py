@@ -3,8 +3,8 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.persistence.redis_backend import RedisBackend
-from membrane.structural_signature import StructuralSignature
+from membrane.persistence.redis import RedisBackend
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash: str = "h1", size: int = 100):

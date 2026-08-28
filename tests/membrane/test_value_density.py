@@ -3,8 +3,8 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.structural_signature import StructuralSignature
-from membrane.value_density import ValueDensity
+from membrane.signature import StructuralSignature
+from membrane.density import ValueDensity
 
 
 def make_fragment(content_hash="abc", reuse_score=0.5):

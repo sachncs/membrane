@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane.cost_model import CostModel
+from membrane.cost import CostModel
 
 
 class TestCostModel:

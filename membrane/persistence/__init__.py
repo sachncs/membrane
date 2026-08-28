@@ -19,7 +19,7 @@ Adding a new backend is a matter of providing a class with the
 same key/value interface and re-exporting it here.
 """
 
-from membrane.persistence.memory_backend import InMemoryBackend
-from membrane.persistence.redis_backend import RedisBackend
+from membrane.persistence.memory import InMemoryBackend
+from membrane.persistence.redis import RedisBackend
 
 __all__ = ["InMemoryBackend", "RedisBackend"]

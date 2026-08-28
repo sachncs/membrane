@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane.weighted_graph import WeightedGraph
+from membrane.weighted import WeightedGraph
 
 
 class TestWeightedGraph:

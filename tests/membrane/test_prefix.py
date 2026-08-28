@@ -1,9 +1,9 @@
 """Tests for Prefix memory object."""
 
-from membrane.delta_encoder import Delta
-from membrane.fragmentation_engine import compute_content_hash
+from membrane.delta import Delta
+from membrane.fragmenter import compute_content_hash
 from membrane.prefix import Prefix
-from membrane.semantic_hash import compute_semantic_hash
+from membrane.semhash import compute_semantic_hash
 
 
 def test_prefix_creation():

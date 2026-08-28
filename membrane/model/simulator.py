@@ -23,7 +23,7 @@ References:
 import logging
 from dataclasses import dataclass
 
-from membrane.model import metrics, optimizer, throughput_model, workload
+from membrane.model import metrics, optimizer, throughput, workload
 
 logger = logging.getLogger(__name__)
 
@@ -95,14 +95,14 @@ def run_membrane_pd(
     long_len = int(round(mean_long)) if mean_long > 0 else best_t
     short_len = int(round(mean_short)) if mean_short > 0 else best_t
 
-    theta_membrane = throughput_model.stage_throughput_membrane(
+    theta_membrane = throughput.stage_throughput_membrane(
         optimizer.MEMBRANE_INSTANCES,
         optimizer.EGRESS_BANDWIDTH_GBPS,
         long_len,
         compute_scale=1.0,
     )
-    theta_pd_p = throughput_model.stage_throughput_pd_p(best_n_p, short_len, compute_scale=optimizer.H20_COMPUTE_SCALE)
-    theta_pd_d = throughput_model.stage_throughput_pd_d(
+    theta_pd_p = throughput.stage_throughput_pd_p(best_n_p, short_len, compute_scale=optimizer.H20_COMPUTE_SCALE)
+    theta_pd_d = throughput.stage_throughput_pd_d(
         best_n_d,
         optimizer.MAX_BATCH_SIZE,
         optimizer.DECODE_TIME_SECONDS,
@@ -158,8 +158,8 @@ def run_homogeneous_pd(
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
     length = int(round(mean_length)) if mean_length > 0 else 32768
 
-    theta_pd_p = throughput_model.stage_throughput_pd_p(best_n_p, length, compute_scale=optimizer.H20_COMPUTE_SCALE)
-    theta_pd_d = throughput_model.stage_throughput_pd_d(
+    theta_pd_p = throughput.stage_throughput_pd_p(best_n_p, length, compute_scale=optimizer.H20_COMPUTE_SCALE)
+    theta_pd_d = throughput.stage_throughput_pd_d(
         best_n_d,
         optimizer.MAX_BATCH_SIZE,
         optimizer.DECODE_TIME_SECONDS,
@@ -206,12 +206,12 @@ def run_naive_heterogeneous_pd(
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
     length = int(round(mean_length)) if mean_length > 0 else 32768
 
-    theta_membrane = throughput_model.stage_throughput_membrane(
+    theta_membrane = throughput.stage_throughput_membrane(
         optimizer.MEMBRANE_INSTANCES,
         optimizer.EGRESS_BANDWIDTH_GBPS,
         length,
     )
-    theta_pd_d = throughput_model.stage_throughput_pd_d(
+    theta_pd_d = throughput.stage_throughput_pd_d(
         optimizer.TOTAL_PD_INSTANCES,
         optimizer.MAX_BATCH_SIZE,
         optimizer.DECODE_TIME_SECONDS,

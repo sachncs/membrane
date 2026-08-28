@@ -3,10 +3,10 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.joint_optimizer import JointOptimizer, PlacementDecision
-from membrane.membrane_node import MembraneNode
-from membrane.node_telemetry import NodeTelemetry
-from membrane.structural_signature import StructuralSignature
+from membrane.joint import JointOptimizer, PlacementDecision
+from membrane.node import MembraneNode
+from membrane.telemetry import NodeTelemetry
+from membrane.signature import StructuralSignature
 
 
 def make_fragment():

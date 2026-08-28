@@ -1,6 +1,6 @@
 from membrane.fragment import Fragment
-from membrane.semantic_index import SemanticIndex
-from membrane.structural_signature import StructuralSignature
+from membrane.semantics import SemanticIndex
+from membrane.signature import StructuralSignature
 
 
 def test_knn_search():

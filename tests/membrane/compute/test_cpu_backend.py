@@ -1,6 +1,6 @@
 """Tests for CPUBackend."""
 
-from membrane.compute.cpu_backend import CPUBackend
+from membrane.compute.cpu import CPUBackend
 
 
 class TestCPUBackend:

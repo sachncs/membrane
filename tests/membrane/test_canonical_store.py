@@ -2,9 +2,9 @@
 
 import pytest
 
-from membrane.canonical_store import CanonicalRef, CanonicalStore
+from membrane.canonical import CanonicalRef, CanonicalStore
 from membrane.fragment import Fragment
-from membrane.structural_signature import StructuralSignature
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash):

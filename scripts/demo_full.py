@@ -3,35 +3,35 @@
 
 import logging
 
-from membrane.canonical_store import CanonicalStore
-from membrane.chunked_transfer import ChunkedTransfer
-from membrane.cluster_replicator import ClusterReplicator
-from membrane.delta_encoder import DeltaEncoder
-from membrane.distributed_directory import DistributedDirectory
-from membrane.dynamic_role_manager import DynamicRoleManager, NodeRole, SystemState
-from membrane.economic_router import EconomicRouter
+from membrane.canonical import CanonicalStore
+from membrane.chunks import ChunkedTransfer
+from membrane.replicator import ClusterReplicator
+from membrane.delta import DeltaEncoder
+from membrane.directory import DistributedDirectory
+from membrane.roles import DynamicRoleManager, NodeRole, SystemState
+from membrane.economic import EconomicRouter
 from membrane.fragment import Fragment
-from membrane.hash_ring import HashRing
-from membrane.joint_optimizer import JointOptimizer
-from membrane.kv_cache_manager import KVCacheManager
-from membrane.latency_router import LatencyRouter
-from membrane.membrane_node import MembraneNode
-from membrane.node_telemetry import NodeTelemetry
-from membrane.offload_decision_engine import OffloadDecisionEngine
-from membrane.origin_node import OriginNode
-from membrane.prefix_version_chain import PrefixVersionChain
-from membrane.promotion_policy import PromotionPolicy
-from membrane.remote_prefill_dispatcher import RemotePrefillDispatcher
-from membrane.replica_node import ReplicaNode
-from membrane.semantic_cluster import SemanticCluster
-from membrane.session_tracker import SessionTracker
-from membrane.structural_signature import StructuralSignature
-from membrane.subgraph_retrieval import SubgraphRetrieval
+from membrane.ring import HashRing
+from membrane.joint import JointOptimizer
+from membrane.kv import KVCacheManager
+from membrane.latency import LatencyRouter
+from membrane.node import MembraneNode
+from membrane.telemetry import NodeTelemetry
+from membrane.offload import OffloadDecisionEngine
+from membrane.origin import OriginNode
+from membrane.versions import PrefixVersionChain
+from membrane.policy import PromotionPolicy
+from membrane.prefill_remote import RemotePrefillDispatcher
+from membrane.replica import ReplicaNode
+from membrane.clusters import SemanticCluster
+from membrane.sessions import SessionTracker
+from membrane.signature import StructuralSignature
+from membrane._subgraph_retrieval import SubgraphRetrieval
 from membrane.supernode import Supernode
-from membrane.tenant_isolation import TenantIsolation, TenantPolicy
-from membrane.value_density import ValueDensity
-from membrane.weighted_graph import WeightedGraph
-from membrane.workload_analyzer import WorkloadAnalyzer
+from membrane.isolation import TenantIsolation, TenantPolicy
+from membrane.density import ValueDensity
+from membrane.weighted import WeightedGraph
+from membrane.workload import WorkloadAnalyzer
 
 logger = logging.getLogger(__name__)
 

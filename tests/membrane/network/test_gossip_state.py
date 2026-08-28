@@ -1,6 +1,6 @@
 """Tests for GossipState and PeerEndpoint."""
 
-from membrane.network.gossip_state import GossipState, PeerEndpoint
+from membrane.network.gossip import GossipState, PeerEndpoint
 
 
 class TestGossipState:

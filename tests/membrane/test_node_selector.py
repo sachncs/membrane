@@ -2,8 +2,8 @@
 
 import pytest
 
-from membrane.node_selector import NodeSelector, NodeSelectorConfig
-from membrane.node_telemetry import NodeTelemetry
+from membrane.selector import NodeSelector, NodeSelectorConfig
+from membrane.telemetry import NodeTelemetry
 
 
 class TestNodeSelector:

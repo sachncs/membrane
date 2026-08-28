@@ -2,12 +2,12 @@
 
 import pytest
 
-from membrane.cache_metrics import CacheMetrics
+from membrane._cache_metrics import CacheMetrics
 from membrane.fragment import Fragment
-from membrane.fragmentation_engine import compute_content_hash
-from membrane.index_system import IndexSystem
-from membrane.kv_cache_manager import KVCacheManager
-from membrane.structural_signature import StructuralSignature
+from membrane.fragmenter import compute_content_hash
+from membrane.index import IndexSystem
+from membrane.kv import KVCacheManager
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(token_span=(0, 3), content_hash="abc"):

@@ -1,6 +1,6 @@
 from membrane.fragment import Fragment
-from membrane.index_system import IndexSystem
-from membrane.structural_signature import StructuralSignature
+from membrane.index import IndexSystem
+from membrane.signature import StructuralSignature
 
 
 def test_cross_index_query():

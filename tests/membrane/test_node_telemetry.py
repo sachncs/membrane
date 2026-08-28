@@ -2,8 +2,8 @@
 
 import pytest
 
-from membrane.membrane_node import MembraneNode
-from membrane.node_telemetry import NodeTelemetry, TelemetryCollector
+from membrane.node import MembraneNode
+from membrane.telemetry import NodeTelemetry, TelemetryCollector
 
 
 class TestTelemetryCollector:

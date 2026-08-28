@@ -2,9 +2,9 @@
 
 import pytest
 
-from membrane.cost_model import CostModel
-from membrane.membrane_node import MembraneNode
-from membrane.offload_decision_engine import (
+from membrane.cost import CostModel
+from membrane.node import MembraneNode
+from membrane.offload import (
     OffloadDecision,
     OffloadDecisionConfig,
     OffloadDecisionEngine,

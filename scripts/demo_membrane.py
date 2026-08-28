@@ -2,12 +2,12 @@
 
 import logging
 
-from membrane.fragmentation_engine import FragmentationConfig, FragmentationEngine
-from membrane.global_directory import GlobalDirectory
-from membrane.membrane_node import MembraneNode
-from membrane.prefill_adapter import PrefillAdapter
-from membrane.reconstruction_engine import ReconstructionEngine
-from membrane.transfer_service import TransferService
+from membrane.fragmenter import FragmentationConfig, FragmentationEngine
+from membrane.registry import GlobalDirectory
+from membrane.node import MembraneNode
+from membrane.adapter import PrefillAdapter
+from membrane.reconstructor import ReconstructionEngine
+from membrane.transfer import TransferService
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def main():
 
     # Reconstruct the prompt from node-2
     adapter = PrefillAdapter()
-    from membrane.reconstruction_engine import ReconstructionConfig
+    from membrane.reconstructor import ReconstructionConfig
     recon = ReconstructionEngine(
         node2.index_system,
         adapter,

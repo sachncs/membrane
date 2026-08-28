@@ -3,8 +3,8 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.memory_object import MemoryObject
-from membrane.structural_signature import StructuralSignature
+from membrane.memobj import MemoryObject
+from membrane.signature import StructuralSignature
 
 
 class MockMemoryObject:

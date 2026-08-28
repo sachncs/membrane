@@ -1,6 +1,6 @@
 """Tests for GPUBackend."""
 
-from membrane.compute.gpu_backend import GPUBackend
+from membrane.compute.gpu import GPUBackend
 
 
 class TestGPUBackend:

@@ -5,9 +5,9 @@ import time
 
 import pytest
 
-from membrane.compute.cpu_backend import CPUBackend
-from membrane.membrane_node import MembraneNode
-from membrane.transport.grpc_server import GrpcServer
+from membrane.compute.cpu import CPUBackend
+from membrane.node import MembraneNode
+from membrane.transport.grpc import GrpcServer
 
 
 class TestGrpcServer:

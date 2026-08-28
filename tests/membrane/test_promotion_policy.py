@@ -3,8 +3,8 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.promotion_policy import PromotionConfig, PromotionDecision, PromotionPolicy
-from membrane.structural_signature import StructuralSignature
+from membrane.policy import PromotionConfig, PromotionDecision, PromotionPolicy
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(reuse_score=0.8):

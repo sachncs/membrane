@@ -5,11 +5,11 @@ import urllib.request
 
 import pytest
 
-from membrane.compute.cpu_backend import CPUBackend
+from membrane.compute.cpu import CPUBackend
 from membrane.fragment import Fragment
-from membrane.membrane_node import MembraneNode
-from membrane.structural_signature import StructuralSignature
-from membrane.transport.http_server import HTTPServer
+from membrane.node import MembraneNode
+from membrane.signature import StructuralSignature
+from membrane.transport.http import HTTPServer
 
 
 def make_fragment(content_hash: str = "h1"):

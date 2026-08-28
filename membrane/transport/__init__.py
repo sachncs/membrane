@@ -15,7 +15,7 @@ inventory, heartbeat, gossip, replicate) so clients can be
 swapped without changing application code.
 """
 
-from membrane.transport.grpc_server import GrpcServer
-from membrane.transport.http_server import HTTPServer
+from membrane.transport.grpc import GrpcServer
+from membrane.transport.http import HTTPServer
 
 __all__ = ["GrpcServer", "HTTPServer"]

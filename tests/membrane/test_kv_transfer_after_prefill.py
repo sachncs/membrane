@@ -3,10 +3,10 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.kv_transfer_after_prefill import KVTransferAfterPrefill
-from membrane.membrane_node import MembraneNode
-from membrane.prefill_adapter import PrefillAdapter
-from membrane.structural_signature import StructuralSignature
+from membrane.kvreturn import KVTransferAfterPrefill
+from membrane.node import MembraneNode
+from membrane.adapter import PrefillAdapter
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash, size=10):
@@ -53,7 +53,7 @@ class TestKVTransferAfterPrefill:
         assert transferred == []
 
     def test_custom_transfer_service(self):
-        from membrane.transfer_service import TransferService
+        from membrane.transfer import TransferService
 
         ts = TransferService()
         shipper = KVTransferAfterPrefill(transfer_service=ts)

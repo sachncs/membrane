@@ -2,8 +2,8 @@
 
 import pytest
 
-from membrane.delta_encoder import Delta, DeltaEncoder
-from membrane.fragmentation_engine import compute_content_hash
+from membrane.delta import Delta, DeltaEncoder
+from membrane.fragmenter import compute_content_hash
 
 
 class TestDeltaEncoder:

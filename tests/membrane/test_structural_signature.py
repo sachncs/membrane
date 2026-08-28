@@ -1,4 +1,4 @@
-from membrane.structural_signature import StructuralSignature
+from membrane.signature import StructuralSignature
 
 
 def test_create_signature():

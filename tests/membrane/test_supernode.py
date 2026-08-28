@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane.hash_ring import HashRing
+from membrane.ring import HashRing
 from membrane.supernode import Supernode
 
 
@@ -38,7 +38,7 @@ class TestSupernode:
         assert sn.hash_ring.get_node("x") == "node-a"
 
     def test_remove_node_from_ring(self):
-        from membrane.hash_ring import EmptyRingError
+        from membrane.ring import EmptyRingError
 
         sn = Supernode("sn-1")
         sn.add_node("node-a")

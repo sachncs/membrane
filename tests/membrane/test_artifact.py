@@ -1,7 +1,7 @@
 """Tests for Artifact memory object."""
 
 from membrane.artifact import Artifact
-from membrane.semantic_hash import compute_semantic_hash
+from membrane.semhash import compute_semantic_hash
 
 
 def test_artifact_creation():

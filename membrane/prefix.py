@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.fragmentation_engine import generate_embedding
-from membrane.structural_signature import StructuralSignature
+from membrane.fragmenter import generate_embedding
+from membrane.signature import StructuralSignature
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,7 @@ class Prefix:
 
     Example:
         >>> from membrane.prefix import Prefix
-        >>> from membrane.fragmentation_engine import (
+        >>> from membrane.fragmenter import (
         ...     compute_content_hash,
         ...     generate_embedding,
         ... )
@@ -186,4 +186,4 @@ class Prefix:
 # narrowly to F401 (imported but unused) because Delta is intentionally
 # re-exported; the E402 (import not at top of file) is intentional so
 # the comment block above can describe the re-export.
-from membrane.delta_encoder import Delta  # noqa: F401, E402
+from membrane.delta import Delta  # noqa: F401, E402

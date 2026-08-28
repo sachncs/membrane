@@ -2,10 +2,10 @@
 
 import pytest
 
-from membrane.cluster_replicator import ClusterReplicator
+from membrane.replicator import ClusterReplicator
 from membrane.fragment import Fragment
-from membrane.membrane_node import MembraneNode
-from membrane.structural_signature import StructuralSignature
+from membrane.node import MembraneNode
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash, size=10):

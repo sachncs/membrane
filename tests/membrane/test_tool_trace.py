@@ -1,7 +1,7 @@
 """Tests for ToolTrace memory object."""
 
-from membrane.fragmentation_engine import compute_content_hash
-from membrane.tool_trace import ToolTrace
+from membrane.fragmenter import compute_content_hash
+from membrane.trace import ToolTrace
 
 
 def test_tool_trace_creation():

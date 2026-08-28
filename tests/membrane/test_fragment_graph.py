@@ -1,6 +1,6 @@
 from membrane.fragment import Fragment
-from membrane.fragment_graph import FragmentGraph
-from membrane.structural_signature import StructuralSignature
+from membrane.graph import FragmentGraph
+from membrane.signature import StructuralSignature
 
 
 def test_add_node_and_edge():

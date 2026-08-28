@@ -19,11 +19,11 @@ submodules are implementation details and should not be imported
 directly by callers outside the package.
 """
 
-from membrane.network.cluster_manager import ClusterManager, PeerInfo
+from membrane.network.cluster import ClusterManager, PeerInfo
 from membrane.network.config import ClusterConfig
-from membrane.network.gossip_state import GossipState, PeerEndpoint
-from membrane.network.peer_client import PeerClient
-from membrane.network.remote_transfer import RemoteTransferService
+from membrane.network.gossip import GossipState, PeerEndpoint
+from membrane.network.peer import PeerClient
+from membrane.network.transfer import RemoteTransferService
 
 __all__ = [
     "ClusterConfig",

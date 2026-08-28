@@ -5,12 +5,12 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from membrane.compute.cpu_backend import CPUBackend
+from membrane.compute.cpu import CPUBackend
 from membrane.fragment import Fragment
-from membrane.membrane_node import MembraneNode
-from membrane.structural_signature import StructuralSignature
-from membrane.transfer_service import TransferService
-from membrane.transport.fastapi_server import FastAPIServer, create_app
+from membrane.node import MembraneNode
+from membrane.signature import StructuralSignature
+from membrane.transfer import TransferService
+from membrane.transport.fastapi import FastAPIServer, create_app
 
 
 def make_fragment(content_hash: str = "h1"):

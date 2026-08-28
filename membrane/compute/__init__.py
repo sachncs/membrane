@@ -28,8 +28,8 @@ keeping ``import membrane.compute`` fast in minimal
 installations.
 """
 
-from membrane.compute.backend import ComputeBackend
-from membrane.compute.cpu_backend import CPUBackend
+from membrane.compute.base import ComputeBackend
+from membrane.compute.cpu import CPUBackend
 
 __all__ = ["ComputeBackend", "CPUBackend"]
 

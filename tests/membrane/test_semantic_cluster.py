@@ -3,8 +3,8 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.semantic_cluster import SemanticCluster
-from membrane.structural_signature import StructuralSignature
+from membrane.clusters import SemanticCluster
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash, embedding):

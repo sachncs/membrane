@@ -3,10 +3,10 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.membrane_node import MembraneNode
-from membrane.origin_node import OriginNode
-from membrane.structural_signature import StructuralSignature
-from membrane.transfer_service import TransferService
+from membrane.node import MembraneNode
+from membrane.origin import OriginNode
+from membrane.signature import StructuralSignature
+from membrane.transfer import TransferService
 
 
 def make_fragment(content_hash, size=100):

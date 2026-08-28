@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane.session_tracker import Session, SessionTracker
+from membrane.sessions import Session, SessionTracker
 
 
 class TestSessionTracker:

@@ -1,4 +1,4 @@
-from membrane.co_access_index import CoAccessIndex
+from membrane.coaccess import CoAccessIndex
 
 
 def test_record_and_lookup():

@@ -1,12 +1,12 @@
 """Tests for FragmentationEngine."""
 
-from membrane.fragmentation_engine import (
+from membrane.fragmenter import (
     FragmentationConfig,
     FragmentationEngine,
     compute_content_hash,
     generate_embedding,
 )
-from membrane.structural_signature import StructuralSignature
+from membrane.signature import StructuralSignature
 
 
 def test_create_windows_produces_correct_spans():

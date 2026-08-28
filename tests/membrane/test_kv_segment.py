@@ -1,7 +1,7 @@
 """Tests for KVSegment memory object."""
 
-from membrane.fragmentation_engine import compute_content_hash
-from membrane.kv_segment import KVSegment
+from membrane.fragmenter import compute_content_hash
+from membrane.segment import KVSegment
 
 
 def test_kv_segment_creation():

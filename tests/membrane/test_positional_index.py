@@ -3,8 +3,8 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.positional_index import PositionalIndex
-from membrane.structural_signature import StructuralSignature
+from membrane.positions import PositionalIndex
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash, token_span, model_id="m"):

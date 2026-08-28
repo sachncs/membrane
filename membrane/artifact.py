@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.structural_signature import StructuralSignature
+from membrane.signature import StructuralSignature
 
 
 @dataclass(frozen=True)

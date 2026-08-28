@@ -22,7 +22,7 @@ from typing import Any
 
 from membrane.errors import SchemaError
 from membrane.fragment import Fragment
-from membrane.structural_signature import StructuralSignature
+from membrane.signature import StructuralSignature
 
 SCHEMA_VERSION: int = 1
 

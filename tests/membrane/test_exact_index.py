@@ -1,6 +1,6 @@
-from membrane.exact_index import ExactIndex
+from membrane.exacts import ExactIndex
 from membrane.fragment import Fragment
-from membrane.structural_signature import StructuralSignature
+from membrane.signature import StructuralSignature
 
 
 def test_index_and_lookup():

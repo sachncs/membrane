@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane.hash_ring import EmptyRingError, HashRing
+from membrane.ring import EmptyRingError, HashRing
 
 
 class TestHashRing:

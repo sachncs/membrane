@@ -17,11 +17,11 @@ over::
 from __future__ import annotations
 
 from membrane.fragment import Fragment
-from membrane.kv_segment import KVSegment
+from membrane.segment import KVSegment
 from membrane.network.config import ClusterConfig
-from membrane.network.gossip_state import GossipState, PeerEndpoint
-from membrane.structural_signature import StructuralSignature
-from membrane.transfer_service import TransferService
+from membrane.network.gossip import GossipState, PeerEndpoint
+from membrane.signature import StructuralSignature
+from membrane.transfer import TransferService
 
 __all__ = [
     "ClusterConfig",

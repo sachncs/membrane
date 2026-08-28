@@ -2,13 +2,13 @@
 
 import pytest
 
-from membrane.canonical_store import CanonicalStore
-from membrane.economic_router import EconomicRouter
-from membrane.global_directory import GlobalDirectory
-from membrane.index_system import IndexSystem
-from membrane.membrane_node import MembraneNode
+from membrane.canonical import CanonicalStore
+from membrane.economic import EconomicRouter
+from membrane.registry import GlobalDirectory
+from membrane.index import IndexSystem
+from membrane.node import MembraneNode
 from membrane.protocols import DirectoryProtocol, IndexProtocol, RouterProtocol, TransportProtocol
-from membrane.transfer_service import TransferService
+from membrane.transfer import TransferService
 
 
 def test_index_system_satisfies_index_protocol():

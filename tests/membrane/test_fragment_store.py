@@ -5,8 +5,8 @@ import time
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.fragment_store import FragmentStore
-from membrane.structural_signature import StructuralSignature
+from membrane.store import FragmentStore
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(

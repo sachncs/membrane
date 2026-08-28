@@ -2,8 +2,8 @@
 
 import pytest
 
-from membrane.distributed_directory import DistributedDirectory
-from membrane.hash_ring import HashRing
+from membrane.directory import DistributedDirectory
+from membrane.ring import HashRing
 from membrane.supernode import Supernode
 
 

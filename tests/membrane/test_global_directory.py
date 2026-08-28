@@ -1,9 +1,9 @@
 """Tests for GlobalDirectory."""
 
 from membrane.fragment import Fragment
-from membrane.global_directory import GlobalDirectory
-from membrane.membrane_node import MembraneNode
-from membrane.structural_signature import StructuralSignature
+from membrane.registry import GlobalDirectory
+from membrane.node import MembraneNode
+from membrane.signature import StructuralSignature
 
 
 def make_fragment(content_hash: str, size: int = 100) -> Fragment:
@@ -46,7 +46,7 @@ def test_locate_missing():
 
 
 def test_optimal_nodes_ranked_by_coverage():
-    from membrane.fragmentation_engine import FragmentationEngine
+    from membrane.fragmenter import FragmentationEngine
 
     gd = GlobalDirectory()
     n1 = MembraneNode("n1", max_memory_bytes=1_000_000)

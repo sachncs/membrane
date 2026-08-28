@@ -3,8 +3,8 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.structural_signature import StructuralSignature
-from membrane.tenant_isolation import TenantIsolation, TenantPolicy
+from membrane.signature import StructuralSignature
+from membrane.isolation import TenantIsolation, TenantPolicy
 
 
 def make_fragment(model_id="prefix", reuse_score=0.5):

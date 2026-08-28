@@ -4,14 +4,14 @@ import asyncio
 
 import pytest
 
-from membrane.async_prefill_dispatcher import (
+from membrane.prefill_async import (
     AsyncRemotePrefillDispatcher,
     PrefillFallbackError,
 )
 from membrane.fragment import Fragment
-from membrane.membrane_node import MembraneNode
-from membrane.prefill_adapter import PrefillAdapter, PrefillResult
-from membrane.structural_signature import StructuralSignature
+from membrane.node import MembraneNode
+from membrane.adapter import PrefillAdapter, PrefillResult
+from membrane.signature import StructuralSignature
 
 
 class EmptyFragmentAdapter(PrefillAdapter):

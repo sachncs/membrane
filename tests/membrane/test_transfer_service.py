@@ -1,9 +1,9 @@
 """Tests for TransferService."""
 
 from membrane.fragment import Fragment
-from membrane.membrane_node import MembraneNode
-from membrane.structural_signature import StructuralSignature
-from membrane.transfer_service import TransferService
+from membrane.node import MembraneNode
+from membrane.signature import StructuralSignature
+from membrane.transfer import TransferService
 
 
 def make_fragment(content_hash: str, size: int = 100) -> Fragment:

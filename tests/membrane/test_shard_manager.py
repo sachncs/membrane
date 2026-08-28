@@ -2,8 +2,8 @@
 
 import pytest
 
-from membrane.hash_ring import EmptyRingError, HashRing
-from membrane.shard_manager import ShardManager
+from membrane.ring import EmptyRingError, HashRing
+from membrane.shard import ShardManager
 
 
 class TestShardManager:

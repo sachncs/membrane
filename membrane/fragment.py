@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 from dataclasses import dataclass
 
-from membrane.structural_signature import StructuralSignature
+from membrane.signature import StructuralSignature
 
 
 @dataclass(frozen=True)
@@ -82,7 +82,7 @@ class Fragment:
 
     Example:
         >>> from membrane.fragment import Fragment
-        >>> from membrane.structural_signature import StructuralSignature
+        >>> from membrane.signature import StructuralSignature
         >>> sig = StructuralSignature(
         ...     model_id="llama-3-8b",
         ...     layer_range=(0, 32),

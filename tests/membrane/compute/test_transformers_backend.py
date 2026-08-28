@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from membrane.compute.transformers_backend import TransformersBackend
+from membrane.compute.transformers import TransformersBackend
 from membrane.fragment import Fragment
 
 # Skip the success-path test when torch is not installed. The

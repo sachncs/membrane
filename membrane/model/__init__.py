@@ -8,7 +8,7 @@ policies, and case-study evaluation from the paper:
 
 Modules:
 
-* :mod:`membrane.model.throughput_model` — Equations (1)–(6)
+* :mod:`membrane.model.throughput` — Equations (1)–(6)
   from the paper.
 * :mod:`membrane.model.profiler` — KV-size and prefill-time
   estimators built on top of the throughput model.

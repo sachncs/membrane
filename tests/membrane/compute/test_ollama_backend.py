@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from membrane.compute.ollama_backend import OllamaBackend
+from membrane.compute.ollama import OllamaBackend
 from membrane.fragment import Fragment
 
 

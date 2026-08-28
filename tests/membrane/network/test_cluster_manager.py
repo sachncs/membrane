@@ -1,7 +1,7 @@
 """Tests for ClusterManager."""
 
-from membrane.membrane_node import MembraneNode
-from membrane.network.cluster_manager import ClusterManager
+from membrane.node import MembraneNode
+from membrane.network.cluster import ClusterManager
 from membrane.network.config import ClusterConfig
 
 

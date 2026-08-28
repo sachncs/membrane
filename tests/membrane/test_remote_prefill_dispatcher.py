@@ -3,10 +3,10 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.membrane_node import MembraneNode
-from membrane.prefill_adapter import PrefillAdapter, PrefillResult
-from membrane.remote_prefill_dispatcher import RemotePrefillDispatcher
-from membrane.structural_signature import StructuralSignature
+from membrane.node import MembraneNode
+from membrane.adapter import PrefillAdapter, PrefillResult
+from membrane.prefill_remote import RemotePrefillDispatcher
+from membrane.signature import StructuralSignature
 
 
 class TestRemotePrefillDispatcher:

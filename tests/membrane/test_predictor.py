@@ -2,8 +2,8 @@
 
 import pytest
 
-from membrane.membrane_node import MembraneNode
-from membrane.predictor import Predictor
+from membrane.node import MembraneNode
+from membrane.predict import Predictor
 
 
 class TestPredictor:
