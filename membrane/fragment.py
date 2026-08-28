@@ -130,3 +130,26 @@ class Fragment:
             raise ValueError(f"Fragment reuse_score must be in [0, 1], got {self.reuse_score}")
         if self.version_id < 1:
             raise ValueError(f"Fragment version_id must be >= 1, got {self.version_id}")
+
+    def merge(self, other: "Fragment") -> "Fragment":
+        """Return the fragment with the higher ``version_id``.
+
+        Used during cluster convergence to resolve concurrent writes
+        under the AP merge policy: the larger version wins. Ties
+        (equal ``version_id``) prefer ``self`` for determinism.
+
+        Args:
+            other: The other fragment to merge with.
+
+        Returns:
+            Fragment: The fragment with the higher version_id.
+
+        Raises:
+            ValueError: If ``other.content_hash != self.content_hash``.
+        """
+        if other.content_hash != self.content_hash:
+            raise ValueError(
+                f"cannot merge fragments with different content_hash: "
+                f"{self.content_hash} vs {other.content_hash}"
+            )
+        return self if self.version_id >= other.version_id else other

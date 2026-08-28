@@ -100,7 +100,17 @@ from membrane.network.cluster import Cluster, PeerInfo
 from membrane.network.config import ClusterConfig
 from membrane.network.gossip import GossipState, PeerEndpoint
 from membrane.network.peer import Peer as PeerClient
+from membrane.network.strategy import (
+    EagerMigrator,
+    FailureDetector,
+    Migrator,
+    QuorumDetector,
+    RateLimitedMigrator,
+    ThresholdDetector,
+)
 from membrane.network.transfer import Transfer as RemoteTransfer
+from membrane.persistence.base import PersistenceBackend
+from membrane.persistence.cache import CachingPersistence
 from membrane.persistence.memory import Memory
 from membrane.persistence.redis import Redis
 from membrane.server import Server, ServerDiagnostics, ServerEvent
@@ -190,6 +200,7 @@ __all__ = [
     "GossipState",
     "Memory",
     "Node",
+    "PersistenceBackend",
     "Origin",
     "PeerClient",
     "PeerEndpoint",
@@ -210,10 +221,18 @@ __all__ = [
     "Weighted",
     # Compute
     "Backend",
+    "CachingPersistence",
     "CPU",
     "GPU",
     "Ollama",
     "OpenAI",
+    # Cluster strategies
+    "EagerMigrator",
+    "FailureDetector",
+    "Migrator",
+    "QuorumDetector",
+    "RateLimitedMigrator",
+    "ThresholdDetector",
     "Anthropic",
     "Transformers",
     # Decision classes

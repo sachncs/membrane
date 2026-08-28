@@ -171,11 +171,15 @@ class GossipState:
             current_nodes.update(nodes)
             merged_locations[h] = list(current_nodes)
 
-        # Inventory digest is overwritten by the other side; it
-        # represents the *other* node's own view of what it
-        # holds locally.
-        merged_digest = dict(self.inventory_digest)
-        merged_digest.update(other.inventory_digest)
+        # Inventory digest merge uses max(version_id) per fragment to
+        # converge under the AP merge policy. An entry is overwritten
+        # only when the incoming version_id is strictly higher; this
+        # avoids the LWW regression bug where a stale gossip message
+        # could roll a fresher local state backward.
+        merged_digest: dict[str, int] = dict(self.inventory_digest)
+        for h, version in other.inventory_digest.items():
+            if merged_digest.get(h, 0) < version:
+                merged_digest[h] = version
 
         return GossipState(
             node_id=self.node_id,
