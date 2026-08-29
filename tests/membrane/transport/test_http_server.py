@@ -10,6 +10,7 @@ from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.signature import Signature
 from membrane.transport.http import HTTPServer
+from tests.conftest import make_fragment
 
 
 class TestHTTPServer:

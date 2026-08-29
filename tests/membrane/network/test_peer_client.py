@@ -12,18 +12,7 @@ from membrane.fragment import Fragment
 from membrane.network.peer import Peer
 from membrane.serialization import to_dict
 from membrane.signature import Signature
-
-
-def make_fragment(content_hash="abc", embedding=(0.1, 0.2, 0.3)):
-    return Fragment(
-        content_hash=content_hash,
-        embedding=embedding,
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
-        size=10,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=1,
-    )
+from tests.conftest import make_fragment
 
 
 class TestPeerClient:

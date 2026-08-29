@@ -1,3 +1,5 @@
+from tests.conftest import make_fragment
+
 """Tests for cluster_replicator module."""
 
 import pytest
@@ -6,18 +8,6 @@ from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.replicator import Replicator
 from membrane.signature import Signature
-
-
-def make_fragment(content_hash, size=10):
-    return Fragment(
-        content_hash=content_hash,
-        embedding=(0.0,),
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
-        size=size,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=1,
-    )
 
 
 class TestClusterReplicator:

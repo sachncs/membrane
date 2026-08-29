@@ -15,18 +15,7 @@ from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.signature import Signature
 from membrane.transfer import TransferService
-
-
-def make_fragment(content_hash, size=10):
-    return Fragment(
-        content_hash=content_hash,
-        embedding=(0.0,),
-        structural_signature=Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1)),
-        size=size,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=1,
-    )
+from tests.conftest import make_fragment
 
 
 def _ship(prefill_result, source, target, transfer):

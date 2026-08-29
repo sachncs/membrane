@@ -1,3 +1,5 @@
+from tests.conftest import make_fragment
+
 """Tests for joint_optimizer module."""
 
 import pytest

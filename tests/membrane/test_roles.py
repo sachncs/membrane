@@ -1,3 +1,5 @@
+from tests.conftest import make_fragment
+
 """Tests for dynamic_role_manager module."""
 
 import pytest

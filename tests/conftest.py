@@ -2,9 +2,12 @@
 
 The previous test layout had 28 copies of a local ``make_fragment``
 helper scattered across the test tree. This conftest consolidates
-them into a single fixture and uses pytest's autouse hook to inject
-it as ``make_fragment(...)`` callable in every test module's
-namespace, preserving the existing call-site shape.
+them into a single factory function (``make_fragment``) that every
+test module imports explicitly. There is no autouse injection:
+each test file declares ``from tests.conftest import make_fragment``
+(or imports it via a shared helper) so the function name is visible
+to static analysis tools (ruff, mypy) and so test failures
+identify the failing fixture unambiguously.
 
 The factory supports several historical calling conventions:
 
@@ -21,13 +24,11 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from membrane.fragment import Fragment
 from membrane.signature import Signature
 
 
-def make_fragment_factory(*args: Any, **kwargs: Any) -> Fragment:
+def make_fragment(*args: Any, **kwargs: Any) -> Fragment:
     """Build a :class:`Fragment` with sensible test defaults.
 
     The factory dispatches on the *type* of the second positional
@@ -90,19 +91,4 @@ def make_fragment_factory(*args: Any, **kwargs: Any) -> Fragment:
     )
 
 
-@pytest.fixture(autouse=True)
-def inject_make_fragment_factory(request):
-    """Make ``make_fragment(...)`` available as a module-level callable.
-
-    Pytest doesn't have a built-in way to expose a fixture as a bare
-    function name (the standard pattern requires every test to declare
-    the fixture in its parameter list). This autouse fixture takes
-    a different route: it injects ``make_fragment`` into the test
-    module's namespace so callers can write ``make_fragment(...)``
-    directly without a fixture parameter.
-
-    Existing tests that already accept ``make_fragment`` as a
-    fixture parameter continue to work because pytest treats the
-    fixture name as available both ways.
-    """
-    request.module.make_fragment = make_fragment_factory
+__all__ = ["make_fragment"]

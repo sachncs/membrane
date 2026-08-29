@@ -1,3 +1,5 @@
+from tests.conftest import make_fragment
+
 """Integration tests for Membrane."""
 
 import pytest

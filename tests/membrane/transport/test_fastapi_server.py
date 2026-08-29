@@ -12,6 +12,7 @@ from membrane.serialization import to_dict
 from membrane.signature import Signature
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer, create_app
+from tests.conftest import make_fragment
 
 
 class TestFastAPIServer:

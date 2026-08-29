@@ -1,3 +1,5 @@
+from tests.conftest import make_fragment
+
 """Tests for redis_backend persistence."""
 
 import pytest

@@ -1,3 +1,5 @@
+from tests.conftest import make_fragment
+
 """Tests for Registry."""
 
 from membrane.fragment import Fragment

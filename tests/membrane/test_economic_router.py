@@ -1,3 +1,5 @@
+from tests.conftest import make_fragment
+
 """Tests for economic_router module."""
 
 import pytest
