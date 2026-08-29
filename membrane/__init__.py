@@ -116,7 +116,6 @@ from membrane.server import Server, ServerDiagnostics, ServerEvent
 from membrane.sessions import Session, Sessions
 from membrane.shard import Shard
 from membrane.signature import Signature
-from membrane.store import Store, StoreMetrics
 from membrane.supernode import Supernode
 from membrane.sync import DeltaSync, SyncPlan, SyncResult
 from membrane.telemetry import Telemetry
@@ -181,7 +180,6 @@ __all__ = [
     "Prefix",
     "Session",
     "Signature",
-    "StoreMetrics",
     "Trace",
     "VersionEntry",
     # Storage / indexes
@@ -193,7 +191,6 @@ __all__ = [
     "Graph",
     "Index",
     "Semantics",
-    "Store",
     "Tree",
     # Cluster / network
     "Cluster",
