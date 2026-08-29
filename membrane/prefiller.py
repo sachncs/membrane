@@ -1,10 +1,17 @@
-"""PrefillAsync: concurrent prefill dispatch with timeout and fallback.
+"""Prefiller: concurrent + synchronous prefill dispatch.
 
-This module defines :class:`PrefillAsync`, which
-races prefill requests across multiple candidate nodes and returns
-the first successful result. If every remote attempt fails or
-times out, the dispatcher falls back to a local prefill (if a
-local node is supplied).
+This module defines :class:`Prefiller`, the unified prefill
+dispatcher. Two modes are exposed:
+
+* :meth:`Prefiller.dispatch` — async; races prefill requests across
+  multiple candidate nodes and returns the first successful
+  result. Falls back to local prefill (if a local node is
+  supplied) when every remote attempt fails or times out.
+* :meth:`Prefiller.dispatch_sync` — sync; runs prefill on a single
+  pre-chosen target node. This is the synchronous counterpart
+  used when the dispatcher has already chosen a specific node
+  (e.g., for deterministic tests and for the Membrane transport
+  prefill route).
 
 The module also defines two exception types used by the
 dispatcher:
@@ -36,12 +43,15 @@ class NodePrefillError(Exception):
     """Raised internally when a single node's prefill attempt fails."""
 
 
-class PrefillAsync:
-    """Dispatches prefill requests concurrently to multiple candidate nodes.
+class Prefiller:
+    """Dispatches prefill requests, async across a race or sync to a fixed target.
 
-    Races remote nodes and returns the first successful result.
-    If all remote nodes fail or time out, falls back to local
-    prefill.
+    The async :meth:`dispatch` races remote nodes and returns the
+    first successful result. If all remote nodes fail or time out,
+    it falls back to local prefill.
+
+    The sync :meth:`dispatch_sync` runs prefill on a single chosen
+    target node and stores the resulting fragments there.
 
     In a real system the latency would be network RTT; here it
     is configurable via ``latency_provider`` for simulation.
@@ -49,8 +59,9 @@ class PrefillAsync:
     Attributes:
         prefill_adapter: Adapter that performs the actual
             prefill computation (CPU/GPU/Transformers/etc.).
-        timeout_seconds: Per-node timeout. A node that does not
-            respond in this window is treated as failed.
+        timeout_seconds: Per-node timeout for the async race. A
+            node that does not respond in this window is treated
+            as failed.
         latency_provider: Optional ``node_id -> latency_seconds``
             mapping used to simulate network latency in tests.
     """
@@ -241,3 +252,43 @@ class PrefillAsync:
         for frag in result.fragments:
             local_node.store(frag, is_primary=True)
         return result
+
+    def dispatch_sync(
+        self,
+        prompt_tokens: list[int],
+        model_id: str,
+        target_node: Node,
+    ) -> PrefillResult:
+        """Run prefill on a single pre-chosen target node.
+
+        Synchronous counterpart to :meth:`dispatch`. The target
+        node is chosen by the caller (this method does not race);
+        the resulting fragments are stored on the target as
+        non-primary replicas.
+
+        Args:
+            prompt_tokens: Input token IDs.
+            model_id: Model identifier.
+            target_node: Node chosen for prefill.
+
+        Returns:
+            PrefillResult: Fragments and prefill metadata after
+            each fragment is stored on the target as a
+            non-primary replica.
+
+        Raises:
+            NodePrefillError: When the adapter raises or returns
+                no fragments.
+        """
+        try:
+            result = self.prefill_adapter.prefill(prompt_tokens, model_id)
+        except Exception as exc:
+            raise NodePrefillError(f"Node {target_node.node_id} prefill failed: {exc}") from exc
+        if not result.fragments:
+            raise NodePrefillError(f"Node {target_node.node_id} returned empty fragments")
+        for frag in result.fragments:
+            target_node.store(frag, is_primary=False)
+        return result
+
+
+__all__ = ["PrefillFallbackError", "NodePrefillError", "Prefiller"]

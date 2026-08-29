@@ -18,7 +18,7 @@ from membrane.node import Node
 from membrane.offload import Offload
 from membrane.origin import Origin
 from membrane.policy import Promotion
-from membrane.prefill_remote import PrefillRemote
+from membrane.prefiller import Prefiller as PrefillRemote
 from membrane.replica import Replica
 from membrane.replicator import Replicator
 from membrane.ring import Ring
@@ -60,7 +60,7 @@ class TestMembraneIntegration:
         assert not decision.local_compute
 
         dispatcher = PrefillRemote()
-        result = dispatcher.dispatch(list(range(100)), "m", remote)
+        result = dispatcher.dispatch_sync(list(range(100)), "m", remote)
         assert result.kv_size > 0.0
 
     def test_phase_4_delta_roundtrip(self):

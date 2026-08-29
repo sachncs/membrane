@@ -92,8 +92,7 @@ from membrane.persistence.memory import Memory
 from membrane.persistence.redis import Redis
 from membrane.policy import Promotion, PromotionConfig, PromotionResult
 from membrane.predict import Predict
-from membrane.prefill_async import PrefillAsync
-from membrane.prefill_remote import PrefillRemote
+from membrane.prefiller import Prefiller
 from membrane.prefix import Prefix
 from membrane.reconstructor import Reconstructor, ReconstructorResult
 from membrane.registry import Registry
@@ -255,8 +254,7 @@ __all__ = [
     "FragmenterConfig",
     "KVCache",
     "LRUTracker",
-    "PrefillAsync",
-    "PrefillRemote",
+    "Prefiller",
     "Reconstructor",
     "ReconstructorResult",
     "Replicator",

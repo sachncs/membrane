@@ -20,7 +20,7 @@ from membrane.offload import Offload
 from membrane.origin import Origin
 from membrane.versions import Versions
 from membrane.policy import Promotion
-from membrane.prefill_remote import PrefillRemote
+from membrane.prefiller import Prefiller as PrefillRemote
 from membrane.replica import Replica
 from membrane.clusters import SemanticCluster
 from membrane.sessions import Sessions

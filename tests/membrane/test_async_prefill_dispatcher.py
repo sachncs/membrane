@@ -15,8 +15,10 @@ import pytest
 from membrane.adapter import Adapter, PrefillResult
 from membrane.fragment import Fragment
 from membrane.node import Node
-from membrane.prefill_async import (
-    PrefillAsync,
+from membrane.prefiller import (
+    Prefiller as PrefillAsync,
+)
+from membrane.prefiller import (
     PrefillFallbackError,
 )
 from membrane.signature import Signature

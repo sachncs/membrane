@@ -10,7 +10,7 @@ from membrane.fragment import Fragment
 from membrane.fragmenter import compute_content_hash
 from membrane.model.router import Router, RoutingDecision
 from membrane.node import Node
-from membrane.prefill_async import PrefillAsync
+from membrane.prefiller import Prefiller as PrefillAsync
 from membrane.signature import Signature
 
 
