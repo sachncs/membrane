@@ -1,30 +1,23 @@
-"""FailureDetector: strategy for cluster membership failure detection.
+"""FailureDetector and Migrator strategies for the cluster layer.
 
-The cluster layer used to inline a single threshold-based detector:
-a peer is removed after 4 missed heartbeats (~8s at default). That is
-fine for small clusters but produces false positives on transient
-hiccups and lacks quorum protection — a single buggy node can mark a
-healthy peer as failed.
+Two strategy interfaces are exposed:
 
-This module introduces two strategy implementations that share the
-:class:`FailureDetector` interface:
-
-* :class:`ThresholdDetector` — historical behavior, kept as the default
-  for backward compatibility.
-* :class:`QuorumDetector` — removes a peer only when ≥ ceil(N/2) + 1
-  healthy peers independently report it as missing. Stronger against
-  noise and split-brain mis-detections.
+* :class:`FailureDetector` — decides when a peer should be removed
+  from membership (threshold or quorum variants).
+* :class:`Migrator` — rebalances primaries after a peer leaves
+  (eager or rate-limited variants).
 
 Selection happens at :class:`~membrane.network.cluster.Cluster`
-construction via the ``failure_detector=...`` kwarg; the rest of the
-cluster loop machinery is unchanged.
+construction via the ``failure_detector=...`` and ``migrator=...``
+kwargs; the rest of the cluster loop machinery is unchanged.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
@@ -128,7 +121,16 @@ class Migrator:
 
     Selection happens at :class:`~membrane.network.cluster.Cluster`
     construction via the ``migrator=...`` kwarg.
+
+    Attributes:
+        transfer_fn: Callable that performs the actual transfer of
+            one content hash to a new owner. The signature is
+            ``(content_hash, leaving_peer) -> None``; implementations
+            are expected to update the shard table and call the
+            underlying :class:`TransferService` / :class:`Peer`.
     """
+
+    transfer_fn: Callable[[str, str], None] | None = None
 
     def migrations_per_second(self) -> float:
         """Return the configured migration rate.
@@ -144,6 +146,37 @@ class Migrator:
         if rate == float("inf") or rate <= 0:
             return 0.0
         return 1.0 / rate
+
+    def migrate(
+        self,
+        hashes: Iterable[str],
+        leaving_peer: str,
+    ) -> int:
+        """Reassign ``hashes`` away from ``leaving_peer``.
+
+        Concrete strategies may impose a rate limit; the default
+        (:class:`EagerMigrator`) migrates everything at once.
+
+        Args:
+            hashes: Iterable of content hashes currently owned by
+                ``leaving_peer``.
+            leaving_peer: Identifier of the peer being removed.
+
+        Returns:
+            int: Number of hashes migrated.
+        """
+        hashes_list = list(hashes)
+        if self.transfer_fn is None:
+            # No-op when no transfer function has been wired in.
+            return 0
+        migrated = 0
+        for h in hashes_list:
+            self.transfer_fn(h, leaving_peer)
+            migrated += 1
+            pause = self.delay()
+            if pause > 0:
+                time.sleep(pause)
+        return migrated
 
 
 @dataclass
@@ -172,9 +205,3 @@ __all__ = [
     "RateLimitedMigrator",
     "ThresholdDetector",
 ]
-
-
-# Suppress unused-import warning for ``time`` and ``field`` while keeping
-# them available for future use (e.g., cooldown timers in the
-# :class:`QuorumDetector`).
-_ = (time, field)

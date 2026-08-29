@@ -1,8 +1,11 @@
 """Tests for Cluster."""
 
+from membrane.fragment import Fragment
 from membrane.network.cluster import Cluster
 from membrane.network.config import ClusterConfig
+from membrane.network.strategy import EagerMigrator, RateLimitedMigrator
 from membrane.node import Node
+from membrane.signature import Signature
 
 
 class TestClusterManager:
@@ -95,3 +98,61 @@ class TestClusterManager:
         )
         assert result["node_id"] == "n1"
         assert len(mgr.get_peers()) == 1
+
+    def test_on_peer_leave_migrates_primaries_to_local(self):
+        """When a peer leaves, primaries it owned are migrated to the
+        local node by the configured Migrator."""
+        node = Node("n1", max_memory_bytes=10000)
+        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
+        mgr = Cluster(
+            "n1",
+            "127.0.0.1",
+            8080,
+            node,
+            cfg,
+            migrator=EagerMigrator(),
+        )
+        # Seed the shard table: leaving peer n2 is the primary of
+        # h-mig; n1 is already a replica.
+        mgr.shard_manager.primary_map["h-mig"] = "n2"
+        mgr.shard_manager.replica_map["h-mig"] = {"n1"}
+        # Seed a fragment on the local node so the migrator can
+        # promote it.
+        node.fragments["h-mig"] = Fragment(
+            content_hash="h-mig",
+            embedding=(0.0,),
+            structural_signature=Signature("m", (0, 1), (0, 0)),
+            size=10,
+            ttl=3600.0,
+            reuse_score=0.5,
+            version_id=1,
+        )
+
+        mgr.on_peer_leave("n2")
+
+        # Migrator re-homed the hash: n1 promoted to primary, n2 dropped from replicas.
+        assert mgr.shard_manager.primary_map["h-mig"] == "n1"
+        assert "n2" not in mgr.shard_manager.replica_map["h-mig"]
+        assert "h-mig" in node.primary_hashes
+
+    def test_on_peer_leave_uses_rate_limited_migrator(self):
+        """RateLimitedMigrator with max_per_second=10 takes ~0.1s for 1 hash."""
+        node = Node("n1", max_memory_bytes=10000)
+        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
+        mgr = Cluster(
+            "n1",
+            "127.0.0.1",
+            8080,
+            node,
+            cfg,
+            migrator=RateLimitedMigrator(max_per_second=10.0),
+        )
+        mgr.shard_manager.primary_map["h-rate"] = "n2"
+        mgr.shard_manager.replica_map["h-rate"] = {"n1"}
+        import time
+
+        start = time.monotonic()
+        mgr.on_peer_leave("n2")
+        elapsed = time.monotonic() - start
+        # 1 migration at 10/s = 0.1s sleep; allow some slack.
+        assert elapsed >= 0.05

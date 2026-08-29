@@ -34,7 +34,12 @@ from membrane.network.gossip_loop import Gossip
 from membrane.network.heartbeat import Heartbeat
 from membrane.network.membership import Membership, PeerInfo
 from membrane.network.peer import Peer
-from membrane.network.strategy import FailureDetector, Migrator, ThresholdDetector
+from membrane.network.strategy import (
+    EagerMigrator,
+    FailureDetector,
+    Migrator,
+    ThresholdDetector,
+)
 from membrane.node import Node
 from membrane.registry import Registry
 from membrane.replicator import Replicator
@@ -106,7 +111,13 @@ class Cluster:
         self.failure_detector = failure_detector or ThresholdDetector(
             failure_remove_threshold=config.failure_remove_threshold
         )
-        self.migrator = migrator
+        self.migrator = migrator or EagerMigrator()
+        # Wire the migrator to a transfer function that re-homes the
+        # leaving peer's primaries onto the local node. The function
+        # updates the shard table and the local Node's primary set
+        # in a single critical section so the cluster state stays
+        # consistent.
+        self.migrator.transfer_fn = self._migrate_primary
         self.heartbeat = Heartbeat(self.membership, config, self.stop_event, self.running)
         self.failure = Failure(
             self.membership,
@@ -229,8 +240,54 @@ class Cluster:
         return {"success": True, "peers": self.membership.to_json()}
 
     def on_peer_leave(self, node_id: str) -> None:
-        """Handle a ``POST /leave`` request."""
+        """Handle a ``POST /leave`` request.
+
+        Removes the peer from membership and triggers the configured
+        :class:`Migrator` to rebalance the leaving peer's primaries.
+        Migration is skipped when the migrator's transfer function is
+        unset (so tests that don't exercise migration don't need to
+        wire it).
+        """
         self.remove_peer(node_id)
+        # The leaving peer may still own primaries in the local shard
+        # table; collect them so the migrator can re-home them.
+        leaving_hashes = {h for h, primary in self.shard_manager.primary_map.items() if primary == node_id}
+        if self.migrator is not None and leaving_hashes:
+            try:
+                self.migrator.migrate(leaving_hashes, node_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "migrator.migrate(%d hashes, leaving=%s) failed: %s",
+                    len(leaving_hashes),
+                    node_id,
+                    exc,
+                )
+
+    def _migrate_primary(self, content_hash: str, leaving_peer: str) -> None:
+        """Re-home ``content_hash`` from ``leaving_peer`` to the local node.
+
+        Used as the default ``Migrator.transfer_fn``. Promotes the
+        local node to primary owner of the hash; updates the shard
+        table to drop the leaving peer from the replica set.
+        """
+        shard = self.shard_manager
+        # Drop the leaving peer from the replica set and add the
+        # local node if it isn't already there.
+        replicas = shard.replica_map.get(content_hash, set())
+        if leaving_peer in replicas:
+            replicas.discard(leaving_peer)
+        if self.node_id not in replicas and self.node_id != leaving_peer:
+            replicas.add(self.node_id)
+        # Promote the local node to primary for this hash.
+        shard.primary_map[content_hash] = self.node_id
+        if content_hash in self.node.fragments:
+            self.node.primary_hashes.add(content_hash)
+        logger.debug(
+            "migrated %s from %s to local (%s)",
+            content_hash,
+            leaving_peer,
+            self.node_id,
+        )
 
     def on_heartbeat(self, node_id: str) -> dict[str, Any]:
         """Handle a ``POST /heartbeat`` request."""
