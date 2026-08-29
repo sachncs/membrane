@@ -92,6 +92,14 @@ class PrefillAsync:
         fails or times out, the dispatcher falls back to
         :meth:`local_prefill` when a ``local_node`` is provided.
 
+        The dispatcher consults the
+        :class:`~membrane.adapter.Adapter` to produce a
+        :class:`~membrane.model.router.RoutingDecision` before
+        racing. A ``target="pd-p"`` decision skips the remote
+        race entirely and goes straight to the local node (if
+        provided); a ``target="membrane"`` decision races the
+        candidates as usual.
+
         Args:
             prompt_tokens: Input token IDs.
             model_id: Model identifier.
@@ -106,6 +114,29 @@ class PrefillAsync:
             PrefillFallbackError: When no remote candidate
             succeeds and no local fallback is available.
         """
+        # Honor the analytical routing decision when the adapter
+        # has a router configured. A target="pd-p" decision means
+        # the analytical model judged local compute sufficient; we
+        # skip the remote race and serve locally. The check is
+        # gated on a configured router so adapters that only
+        # produce fragments (and don't return a routing decision)
+        # are not perturbed.
+        if self.prefill_adapter.router is not None:
+            try:
+                decision_result = self.prefill_adapter.prefill(prompt_tokens, model_id)
+                if (
+                    decision_result.routing_decision is not None
+                    and decision_result.routing_decision.target == "pd-p"
+                    and local_node is not None
+                ):
+                    for frag in decision_result.fragments:
+                        local_node.store(frag, is_primary=True)
+                    return decision_result
+                # Decision absent, target != 'pd-p', or no local
+                # node: fall through to the race.
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("analytical prefill for routing decision failed: %s", exc)
+
         if not candidate_nodes:
             if local_node is None:
                 raise PrefillFallbackError("No candidate nodes and no local fallback")
