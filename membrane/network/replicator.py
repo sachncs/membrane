@@ -52,7 +52,7 @@ class Replicator:
         self.config = config
         self.stop_event = stop_event
         self.running = running
-        self._sem = threading.Semaphore(max_concurrent) if max_concurrent > 0 else None
+        self.semaphore = threading.Semaphore(max_concurrent) if max_concurrent > 0 else None
 
     def loop(self) -> None:
         """Push every primary hash to each missing replica."""
@@ -65,10 +65,10 @@ class Replicator:
                 for peer_id in replicas:
                     if peer_id == self.node.node_id:
                         continue
-                    self._push_one(h, peer_id)
+                    self.push_one(h, peer_id)
             self.stop_event.wait(timeout=self.config.gossip_interval_sec)
 
-    def _push_one(self, content_hash: str, peer_id: str) -> None:
+    def push_one(self, content_hash: str, peer_id: str) -> None:
         """Push a single fragment to a peer (no-op if it already has it)."""
         client = self.membership.get_client(peer_id)
         if client is None:
@@ -88,10 +88,10 @@ class Replicator:
                     "Replication of %s to %s failed: %s", content_hash, peer_id, exc
                 )
 
-        if self._sem is None:
+        if self.semaphore is None:
             do_push()
         else:
-            with self._sem:
+            with self.semaphore:
                 do_push()
 
 

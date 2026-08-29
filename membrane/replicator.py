@@ -3,7 +3,7 @@
 This module defines :class:`Replicator`, a helper that
 replicates a *set* of fragments (typically the contents of a
 connected component discovered via
-:class:`~membrane.subgraph_retrieval._SubgraphRetrieval`) from a
+:class:`~membrane.subgraph_retrieval.SubgraphRetrieval`) from a
 source node to multiple target nodes.
 
 The replicator is intentionally thin: it delegates every fragment

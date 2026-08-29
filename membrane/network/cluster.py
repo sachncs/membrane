@@ -17,7 +17,7 @@ Threading:
     * Membership mutations are protected by the
       :class:`~membrane.network.membership.Membership` lock.
     * Background loops run as daemon threads; they are stopped by
-      :meth:`stop` (which sets ``_stop_event`` and joins each thread
+      :meth:`stop` (which sets ``stop_event`` and joins each thread
       with a short timeout).
 """
 
@@ -94,9 +94,9 @@ class Cluster:
 
         # Lifecycle state — must be initialized before subsystem
         # composition so subsystem constructors can reference them.
-        self._running: list[bool] = [False]
-        self._stop_event = threading.Event()
-        self._threads: list[threading.Thread] = []
+        self.running: list[bool] = [False]
+        self.stop_event = threading.Event()
+        self.threads: list[threading.Thread] = []
 
         # Composed subsystems.
         self.membership = Membership(
@@ -109,12 +109,12 @@ class Cluster:
             failure_remove_threshold=config.failure_remove_threshold
         )
         self.migrator = migrator
-        self.heartbeat = Heartbeat(self.membership, config, self._stop_event, self._running)
+        self.heartbeat = Heartbeat(self.membership, config, self.stop_event, self.running)
         self.failure = Failure(
             self.membership,
             config,
-            self._stop_event,
-            self._running,
+            self.stop_event,
+            self.running,
             detector=self.failure_detector,
         )
         self.gossip = Gossip(
@@ -122,21 +122,21 @@ class Cluster:
             node,
             config,
             self.directory,
-            self._stop_event,
-            self._running,
+            self.stop_event,
+            self.running,
         )
         self.replicator = Replicator(
             self.membership,
             self.shard_manager,
             node,
             config,
-            self._stop_event,
-            self._running,
+            self.stop_event,
+            self.running,
         )
 
-        self._running: list[bool] = [False]
-        self._stop_event = threading.Event()
-        self._threads: list[threading.Thread] = []
+        self.running: list[bool] = [False]
+        self.stop_event = threading.Event()
+        self.threads: list[threading.Thread] = []
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -150,14 +150,14 @@ class Cluster:
         replication threads are started only when the
         corresponding ``config.enable_*`` flag is set.
         """
-        self._running[0] = True
-        self._stop_event.clear()
+        self.running[0] = True
+        self.stop_event.clear()
 
         # Bootstrap is one-shot; we still launch it as a thread so
         # it never blocks startup. The thread exits as soon as the
         # loop body completes (or when stop_event is set).
         loops = [
-            (self._bootstrap, "bootstrap"),
+            (self.bootstrap_loop, "bootstrap"),
             (self.heartbeat.loop, "heartbeat"),
             (self.failure.loop, "failure-detection"),
         ]
@@ -169,30 +169,30 @@ class Cluster:
         for target, name in loops:
             t = threading.Thread(target=target, daemon=True, name=f"membrane-{name}")
             t.start()
-            self._threads.append(t)
+            self.threads.append(t)
 
         logger.info("Cluster started with %s background threads", len(loops))
 
     def stop(self) -> None:
         """Signal all background threads to exit.
 
-        Sets ``_running`` to ``False`` and ``_stop_event``, then
+        Sets ``running`` to ``False`` and ``stop_event``, then
         joins each background thread with a short timeout. Threads
         that do not terminate within the timeout remain alive
         (they are daemon threads, so they will not block process
         exit).
         """
-        self._running[0] = False
-        self._stop_event.set()
-        for t in self._threads:
+        self.running[0] = False
+        self.stop_event.set()
+        for t in self.threads:
             t.join(timeout=2.0)
         logger.info("Cluster stopped")
 
     def join(self) -> None:
         """Block until :meth:`stop` is called."""
-        self._stop_event.wait()
+        self.stop_event.wait()
 
-    def _bootstrap(self) -> None:
+    def bootstrap_loop(self) -> None:
         """One-shot bootstrap wrapper for the daemon thread."""
         bootstrap(self.membership, self.config, self.node_id, self.host, self.port)
 

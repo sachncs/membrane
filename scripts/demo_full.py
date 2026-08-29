@@ -26,7 +26,7 @@ from membrane.replica import Replica
 from membrane.clusters import SemanticCluster
 from membrane.sessions import Sessions
 from membrane.signature import Signature
-from membrane._subgraph_retrieval import _SubgraphRetrieval
+from membrane.graph import SubgraphRetrieval
 from membrane.supernode import Supernode
 from membrane.isolation import Isolation, Tenant
 from membrane.density import density
@@ -105,7 +105,7 @@ def main():
     g = Weighted()
     g.add_weighted_edge("a", "b", "next", 0.9)
     g.add_weighted_edge("b", "c", "next", 0.9)
-    sr = _SubgraphRetrieval(g)
+    sr = SubgraphRetrieval(g)
     comp = sr.retrieve_component("a", min_weight=0.5, max_depth=2)
     logger.info(f"  Component from a: {comp}")
     source = Node("source")

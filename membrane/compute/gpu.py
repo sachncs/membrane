@@ -51,22 +51,22 @@ class GPU(Backend):
 
     def __init__(self) -> None:
         """Probe the runtime and select GPU or CPU fallback."""
-        self._torch = None
-        self._device: str | None = None
-        self._fallback: CPU | None = None
+        self.torch = None
+        self.gpu_device: str | None = None
+        self.fallback: CPU | None = None
         try:
             import torch
 
             if torch.cuda.is_available():
-                self._torch = torch
-                self._device = "cuda"
+                self.torch = torch
+                self.gpu_device = "cuda"
                 logger.info("GPU: using %s", torch.cuda.get_device_name(0))
             else:
                 logger.warning("GPU: CUDA unavailable, will use fallback")
-                self._fallback = CPU()
+                self.fallback = CPU()
         except ImportError:
             logger.warning("GPU: torch not installed, using CPU fallback")
-            self._fallback = CPU()
+            self.fallback = CPU()
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Run prefill on GPU (or fallback to CPU).
@@ -79,11 +79,11 @@ class GPU(Backend):
             list[Fragment]: One fragment per window. Returns
             the CPU backend's output when GPU is unavailable.
         """
-        if self._fallback is not None:
-            return self._fallback.prefill(prompt_tokens, model_id)
+        if self.fallback is not None:
+            return self.fallback.prefill(prompt_tokens, model_id)
 
         # GPU simulation: create tensors and simulate KV generation.
-        assert self._torch is not None
+        assert self.torch is not None
         window_size = 128
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
@@ -93,7 +93,7 @@ class GPU(Backend):
             # sum() forces a synchronous kernel launch so the
             # simulator actually exercises the GPU even when no
             # real model is loaded.
-            t = self._torch.tensor(chunk, device=self._device)
+            t = self.torch.tensor(chunk, device=self.gpu_device)
             _ = t.sum().item()
             frag = Fragment(
                 content_hash=h,
@@ -113,7 +113,7 @@ class GPU(Backend):
             "GPU: prefill %s tokens into %s fragments on %s",
             len(prompt_tokens),
             len(fragments),
-            self._device,
+            self.gpu_device,
         )
         return fragments
 
@@ -129,8 +129,8 @@ class GPU(Backend):
             dict: ``{"text": ..., "tokens": [...]}``. Falls back
             to the CPU backend's stub when GPU is unavailable.
         """
-        if self._fallback is not None:
-            return self._fallback.generate(prompt_tokens, model_id, max_tokens)
+        if self.fallback is not None:
+            return self.fallback.generate(prompt_tokens, model_id, max_tokens)
         return {"text": "", "tokens": []}
 
     def available(self) -> bool:
@@ -140,7 +140,7 @@ class GPU(Backend):
             bool: True when the backend is using CUDA, False
             when it has fallen back to CPU.
         """
-        return self._fallback is None
+        return self.fallback is None
 
     def device_name(self) -> str:
         """Return the active device name.
@@ -150,6 +150,6 @@ class GPU(Backend):
             fallback string of the form
             ``"gpu_fallback(cpu)"`` otherwise.
         """
-        if self._fallback is not None:
-            return f"gpu_fallback({self._fallback.device_name()})"
-        return str(self._device)
+        if self.fallback is not None:
+            return f"gpu_fallback({self.fallback.device_name()})"
+        return str(self.gpu_device)

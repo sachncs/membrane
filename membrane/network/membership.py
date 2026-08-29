@@ -87,9 +87,9 @@ class Membership:
         self.shard = shard
         self.directory = directory or Registry()
 
-        self._peers: dict[str, PeerInfo] = {}
-        self._clients: dict[str, Peer] = {}
-        self._lock = threading.RLock()
+        self.peers: dict[str, PeerInfo] = {}
+        self.clients: dict[str, Peer] = {}
+        self.lock = threading.RLock()
 
     def add(self, node_id: str, host: str, port: int) -> None:
         """Add or update a peer.
@@ -101,28 +101,28 @@ class Membership:
             host: Peer host.
             port: Peer port.
         """
-        with self._lock:
+        with self.lock:
             if node_id == self.node_id:
                 return
-            if node_id in self._peers:
-                self._peers[node_id].host = host
-                self._peers[node_id].port = port
+            if node_id in self.peers:
+                self.peers[node_id].host = host
+                self.peers[node_id].port = port
                 return
-            self._peers[node_id] = PeerInfo(
+            self.peers[node_id] = PeerInfo(
                 node_id=node_id, host=host, port=port, last_heartbeat=time.time()
             )
-            self._clients[node_id] = Peer(f"http://{host}:{port}")
+            self.clients[node_id] = Peer(f"http://{host}:{port}")
             self.ring.add_node(node_id)
             self.shard.add_node(node_id)
             logger.info("Added peer %s at %s:%s", node_id, host, port)
 
     def remove(self, node_id: str) -> bool:
         """Remove a peer; return True when it was registered."""
-        with self._lock:
-            if node_id not in self._peers:
+        with self.lock:
+            if node_id not in self.peers:
                 return False
-            del self._peers[node_id]
-            self._clients.pop(node_id, None)
+            del self.peers[node_id]
+            self.clients.pop(node_id, None)
             self.ring.remove_node(node_id)
             self.shard.remove_node(node_id)
             self.directory.unregister_node(node_id)
@@ -131,42 +131,42 @@ class Membership:
 
     def snapshot(self) -> list[PeerInfo]:
         """Return a copy of the membership list."""
-        with self._lock:
-            return list(self._peers.values())
+        with self.lock:
+            return list(self.peers.values())
 
     def find(self, node_id: str) -> PeerInfo | None:
         """Return the PeerInfo for ``node_id`` or None."""
-        with self._lock:
-            return self._peers.get(node_id)
+        with self.lock:
+            return self.peers.get(node_id)
 
     def get_client(self, node_id: str) -> Peer | None:
         """Return the cached HTTP client for a peer."""
-        with self._lock:
-            return self._clients.get(node_id)
+        with self.lock:
+            return self.clients.get(node_id)
 
     def get_url(self, node_id: str) -> str | None:
         """Return ``http://<host>:<port>`` for a peer, or None."""
-        with self._lock:
-            p = self._peers.get(node_id)
+        with self.lock:
+            p = self.peers.get(node_id)
             return f"http://{p.host}:{p.port}" if p else None
 
     def healthy(self) -> list[PeerInfo]:
         """Return the list of currently healthy peers."""
-        with self._lock:
-            return [p for p in self._peers.values() if p.healthy]
+        with self.lock:
+            return [p for p in self.peers.values() if p.healthy]
 
     def to_json(self) -> list[dict[str, Any]]:
         """Return a JSON-serializable snapshot of membership."""
-        with self._lock:
-            return [p.to_json() for p in self._peers.values()]
+        with self.lock:
+            return [p.to_json() for p in self.peers.values()]
 
     def record_heartbeat(self, node_id: str) -> None:
         """Reset heartbeat counters for ``node_id``.
 
         No-op when the peer is unknown.
         """
-        with self._lock:
-            p = self._peers.get(node_id)
+        with self.lock:
+            p = self.peers.get(node_id)
             if p is None:
                 return
             p.last_heartbeat = time.time()
@@ -176,15 +176,15 @@ class Membership:
 
     def record_miss(self, node_id: str) -> None:
         """Increment the missed-heartbeat counter for ``node_id``."""
-        with self._lock:
-            p = self._peers.get(node_id)
+        with self.lock:
+            p = self.peers.get(node_id)
             if p is not None:
                 p.missed_heartbeats += 1
 
     def mark_suspect(self, node_id: str) -> bool:
         """Mark ``node_id`` as suspect. Returns True on transition."""
-        with self._lock:
-            p = self._peers.get(node_id)
+        with self.lock:
+            p = self.peers.get(node_id)
             if p is None or p.suspect:
                 return False
             p.suspect = True

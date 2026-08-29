@@ -1,10 +1,10 @@
-from membrane._graph_manager import _GraphManager
+from membrane.graph import GraphManager
 from membrane.fragment import Fragment
 from membrane.signature import Signature
 
 
 def test_register_and_prefetch():
-    gm = _GraphManager()
+    gm = GraphManager()
     sig = Signature("m", (0, 1), (0, 10))
     frag = Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1)
     gm.register(frag)
@@ -14,7 +14,7 @@ def test_register_and_prefetch():
 
 
 def test_suggest_prefetch_limit():
-    gm = _GraphManager()
+    gm = GraphManager()
     sig = Signature("m", (0, 1), (0, 10))
     for i in range(20):
         gm.register(Fragment(f"h{i}", (0.1,), sig, 10, 60.0, 0.5, 1))
@@ -24,7 +24,7 @@ def test_suggest_prefetch_limit():
 
 
 def test_eviction_candidates():
-    gm = _GraphManager()
+    gm = GraphManager()
     sig = Signature("m", (0, 1), (0, 10))
     gm.register(Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1))
     gm.link("h1", "h2", "co_access")

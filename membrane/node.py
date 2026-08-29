@@ -7,7 +7,7 @@ plane node that hosts fragments on a single machine. It owns:
   ``content_hash``.
 * An :class:`~membrane.index_system.Index` that maintains
   the four in-memory indexes for the fragments it holds.
-* A :class:`~membrane.graph_manager._GraphManager` used during
+* A :class:`~membrane.graph_manager.GraphManager` used during
   graph-aware eviction.
 
 The node enforces a ``max_memory_bytes`` budget and supports three
@@ -39,7 +39,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from membrane._graph_manager import _GraphManager
+from membrane.graph import GraphManager
 from membrane.fragment import Fragment
 from membrane.index import Index
 
@@ -72,7 +72,7 @@ class Node:
 
     Supports TTL expiry, LRU eviction weighted by ``reuse_score``,
     and graph-aware co-eviction via an owned
-    :class:`_GraphManager`.
+    :class:`GraphManager`.
 
     All public methods are thread-safe via an internal
     :class:`threading.RLock`.
@@ -83,7 +83,7 @@ class Node:
         node_id: str,
         max_memory_bytes: int = 1 << 30,
         index_system: Index | None = None,
-        graph_manager: _GraphManager | None = None,
+        graph_manager: GraphManager | None = None,
     ) -> None:
         """Initialize the node.
 
@@ -98,14 +98,14 @@ class Node:
         self.node_id = node_id
         self.max_memory_bytes = max_memory_bytes
         self.index_system = index_system or Index()
-        self.graph_manager = graph_manager or _GraphManager()
+        self.graph_manager = graph_manager or GraphManager()
 
         self.fragments: dict[str, Fragment] = {}
         self.primary_hashes: set[str] = set()
         self.access_times: dict[str, float] = {}
         self.insertion_times: dict[str, float] = {}
         self.memory_usage: int = 0
-        self._lock = threading.RLock()
+        self.lock = threading.RLock()
         logger.info("Initialized node %s with %s bytes", node_id, max_memory_bytes)
 
     def store(self, fragment: Fragment, is_primary: bool = True) -> bool:
@@ -136,7 +136,7 @@ class Node:
             )
             return False
 
-        with self._lock:
+        with self.lock:
             now = time.time()
 
             if fragment.content_hash not in self.fragments:
@@ -185,7 +185,7 @@ class Node:
             Fragment | None: The fragment if present and not
             expired, otherwise ``None``.
         """
-        with self._lock:
+        with self.lock:
             fragment = self.fragments.get(content_hash)
             if fragment is None:
                 return None
@@ -216,7 +216,7 @@ class Node:
         Returns:
             Fragment: The removed fragment.
         """
-        with self._lock:
+        with self.lock:
             frag = self.fragments.pop(content_hash)
             self.memory_usage -= frag.size
             self.primary_hashes.discard(content_hash)
@@ -239,7 +239,7 @@ class Node:
             tuple[list[str], int]: ``(evicted_hashes, freed_bytes)``.
             Stops as soon as ``freed_bytes >= target_bytes``.
         """
-        with self._lock:
+        with self.lock:
             evicted: list[str] = []
             freed = 0
             expired = [h for h, frag in self.fragments.items() if now - self.insertion_times.get(h, now) > frag.ttl]
@@ -268,7 +268,7 @@ class Node:
         Returns:
             tuple[list[str], int]: ``(evicted_hashes, freed_bytes)``.
         """
-        with self._lock:
+        with self.lock:
             evicted: list[str] = []
             freed = 0
             candidates = [(h, frag) for h, frag in self.fragments.items() if h not in already_evicted]
@@ -301,7 +301,7 @@ class Node:
 
         For every seed hash evicted in earlier phases, look up its
         structural neighbors via
-        :meth:`_GraphManager.eviction_candidates` and remove any
+        :meth:`GraphManager.eviction_candidates` and remove any
         neighbor that is still resident on this node.
 
         Args:
@@ -311,7 +311,7 @@ class Node:
         Returns:
             tuple[list[str], int]: ``(evicted_hashes, freed_bytes)``.
         """
-        with self._lock:
+        with self.lock:
             evicted: list[str] = []
             freed = 0
             for h in list(seed_hashes):
@@ -357,7 +357,7 @@ class Node:
         if target_bytes <= 0:
             return []
 
-        with self._lock:
+        with self.lock:
             now = current_time if current_time is not None else time.time()
             evicted_hashes: list[str] = []
             freed = 0
@@ -390,7 +390,7 @@ class Node:
         Returns:
             int: Bytes currently occupied by stored fragments.
         """
-        with self._lock:
+        with self.lock:
             return self.memory_usage
 
     def get_shard_hashes(self) -> set[str]:
@@ -399,7 +399,7 @@ class Node:
         Returns:
             set[str]: Defensive copy of the primary shard set.
         """
-        with self._lock:
+        with self.lock:
             return set(self.primary_hashes)
 
     def heartbeat(self) -> float:
@@ -423,7 +423,7 @@ class Node:
             Stats: Snapshot of memory usage and fragment
             counts at call time.
         """
-        with self._lock:
+        with self.lock:
             return Stats(
                 memory_used_bytes=self.memory_usage,
                 memory_limit_bytes=self.max_memory_bytes,

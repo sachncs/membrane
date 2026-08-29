@@ -186,7 +186,7 @@ class HTTPServer:
         self.compute_backend = compute_backend
         self.transfer_service = transfer_service or TransferService()
         self.cluster_manager = cluster_manager
-        self._server: StdlibServer | None = None
+        self.server: StdlibServer | None = None
 
     def start(self) -> None:
         """Start the HTTP server (blocking).
@@ -196,7 +196,7 @@ class HTTPServer:
         :meth:`stop` from another thread to terminate the serve
         loop.
         """
-        self._server = StdlibServer(
+        self.server = StdlibServer(
             (self.host, self.port),
             Handler,
             node=self.node,
@@ -205,15 +205,15 @@ class HTTPServer:
             cluster_manager=self.cluster_manager,
         )
         logger.info("HTTP server listening on http://%s:%s", self.host, self.port)
-        self._server.serve_forever()
+        self.server.serve_forever()
 
     def stop(self) -> None:
         """Stop the HTTP server.
 
         No-op when the server was never started.
         """
-        if self._server:
-            self._server.shutdown()
+        if self.server:
+            self.server.shutdown()
             logger.info("HTTP server stopped")
 
     def run_in_thread(self) -> None:

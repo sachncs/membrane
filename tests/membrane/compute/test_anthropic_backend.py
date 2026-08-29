@@ -29,7 +29,7 @@ class TestAnthropicBackend:
         mock_resp.raise_for_status = MagicMock()
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
-        backend._client = mock_client
+        backend.client = mock_client
 
         result = backend.generate([1, 2], "m")
         assert result["text"] == "hello"
@@ -38,7 +38,7 @@ class TestAnthropicBackend:
         mock_client = MagicMock()
         # Simulate a network timeout.
         mock_client.post.side_effect = httpx.TimeoutException("timeout")
-        backend._client = mock_client
+        backend.client = mock_client
 
         result = backend.generate([1, 2], "m")
         assert result["text"] == ""
@@ -48,12 +48,12 @@ class TestAnthropicBackend:
         mock_resp.status_code = 200
         mock_client = MagicMock()
         mock_client.get.return_value = mock_resp
-        backend._client = mock_client
+        backend.client = mock_client
         assert backend.available() is True
 
     def test_available_when_unhealthy(self, backend):
         mock_client = MagicMock()
         # Simulate a network timeout during the availability probe.
         mock_client.get.side_effect = httpx.TimeoutException("timeout")
-        backend._client = mock_client
+        backend.client = mock_client
         assert backend.available() is False

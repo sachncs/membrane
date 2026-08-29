@@ -4,14 +4,14 @@ This module defines :class:`Index`, a thin aggregate that
 coordinates the four specialized index structures that ship with
 Membrane:
 
-* :class:`~membrane.exact_index.Exacts` — primary
+* :class:`~membrane.exacts.Exacts` — primary
   ``content_hash`` lookup with replica tracking.
-* :class:`~membrane.semantic_index.Semantics` — embedding-based
+* :class:`~membrane.semantics.Semantics` — embedding-based
   similarity search.
-* :class:`~membrane.positional_index._PositionalIndex` — token-span
-  overlap and adjacency queries.
-* :class:`~membrane.co_access_index.Coaccess` — undirected
-  graph of fragments accessed together.
+* :class:`~membrane.tree.Tree` — token-span overlap and adjacency
+  queries (AVL interval tree).
+* :class:`~membrane.coaccess.Coaccess` — undirected graph of
+  fragments accessed together.
 
 The facade ensures that *every* sub-index stays in sync whenever a
 fragment is inserted or removed, and exposes a single set of
@@ -40,8 +40,8 @@ from collections.abc import Sequence
 from membrane.coaccess import Coaccess
 from membrane.exacts import Exacts, IndexEntry
 from membrane.fragment import Fragment
-from membrane.positions import _PositionalIndex
 from membrane.semantics import Semantics
+from membrane.tree import Tree
 
 
 class Index:
@@ -62,7 +62,7 @@ class Index:
         logger.info("Initialized %s", self.__class__.__name__)
         self.exact = Exacts()
         self.semantic = Semantics()
-        self.positional = _PositionalIndex()
+        self.positional = Tree()
         self.co_access = Coaccess()
 
     def insert(self, fragment: Fragment, locations: set[str]) -> None:

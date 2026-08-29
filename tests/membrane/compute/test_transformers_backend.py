@@ -20,19 +20,19 @@ class TestTransformersBackend:
 
     def test_device_name_unloaded(self):
         backend = Transformers(model_id="gpt2")
-        backend._model = None
+        backend.model = None
         assert backend.device_name() == "transformers(unloaded)"
 
     def test_prefill_simulation_when_model_none(self):
         backend = Transformers(model_id="gpt2")
-        backend._model = None
+        backend.model = None
         frags = backend.prefill([1, 2, 3, 4], "m")
         assert len(frags) == 1
         assert frags[0].embedding == (0.0, 4.0)
 
     def test_generate_when_model_none(self):
         backend = Transformers(model_id="gpt2")
-        backend._model = None
+        backend.model = None
         result = backend.generate([1, 2], "m")
         assert result["text"] == ""
 
@@ -53,9 +53,9 @@ class TestTransformersBackend:
         mock_tokenizer.decode.return_value = "hello world"
         mock_tokenizer.return_value = {"input_ids": MagicMock(shape=[1, 2])}
 
-        backend._model = mock_model
-        backend._tokenizer = mock_tokenizer
-        backend._actual_device = "cpu"
+        backend.model = mock_model
+        backend.tokenizer = mock_tokenizer
+        backend.actual_device = "cpu"
 
         result = backend.generate([1, 2], "m")
         assert result["text"] == "hello world"
@@ -63,11 +63,11 @@ class TestTransformersBackend:
 
     def test_available_when_loaded(self):
         backend = Transformers(model_id="gpt2")
-        backend._model = MagicMock()
-        backend._tokenizer = MagicMock()
+        backend.model = MagicMock()
+        backend.tokenizer = MagicMock()
         assert backend.available() is True
 
     def test_available_when_unloaded(self):
         backend = Transformers(model_id="gpt2")
-        backend._model = None
+        backend.model = None
         assert backend.available() is False

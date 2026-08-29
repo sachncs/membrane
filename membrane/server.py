@@ -307,8 +307,8 @@ class Server:
                 compute_backend=self.compute_backend,
             )
 
-        self._running = False
-        self._thread: threading.Thread | None = None
+        self.running = False
+        self.thread: threading.Thread | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -320,11 +320,11 @@ class Server:
         Also starts the :class:`Cluster` (if configured)
         in its own background threads.
         """
-        self._running = True
+        self.running = True
         if self.cluster_manager:
             self.cluster_manager.start()
-        self._thread = threading.Thread(target=self.transport.start, daemon=True)
-        self._thread.start()
+        self.thread = threading.Thread(target=self.transport.start, daemon=True)
+        self.thread.start()
         self.log_event("info", f"Server started on {self.host}:{self.port}")
 
     def stop(self) -> None:
@@ -333,7 +333,7 @@ class Server:
         Stops the transport and (when configured) the cluster
         manager. The background thread exits shortly thereafter.
         """
-        self._running = False
+        self.running = False
         self.transport.stop()
         if self.cluster_manager:
             self.cluster_manager.stop()
@@ -341,8 +341,8 @@ class Server:
 
     def join(self) -> None:
         """Block until the server thread exits."""
-        if self._thread:
-            self._thread.join()
+        if self.thread:
+            self.thread.join()
 
     # ------------------------------------------------------------------
     # Event logging

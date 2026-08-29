@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 from membrane.constants import DEFAULT_LOG_FORMAT, DEFAULT_LOG_LEVEL
 
-_configured = False
+configured = False
 
 
 class TextFormatter(logging.Formatter):
@@ -74,8 +74,8 @@ def configure_logging(
         fmt: Format string for text mode. Ignored in JSON mode.
         json_mode: When ``True``, emit JSON lines instead of text.
     """
-    global _configured
-    if _configured:
+    global configured
+    if configured:
         return
     effective_level = (level or DEFAULT_LOG_LEVEL).upper()
     handler = logging.StreamHandler()
@@ -87,7 +87,7 @@ def configure_logging(
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(effective_level)
-    _configured = True
+    configured = True
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -99,7 +99,7 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         logging.Logger: Configured logger.
     """
-    if not _configured:
+    if not configured:
         configure_logging()
     return logging.getLogger(name)
 

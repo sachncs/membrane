@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane._subgraph_retrieval import _SubgraphRetrieval
+from membrane.graph import SubgraphRetrieval
 from membrane.canonical import Canonical
 from membrane.chunks import Chunks
 from membrane.clusters import SemanticCluster
@@ -92,7 +92,7 @@ class TestMembraneIntegration:
         g = Weighted()
         g.add_weighted_edge("a", "b", "next", 0.9)
         g.add_weighted_edge("b", "c", "next", 0.9)
-        sr = _SubgraphRetrieval(g)
+        sr = SubgraphRetrieval(g)
         comp = sr.retrieve_component("a", min_weight=0.5, max_depth=2)
         assert comp == {"a", "b", "c"}
 

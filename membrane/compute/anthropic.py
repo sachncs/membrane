@@ -64,11 +64,11 @@ class Anthropic(Backend):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self._client: Any | None = None
+        self.client: Any | None = None
         try:
             import httpx
 
-            self._client = httpx.Client(
+            self.client = httpx.Client(
                 headers={
                     "x-api-key": api_key,
                     "anthropic-version": "2023-06-01",
@@ -152,11 +152,11 @@ class Anthropic(Backend):
             values when the client is missing or the request
             fails.
         """
-        if self._client is None:
+        if self.client is None:
             return {"text": "", "tokens": []}
         text = " ".join(str(t) for t in prompt_tokens)
         try:
-            resp = self._client.post(
+            resp = self.client.post(
                 f"{self.base_url}/messages",
                 json={
                     "model": self.model,
@@ -185,10 +185,10 @@ class Anthropic(Backend):
             bool: True when the client is configured and the
             API responds with status 200 to ``GET /models``.
         """
-        if self._client is None:
+        if self.client is None:
             return False
         try:
-            resp = self._client.get(f"{self.base_url}/models", timeout=5.0)
+            resp = self.client.get(f"{self.base_url}/models", timeout=5.0)
             return resp.status_code == 200
         except httpx.HTTPError:
             return False

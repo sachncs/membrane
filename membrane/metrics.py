@@ -77,30 +77,30 @@ class MetricsCollector:
     """
 
     def __init__(self) -> None:
-        self._counters: dict[str, Counter] = {}
-        self._gauges: dict[str, Gauge] = {}
-        self._histograms: dict[str, Histogram] = {}
+        self.counters: dict[str, Counter] = {}
+        self.gauges: dict[str, Gauge] = {}
+        self.histograms: dict[str, Histogram] = {}
 
     def counter(self, name: str, help_text: str, labels: tuple[str, ...] = ()) -> Counter:
         """Get-or-create a counter."""
-        if name not in self._counters:
-            self._counters[name] = Counter(name=name, help_text=help_text, labels=labels)
-        return self._counters[name]
+        if name not in self.counters:
+            self.counters[name] = Counter(name=name, help_text=help_text, labels=labels)
+        return self.counters[name]
 
     def gauge(self, name: str, help_text: str, labels: tuple[str, ...] = ()) -> Gauge:
         """Get-or-create a gauge."""
-        if name not in self._gauges:
-            self._gauges[name] = Gauge(name=name, help_text=help_text, labels=labels)
-        return self._gauges[name]
+        if name not in self.gauges:
+            self.gauges[name] = Gauge(name=name, help_text=help_text, labels=labels)
+        return self.gauges[name]
 
     def histogram(self, name: str, help_text: str, buckets: tuple[float, ...] | None = None) -> Histogram:
         """Get-or-create a histogram."""
-        if name not in self._histograms:
+        if name not in self.histograms:
             h = Histogram(name=name, help_text=help_text)
             if buckets is not None:
                 h.buckets = buckets
-            self._histograms[name] = h
-        return self._histograms[name]
+            self.histograms[name] = h
+        return self.histograms[name]
 
     def render(self) -> str:
         """Render the registry as Prometheus text exposition.
@@ -110,15 +110,15 @@ class MetricsCollector:
             (``Content-Type: text/plain; version=0.0.4``).
         """
         lines: list[str] = []
-        for c in self._counters.values():
+        for c in self.counters.values():
             lines.append(f"# HELP {c.name} {c.help_text}")
             lines.append(f"# TYPE {c.name} counter")
             lines.append(f"{c.name} {c.value}")
-        for g in self._gauges.values():
+        for g in self.gauges.values():
             lines.append(f"# HELP {g.name} {g.help_text}")
             lines.append(f"# TYPE {g.name} gauge")
             lines.append(f"{g.name} {g.value}")
-        for h in self._histograms.values():
+        for h in self.histograms.values():
             lines.append(f"# HELP {h.name} {h.help_text}")
             lines.append(f"# TYPE {h.name} histogram")
             cumulative = 0

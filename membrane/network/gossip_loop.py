@@ -52,7 +52,7 @@ class Gossip:
         self.stop_event = stop_event
         self.running = running
 
-    def _build_state(self) -> GossipState:
+    def build_state(self) -> GossipState:
         """Snapshot local state into a :class:`GossipState`."""
         peers = [
             PeerEndpoint(node_id=p.node_id, host=p.host, port=p.port, healthy=p.healthy)
@@ -83,7 +83,7 @@ class Gossip:
             targets = random.sample(
                 healthy, min(self.config.gossip_fanout, len(healthy))
             )
-            state = self._build_state()
+            state = self.build_state()
             for target in targets:
                 if self.stop_event.is_set():
                     return
@@ -124,7 +124,7 @@ class Gossip:
                 self.directory.record_fragment_location(h, nid)
 
         # Build the response with our state.
-        return self._build_state().to_json()
+        return self.build_state().to_json()
 
 
 __all__ = ["Gossip"]

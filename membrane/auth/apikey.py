@@ -36,7 +36,7 @@ class APIKey:
     scopes: frozenset[str]
 
 
-def _parse_keyfile(text: str) -> dict[str, APIKey]:
+def parse_keyfile(text: str) -> dict[str, APIKey]:
     """Parse a keyfile string into a ``key -> APIKey`` map.
 
     Args:
@@ -76,7 +76,7 @@ class APIKeyAuthenticator:
             keyfile_text: Contents of the keyfile; see module docstring
                 for the expected format.
         """
-        self._keys = _parse_keyfile(keyfile_text)
+        self.keys = parse_keyfile(keyfile_text)
 
     def authenticate(self, request: AuthRequest) -> AuthContext:
         """Authenticate a request via its Authorization header.
@@ -98,7 +98,7 @@ class APIKeyAuthenticator:
         if len(parts) != 2 or parts[0].lower() != "bearer":
             raise AuthBackendError("unauthorized")
         key = parts[1].strip()
-        record = self._keys.get(key)
+        record = self.keys.get(key)
         if record is None:
             raise AuthBackendError("unauthorized")
         return AuthContext(subject=record.subject, scopes=record.scopes)
@@ -118,7 +118,7 @@ class NoopAuthenticator:
 __all__ = ["APIKey", "APIKeyAuthenticator", "NoopAuthenticator"]
 
 
-def _ensure_runtime_checkable() -> None:
+def ensure_runtime_checkable() -> None:
     """Sanity-check that both implementations satisfy the :class:`Authenticator` protocol."""
     # These are no-ops at runtime; they exist purely to give a clear error
     # at import time if a bug regresses the protocol implementation.
@@ -126,9 +126,9 @@ def _ensure_runtime_checkable() -> None:
     assert isinstance(NoopAuthenticator(), Authenticator)
 
 
-_ensure_runtime_checkable()
+ensure_runtime_checkable()
 
 
-def _ignore_unused(_: Any) -> None:
+def ignore_unused(_: Any) -> None:
     """Suppress unused-import warnings for type-checker-only imports."""
     return None

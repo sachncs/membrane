@@ -51,11 +51,11 @@ class Ollama(Backend):
         """
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self._client: Any | None = None
+        self.client: Any | None = None
         try:
             import httpx
 
-            self._client = httpx.Client(timeout=30.0)
+            self.client = httpx.Client(timeout=30.0)
         except ImportError:
             logger.warning("Ollama: httpx not installed")
 
@@ -84,7 +84,7 @@ class Ollama(Backend):
             Falls back to a simulation when the API call fails
             or the ``httpx`` client is unavailable.
         """
-        if self._client is None:
+        if self.client is None:
             return self.simulate_prefill(prompt_tokens, model_id)
 
         # Ollama expects text, not raw token IDs; we stringify
@@ -92,7 +92,7 @@ class Ollama(Backend):
         # deterministic for a given token sequence.
         text = " ".join(str(t) for t in prompt_tokens)
         try:
-            resp = self._client.post(
+            resp = self.client.post(
                 f"{self.base_url}/api/embeddings",
                 json={"model": self.model, "prompt": text},
             )
@@ -152,11 +152,11 @@ class Ollama(Backend):
             token IDs. Empty values when the client is missing
             or the request fails.
         """
-        if self._client is None:
+        if self.client is None:
             return {"text": "", "tokens": []}
         text = " ".join(str(t) for t in prompt_tokens)
         try:
-            resp = self._client.post(
+            resp = self.client.post(
                 f"{self.base_url}/api/generate",
                 json={
                     "model": self.model,
@@ -179,10 +179,10 @@ class Ollama(Backend):
             bool: True when the client is configured and the
             server responds with status 200 to ``GET /api/tags``.
         """
-        if self._client is None:
+        if self.client is None:
             return False
         try:
-            resp = self._client.get(f"{self.base_url}/api/tags", timeout=2.0)
+            resp = self.client.get(f"{self.base_url}/api/tags", timeout=2.0)
             return resp.status_code == 200
         except httpx.HTTPError:
             return False

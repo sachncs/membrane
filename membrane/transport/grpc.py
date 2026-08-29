@@ -60,14 +60,14 @@ class GrpcServer:
         self.host = host
         self.port = port
         self.compute_backend = compute_backend
-        self._server: Any | None = None
-        self._grpc: Any | None = None
+        self.grpc_server: Any | None = None
+        self.grpc_module: Any | None = None
         try:
             # gRPC lacks type stubs, hence the type: ignore on the
             # import. The alias is captured for later use.
             import grpc as grpc_module  # type: ignore[import-untyped]
 
-            self._grpc = grpc_module
+            self.grpc_module = grpc_module
         except ImportError:
             logger.warning(
                 "grpcio not installed; GrpcServer will not function. Install with: pip install grpcio grpcio-tools"
@@ -79,21 +79,21 @@ class GrpcServer:
         Raises:
             RuntimeError: When ``grpcio`` is not installed.
         """
-        grpc_module = self._grpc
+        grpc_module = self.grpc_module
         if grpc_module is None:
             raise RuntimeError("grpcio is not installed")
 
         from membrane.transport.proto import membrane_pb2_grpc
 
         servicer = Handler(self.node, self.compute_backend)
-        self._server = grpc_module.server(thread_pool=ThreadPoolExecutor(max_workers=10))
-        membrane_pb2_grpc.add_MembraneServicer_to_server(servicer, self._server)
+        self.grpc_server = grpc_module.server(thread_pool=ThreadPoolExecutor(max_workers=10))
+        membrane_pb2_grpc.add_MembraneServicer_to_server(servicer, self.grpc_server)
         # Insecure port for local development. For production
         # use a TLS-enabled port via add_secure_port().
-        self._server.add_insecure_port(f"{self.host}:{self.port}")
-        self._server.start()
+        self.grpc_server.add_insecure_port(f"{self.host}:{self.port}")
+        self.grpc_server.start()
         logger.info("gRPC server started on %s:%s", self.host, self.port)
-        self._server.wait_for_termination()
+        self.grpc_server.wait_for_termination()
 
     def stop(self) -> None:
         """Stop the gRPC server.
@@ -102,8 +102,8 @@ class GrpcServer:
         shutdown is immediate. No-op when the server was never
         started.
         """
-        if self._server:
-            self._server.stop(0)
+        if self.grpc_server:
+            self.grpc_server.stop(0)
             logger.info("gRPC server stopped")
 
 
@@ -127,7 +127,7 @@ class Handler:
         self.compute_backend = compute_backend
         from membrane.transport.proto import membrane_pb2
 
-        self._pb2: Any = membrane_pb2
+        self.pb2_module: Any = membrane_pb2
 
     def StoreFragment(self, request, context):
         """gRPC handler: store a fragment on the local node.
@@ -142,7 +142,7 @@ class Handler:
         """
         frag = self.pb_to_fragment(request.fragment)
         success = self.node.store(frag, is_primary=request.is_primary)
-        return self._pb2.StoreResponse(
+        return self.pb2_module.StoreResponse(
             success=success,
             content_hash=frag.content_hash,
         )
@@ -161,8 +161,8 @@ class Handler:
         """
         frag = self.node.retrieve(request.content_hash)
         if frag is None:
-            return self._pb2.RetrieveResponse(found=False)
-        return self._pb2.RetrieveResponse(
+            return self.pb2_module.RetrieveResponse(found=False)
+        return self.pb2_module.RetrieveResponse(
             found=True,
             fragment=self.fragment_to_pb(frag),
         )
@@ -179,7 +179,7 @@ class Handler:
             ``node_id``.
         """
         digest = {h: frag.version_id for h, frag in self.node.fragments.items()}
-        return self._pb2.InventoryResponse(
+        return self.pb2_module.InventoryResponse(
             digest=digest,
             node_id=self.node.node_id,
         )
@@ -200,7 +200,7 @@ class Handler:
         t0 = time.time()
         frags = self.compute_backend.prefill(list(request.prompt_tokens), request.model_id)
         latency = time.time() - t0
-        return self._pb2.PrefillResponse(
+        return self.pb2_module.PrefillResponse(
             success=True,
             fragments=[self.fragment_to_pb(f) for f in frags],
             kv_size_mib=sum(f.size for f in frags) / (1024 * 1024),
@@ -220,7 +220,7 @@ class Handler:
             ``fragment_count``, ``healthy``.
         """
         stats = self.node.get_stats()
-        return self._pb2.HeartbeatResponse(
+        return self.pb2_module.HeartbeatResponse(
             node_id=self.node.node_id,
             load=self.node.heartbeat(),
             memory_used_bytes=stats.memory_used_bytes,
@@ -266,7 +266,7 @@ class Handler:
             FragmentMessage: Protobuf message suitable for
             transport over gRPC.
         """
-        return self._pb2.FragmentMessage(
+        return self.pb2_module.FragmentMessage(
             content_hash=frag.content_hash,
             embedding=list(frag.embedding),
             model_id=frag.structural_signature.model_id,

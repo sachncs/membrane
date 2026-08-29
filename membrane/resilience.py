@@ -95,7 +95,7 @@ class BulkheadPolicy:
 
 
 @dataclass
-class _BreakerState:
+class BreakerState:
     """Mutable state for a single :class:`CircuitBreakerPolicy`."""
 
     failures: int = 0
@@ -156,15 +156,15 @@ class ResiliencePolicy:
         )
 
     def __post_init__(self) -> None:
-        self._breaker_state = _BreakerState()
-        self._bulkhead_sem: threading.Semaphore | None = None
+        self.breaker_state = BreakerState()
+        self.bulkhead_sem: threading.Semaphore | None = None
         if self.bulkhead is not None:
-            self._bulkhead_sem = threading.Semaphore(self.bulkhead.max_concurrent)
+            self.bulkhead_sem = threading.Semaphore(self.bulkhead.max_concurrent)
 
-    def _check_breaker(self) -> None:
+    def check_breaker(self) -> None:
         if self.breaker is None:
             return
-        state = self._breaker_state
+        state = self.breaker_state
         with state.lock:
             now = time.monotonic()
             if state.open_until > now:
@@ -173,18 +173,18 @@ class ResiliencePolicy:
                 # half-open: allow one probe; next success closes, next failure re-opens
                 pass
 
-    def _record_success(self) -> None:
+    def record_success(self) -> None:
         if self.breaker is None:
             return
-        state = self._breaker_state
+        state = self.breaker_state
         with state.lock:
             state.failures = 0
             state.open_until = 0.0
 
-    def _record_failure(self) -> None:
+    def record_failure(self) -> None:
         if self.breaker is None:
             return
-        state = self._breaker_state
+        state = self.breaker_state
         with state.lock:
             state.failures += 1
             if state.failures >= self.breaker.failure_threshold:
@@ -203,18 +203,18 @@ class ResiliencePolicy:
         state is updated. The retry policy is applied separately via
         :meth:`run`.
         """
-        if self._bulkhead_sem is not None and not self._bulkhead_sem.acquire(blocking=False):
+        if self.bulkhead_sem is not None and not self.bulkhead_sem.acquire(blocking=False):
             raise CapacityError("bulkhead saturated")
         try:
-            self._check_breaker()
+            self.check_breaker()
             yield
-            self._record_success()
+            self.record_success()
         except Exception:
-            self._record_failure()
+            self.record_failure()
             raise
         finally:
-            if self._bulkhead_sem is not None:
-                self._bulkhead_sem.release()
+            if self.bulkhead_sem is not None:
+                self.bulkhead_sem.release()
 
     def run(self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """Run ``fn`` under the configured policy.

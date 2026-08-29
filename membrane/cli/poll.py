@@ -28,7 +28,7 @@ from membrane.cli.formatters import fmt_bytes
 console = Console()
 
 
-def _fetch_json(host: str, port: int, path: str, timeout: float = 2.0) -> dict:
+def fetch_json(host: str, port: int, path: str, timeout: float = 2.0) -> dict:
     """Fetch a JSON payload from the remote server.
 
     Args:
@@ -49,7 +49,7 @@ def _fetch_json(host: str, port: int, path: str, timeout: float = 2.0) -> dict:
         return {}
 
 
-def _header(data: dict) -> Panel:
+def header_panel(data: dict) -> Panel:
     """Render the standalone-dashboard header panel."""
     node_id = data.get("node_id", "unknown")
     healthy = data.get("healthy", False)
@@ -62,7 +62,7 @@ def _header(data: dict) -> Panel:
     return Panel(Align.center(text), style="bold white on blue")
 
 
-def _metrics(data: dict) -> Panel:
+def metrics_panel(data: dict) -> Panel:
     """Render the standalone-dashboard metrics panel."""
     table = Table(show_header=False, box=None)
     table.add_column("Metric", style="cyan")
@@ -74,13 +74,13 @@ def _metrics(data: dict) -> Panel:
     return Panel(table, title="[bold]Metrics[/bold]", border_style="green")
 
 
-def _diagnostics() -> Panel:
+def diagnostics_panel() -> Panel:
     """Render the diagnostics panel for standalone mode."""
     text = Text("Connect to a local server with 'membrane serve' for full diagnostics.")
     return Panel(text, title="[bold]Diagnostics[/bold]", border_style="yellow")
 
 
-def _footer() -> Panel:
+def footer_panel() -> Panel:
     """Render the standalone-dashboard footer."""
     text = Text("[Q]uit  |  Refresh: ", style="dim")
     return Panel(Align.center(text), style="dim")
@@ -111,11 +111,11 @@ def main(
     console.print("[bold cyan]Connecting to Membrane server...[/bold cyan]")
     with Live(layout, refresh_per_second=1 / refresh, screen=True):
         while True:
-            data = _fetch_json(host, port, "/heartbeat")
-            layout["header"].update(_header(data))
-            layout["left"].update(_metrics(data))
-            layout["right"].update(_diagnostics())
-            layout["footer"].update(_footer())
+            data = fetch_json(host, port, "/heartbeat")
+            layout["header"].update(header_panel(data))
+            layout["left"].update(metrics_panel(data))
+            layout["right"].update(diagnostics_panel())
+            layout["footer"].update(footer_panel())
             time.sleep(refresh)
 
 

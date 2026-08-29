@@ -14,7 +14,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from membrane.cli.poll import _fetch_json
+from membrane.cli.poll import fetch_json
 
 console = Console()
 
@@ -24,7 +24,7 @@ def main(
     port: int = typer.Option(8080, "--port", "-p", help="Server port"),
 ) -> None:
     """Show cluster membership and peer health."""
-    data = _fetch_json(host, port, "/peers")
+    data = fetch_json(host, port, "/peers")
     if not data:
         console.print(f"[red]Could not fetch cluster status from http://{host}:{port}/peers[/red]")
         raise typer.Exit(1)

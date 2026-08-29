@@ -23,10 +23,10 @@ class TestMembraneServer:
         node = Node("s2")
         srv = Server(node=node, transport="http", compute="cpu", port=18081)
         srv.start()
-        assert srv._running
+        assert srv.running
         time.sleep(0.1)
         srv.stop()
-        assert not srv._running
+        assert not srv.running
 
     def test_diagnostics(self):
         node = Node("s3")

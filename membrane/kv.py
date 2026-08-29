@@ -27,7 +27,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from membrane._cache_metrics import CacheMetrics
+from membrane.cache_metrics import CacheMetrics
 from membrane.fragment import Fragment
 from membrane.index import Index
 from membrane.tracker import LRUTracker

@@ -38,7 +38,7 @@ class CPU(Backend):
         backends that lazy-load heavy resources; here it is
         always ``True``.
         """
-        self._initialized = True
+        self.initialized = True
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Simulate prefill on CPU.

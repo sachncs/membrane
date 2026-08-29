@@ -44,11 +44,11 @@ class Memory:
 
     def __init__(self) -> None:
         """Initialize all internal dictionaries to empty."""
-        self._fragments: dict[str, Fragment] = {}
-        self._node_fragments: dict[str, set[str]] = {}
-        self._primary: dict[str, str] = {}
-        self._locations: dict[str, set[str]] = {}
-        self._lru: dict[str, float] = {}
+        self.fragments: dict[str, Fragment] = {}
+        self.node_fragments: dict[str, set[str]] = {}
+        self.primary: dict[str, str] = {}
+        self.locations: dict[str, set[str]] = {}
+        self.lru: dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # Fragment CRUD
@@ -71,12 +71,12 @@ class Memory:
             bool: Always ``True`` for the in-memory backend.
         """
         h = fragment.content_hash
-        self._fragments[h] = fragment
-        self._node_fragments.setdefault(node_id, set()).add(h)
+        self.fragments[h] = fragment
+        self.node_fragments.setdefault(node_id, set()).add(h)
         if is_primary:
-            self._primary[h] = node_id
+            self.primary[h] = node_id
         # Refresh LRU on every write.
-        self._lru[h] = time.time()
+        self.lru[h] = time.time()
         return True
 
     def retrieve_fragment(self, content_hash: str) -> Fragment | None:
@@ -92,9 +92,9 @@ class Memory:
             Fragment | None: The fragment, or ``None`` if it is
             not stored.
         """
-        frag = self._fragments.get(content_hash)
+        frag = self.fragments.get(content_hash)
         if frag is not None:
-            self._lru[content_hash] = time.time()
+            self.lru[content_hash] = time.time()
         return frag
 
     def delete_fragment(self, content_hash: str) -> bool:
@@ -106,12 +106,12 @@ class Memory:
         Returns:
             bool: Always ``True`` for the in-memory backend.
         """
-        self._fragments.pop(content_hash, None)
-        self._primary.pop(content_hash, None)
-        self._lru.pop(content_hash, None)
+        self.fragments.pop(content_hash, None)
+        self.primary.pop(content_hash, None)
+        self.lru.pop(content_hash, None)
         # Garbage-collect the fragment from every node's set
         # so stale entries do not linger.
-        for node_set in self._node_fragments.values():
+        for node_set in self.node_fragments.values():
             node_set.discard(content_hash)
         return True
 
@@ -130,8 +130,8 @@ class Memory:
             Empty when the node holds no fragments.
         """
         digest: dict[str, int] = {}
-        for h in self._node_fragments.get(node_id, set()):
-            frag = self._fragments.get(h)
+        for h in self.node_fragments.get(node_id, set()):
+            frag = self.fragments.get(h)
             if frag is not None:
                 digest[h] = frag.version_id
         return digest
@@ -145,7 +145,7 @@ class Memory:
         Returns:
             set[str]: Defensive copy of the node's fragment set.
         """
-        return set(self._node_fragments.get(node_id, set()))
+        return set(self.node_fragments.get(node_id, set()))
 
     # ------------------------------------------------------------------
     # Location / directory
@@ -158,7 +158,7 @@ class Memory:
             content_hash: Fragment content hash.
             node_id: Node identifier.
         """
-        self._locations.setdefault(content_hash, set()).add(node_id)
+        self.locations.setdefault(content_hash, set()).add(node_id)
 
     def locate(self, content_hash: str) -> set[str]:
         """Return all node IDs recorded as holders of ``content_hash``.
@@ -169,7 +169,7 @@ class Memory:
         Returns:
             set[str]: Defensive copy of the holder set.
         """
-        return set(self._locations.get(content_hash, set()))
+        return set(self.locations.get(content_hash, set()))
 
     def get_primary(self, content_hash: str) -> str | None:
         """Return the primary node for ``content_hash``.
@@ -181,7 +181,7 @@ class Memory:
             str | None: Primary node ID, or ``None`` if no
             primary has been declared.
         """
-        return self._primary.get(content_hash)
+        return self.primary.get(content_hash)
 
     # ------------------------------------------------------------------
     # LRU eviction support
@@ -196,7 +196,7 @@ class Memory:
         Returns:
             list[str]: Hashes ordered by oldest access first.
         """
-        sorted_items = sorted(self._lru.items(), key=lambda kv: kv[1])
+        sorted_items = sorted(self.lru.items(), key=lambda kv: kv[1])
         return [h for h, _ in sorted_items[:count]]
 
     # ------------------------------------------------------------------
@@ -216,11 +216,11 @@ class Memory:
 
         After :meth:`flush`, every internal table is empty.
         """
-        self._fragments.clear()
-        self._node_fragments.clear()
-        self._primary.clear()
-        self._locations.clear()
-        self._lru.clear()
+        self.fragments.clear()
+        self.node_fragments.clear()
+        self.primary.clear()
+        self.locations.clear()
+        self.lru.clear()
 
     # ------------------------------------------------------------------
     # Serialization helpers (passthrough — no-op for in-memory)

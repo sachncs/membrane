@@ -64,10 +64,10 @@ class Transformers(Backend):
         """
         self.model_id = model_id
         self.device = device
-        self._model: Any | None = None
-        self._tokenizer: Any | None = None
-        self._torch: Any | None = None
-        self._actual_device: str = "cpu"
+        self.model: Any | None = None
+        self.tokenizer: Any | None = None
+        self.torch: Any | None = None
+        self.actual_device: str = "cpu"
         self.load_model()
 
     def load_model(self) -> None:
@@ -86,18 +86,18 @@ class Transformers(Backend):
             # hence the type: ignore on the import line below.
             from transformers import AutoModel, AutoTokenizer  # type: ignore[import-not-found]
 
-            self._torch = torch
+            self.torch = torch
             if self.device == "auto":
                 # Prefer CUDA when available, fall back to CPU.
-                self._actual_device = "cuda" if torch.cuda.is_available() else "cpu"
+                self.actual_device = "cuda" if torch.cuda.is_available() else "cpu"
             else:
-                self._actual_device = self.device
+                self.actual_device = self.device
 
-            logger.info("Transformers: loading %s on %s", self.model_id, self._actual_device)
-            self._tokenizer = AutoTokenizer.from_pretrained(self.model_id)
-            self._model = AutoModel.from_pretrained(self.model_id)
-            self._model.to(self._actual_device)
-            self._model.eval()
+            logger.info("Transformers: loading %s on %s", self.model_id, self.actual_device)
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+            self.model = AutoModel.from_pretrained(self.model_id)
+            self.model.to(self.actual_device)
+            self.model.eval()
             logger.info("Transformers: loaded %s", self.model_id)
         except ImportError:
             logger.warning("Transformers: transformers or torch not installed")
@@ -133,21 +133,21 @@ class Transformers(Backend):
         Returns:
             list[Fragment]: One fragment per 128-token window.
         """
-        if self._model is None or self._tokenizer is None:
+        if self.model is None or self.tokenizer is None:
             return self.simulate_prefill(prompt_tokens, model_id)
 
         try:
             import torch
 
             with torch.no_grad():
-                inputs = self._tokenizer(
+                inputs = self.tokenizer(
                     " ".join(str(t) for t in prompt_tokens),
                     return_tensors="pt",
                     truncation=True,
                     max_length=2048,
                 )
-                inputs = {k: v.to(self._actual_device) for k, v in inputs.items()}
-                outputs = self._model(**inputs, output_hidden_states=True)
+                inputs = {k: v.to(self.actual_device) for k, v in inputs.items()}
+                outputs = self.model(**inputs, output_hidden_states=True)
                 # Last layer's hidden state: (batch, seq_len, hidden_dim).
                 hidden_states = outputs.hidden_states[-1]
                 # Drop batch dim and move to CPU as numpy.
@@ -206,16 +206,16 @@ class Transformers(Backend):
             strings and lists when the model is not loaded or
             generation fails.
         """
-        if self._model is None or self._tokenizer is None:
+        if self.model is None or self.tokenizer is None:
             return {"text": "", "tokens": []}
         try:
             import torch
 
             prompt_text = " ".join(str(t) for t in prompt_tokens)
-            inputs = self._tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=2048)
-            inputs = {k: v.to(self._actual_device) for k, v in inputs.items()}
+            inputs = self.tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=2048)
+            inputs = {k: v.to(self.actual_device) for k, v in inputs.items()}
             with torch.no_grad():
-                output_ids = self._model.generate(
+                output_ids = self.model.generate(
                     **inputs,
                     max_new_tokens=max_tokens,
                     do_sample=False,
@@ -223,7 +223,7 @@ class Transformers(Backend):
             # Slice off the prompt portion to keep only the
             # newly generated tokens.
             new_ids = output_ids[0][inputs["input_ids"].shape[1] :]
-            text = self._tokenizer.decode(new_ids, skip_special_tokens=True)
+            text = self.tokenizer.decode(new_ids, skip_special_tokens=True)
             return {"text": text, "tokens": new_ids.tolist()}
         except (RuntimeError, ValueError, IndexError) as exc:
             logger.warning("Transformers generate failed: %s", exc)
@@ -236,7 +236,7 @@ class Transformers(Backend):
             bool: True when both ``_model`` and ``_tokenizer``
             were successfully initialized.
         """
-        return self._model is not None and self._tokenizer is not None
+        return self.model is not None and self.tokenizer is not None
 
     def device_name(self) -> str:
         """Return a descriptive device name.
@@ -245,9 +245,9 @@ class Transformers(Backend):
             str: ``"transformers(<model>,<device>)"`` when
             loaded, ``"transformers(unloaded)"`` otherwise.
         """
-        if self._model is None:
+        if self.model is None:
             return "transformers(unloaded)"
-        return f"transformers({self.model_id},{self._actual_device})"
+        return f"transformers({self.model_id},{self.actual_device})"
 
     def simulate_prefill(
         self,

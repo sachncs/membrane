@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane._cache_metrics import CacheMetrics
+from membrane.cache_metrics import CacheMetrics
 
 
 class TestCacheMetrics:

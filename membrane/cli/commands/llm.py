@@ -10,7 +10,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from membrane.cli.poll import _fetch_json
+from membrane.cli.poll import fetch_json
 
 console = Console()
 
@@ -20,7 +20,7 @@ def main(
     port: int = typer.Option(8080, "--port", "-p", help="Server port"),
 ) -> None:
     """Show active LLM backend status and model info."""
-    data = _fetch_json(host, port, "/metrics.json")
+    data = fetch_json(host, port, "/metrics.json")
     if not data:
         console.print(f"[red]Could not fetch LLM status from http://{host}:{port}/metrics.json[/red]")
         raise typer.Exit(1)

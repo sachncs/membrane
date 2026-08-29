@@ -7,9 +7,9 @@ the cluster-management verbs (``join``, ``leave``, ``heartbeat``,
 ``retrieve``, ``replicate``).
 
 The wire-level HTTP work is delegated to a pluggable
-:class:`Transport` (default: :class:`HTTPTransport`). Tests can
-inject :class:`StubTransport` to exercise the client without
-patching ``urllib.request.urlopen``.
+:class:`Transport` (default: :class:`HTTPTransport`). The default
+transport uses ``urllib.request``; tests use
+``unittest.mock.patch`` on the transport instance directly.
 
 Thread safety:
     The class is **not** explicitly thread-safe; in practice a
@@ -30,11 +30,6 @@ from membrane.serialization import from_dict as deserialize_fragment
 from membrane.serialization import to_dict as serialize_fragment
 
 logger = logging.getLogger(__name__)
-
-
-# ------------------------------------------------------------------
-# Transport abstraction
-# ------------------------------------------------------------------
 
 
 @runtime_checkable
@@ -96,52 +91,6 @@ class HTTPTransport:
         except Exception as exc:
             logger.debug("HTTPTransport %s %s failed: %s", method, url, exc)
             return None
-
-
-class StubTransport:
-    """In-memory :class:`Transport` for tests.
-
-    Routes are pre-populated as ``{path: {method: response_body}}``.
-    Returns ``None`` for any unmatched route so tests can assert
-    that no request was issued.
-    """
-
-    def __init__(self) -> None:
-        """Initialize with empty route table."""
-        self.routes: dict[str, dict[str, dict | None]] = {}
-        self.calls: list[tuple[str, str, bytes | None]] = []
-
-    def add(self, method: str, path: str, response: dict | None) -> None:
-        """Register a stub response for ``method path``."""
-        self.routes.setdefault(path, {})[method.upper()] = response
-
-    def request(
-        self,
-        method: str,
-        url: str,
-        body: bytes | None,
-        headers: dict[str, str],
-        timeout_sec: float,
-    ) -> dict | None:
-        """Return the registered stub response (or ``None``).
-
-        Routes are keyed on the URL path *including the query
-        string* when present, so tests can stub parameterized
-        endpoints like ``/retrieve?content_hash=foo`` uniquely.
-        Callers that don't care about the query should register
-        the bare path.
-        """
-        from urllib.parse import urlparse
-
-        parsed = urlparse(url)
-        key = parsed.path + (f"?{parsed.query}" if parsed.query else "")
-        self.calls.append((method, key, body))
-        return self.routes.get(key, {}).get(method.upper())
-
-
-# ------------------------------------------------------------------
-# Peer
-# ------------------------------------------------------------------
 
 
 class Peer:
@@ -249,9 +198,9 @@ class Peer:
 
         A ``None`` response from the transport is retried up to
         ``max_retries`` times with ``retry_delay_sec * 2 ** attempt``
-        seconds between attempts. ``StubTransport`` users can
-        pre-program ``None`` responses to simulate transient
-        failures.
+        seconds between attempts. Tests that want to simulate
+        transient failures can return ``None`` from a mocked
+        transport.
 
         Args:
             method: HTTP method.
@@ -278,7 +227,7 @@ class Peer:
                 )
                 if resp is not None:
                     return resp
-            except Exception as exc:  # transport-level failure
+            except Exception as exc:
                 last_error = exc
 
             # Exponential backoff: 1x, 2x, 4x, ...
@@ -303,4 +252,4 @@ class Peer:
         return None
 
 
-__all__ = ["HTTPTransport", "Peer", "StubTransport", "Transport"]
+__all__ = ["HTTPTransport", "Peer", "Transport"]

@@ -24,7 +24,7 @@ from membrane.server import Server
 console = Console()
 
 
-def _header(diag) -> Panel:
+def header_panel(diag) -> Panel:
     """Render the local-dashboard header."""
     status = "[green]HEALTHY[/green]" if diag.load < 0.9 else "[yellow]WARNING[/yellow]"
     text = Text.assemble(
@@ -36,7 +36,7 @@ def _header(diag) -> Panel:
     return Panel(Align.center(text), style="bold white on blue")
 
 
-def _metrics(diag) -> Panel:
+def metrics_panel(diag) -> Panel:
     """Render the local-dashboard metrics table."""
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column("Metric", style="cyan", no_wrap=True)
@@ -54,7 +54,7 @@ def _metrics(diag) -> Panel:
     return Panel(table, title="[bold]Server Metrics[/bold]", border_style="green")
 
 
-def _peers(server: Server) -> Panel:
+def peers_panel(server: Server) -> Panel:
     """Render the connected-peers panel."""
     if not server.connected_nodes:
         return Panel(
@@ -70,7 +70,7 @@ def _peers(server: Server) -> Panel:
     return Panel(table, title="[bold]Peers[/bold]", border_style="blue")
 
 
-def _events(server: Server) -> Panel:
+def events_panel(server: Server) -> Panel:
     """Render the recent-events panel (newest first)."""
     events = server.recent_events(n=15)
     if not events:
@@ -96,7 +96,7 @@ def _events(server: Server) -> Panel:
     return Panel(table, title="[bold]Event Log[/bold]", border_style="yellow")
 
 
-def _footer() -> Panel:
+def footer_panel() -> Panel:
     """Render the local-dashboard footer."""
     text = Text("[Ctrl+C] Stop server  |  Live Dashboard", style="dim")
     return Panel(Align.center(text), style="dim")
@@ -127,13 +127,13 @@ def run_dashboard(server: Server) -> None:
 
     with Live(layout, refresh_per_second=2, screen=True):
         try:
-            while server._running:
+            while server.running:
                 diag = server.diagnostics()
-                layout["header"].update(_header(diag))
-                layout["metrics"].update(_metrics(diag))
-                layout["peers"].update(_peers(server))
-                layout["right"].update(_events(server))
-                layout["footer"].update(_footer())
+                layout["header"].update(header_panel(diag))
+                layout["metrics"].update(metrics_panel(diag))
+                layout["peers"].update(peers_panel(server))
+                layout["right"].update(events_panel(server))
+                layout["footer"].update(footer_panel())
                 time.sleep(0.5)
         except KeyboardInterrupt:
             pass

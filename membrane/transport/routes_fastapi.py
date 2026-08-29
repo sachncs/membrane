@@ -335,44 +335,44 @@ def register_routes(app: FastAPI) -> None:
     app.add_api_route("/metrics", lambda: metrics(app), methods=["GET"])
     app.add_api_route("/metrics.json", lambda: metrics_json(app), methods=["GET"])
 
-    def _retrieve(content_hash: str):
+    def retrieve_handler(content_hash: str):
         return retrieve(app, content_hash)
 
-    app.add_api_route("/retrieve", _retrieve, methods=["GET"])
+    app.add_api_route("/retrieve", retrieve_handler, methods=["GET"])
     app.add_api_route("/inventory", lambda: inventory(app), methods=["GET"])
     app.add_api_route("/peers", lambda: peers(app), methods=["GET"])
 
     # POST endpoints. Use module-level factories (closures) that capture
     # ``app`` so the route functions take only the request body, which
     # is the only FastAPI parameter it needs.
-    def _store(req: StoreRequest):
+    def store_handler(req: StoreRequest):
         return store(app, req)
 
-    def _replicate(req: ReplicateRequest):
+    def replicate_handler(req: ReplicateRequest):
         return replicate(app, req)
 
-    def _sync(req: SyncRequest):
+    def sync_handler(req: SyncRequest):
         return sync(app, req)
 
-    def _prefill(req: PrefillRequest):
+    def prefill_handler(req: PrefillRequest):
         return prefill(app, req)
 
-    def _join(req: JoinRequest):
+    def join_handler(req: JoinRequest):
         return join(app, req)
 
-    def _leave(req: LeaveRequest):
+    def leave_handler(req: LeaveRequest):
         return leave(app, req)
 
-    def _gossip(req: GossipRequest):
+    def gossip_handler(req: GossipRequest):
         return gossip(app, req)
 
-    app.add_api_route("/store", _store, methods=["POST"], response_model=None)
-    app.add_api_route("/replicate", _replicate, methods=["POST"], response_model=None)
-    app.add_api_route("/sync", _sync, methods=["POST"], response_model=None)
-    app.add_api_route("/prefill", _prefill, methods=["POST"], response_model=None)
-    app.add_api_route("/join", _join, methods=["POST"], response_model=None)
-    app.add_api_route("/leave", _leave, methods=["POST"], response_model=None)
-    app.add_api_route("/gossip", _gossip, methods=["POST"], response_model=None)
+    app.add_api_route("/store", store_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/replicate", replicate_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/sync", sync_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/prefill", prefill_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/join", join_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/leave", leave_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/gossip", gossip_handler, methods=["POST"], response_model=None)
 
 
 __all__ = ["register_routes"]

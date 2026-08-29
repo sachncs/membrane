@@ -27,7 +27,7 @@ from membrane.fragment import Fragment
 from membrane.signature import Signature
 
 
-def _make_fragment(*args: Any, **kwargs: Any) -> Fragment:
+def make_fragment_factory(*args: Any, **kwargs: Any) -> Fragment:
     """Build a :class:`Fragment` with sensible test defaults.
 
     The factory dispatches on the *type* of the second positional
@@ -91,7 +91,7 @@ def _make_fragment(*args: Any, **kwargs: Any) -> Fragment:
 
 
 @pytest.fixture(autouse=True)
-def _inject_make_fragment(request):
+def inject_make_fragment_factory(request):
     """Make ``make_fragment(...)`` available as a module-level callable.
 
     Pytest doesn't have a built-in way to expose a fixture as a bare
@@ -105,4 +105,4 @@ def _inject_make_fragment(request):
     fixture parameter continue to work because pytest treats the
     fixture name as available both ways.
     """
-    request.module.make_fragment = _make_fragment
+    request.module.make_fragment = make_fragment_factory

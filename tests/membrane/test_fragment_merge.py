@@ -6,7 +6,7 @@ from membrane.fragment import Fragment
 from membrane.signature import Signature
 
 
-def _make(content_hash: str, version_id: int) -> Fragment:
+def make(content_hash: str, version_id: int) -> Fragment:
     return Fragment(
         content_hash=content_hash,
         embedding=(0.0,),
@@ -20,23 +20,23 @@ def _make(content_hash: str, version_id: int) -> Fragment:
 
 def test_merge_higher_version_wins():
     """Fragment.merge returns the higher version_id."""
-    a = _make("h", 1)
-    b = _make("h", 5)
+    a = make("h", 1)
+    b = make("h", 5)
     assert a.merge(b) is b
     assert b.merge(a) is b
 
 
 def test_merge_equal_version_returns_self():
     """On tie, self wins for determinism."""
-    a = _make("h", 3)
-    b = _make("h", 3)
+    a = make("h", 3)
+    b = make("h", 3)
     assert a.merge(b) is a
 
 
 def test_merge_rejects_different_content_hash():
     """Mismatched content_hash raises ValueError."""
-    a = _make("h1", 1)
-    b = _make("h2", 2)
+    a = make("h1", 1)
+    b = make("h2", 2)
     with pytest.raises(ValueError, match="different content_hash"):
         a.merge(b)
 

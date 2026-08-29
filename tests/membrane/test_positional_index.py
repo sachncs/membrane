@@ -3,11 +3,11 @@
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.positions import _PositionalIndex
+from membrane.tree import Tree
 from membrane.signature import Signature
 
 def test_overlap_query():
-    idx = _PositionalIndex()
+    idx = Tree()
     frag = make_fragment("h1", (100, 200))
     idx.insert(frag)
     results = idx.find_overlapping(150, 250)
@@ -15,14 +15,14 @@ def test_overlap_query():
     assert results[0].content_hash == "h1"
 
 def test_adjacent_query():
-    idx = _PositionalIndex()
+    idx = Tree()
     frag = make_fragment("h1", (100, 200))
     idx.insert(frag)
     results = idx.find_adjacent(200, max_gap=10)
     assert len(results) == 1
 
 def test_no_overlap():
-    idx = _PositionalIndex()
+    idx = Tree()
     frag = make_fragment("h1", (100, 200))
     idx.insert(frag)
     assert idx.find_overlapping(300, 400) == []
@@ -30,19 +30,19 @@ def test_no_overlap():
 # --- Tests designed to break the interval tree algorithm ---
 
 def test_remove_existingfragment():
-    idx = _PositionalIndex()
+    idx = Tree()
     frag = make_fragment("h1", (100, 200))
     idx.insert(frag)
     assert idx.remove("h1") is True
     assert idx.find_overlapping(100, 200) == []
 
 def test_remove_nonexistentfragment():
-    idx = _PositionalIndex()
+    idx = Tree()
     assert idx.remove("missing") is False
 
 def test_many_intervals_stress():
     """Insert many intervals and verify all are retrievable."""
-    idx = _PositionalIndex()
+    idx = Tree()
     n = 200
     for i in range(n):
         idx.insert(make_fragment(f"h{i}", (i * 10, i * 10 + 5)))
@@ -52,7 +52,7 @@ def test_many_intervals_stress():
 
 def test_nested_intervals():
     """Nested intervals should all be found."""
-    idx = _PositionalIndex()
+    idx = Tree()
     idx.insert(make_fragment("outer", (0, 100)))
     idx.insert(make_fragment("inner", (40, 60)))
     results = idx.find_overlapping(45, 55)
@@ -61,7 +61,7 @@ def test_nested_intervals():
 
 def test_same_start_different_ends():
     """Multiple intervals with same start but different ends."""
-    idx = _PositionalIndex()
+    idx = Tree()
     idx.insert(make_fragment("a", (50, 60)))
     idx.insert(make_fragment("b", (50, 70)))
     idx.insert(make_fragment("c", (50, 80)))
@@ -71,27 +71,27 @@ def test_same_start_different_ends():
 
 def test_boundary_overlap_exact():
     """Interval [10, 20] should overlap with [20, 30] at point 20."""
-    idx = _PositionalIndex()
+    idx = Tree()
     idx.insert(make_fragment("a", (10, 20)))
     results = idx.find_overlapping(20, 30)
     assert len(results) == 1
 
 def test_boundary_no_overlap_off_by_one():
     """Interval [10, 20] should NOT overlap with [21, 30]."""
-    idx = _PositionalIndex()
+    idx = Tree()
     idx.insert(make_fragment("a", (10, 20)))
     assert idx.find_overlapping(21, 30) == []
 
 def test_adjacent_gap_zero_exact_touch():
     """max_gap=0 means fragments must touch exactly."""
-    idx = _PositionalIndex()
+    idx = Tree()
     idx.insert(make_fragment("a", (10, 20)))
     results = idx.find_adjacent(20, max_gap=0)
     assert len(results) == 1
 
 def test_adjacent_gap_one_near_touch():
     """max_gap=1 should include fragments 1 token away."""
-    idx = _PositionalIndex()
+    idx = Tree()
     idx.insert(make_fragment("a", (10, 20)))
     results = idx.find_adjacent(22, max_gap=1)
     assert len(results) == 0
@@ -100,7 +100,7 @@ def test_adjacent_gap_one_near_touch():
 
 def test_tree_balance_after_many_insertions():
     """After many insertions in sorted order, tree should still be balanced."""
-    idx = _PositionalIndex()
+    idx = Tree()
     for i in range(100):
         idx.insert(make_fragment(f"h{i}", (i, i + 1)))
     # All should be findable
@@ -109,7 +109,7 @@ def test_tree_balance_after_many_insertions():
 
 def test_remove_and_reinsert():
     """Remove then reinsert should work correctly."""
-    idx = _PositionalIndex()
+    idx = Tree()
     frag = make_fragment("a", (10, 20))
     idx.insert(frag)
     idx.remove("a")
@@ -119,7 +119,7 @@ def test_remove_and_reinsert():
 
 def test_complex_scenario_multiple_operations():
     """Mix of inserts, removes, and queries."""
-    idx = _PositionalIndex()
+    idx = Tree()
     for i in range(50):
         idx.insert(make_fragment(f"h{i}", (i * 2, i * 2 + 3)))
     # Remove every other

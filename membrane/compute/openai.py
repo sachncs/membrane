@@ -71,11 +71,11 @@ class OpenAI(Backend):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.embedding_model = embedding_model
-        self._client: Any | None = None
+        self.client: Any | None = None
         try:
             import httpx
 
-            self._client = httpx.Client(
+            self.client = httpx.Client(
                 headers={"Authorization": f"Bearer {api_key}"},
                 timeout=60.0,
             )
@@ -107,12 +107,12 @@ class OpenAI(Backend):
             Falls back to a simulation when the API call fails
             or the ``httpx`` client is unavailable.
         """
-        if self._client is None:
+        if self.client is None:
             return self.simulate_prefill(prompt_tokens, model_id)
 
         text = " ".join(str(t) for t in prompt_tokens)
         try:
-            resp = self._client.post(
+            resp = self.client.post(
                 f"{self.base_url}/embeddings",
                 json={"model": self.embedding_model, "input": text},
             )
@@ -175,11 +175,11 @@ class OpenAI(Backend):
             does not return raw token IDs. Returns empty values
             when the client is missing or the request fails.
         """
-        if self._client is None:
+        if self.client is None:
             return {"text": "", "tokens": []}
         text = " ".join(str(t) for t in prompt_tokens)
         try:
-            resp = self._client.post(
+            resp = self.client.post(
                 f"{self.base_url}/chat/completions",
                 json={
                     "model": self.model,
@@ -205,10 +205,10 @@ class OpenAI(Backend):
             bool: True when the client is configured and the
             API responds with status 200.
         """
-        if self._client is None:
+        if self.client is None:
             return False
         try:
-            resp = self._client.get(f"{self.base_url}/models", timeout=5.0)
+            resp = self.client.get(f"{self.base_url}/models", timeout=5.0)
             return resp.status_code == 200
         except httpx.HTTPError:
             return False

@@ -141,9 +141,9 @@ class FastAPIServer:
             log_level="info",
             access_log=False,
         )
-        self._server = uvicorn.Server(config)
+        self.server = uvicorn.Server(config)
         logger.info("FastAPI server listening on http://%s:%s", self.host, self.port)
-        self._server.run()
+        self.server.run()
 
     def stop(self) -> None:
         """Stop the uvicorn server.
@@ -151,8 +151,8 @@ class FastAPIServer:
         Sets ``should_exit = True`` on the underlying server; the
         blocking ``run()`` returns shortly thereafter.
         """
-        if self._server:
-            self._server.should_exit = True
+        if self.server:
+            self.server.should_exit = True
             logger.info("FastAPI server stopped")
 
     def run_in_thread(self) -> None:

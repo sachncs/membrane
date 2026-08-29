@@ -34,7 +34,7 @@ from membrane.compute.cpu import CPU
 __all__ = ["Backend", "CPU"]
 
 
-def _try_register(name: str, module_path: str) -> None:
+def try_register(name: str, module_path: str) -> None:
     """Attempt to import an optional backend and add it to ``__all__``.
 
     Args:
@@ -58,4 +58,4 @@ for _backend_name, _backend_path in (
     ("Anthropic", "membrane.compute.anthropic_backend"),
     ("Transformers", "membrane.compute.transformers_backend"),
 ):
-    _try_register(_backend_name, _backend_path)
+    try_register(_backend_name, _backend_path)

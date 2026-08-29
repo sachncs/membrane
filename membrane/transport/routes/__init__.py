@@ -45,7 +45,7 @@ Handler = Callable[[Any], None]
 # ------------------------------------------------------------------
 
 
-def _get(handler: Any) -> dict[str, Any]:
+def get_handler_node(handler: Any) -> dict[str, Any]:
     """Return ``handler.server.node`` or send a 500 and return an empty dict."""
     if not handler.server.node:
         handler.send_json(500, {"error": "no node"})
@@ -53,7 +53,7 @@ def _get(handler: Any) -> dict[str, Any]:
     return handler.server.node  # type: ignore[return-value]
 
 
-def _cluster(handler: Any) -> Any:
+def get_handler_cluster(handler: Any) -> Any:
     """Return the cluster manager, or send a 503 if it is not enabled."""
     cm = handler.server.cluster_manager
     if not cm:
@@ -70,7 +70,7 @@ def _cluster(handler: Any) -> Any:
 def store(handler: Any) -> None:
     """``POST /store``."""
     data = handler.read_json()
-    node = _get(handler)
+    node = get_handler_node(handler)
     if not node:
         return
     frag = deserialize_fragment(data["fragment"])
@@ -82,7 +82,7 @@ def store(handler: Any) -> None:
 def replicate(handler: Any) -> None:
     """``POST /replicate`` — store a fragment as a replica."""
     data = handler.read_json()
-    node = _get(handler)
+    node = get_handler_node(handler)
     if not node:
         return
     frag = deserialize_fragment(data["fragment"])
@@ -97,7 +97,7 @@ def retrieve(handler: Any) -> None:
     if not h:
         handler.send_json(400, {"error": "missing content_hash"})
         return
-    node = _get(handler)
+    node = get_handler_node(handler)
     if not node:
         return
     frag = node.retrieve(h)
@@ -109,7 +109,7 @@ def retrieve(handler: Any) -> None:
 
 def inventory(handler: Any) -> None:
     """``GET /inventory``."""
-    node = _get(handler)
+    node = get_handler_node(handler)
     if not node:
         return
     digest = {h: frag.version_id for h, frag in node.fragments.items()}
@@ -118,7 +118,7 @@ def inventory(handler: Any) -> None:
 
 def heartbeat(handler: Any) -> None:
     """``GET /heartbeat``."""
-    node = _get(handler)
+    node = get_handler_node(handler)
     if not node:
         return
     stats = node.get_stats()
@@ -137,7 +137,7 @@ def heartbeat(handler: Any) -> None:
 
 def metrics(handler: Any) -> None:
     """``GET /metrics`` — extended JSON metrics."""
-    node = _get(handler)
+    node = get_handler_node(handler)
     if not node:
         return
     stats = node.get_stats()
@@ -161,7 +161,7 @@ def sync(handler: Any) -> None:
     if not source_url:
         handler.send_json(400, {"error": "missing source_url"})
         return
-    node = _get(handler)
+    node = get_handler_node(handler)
     if not node:
         return
     try:
@@ -190,7 +190,7 @@ def prefill(handler: Any) -> None:
     tokens = data.get("prompt_tokens", [])
     model_id = data.get("model_id", "default")
     backend = handler.server.compute_backend or CPU()
-    node = _get(handler)
+    node = get_handler_node(handler)
     if not node:
         return
     fragments = backend.prefill(tokens, model_id)
@@ -214,7 +214,7 @@ def join(handler: Any) -> None:
     if not node_id or not host or not port:
         handler.send_json(400, {"error": "missing node_id, host, or port"})
         return
-    cm = _cluster(handler)
+    cm = get_handler_cluster(handler)
     if cm is None:
         return
     result = cm.on_peer_join(node_id, host, port)
@@ -228,7 +228,7 @@ def leave(handler: Any) -> None:
     if not node_id:
         handler.send_json(400, {"error": "missing node_id"})
         return
-    cm = _cluster(handler)
+    cm = get_handler_cluster(handler)
     if cm is None:
         return
     cm.on_peer_leave(node_id)
@@ -238,7 +238,7 @@ def leave(handler: Any) -> None:
 def gossip(handler: Any) -> None:
     """``POST /gossip``."""
     data = handler.read_json()
-    cm = _cluster(handler)
+    cm = get_handler_cluster(handler)
     if cm is None:
         return
     result = cm.on_gossip(data)
@@ -247,7 +247,7 @@ def gossip(handler: Any) -> None:
 
 def peers(handler: Any) -> None:
     """``GET /peers``."""
-    cm = _cluster(handler)
+    cm = get_handler_cluster(handler)
     if cm is None:
         return
     peers = cm.get_peers()
