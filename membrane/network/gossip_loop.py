@@ -18,7 +18,6 @@ from typing import Any
 from membrane.network.config import ClusterConfig
 from membrane.network.gossip import GossipState, PeerEndpoint
 from membrane.network.membership import Membership
-from membrane.network.peer import Peer
 from membrane.node import Node
 
 logger = logging.getLogger(__name__)
@@ -80,9 +79,7 @@ class Gossip:
             if not healthy:
                 self.stop_event.wait(timeout=self.config.gossip_interval_sec)
                 continue
-            targets = random.sample(
-                healthy, min(self.config.gossip_fanout, len(healthy))
-            )
+            targets = random.sample(healthy, min(self.config.gossip_fanout, len(healthy)))
             state = self.build_state()
             for target in targets:
                 if self.stop_event.is_set():

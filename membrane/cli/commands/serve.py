@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import Annotated
 
 import typer
 from rich.console import Console
 
+from membrane.cli.dashboard import run_dashboard
 from membrane.cli.formatters import fmt_bytes
 from membrane.cli.wizard import interactive_setup
-from membrane.cli.dashboard import run_dashboard
 from membrane.network.config import ClusterConfig
 from membrane.node import Node
 from membrane.server import Server
@@ -37,7 +38,7 @@ def main(
     log_level: str = typer.Option("INFO", "--log-level", "-l", help="Logging level"),
     daemon: bool = typer.Option(False, "--daemon", "-d", help="Run as daemon (no dashboard)"),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive setup wizard"),
-    peer: list[str] = typer.Option([], "--peer", help="Seed peer host:port (repeatable)"),
+    peer: Annotated[list[str] | None, typer.Option(help="Seed peer host:port (repeatable)")] = None,
     heartbeat_interval: float = typer.Option(2.0, "--heartbeat-interval", help="Heartbeat interval seconds"),
     gossip_interval: float = typer.Option(5.0, "--gossip-interval", help="Gossip interval seconds"),
     replica_count: int = typer.Option(2, "--replica-count", help="Replicas per fragment"),
@@ -92,15 +93,17 @@ def main(
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
+    peer_list: list[str] = peer or []
+
     # Only build cluster config when at least one seed peer is
     # supplied — single-node mode skips cluster bootstrapping.
     cluster_config = None
-    if peer:
+    if peer_list:
         cluster_config = ClusterConfig(
             node_id=node_id,
             host=host,
             port=port,
-            peers=peer,
+            peers=peer_list,
             heartbeat_interval_sec=heartbeat_interval,
             gossip_interval_sec=gossip_interval,
             replica_count=replica_count,
@@ -129,7 +132,7 @@ def main(
     console.print(f"  LLM URL  : {llm_url or 'default'}")
     console.print(f"  LLM Model: {llm_model or 'default'}")
     console.print(f"  Redis    : {redis_url or 'disabled (in-memory)'}")
-    console.print(f"  Peers    : {', '.join(peer) if peer else 'none'}")
+    console.print(f"  Peers    : {', '.join(peer_list) if peer_list else 'none'}")
     console.print(f"  Max Mem  : {fmt_bytes(max_memory)}")
 
     if daemon:

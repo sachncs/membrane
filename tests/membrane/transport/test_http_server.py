@@ -11,6 +11,7 @@ from membrane.node import Node
 from membrane.signature import Signature
 from membrane.transport.http import HTTPServer
 
+
 class TestHTTPServer:
     """Test suite for HTTPServer."""
 
@@ -37,6 +38,7 @@ class TestHTTPServer:
     def test_store_and_retrieve(self, server):
         frag = make_fragment("store-test")
         from membrane.serialization import to_dict
+
         payload = json.dumps(
             {
                 "fragment": to_dict(frag),

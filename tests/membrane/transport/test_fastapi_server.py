@@ -8,10 +8,11 @@ from fastapi.testclient import TestClient
 from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
 from membrane.node import Node
+from membrane.serialization import to_dict
 from membrane.signature import Signature
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer, create_app
-from membrane.serialization import to_dict
+
 
 class TestFastAPIServer:
     """Test suite for FastAPI transport endpoints."""

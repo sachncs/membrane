@@ -43,9 +43,7 @@ class Failure:
         self.config = config
         self.stop_event = stop_event
         self.running = running
-        self.detector = detector or ThresholdDetector(
-            failure_remove_threshold=config.failure_remove_threshold
-        )
+        self.detector = detector or ThresholdDetector(failure_remove_threshold=config.failure_remove_threshold)
 
     def loop(self) -> None:
         """Iterate peers; mark suspect or remove per the strategy."""
@@ -61,9 +59,8 @@ class Failure:
                         healthy_peer_count=len(self.membership.healthy()) + 1,
                     ):
                         to_remove.append(p.node_id)
-                elif p.missed_heartbeats >= suspect_threshold:
-                    if self.membership.mark_suspect(p.node_id):
-                        logger.warning("Peer %s is now suspect", p.node_id)
+                elif p.missed_heartbeats >= suspect_threshold and self.membership.mark_suspect(p.node_id):
+                    logger.warning("Peer %s is now suspect", p.node_id)
             for node_id in to_remove:
                 logger.warning("Removing failed peer %s", node_id)
                 self.membership.remove(node_id)

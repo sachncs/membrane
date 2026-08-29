@@ -53,11 +53,6 @@ class CachingPersistence:
         self.lock = threading.RLock()
         self.on_unavailable = on_unavailable or (lambda op, exc: None)
 
-    @property
-    def inner(self) -> PersistenceBackend:
-        """The canonical backend this cache wraps."""
-        return self.inner
-
     def ping(self) -> bool:
         """``True`` if the inner backend responds (cache hit on Redis still works)."""
         try:
@@ -66,9 +61,7 @@ class CachingPersistence:
             self.on_unavailable("ping", exc)
             return False
 
-    def store_fragment(
-        self, fragment: Fragment, node_id: str, is_primary: bool = False
-    ) -> bool:
+    def store_fragment(self, fragment: Fragment, node_id: str, is_primary: bool = False) -> bool:
         """Store ``fragment`` in cache and inner backend.
 
         The cache write is performed first so that even if the inner

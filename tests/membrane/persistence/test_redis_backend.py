@@ -6,6 +6,7 @@ from membrane.fragment import Fragment
 from membrane.persistence.redis import Redis
 from membrane.signature import Signature
 
+
 class TestRedisBackend:
     """Test suite for Redis."""
 

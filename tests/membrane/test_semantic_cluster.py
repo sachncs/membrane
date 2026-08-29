@@ -6,6 +6,7 @@ from membrane.clusters import SemanticCluster
 from membrane.fragment import Fragment
 from membrane.signature import Signature
 
+
 class TestSemanticCluster:
     """Test suite for SemanticCluster."""
 

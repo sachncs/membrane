@@ -6,6 +6,7 @@ from membrane.fragment import Fragment
 from membrane.isolation import Isolation, Tenant
 from membrane.signature import Signature
 
+
 class TestTenantIsolation:
     """Test suite for Isolation."""
 

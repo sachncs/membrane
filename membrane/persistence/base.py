@@ -33,9 +33,7 @@ class PersistenceBackend(Protocol):
         """Return ``True`` if the backend is reachable."""
         ...
 
-    def store_fragment(
-        self, fragment: Fragment, node_id: str, is_primary: bool = False
-    ) -> bool:
+    def store_fragment(self, fragment: Fragment, node_id: str, is_primary: bool = False) -> bool:
         """Persist ``fragment`` owned by ``node_id``.
 
         Returns:

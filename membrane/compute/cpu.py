@@ -128,4 +128,4 @@ class CPU(Backend):
         import hashlib
 
         payload = ",".join(str(t) for t in tokens)
-        return hashlib.md5(payload.encode()).hexdigest()
+        return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()

@@ -117,6 +117,7 @@ class Economic:
         # Compute the value density once — it does not depend on
         # the candidate and can therefore be shared.
         from membrane.density import density as density_fn
+
         vd = density_fn(fragment, access_history)
         cfg = self.config
 

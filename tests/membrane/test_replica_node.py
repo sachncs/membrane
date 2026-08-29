@@ -8,6 +8,7 @@ from membrane.origin import Origin
 from membrane.replica import Replica
 from membrane.signature import Signature
 
+
 class TestReplicaNode:
     """Test suite for Replica."""
 

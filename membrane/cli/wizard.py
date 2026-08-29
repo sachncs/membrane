@@ -57,9 +57,7 @@ def interactive_setup() -> dict[str, Any]:
     valid_backends = ("cpu", "gpu", "ollama", "openai", "anthropic", "transformers")
     compute = ask("Compute backend (cpu/gpu/ollama/openai/anthropic/transformers)", "cpu")
     while compute not in valid_backends:
-        console.print(
-            f"[red]Invalid compute. Choose one of: {', '.join(valid_backends)}.[/red]"
-        )
+        console.print(f"[red]Invalid compute. Choose one of: {', '.join(valid_backends)}.[/red]")
         compute = ask("Compute backend", "cpu")
 
     llm_url = ""

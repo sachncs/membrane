@@ -7,6 +7,7 @@ from membrane.node import Node
 from membrane.signature import Signature
 from membrane.sync import DeltaSync, SyncPlan
 
+
 class TestDeltaSync:
     """Test suite for DeltaSync."""
 

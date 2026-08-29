@@ -51,8 +51,8 @@ from typing import Any
 
 from membrane.compute.base import Backend
 from membrane.node import Node
-from membrane.transport.routes import ROUTES, MAX_BODY_BYTES
 from membrane.transfer import TransferService
+from membrane.transport.routes import MAX_BODY_BYTES, ROUTES
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             handler(self)
-        except Exception as exc:
+        except Exception:
             logger.exception("GET %s failed", path)
             self.send_json(500, {"error": "internal"})
 
@@ -152,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             handler(self)
-        except Exception as exc:
+        except Exception:
             logger.exception("POST %s failed", path)
             self.send_json(500, {"error": "internal"})
 

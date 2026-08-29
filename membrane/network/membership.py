@@ -108,9 +108,7 @@ class Membership:
                 self.peers[node_id].host = host
                 self.peers[node_id].port = port
                 return
-            self.peers[node_id] = PeerInfo(
-                node_id=node_id, host=host, port=port, last_heartbeat=time.time()
-            )
+            self.peers[node_id] = PeerInfo(node_id=node_id, host=host, port=port, last_heartbeat=time.time())
             self.clients[node_id] = Peer(f"http://{host}:{port}")
             self.ring.add_node(node_id)
             self.shard.add_node(node_id)

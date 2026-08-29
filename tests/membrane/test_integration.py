@@ -2,7 +2,6 @@
 
 import pytest
 
-from membrane.graph import SubgraphRetrieval
 from membrane.canonical import Canonical
 from membrane.chunks import Chunks
 from membrane.clusters import SemanticCluster
@@ -11,6 +10,7 @@ from membrane.density import density
 from membrane.directory import Directory
 from membrane.economic import Economic
 from membrane.fragment import Fragment
+from membrane.graph import SubgraphRetrieval
 from membrane.isolation import Isolation, Tenant
 from membrane.joint import Joint
 from membrane.kv import KVCache
@@ -31,6 +31,7 @@ from membrane.telemetry import Telemetry
 from membrane.versions import Versions
 from membrane.weighted import Weighted
 from membrane.workload import Workload
+
 
 class TestMembraneIntegration:
     """End-to-end integration tests across all 10 phases."""

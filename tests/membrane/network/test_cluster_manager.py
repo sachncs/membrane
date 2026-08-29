@@ -71,14 +71,13 @@ class TestClusterManager:
         peer.missed_heartbeats = 2
         # Use the Failure subsystem's detector directly.
         for p in mgr.membership.snapshot():
-            if p.missed_heartbeats >= mgr.config.failure_remove_threshold:
-                if mgr.failure.detector.should_remove(
-                    peer_id=p.node_id,
-                    peer_missed=p.missed_heartbeats,
-                    suspect_votes=0,
-                    healthy_peer_count=len(mgr.membership.healthy()) + 1,
-                ):
-                    mgr.remove_peer(p.node_id)
+            if p.missed_heartbeats >= mgr.config.failure_remove_threshold and mgr.failure.detector.should_remove(
+                peer_id=p.node_id,
+                peer_missed=p.missed_heartbeats,
+                suspect_votes=0,
+                healthy_peer_count=len(mgr.membership.healthy()) + 1,
+            ):
+                mgr.remove_peer(p.node_id)
         assert mgr.get_peers() == []
 
     def test_on_gossip(self):

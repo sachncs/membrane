@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 
 from membrane.network.config import ClusterConfig
 from membrane.network.membership import Membership

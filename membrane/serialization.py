@@ -71,10 +71,7 @@ def from_dict(data: dict[str, Any]) -> Fragment:
     if "schema_version" not in data:
         raise SchemaError("serialized fragment missing schema_version")
     if data["schema_version"] != SCHEMA_VERSION:
-        raise SchemaError(
-            f"incompatible schema_version={data['schema_version']}; "
-            f"expected {SCHEMA_VERSION}"
-        )
+        raise SchemaError(f"incompatible schema_version={data['schema_version']}; expected {SCHEMA_VERSION}")
     try:
         signature = Signature(
             model_id=data["model_id"],

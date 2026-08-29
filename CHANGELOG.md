@@ -51,6 +51,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `interactive_setup`, `_run_dashboard` -> `run_dashboard`.
   BREAKING CHANGE for any caller that overrode `_handle_*` on a custom
   HTTP handler subclass.
+- Bumped all runtime dependencies to their latest stable releases as of
+  2026-08-29: `typer>=0.27.2`, `rich>=15.0.0`, `redis>=8.1.0`,
+  `fastapi>=0.141.1`, `uvicorn>=0.52.4`, `ruff>=0.16.5`,
+  `grpcio>=1.83.1`, `grpcio-tools>=1.83.1`, `mypy>=2.3.1`,
+  `pydantic>=2.13.5`, `transformers>=5.16.1`, `torch>=2.13.0`,
+  `httpx>=0.28.1`, `protobuf>=7.36.0`, `pytest>=9.1.1`,
+  `pytest-cov>=7.1.0`. Bumped CI action versions
+  (`actions/checkout@v7`, `actions/setup-python@v7`,
+  `docker/build-push-action@v7`).
+- Converted the `peer` option on `membrane serve` to the
+  `Annotated[list[str] | None, typer.Option(...)] = None` form so the
+  default value is no longer a function call, eliminating a
+  mutable-default-argument lint warning without a per-file suppression.
+- Updated the ruff per-file-ignores list to reflect the current file
+  layout: removed stale entries for renamed files (`cli.py`,
+  `grpc_server.py`, `auth/__init__.py`) and tightened the
+  `membrane/__init__.py` re-export list by adding `DeltaSync` and
+  `TransferService` to `__all__` rather than suppressing the unused-import
+  warning.
+
+### Fixed
+- `membrane.metrics.metrics_summary`: the function referenced
+  `registry._counters` / `registry._gauges` (with a leading underscore)
+  which never existed on `MetricsCollector`; the summary therefore raised
+  `AttributeError` at runtime. Renamed to the actual public attributes
+  (`counters`, `gauges`).
+- `membrane.persistence.cache.CachingPersistence`: removed a self-referential
+  `@property def inner` whose getter returned `self.inner` (infinite
+  recursion) and which also made `self.inner = inner` in `__init__`
+  raise `read-only property` errors. The cache now stores `inner` as a
+  plain attribute, matching how every other backend is composed.
+- `membrane.network.cluster.ClusterManager.__init__`: removed a duplicate
+  block that re-initialized `self.running`, `self.stop_event`, and
+  `self.threads` after the subsystems that already captured references
+  to them — `running` and `threads` were reported by mypy as redefined.
+- `membrane.transport.routes.get_handler_node`: the return annotation
+  was `dict[str, Any]` even though the helper returned a live `Node`
+  (or an empty `dict` sentinel). Every caller was then flagged by mypy
+  when it tried to call `node.store(...)` / `node.fragments.items()` /
+  etc. on `dict[str, Any]`. The helper now returns `Node | None`, the
+  sentinel is `None`, and each caller already had an `if not node:`
+  early-return so the change is purely a type-correctness fix.
+- `membrane.auth.apikey.ignore_unused`: the helper referenced `Any`
+  without importing it (it was only re-exported from
+  `membrane.auth.__init__`). Added a local `from typing import Any`
+  import and dropped the now-unused `Any` re-export from the package
+  `__init__.py`.
+- Compute backends and content hashers (`membrane.compute.{cpu,openai,
+  anthropic,ollama,transformers}.token_hash`, `membrane.fragmenter.
+  payload_hash`, `membrane.ring.hash_value`): every call to
+  `hashlib.md5(...)` now passes `usedforsecurity=False`. The hashes are
+  used purely for content addressing and consistent-hashing placement,
+  not authentication, so they were false-positive B324 (high severity)
+  findings in bandit.
+- Reconstruction-engine tests (`tests/membrane/test_reconstruction_engine.py`):
+  six tests (`test_full_exact_match_no_prefill`,
+  `test_partial_match_with_positional_extension`,
+  `test_gap_filled_by_semantic_similarity`, `test_large_gap_triggers_prefill`,
+  `test_coverage_ratio_accuracy`, `test_graph_links_recorded`) created
+  fragments with placeholder `content_hash` strings (`"a"`, `"match"`,
+  …) and `model_id="test-model"`, then asserted behaviour under
+  `rebuild_context(..., "m")`. The reconstructor's exact-index lookup
+  keys fragments by `compute_content_hash(tokens)`, so those placeholders
+  were never reachable through `longest_match`. Coverage used to reach
+  1.0 only via semantic-similarity coincidence (and `prefill_invoked`
+  was wrong on `test_partial_match_with_positional_extension` for the
+  same reason). Replaced the placeholder hashes with
+  `compute_content_hash(tokens[start:end+1])` and `model_id="m"`, added
+  a small `_fragment_for_span` helper, and dropped two `@pytest.mark.xfail`
+  markers that had been hiding the failure.
+- `membrane.cost.should_prefill`: collapsed an if/else that assigned
+  `retrieve_cost` into a single ternary to satisfy `ruff` rule SIM108.
+- `membrane.network.failure.scrub_loop`: combined a nested
+  `elif`/`if` pair into a single guarded `elif … and …` to satisfy
+  `ruff` rule SIM102.
+- `tests/membrane/network/test_cluster_manager.py`: same SIM102
+  collapse as in the production failure detector.
+- Removed 44 auto-fixable ruff violations across the tree (`I001`
+  unsorted imports, `F841` unused variables, `W293` trailing whitespace,
+  `F811` redefined-but-unused, `UP035` deprecated imports) and
+  reformatted 25 files that drifted from `ruff format`.
+- Removed stale per-file ruff ignores for files that no longer exist
+  after the `R5–R7` file renames (`membrane/cli.py`,
+  `membrane/transport/grpc_server.py`).
 
 ## [0.1.2] - 2026-07-12
 

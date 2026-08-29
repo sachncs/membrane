@@ -1,5 +1,5 @@
-from membrane.graph import GraphManager
 from membrane.fragment import Fragment
+from membrane.graph import GraphManager
 from membrane.signature import Signature
 
 

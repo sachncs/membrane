@@ -201,9 +201,7 @@ def naive_heterogeneous_pd(
     length = int(round(mean_length)) if mean_length > 0 else 32768
 
     theta_membrane = throughput.stage_throughput_membrane(membrane_instances, EGRESS_BANDWIDTH_GBPS, length)
-    theta_pd_d = throughput.decode_throughput(
-        pd_instances, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH
-    )
+    theta_pd_d = throughput.decode_throughput(pd_instances, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH)
     # fraction_to_membrane = 1.0 means PD-P's contribution is
     # +inf; only Membrane and PD-D bottlenecks apply.
     lam = throughput.end_to_end_throughput(theta_membrane, float("inf"), theta_pd_d, 1.0)

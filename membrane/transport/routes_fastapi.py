@@ -33,9 +33,6 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 
 
-import json
-
-
 class FragmentPayload(BaseModel):
     """Wire format for a serialized Fragment.
 

@@ -9,6 +9,7 @@ from membrane.index import Index
 from membrane.kv import KVCache
 from membrane.signature import Signature
 
+
 class TestKVCacheManager:
     """Test suite for KVCache."""
 

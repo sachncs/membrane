@@ -5,6 +5,7 @@ from membrane.node import Node
 from membrane.registry import Registry
 from membrane.signature import Signature
 
+
 def test_register_and_unregister():
     gd = Registry()
     node = Node("n1")
@@ -13,9 +14,11 @@ def test_register_and_unregister():
     assert gd.unregister_node("n1")
     assert "n1" not in gd.nodes
 
+
 def test_unregister_missing():
     gd = Registry()
     assert not gd.unregister_node("missing")
+
 
 def test_locate_fragment():
     gd = Registry()
@@ -23,9 +26,11 @@ def test_locate_fragment():
     gd.record_fragment_location("h1", "n2")
     assert gd.locate_fragment("h1") == {"n1", "n2"}
 
+
 def test_locate_missing():
     gd = Registry()
     assert gd.locate_fragment("missing") == set()
+
 
 def test_optimal_nodes_ranked_by_coverage():
     from membrane.fragmenter import Fragmenter
@@ -46,9 +51,11 @@ def test_optimal_nodes_ranked_by_coverage():
     ranked = gd.best_nodes(tokens, "m", k=2)
     assert len(ranked) > 0
 
+
 def test_optimal_nodes_empty():
     gd = Registry()
     assert gd.best_nodes([1, 2, 3], "m") == []
+
 
 def test_node_load_influences_ranking():
     gd = Registry()

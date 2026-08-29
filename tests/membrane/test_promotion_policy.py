@@ -6,6 +6,7 @@ from membrane.fragment import Fragment
 from membrane.policy import Promotion, PromotionConfig, PromotionResult
 from membrane.signature import Signature
 
+
 class TestPromotionPolicy:
     """Test suite for Promotion."""
 

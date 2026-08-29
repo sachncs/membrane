@@ -21,11 +21,13 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 from membrane.compute.cpu import CPU
+from membrane.node import Node
 from membrane.serialization import from_dict as deserialize_fragment
 from membrane.serialization import to_dict as serialize_fragment
 
@@ -45,11 +47,11 @@ Handler = Callable[[Any], None]
 # ------------------------------------------------------------------
 
 
-def get_handler_node(handler: Any) -> dict[str, Any]:
-    """Return ``handler.server.node`` or send a 500 and return an empty dict."""
+def get_handler_node(handler: Any) -> Node | None:
+    """Return ``handler.server.node`` or send a 500 and return ``None``."""
     if not handler.server.node:
         handler.send_json(500, {"error": "no node"})
-        return {}
+        return None
     return handler.server.node  # type: ignore[return-value]
 
 

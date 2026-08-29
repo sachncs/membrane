@@ -6,10 +6,6 @@ renders the cluster membership as a Rich table.
 
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
-
 import typer
 from rich.console import Console
 from rich.table import Table

@@ -9,9 +9,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from membrane.fragment import Fragment
+from membrane.network.peer import Peer
 from membrane.serialization import to_dict
 from membrane.signature import Signature
-from membrane.network.peer import Peer
 
 
 def make_fragment(content_hash="abc", embedding=(0.1, 0.2, 0.3)):

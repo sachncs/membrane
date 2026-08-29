@@ -88,7 +88,7 @@ class Anthropic(Backend):
             str: Hexadecimal digest.
         """
         payload = ",".join(str(t) for t in tokens)
-        return hashlib.md5(payload.encode()).hexdigest()
+        return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Produce content-addressed fragments by hashing the prompt.

@@ -124,10 +124,6 @@ class CostModel:
             False otherwise.
         """
         compute_cost = self.prefill_cost(prefix_length)
-        if retrieval_latency_seconds is not None:
-            # Caller-supplied measurement overrides the
-            # bandwidth-based estimate.
-            retrieve_cost = retrieval_latency_seconds
-        else:
-            retrieve_cost = self.find_cost(kv_size)
+        # Caller-supplied measurement overrides the bandwidth-based estimate.
+        retrieve_cost = retrieval_latency_seconds if retrieval_latency_seconds is not None else self.find_cost(kv_size)
         return retrieve_cost < compute_cost

@@ -8,6 +8,7 @@ from membrane.origin import Origin
 from membrane.signature import Signature
 from membrane.transfer import TransferService
 
+
 class TestOriginNode:
     """Test suite for Origin."""
 

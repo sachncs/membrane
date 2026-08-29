@@ -62,12 +62,17 @@ def test_readyz_returns_503_when_over_capacity(client):
     c.app.state.node.fragments["h"] = big  # type: ignore[attr-defined]
     # Inject the equivalent of get_stats() reporting full memory.
     from dataclasses import replace
-    c.app.state.node.get_stats = lambda: type("S", (), {  # type: ignore[attr-defined]
-        "memory_used_bytes": 1,
-        "memory_limit_bytes": 1,
-        "fragment_count": 1,
-        "primary_count": 0,
-    })()
+
+    c.app.state.node.get_stats = lambda: type(
+        "S",
+        (),
+        {  # type: ignore[attr-defined]
+            "memory_used_bytes": 1,
+            "memory_limit_bytes": 1,
+            "fragment_count": 1,
+            "primary_count": 0,
+        },
+    )()
     resp = c.get("/readyz")
     assert resp.status_code == 503
 

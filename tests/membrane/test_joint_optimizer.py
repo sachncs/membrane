@@ -8,6 +8,7 @@ from membrane.node import Node
 from membrane.signature import Signature
 from membrane.telemetry import Telemetry
 
+
 class TestJointOptimizer:
     """Test suite for Joint."""
 

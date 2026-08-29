@@ -247,10 +247,9 @@ class ResiliencePolicy:
                     raise
                 delay = min(
                     self.retry.max_delay,
-                    self.retry.base_delay * (2 ** attempt),
+                    self.retry.base_delay * (2**attempt),
                 )
-                logger.debug("retry %d/%d after %.2fs due to %s",
-                             attempt + 1, attempts, delay, exc.__class__.__name__)
+                logger.debug("retry %d/%d after %.2fs due to %s", attempt + 1, attempts, delay, exc.__class__.__name__)
                 time.sleep(delay)
         assert last_exc is not None
         raise last_exc

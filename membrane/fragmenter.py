@@ -98,7 +98,7 @@ def compute_content_hash(tokens: tuple[int, ...]) -> str:
         str: Hexadecimal MD5 digest string.
     """
     payload = str(tokens).encode("utf-8")
-    return hashlib.md5(payload).hexdigest()
+    return hashlib.md5(payload, usedforsecurity=False).hexdigest()
 
 
 def generate_embedding(tokens: tuple[int, ...], dim: int) -> tuple[float, ...]:

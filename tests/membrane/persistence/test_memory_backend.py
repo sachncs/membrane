@@ -4,6 +4,7 @@ from membrane.fragment import Fragment
 from membrane.persistence.memory import Memory
 from membrane.signature import Signature
 
+
 class TestInMemoryBackend:
     """Test suite for Memory."""
 

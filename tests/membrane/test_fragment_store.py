@@ -8,6 +8,7 @@ from membrane.fragment import Fragment
 from membrane.signature import Signature
 from membrane.store import Store
 
+
 class TestFragmentStore:
     """Test suite for Store."""
 

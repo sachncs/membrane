@@ -15,7 +15,6 @@ import threading
 
 from membrane.network.config import ClusterConfig
 from membrane.network.membership import Membership
-from membrane.network.peer import Peer
 from membrane.node import Node
 from membrane.shard import Shard
 
@@ -84,9 +83,7 @@ class Replicator:
                     client.request_replicate(frag)
                     logger.debug("Replicated %s to %s", content_hash, peer_id)
             except Exception as exc:
-                logger.debug(
-                    "Replication of %s to %s failed: %s", content_hash, peer_id, exc
-                )
+                logger.debug("Replication of %s to %s failed: %s", content_hash, peer_id, exc)
 
         if self.semaphore is None:
             do_push()

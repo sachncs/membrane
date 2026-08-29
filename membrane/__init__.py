@@ -219,8 +219,10 @@ __all__ = [
     "Sync",
     "SyncPlan",
     "SyncResult",
+    "DeltaSync",
     "Telemetry",
     "Transfer",
+    "TransferService",
     "Weighted",
     # Compute
     "Backend",

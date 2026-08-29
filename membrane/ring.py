@@ -191,4 +191,4 @@ class Ring:
         Returns:
             str: Hexadecimal digest string.
         """
-        return hashlib.md5(value.encode("utf-8")).hexdigest()
+        return hashlib.md5(value.encode("utf-8"), usedforsecurity=False).hexdigest()

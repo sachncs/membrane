@@ -15,7 +15,7 @@ handlers use for scope checks via :func:`require_scope`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)

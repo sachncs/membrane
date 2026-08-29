@@ -7,6 +7,7 @@ from membrane.latency import Latency
 from membrane.node import Node
 from membrane.signature import Signature
 
+
 class TestLatencyRouter:
     """Test suite for Latency."""
 

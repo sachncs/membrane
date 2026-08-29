@@ -37,13 +37,32 @@ class JsonFormatter(logging.Formatter):
     site are merged into the output.
     """
 
-    RESERVED: frozenset[str] = frozenset({
-        "name", "msg", "args", "levelname", "levelno", "pathname",
-        "filename", "module", "exc_info", "exc_text", "stack_info",
-        "lineno", "funcName", "created", "msecs", "relativeCreated",
-        "thread", "threadName", "processName", "process", "message",
-        "taskName",
-    })
+    RESERVED: frozenset[str] = frozenset(
+        {
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "message",
+            "taskName",
+        }
+    )
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, object] = {

@@ -25,13 +25,11 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from typing import Any
 
 from membrane.network.bootstrap import bootstrap
 from membrane.network.config import ClusterConfig
 from membrane.network.failure import Failure
-from membrane.network.gossip import GossipState, PeerEndpoint
 from membrane.network.gossip_loop import Gossip
 from membrane.network.heartbeat import Heartbeat
 from membrane.network.membership import Membership, PeerInfo
@@ -133,10 +131,6 @@ class Cluster:
             self.stop_event,
             self.running,
         )
-
-        self.running: list[bool] = [False]
-        self.stop_event = threading.Event()
-        self.threads: list[threading.Thread] = []
 
     # ------------------------------------------------------------------
     # Lifecycle

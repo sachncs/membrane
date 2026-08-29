@@ -189,9 +189,7 @@ class ClusterMetrics:
 
     @property
     def replication_failures(self) -> Counter:
-        return self.registry.counter(
-            "membrane_replication_failures_total", "Failed replication pushes."
-        )
+        return self.registry.counter("membrane_replication_failures_total", "Failed replication pushes.")
 
 
 @dataclass
@@ -245,8 +243,8 @@ class NodeMetrics:
 def metrics_summary(registry: MetricsCollector) -> Mapping[str, float]:
     """Return a flat ``name -> value`` summary (counters and gauges only)."""
     return {
-        **{c.name: c.value for c in registry._counters.values()},
-        **{g.name: g.value for g in registry._gauges.values()},
+        **{c.name: c.value for c in registry.counters.values()},
+        **{g.name: g.value for g in registry.gauges.values()},
     }
 
 

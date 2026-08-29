@@ -149,7 +149,6 @@ class Fragment:
         """
         if other.content_hash != self.content_hash:
             raise ValueError(
-                f"cannot merge fragments with different content_hash: "
-                f"{self.content_hash} vs {other.content_hash}"
+                f"cannot merge fragments with different content_hash: {self.content_hash} vs {other.content_hash}"
             )
         return self if self.version_id >= other.version_id else other

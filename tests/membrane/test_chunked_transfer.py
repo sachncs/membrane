@@ -7,6 +7,7 @@ from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.signature import Signature
 
+
 class TestChunkedTransfer:
     """Test suite for Chunks."""
 

@@ -7,6 +7,7 @@ from membrane.fragment import Fragment
 from membrane.signature import Signature
 from membrane.telemetry import Telemetry
 
+
 class TestEconomicRouter:
     """Test suite for Economic."""
 

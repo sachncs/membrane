@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from membrane.fragment import Fragment
 from membrane.serialization import from_dict as deserialize_fragment

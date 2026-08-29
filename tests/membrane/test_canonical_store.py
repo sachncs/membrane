@@ -6,6 +6,7 @@ from membrane.canonical import Canonical, CanonicalRef
 from membrane.fragment import Fragment
 from membrane.signature import Signature
 
+
 class TestCanonicalStore:
     """Test suite for Canonical."""
 
