@@ -35,7 +35,6 @@ from membrane.compute.transformers import Transformers
 from membrane.cost import CostModel
 from membrane.delta import Delta
 from membrane.density import density
-from membrane.directory import Directory
 from membrane.economic import Economic
 from membrane.errors import (
     AuthError,
@@ -116,7 +115,6 @@ from membrane.server import Server, ServerDiagnostics, ServerEvent
 from membrane.sessions import Session, Sessions
 from membrane.shard import Shard
 from membrane.signature import Signature
-from membrane.supernode import Supernode
 from membrane.sync import DeltaSync, SyncPlan, SyncResult
 from membrane.telemetry import Telemetry
 from membrane.trace import Trace
@@ -195,7 +193,6 @@ __all__ = [
     # Cluster / network
     "Cluster",
     "ClusterConfig",
-    "Directory",
     "GossipState",
     "Memory",
     "Node",
@@ -211,7 +208,6 @@ __all__ = [
     "Ring",
     "Shard",
     "Stats",
-    "Supernode",
     "Sync",
     "SyncPlan",
     "SyncResult",

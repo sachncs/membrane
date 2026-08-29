@@ -2,12 +2,10 @@
 
 This module defines :class:`Registry`, the routing-plane
 registry that tracks cluster membership and the set of nodes
-holding each fragment. Unlike
-:class:`~membrane.directory.Directory`
-(which delegates to supernodes), this implementation stores the
-membership and placement tables directly in memory.
+holding each fragment. The registry stores the membership and
+placement tables directly in memory.
 
-The directory also exposes a higher-level helper,
+The registry also exposes a higher-level helper,
 :meth:`best_nodes`, which scores each
 registered node by an estimate of how many of the prompt's
 prefix-length sub-hashes it already holds, adjusted by a small

@@ -7,7 +7,6 @@ from membrane.canonical import Canonical
 from membrane.chunks import Chunks
 from membrane.replicator import Replicator
 from membrane.delta import DeltaEncoder
-from membrane.directory import Directory
 from membrane.roles import Roles, NodeRole, SystemState
 from membrane.economic import Economic
 from membrane.fragment import Fragment
@@ -27,7 +26,6 @@ from membrane.clusters import SemanticCluster
 from membrane.sessions import Sessions
 from membrane.signature import Signature
 from membrane.graph import SubgraphRetrieval
-from membrane.supernode import Supernode
 from membrane.isolation import Isolation, Tenant
 from membrane.density import density
 from membrane.weighted import Weighted
@@ -79,18 +77,8 @@ def main():
     decision = engine.decide(list(range(2048)), local, [remote])
     logger.info(f"  Offload to {decision.target_node_id}, reason={decision.reason}\n")
 
-    # Phase 4: Global Directory
-    logger.info("[Phase 4] Distributed Directory")
-    ring = Ring()
-    ring.add_node("n1")
-    sn = Supernode("sn1", hash_ring=ring)
-    sn.register_fragment("demo-1", "n1")
-    dd = Directory(hash_ring=ring)
-    dd.register_supernode(sn)
-    logger.info(f"  Locate demo-1: {dd.locate('demo-1')}\n")
-
-    # Phase 5: Delta Transport
-    logger.info("[Phase 5] Delta Encoding")
+    # Phase 4: Delta Transport
+    logger.info("[Phase 4] Delta Encoding")
     enc = DeltaEncoder()
     base = tuple(range(10))
     new = tuple(range(10)) + (99, 100)

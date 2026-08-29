@@ -7,7 +7,6 @@ from membrane.chunks import Chunks
 from membrane.clusters import SemanticCluster
 from membrane.delta import DeltaEncoder
 from membrane.density import density
-from membrane.directory import Directory
 from membrane.economic import Economic
 from membrane.fragment import Fragment
 from membrane.graph import SubgraphRetrieval
@@ -26,7 +25,6 @@ from membrane.ring import Ring
 from membrane.roles import NodeRole, Roles, SystemState
 from membrane.sessions import Sessions
 from membrane.signature import Signature
-from membrane.supernode import Supernode
 from membrane.telemetry import Telemetry
 from membrane.versions import Versions
 from membrane.weighted import Weighted
@@ -65,17 +63,7 @@ class TestMembraneIntegration:
         result = dispatcher.dispatch(list(range(100)), "m", remote)
         assert result.kv_size > 0.0
 
-    def test_phase_4_directory_resolution(self):
-        ring = Ring()
-        ring.add_node("n1")
-        sn = Supernode("sn1", hash_ring=ring)
-        sn.register_fragment("h1", "n1")
-        dd = Directory(hash_ring=ring)
-        dd.register_supernode(sn)
-        assert dd.locate("h1") == {"n1"}
-        assert dd.locate_nearest("h1", "from") == "n1"
-
-    def test_phase_5_delta_roundtrip(self):
+    def test_phase_4_delta_roundtrip(self):
         enc = DeltaEncoder()
         base = tuple(range(10))
         new = tuple(range(10)) + (99, 100)
