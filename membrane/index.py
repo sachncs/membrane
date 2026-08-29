@@ -153,9 +153,10 @@ class Index:
         """Remove a fragment from all sub-indices.
 
         Each sub-index is queried independently because their
-        membership sets may diverge (e.g., a co-access entry can
-        outlive its fragment). The method returns ``True`` if at
-        least one sub-index reported a removal.
+        membership sets may diverge: a co-access entry, in particular,
+        can outlive the fragment it was recorded against. Every
+        sub-index is consulted so that co-access entries are
+        reliably cleaned up alongside the underlying fragment.
 
         Args:
             content_hash: Hash of the fragment to remove.
@@ -164,12 +165,15 @@ class Index:
             bool: True if the fragment was found in at least one
             sub-index, False otherwise.
         """
-        removed = (
-            self.exact.remove(content_hash)
-            or self.semantic.remove(content_hash)
-            or self.positional.remove(content_hash)
-            or self.co_access.remove(content_hash)
-        )
+        removed = False
+        if self.exact.remove(content_hash):
+            removed = True
+        if self.semantic.remove(content_hash):
+            removed = True
+        if self.positional.remove(content_hash):
+            removed = True
+        if self.co_access.remove(content_hash):
+            removed = True
         return removed
 
     def co_access_neighbors(self, content_hash: str) -> set[str]:
