@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
-from membrane.auth import AuthBackendError, AuthContext, Authenticator, AuthRequest
+from membrane.auth import AuthBackendError, AuthContext, AuthRequest
 
 logger = logging.getLogger(__name__)
 
@@ -117,19 +116,3 @@ class NoopAuthenticator:
 
 
 __all__ = ["APIKey", "APIKeyAuthenticator", "NoopAuthenticator"]
-
-
-def ensure_runtime_checkable() -> None:
-    """Sanity-check that both implementations satisfy the :class:`Authenticator` protocol."""
-    # These are no-ops at runtime; they exist purely to give a clear error
-    # at import time if a bug regresses the protocol implementation.
-    assert isinstance(APIKeyAuthenticator(""), Authenticator)
-    assert isinstance(NoopAuthenticator(), Authenticator)
-
-
-ensure_runtime_checkable()
-
-
-def ignore_unused(_: Any) -> None:
-    """Suppress unused-import warnings for type-checker-only imports."""
-    return None

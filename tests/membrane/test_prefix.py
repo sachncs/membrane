@@ -3,7 +3,6 @@
 from membrane.delta import Delta
 from membrane.fragmenter import compute_content_hash
 from membrane.prefix import Prefix
-from membrane.semhash import compute_semantic_hash
 
 
 def test_prefix_creation():
@@ -11,7 +10,7 @@ def test_prefix_creation():
     p = Prefix(
         tokens=tokens,
         content_hash=compute_content_hash(tokens),
-        semantic_hash=compute_semantic_hash((0.1, 0.2)),
+        semantic_hash="sh",
         size_bytes=256,
         token_count=4,
         reuse_score=0.8,
@@ -25,7 +24,7 @@ def test_prefix_materialize():
     p = Prefix(
         tokens=tokens,
         content_hash=compute_content_hash(tokens),
-        semantic_hash=compute_semantic_hash((0.1, 0.2)),
+        semantic_hash="sh",
         size_bytes=128,
         token_count=3,
         reuse_score=0.5,

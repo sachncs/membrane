@@ -1,7 +1,6 @@
 """Tests for Artifact memory object."""
 
 from membrane.artifact import Artifact
-from membrane.semhash import compute_semantic_hash
 
 
 def test_artifact_creation():
@@ -10,7 +9,7 @@ def test_artifact_creation():
         text_hash="th123",
         embedding=(0.1, 0.2, 0.3),
         content_hash="ch123",
-        semantic_hash=compute_semantic_hash((0.1, 0.2, 0.3)),
+        semantic_hash="sh123",
         size_bytes=256,
         token_count=50,
         reuse_score=0.7,

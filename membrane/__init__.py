@@ -112,7 +112,6 @@ from membrane.roles import NodeRole, Roles, SystemState
 from membrane.segment import Segment
 from membrane.selector import Selector, SelectorConfig
 from membrane.semantics import Semantics
-from membrane.semhash import compute_semantic_hash, semantic_distance
 from membrane.server import Server, ServerDiagnostics, ServerEvent
 from membrane.sessions import Session, Sessions
 from membrane.shard import Shard
@@ -120,7 +119,7 @@ from membrane.signature import Signature
 from membrane.store import Store, StoreMetrics
 from membrane.supernode import Supernode
 from membrane.sync import DeltaSync, SyncPlan, SyncResult
-from membrane.telemetry import Telemetry, telemetry
+from membrane.telemetry import Telemetry
 from membrane.trace import Trace
 from membrane.tracker import LRUTracker
 from membrane.transfer import TransferService
@@ -261,7 +260,6 @@ __all__ = [
     "Workload",
     # Engines
     "Adapter",
-    "Chunk",
     "Fragmenter",
     "FragmenterConfig",
     "KVCache",
@@ -276,10 +274,6 @@ __all__ = [
     "Versions",
     # Decisions helpers
     "density",
-    "telemetry",
-    "replicate",
-    "compute_semantic_hash",
-    "semantic_distance",
     "NodeRole",
     # Server
     "Server",

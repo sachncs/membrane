@@ -6,7 +6,7 @@ cosine similarity — every query scores against every indexed
 fragment — which is appropriate when the number of fragments is
 modest (thousands to tens of thousands). For larger collections,
 swap in a proper ANN index (e.g., FAISS) by implementing the
-:class:`~membrane.protocols.IndexProtocol` interface.
+:class:`~membrane.index.Index` interface.
 
 The index caches each fragment's embedding L2 norm so that the
 similarity computation only needs to multiply the query embedding

@@ -19,8 +19,7 @@ query methods that map to the most appropriate sub-index.
 
 Because the underlying indexes are independent data structures,
 :class:`Index` can be initialized lazily in tests or replaced
-with mocks that satisfy
-:class:`~membrane.protocols.IndexProtocol`.
+with mocks that satisfy the same surface.
 
 Thread safety:
     The class inherits the threading properties of its
