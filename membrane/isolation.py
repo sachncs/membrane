@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
+from membrane.fragment_kind import FragmentKind
 
 
 @dataclass(frozen=True)
@@ -105,7 +106,7 @@ class Isolation:
         # they were not explicitly opted out of.
         model_id = fragment.structural_signature.model_id
         return not (
-            (model_id == "prefix" and not self.policy.allow_public_prefixes)
-            or (model_id == "tool" and not self.policy.allow_tool_traces)
-            or (model_id == "artifact" and not self.policy.allow_artifacts)
+            (model_id == FragmentKind.PREFIX and not self.policy.allow_public_prefixes)
+            or (model_id == FragmentKind.TRACE and not self.policy.allow_tool_traces)
+            or (model_id == FragmentKind.ARTIFACT and not self.policy.allow_artifacts)
         )

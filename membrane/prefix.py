@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
+from membrane.fragment_kind import FragmentKind
 from membrane.fragmenter import generate_embedding
 from membrane.signature import Signature
 
@@ -125,7 +126,7 @@ class Prefix:
         # fragments produced by a compute backend carry the actual
         # model id in their Signature.
         signature = Signature(
-            model_id="prefix",
+            model_id=FragmentKind.PREFIX,
             layer_range=(0, 0),
             token_span=(0, self.token_count - 1),
         )

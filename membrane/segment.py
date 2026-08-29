@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
+from membrane.fragment_kind import FragmentKind
 from membrane.fragmenter import generate_embedding
 from membrane.signature import Signature
 
@@ -115,7 +116,7 @@ class Segment:
         # The synthetic "kv" model_id distinguishes segment-level
         # fragments from prefix-level fragments in the indexes.
         signature = Signature(
-            model_id="kv",
+            model_id=FragmentKind.KV,
             layer_range=(self.layer, self.layer),
             token_span=self.token_span,
         )

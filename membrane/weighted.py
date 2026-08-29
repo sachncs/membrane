@@ -31,6 +31,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from membrane.fragment_kind import FragmentKind
 from membrane.graph import Graph
 
 
@@ -79,7 +80,7 @@ class Weighted:
             content_hash=content_hash,
             embedding=(0.0,),
             structural_signature=Signature(
-                model_id="weighted_graph",
+                model_id=FragmentKind.WEIGHTED,
                 layer_range=(0, 0),
                 token_span=(0, 0),
             ),

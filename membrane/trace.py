@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
+from membrane.fragment_kind import FragmentKind
 from membrane.fragmenter import generate_embedding
 from membrane.signature import Signature
 
@@ -104,7 +105,7 @@ class Trace:
         # trace, allowing downstream routing/eviction logic to treat
         # it differently from prefix or KV fragments if needed.
         signature = Signature(
-            model_id="tool",
+            model_id=FragmentKind.TRACE,
             layer_range=(0, 0),
             # Use max(0, len-1) so empty outputs produce a valid
             # (0, 0) span rather than a negative bound.

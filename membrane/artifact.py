@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
+from membrane.fragment_kind import FragmentKind
 from membrane.signature import Signature
 
 
@@ -98,7 +99,7 @@ class Artifact:
             .materialize`).
         """
         signature = Signature(
-            model_id="artifact",
+            model_id=FragmentKind.ARTIFACT,
             layer_range=(0, 0),
             token_span=(0, self.token_count - 1),
         )
