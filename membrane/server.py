@@ -13,7 +13,7 @@ command and the TUI dashboard. It owns:
 * A persistence backend (:class:`Memory` or
   :class:`Redis`).
 * An optional :class:`Cluster` and matching
-  :class:`Transfer`.
+  :class:`~membrane.transfer.TransferService`.
 * An in-memory event log surfaced via
   :meth:`recent_events` for the dashboard.
 """
@@ -36,10 +36,10 @@ from membrane.metrics import (
 )
 from membrane.network.cluster import Cluster
 from membrane.network.config import ClusterConfig
-from membrane.network.transfer import Transfer
 from membrane.node import Node
 from membrane.persistence.memory import Memory
 from membrane.persistence.redis import Redis
+from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.http import HTTPServer
 
@@ -248,7 +248,7 @@ class Server:
     ) -> None:
         """Initialize the cluster manager and transfer service."""
         self.cluster_manager: Cluster | None = None
-        self.transfer_service = Transfer(
+        self.transfer_service = TransferService(
             cluster_manager=self.cluster_manager,
             local_node=self.node,
         )

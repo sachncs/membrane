@@ -106,8 +106,8 @@ class DeltaSync:
         Returns:
             SyncPlan: Description of the required transfers.
         """
-        source_digest = self.transfer_service.inventory_digest(source)
-        target_digest = self.transfer_service.inventory_digest(target)
+        source_digest = self.transfer_service.inventory_digest(source) or {}
+        target_digest = self.transfer_service.inventory_digest(target) or {}
 
         missing: list[str] = []
         outdated: list[str] = []

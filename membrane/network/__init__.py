@@ -11,8 +11,6 @@ Membrane nodes together:
   eventually-consistent state propagation via gossip.
 * :class:`~membrane.network.peer.Peer` —
   request/response transport to a specific peer.
-* :class:`~membrane.network.transfer.Transfer`
-  — remote fragment transfer between nodes.
 
 The public API of the package is the union of these classes; all
 submodules are implementation details and should not be imported
@@ -23,7 +21,6 @@ from membrane.network.cluster import Cluster, PeerInfo
 from membrane.network.config import ClusterConfig
 from membrane.network.gossip import GossipState, PeerEndpoint
 from membrane.network.peer import Peer
-from membrane.network.transfer import Transfer
 
 __all__ = [
     "ClusterConfig",
@@ -32,5 +29,4 @@ __all__ = [
     "Peer",
     "PeerEndpoint",
     "PeerInfo",
-    "Transfer",
 ]

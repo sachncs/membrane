@@ -83,7 +83,6 @@ from membrane.network.strategy import (
     RateLimitedMigrator,
     ThresholdDetector,
 )
-from membrane.network.transfer import Transfer as RemoteTransfer
 from membrane.node import Node, Stats
 from membrane.offload import Offload, OffloadConfig, OffloadResult
 from membrane.origin import Origin
@@ -203,7 +202,6 @@ __all__ = [
     "PeerInfo",
     "Redis",
     "Registry",
-    "RemoteTransfer",
     "Replica",
     "Ring",
     "Shard",
