@@ -22,8 +22,7 @@ from __future__ import annotations
 
 import typer
 
-from membrane.cli.commands import cluster, config, llm, serve
-from membrane.cli.poll import main as dashboard
+from membrane.cli.commands import cluster, config, dashboard, llm, serve
 
 app = typer.Typer(
     name="membrane",
@@ -34,7 +33,7 @@ app = typer.Typer(
 # Register subcommands. Each is a typer.command function from
 # ``membrane.cli.commands.*`` exposed as ``main`` for uniformity.
 app.command(name="serve", help="Start a Membrane production server.")(serve.main)
-app.command(name="dashboard", help="Open a live TUI dashboard against a remote server.")(dashboard)
+app.command(name="dashboard", help="Open a live TUI dashboard against a remote server.")(dashboard.main)
 app.command(name="cluster-status", help="Show cluster membership and peer health.")(cluster.main)
 app.command(name="llm-status", help="Show active LLM backend status and model info.")(llm.main)
 app.command(name="config", help="Show Membrane configuration and environment.")(config.main)

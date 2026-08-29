@@ -10,7 +10,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from membrane.cli.poll import fetch_json
+from membrane.cli.dashboard import fetch_json
 
 console = Console()
 
