@@ -6,7 +6,7 @@ Owns the daemon threads and dispatches to focused subsystem classes:
 * :class:`~membrane.network.heartbeat.Heartbeat` — heartbeat loop
 * :class:`~membrane.network.failure.Failure` — failure-detection loop
 * :class:`~membrane.network.gossip_loop.Gossip` — gossip loop + handler
-* :class:`~membrane.network.replicator.Replicator` — replication loop
+* :class:`~membrane.replicator.Replicator` — replication loop
 * :func:`~membrane.network.bootstrap.bootstrap` — one-shot seed join
 
 Public API is preserved for backward compatibility with the previous
@@ -34,10 +34,10 @@ from membrane.network.gossip_loop import Gossip
 from membrane.network.heartbeat import Heartbeat
 from membrane.network.membership import Membership, PeerInfo
 from membrane.network.peer import Peer
-from membrane.network.replicator import Replicator
 from membrane.network.strategy import FailureDetector, Migrator, ThresholdDetector
 from membrane.node import Node
 from membrane.registry import Registry
+from membrane.replicator import Replicator
 from membrane.ring import Ring
 from membrane.shard import Shard
 
@@ -124,12 +124,12 @@ class Cluster:
             self.running,
         )
         self.replicator = Replicator(
-            self.membership,
-            self.shard_manager,
-            node,
-            config,
-            self.stop_event,
-            self.running,
+            membership=self.membership,
+            shard=self.shard_manager,
+            node=node,
+            config=config,
+            stop_event=self.stop_event,
+            running=self.running,
         )
 
     # ------------------------------------------------------------------
