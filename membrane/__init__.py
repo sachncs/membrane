@@ -1,7 +1,50 @@
 """Membrane — Global Contextual Memory Fabric for LLM inference.
 
-This package provides the foundational data model, indexing, graph layer,
-caching, routing, and multi-tenant deduplication for Membrane.
+The public API of Membrane. This module intentionally re-exports only
+the durable domain concepts; implementation details live in their
+own submodules and should be imported via the deep path.
+
+Durable concepts (in import order, by domain):
+
+* Memory objects — :class:`Fragment` and its family
+  :class:`Prefix`, :class:`Segment`, :class:`Artifact`,
+  :class:`Trace`, plus the discriminator :class:`FragmentKind` and
+  the structural metadata :class:`Signature`.
+* Serving plane — :class:`Node` with its :class:`Origin` and
+  :class:`Replica` variants.
+* Index — :class:`Index` aggregate (sub-indexes are deep-imported
+  from ``membrane.exacts`` etc.).
+* Placement — :class:`Ring` and :class:`Shard`.
+* Reconstruction — :class:`Reconstructor`.
+* Transfer — :class:`TransferService` (the unified in-process +
+  remote-aware transfer plane).
+* Persistence — :class:`PersistenceBackend` protocol with the
+  :class:`Memory`, :class:`Redis`, and :class:`CachingPersistence`
+  implementations.
+* Compute — :class:`Backend` ABC plus the concrete CPU, GPU,
+  Transformers, OpenAI, Anthropic, and Ollama backends.
+* Transports — :class:`FastAPIServer`, :class:`GrpcServer`,
+  :class:`HTTPServer`.
+* Composition — :class:`Server` (the runnable entry point).
+* Auth — :class:`Authenticator` protocol.
+* Errors — :class:`Error` and its typed hierarchy.
+* Logging — :func:`configure_logging`.
+
+Implementation details that used to be re-exported here have been
+moved to deep imports:
+
+* Sub-indexes (``Exacts``, ``Semantics``, ``Tree``, ``Coaccess``,
+  ``Weighted``, ``Graph``, ``Canonical``, ``KVCache``, ``Registry``,
+  ``Chunk``) — import from ``membrane.exacts`` etc.
+* Cluster plumbing (``Cluster``, ``Membership``, ``Peer``,
+  ``Transfer`` legacy alias, ``GossipState``) — import from
+  ``membrane.network.cluster`` etc.
+* Decision / policy classes (``Economic``, ``Latency``, ``Joint``,
+  ``Promotion``, ``Offload``, ``Isolation``, ``Selector``, ``Roles``,
+  ``Predict``, ``Workload``) — import from their own modules.
+* Resilience policies, metrics primitives, observability helpers,
+  model analytical code, and CLI commands — import from their own
+  modules.
 """
 
 import logging
@@ -9,22 +52,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.adapter import Adapter
 from membrane.artifact import Artifact
-from membrane.auth import (
-    SCOPES,
-    AuthBackendError,
-    AuthContext,
-    Authenticator,
-    AuthRequest,
-    require_scope,
-)
-from membrane.auth.apikey import APIKey, APIKeyAuthenticator, NoopAuthenticator
-from membrane.auth.tls import TLSConfig
-from membrane.canonical import Canonical, CanonicalRef
-from membrane.chunks import Chunk
-from membrane.clusters import SemanticCluster
-from membrane.coaccess import Coaccess
+from membrane.auth import Authenticator
 from membrane.compute.anthropic import Anthropic
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
@@ -32,12 +61,7 @@ from membrane.compute.gpu import GPU
 from membrane.compute.ollama import Ollama
 from membrane.compute.openai import OpenAI
 from membrane.compute.transformers import Transformers
-from membrane.cost import CostModel
-from membrane.delta import Delta
-from membrane.density import density
-from membrane.economic import Economic
 from membrane.errors import (
-    AuthError,
     BackendError,
     CapacityError,
     ConfigError,
@@ -46,234 +70,88 @@ from membrane.errors import (
     NetworkError,
     PersistenceError,
     SchemaError,
+    TimeoutError,
 )
-from membrane.errors import (
-    ConnectionError as PersistenceConnectionError,
-)
-from membrane.exacts import Exacts
 from membrane.fragment import Fragment
-from membrane.fragmenter import Fragmenter, FragmenterConfig
-from membrane.graph import Graph
+from membrane.fragment_kind import FragmentKind
 from membrane.index import Index
-from membrane.isolation import Isolation, Tenant
-from membrane.joint import Joint, PlacementDecision
-from membrane.kv import KVCache
-from membrane.latency import Latency
-from membrane.logging import configure_logging, get_logger
-from membrane.metrics import (
-    ClusterMetrics,
-    Counter,
-    Gauge,
-    Histogram,
-    MetricsCollector,
-    NodeMetrics,
-    PersistenceMetrics,
-    TransportMetrics,
-    metrics_summary,
-)
-from membrane.network.cluster import Cluster, PeerInfo
-from membrane.network.config import ClusterConfig
-from membrane.network.gossip import GossipState, PeerEndpoint
-from membrane.network.peer import Peer as PeerClient
-from membrane.network.strategy import (
-    EagerMigrator,
-    FailureDetector,
-    Migrator,
-    QuorumDetector,
-    RateLimitedMigrator,
-    ThresholdDetector,
-)
-from membrane.node import Node, Stats
-from membrane.offload import Offload, OffloadConfig, OffloadResult
+from membrane.logging import configure_logging
+from membrane.node import Node
 from membrane.origin import Origin
 from membrane.persistence.base import PersistenceBackend
 from membrane.persistence.cache import CachingPersistence
 from membrane.persistence.memory import Memory
 from membrane.persistence.redis import Redis
-from membrane.policy import Promotion, PromotionConfig, PromotionResult
-from membrane.predict import Predict
 from membrane.prefiller import Prefiller
 from membrane.prefix import Prefix
-from membrane.reconstructor import Reconstructor, ReconstructorResult
-from membrane.registry import Registry
+from membrane.reconstructor import Reconstructor
 from membrane.replica import Replica
-from membrane.resilience import (
-    BulkheadPolicy,
-    CircuitBreakerPolicy,
-    ResiliencePolicy,
-    RetryPolicy,
-    TimeoutPolicy,
-)
 from membrane.ring import Ring
-from membrane.roles import NodeRole, Roles, SystemState
 from membrane.segment import Segment
-from membrane.selector import Selector, SelectorConfig
-from membrane.semantics import Semantics
-from membrane.server import Server, ServerDiagnostics, ServerEvent
-from membrane.sessions import Session, Sessions
+from membrane.server import Server
 from membrane.shard import Shard
 from membrane.signature import Signature
-from membrane.sync import DeltaSync, SyncPlan, SyncResult
-from membrane.telemetry import Telemetry
 from membrane.trace import Trace
-from membrane.tracker import LRUTracker
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.grpc import GrpcServer
 from membrane.transport.http import HTTPServer
-from membrane.transport.http import StdlibServer as StdlibServerTransport
-from membrane.tree import Tree
-from membrane.versions import VersionEntry, Versions
-from membrane.weighted import Weighted
-from membrane.workload import Workload
 
 __all__ = [
-    "configure_logging",
-    "get_logger",
-    # Errors
-    "AuthError",
-    "BackendError",
-    "CapacityError",
-    "ConfigError",
-    "Error",
-    "MigrationError",
-    "NetworkError",
-    "PersistenceConnectionError",
-    "PersistenceError",
-    "SchemaError",
-    # Authentication
-    "APIKey",
-    "APIKeyAuthenticator",
-    "AuthBackendError",
-    "AuthContext",
-    "AuthRequest",
-    "Authenticator",
-    "NoopAuthenticator",
-    "SCOPES",
-    "TLSConfig",
-    "require_scope",
-    # Resilience
-    "BulkheadPolicy",
-    "CircuitBreakerPolicy",
-    "ResiliencePolicy",
-    "RetryPolicy",
-    "TimeoutPolicy",
-    # Metrics
-    "ClusterMetrics",
-    "Counter",
-    "Gauge",
-    "Histogram",
-    "MetricsCollector",
-    "NodeMetrics",
-    "PersistenceMetrics",
-    "TransportMetrics",
-    "metrics_summary",
-    # Core data
-    "Artifact",
-    "Chunk",
-    "Delta",
+    # Memory objects
     "Fragment",
-    "Prefix",
-    "Session",
+    "FragmentKind",
     "Signature",
+    "Prefix",
+    "Segment",
+    "Artifact",
     "Trace",
-    "VersionEntry",
-    # Storage / indexes
-    "Canonical",
-    "CanonicalRef",
-    "Coaccess",
-    "CostModel",
-    "Exacts",
-    "Graph",
-    "Index",
-    "Semantics",
-    "Tree",
-    # Cluster / network
-    "Cluster",
-    "ClusterConfig",
-    "GossipState",
-    "Memory",
+    # Serving plane
     "Node",
-    "PersistenceBackend",
     "Origin",
-    "PeerClient",
-    "PeerEndpoint",
-    "PeerInfo",
-    "Redis",
-    "Registry",
     "Replica",
+    # Index
+    "Index",
+    # Placement
     "Ring",
     "Shard",
-    "Stats",
-    "Sync",
-    "SyncPlan",
-    "SyncResult",
-    "DeltaSync",
-    "Telemetry",
-    "Transfer",
+    # Reconstruction
+    "Reconstructor",
+    # Transfer
     "TransferService",
-    "Weighted",
+    # Persistence
+    "PersistenceBackend",
+    "Memory",
+    "Redis",
+    "CachingPersistence",
     # Compute
     "Backend",
-    "CachingPersistence",
     "CPU",
     "GPU",
-    "Ollama",
-    "OpenAI",
-    # Cluster strategies
-    "EagerMigrator",
-    "FailureDetector",
-    "Migrator",
-    "QuorumDetector",
-    "RateLimitedMigrator",
-    "ThresholdDetector",
-    "Anthropic",
     "Transformers",
-    # Decision classes
-    "Economic",
-    "Isolation",
-    "Joint",
-    "Latency",
-    "Offload",
-    "OffloadConfig",
-    "OffloadResult",
-    "PlacementDecision",
-    "Predict",
-    "Promotion",
-    "PromotionConfig",
-    "PromotionResult",
-    "Roles",
-    "Selector",
-    "SelectorConfig",
-    "SystemState",
-    "Tenant",
-    "Workload",
-    # Engines
-    "Adapter",
-    "Fragmenter",
-    "FragmenterConfig",
-    "KVCache",
-    "LRUTracker",
-    "Prefiller",
-    "Reconstructor",
-    "ReconstructorResult",
-    "Replicator",
-    "Segment",
-    "Sessions",
-    "Versions",
-    # Decisions helpers
-    "density",
-    "NodeRole",
-    # Server
-    "Server",
-    "ServerDiagnostics",
-    "ServerEvent",
+    "OpenAI",
+    "Anthropic",
+    "Ollama",
     # Transports
     "FastAPIServer",
     "GrpcServer",
     "HTTPServer",
-    "StdlibServerTransport",
-    # Other
-    "Clusters",
-    "SemanticCluster",
+    # Composition
+    "Server",
+    # Auth
+    "Authenticator",
+    # Errors
+    "Error",
+    "BackendError",
+    "CapacityError",
+    "ConfigError",
+    "MigrationError",
+    "NetworkError",
+    "PersistenceError",
+    "SchemaError",
+    "TimeoutError",
+    # Logging
+    "configure_logging",
+    # Prefill
+    "Prefiller",
 ]
