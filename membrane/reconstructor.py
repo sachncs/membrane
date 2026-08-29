@@ -20,7 +20,7 @@ Workflow:
    record co-access edges between the assembled fragments.
 
 The engine is content-agnostic: it operates on whatever fragments
-are present in the supplied :class:`~membrane.index_system
+are present in the supplied :class:`~membrane.index
 .Index`. Callers that need model-specific behavior should
 select a :class:`Adapter` accordingly.
 """

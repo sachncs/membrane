@@ -8,7 +8,7 @@ The backend is a thin convenience layer used by the
 :class:`~membrane.fragment_store.Store` and similar
 components to abstract over the *physical* storage. It is
 process-local and loses all state when the process exits — use
-:class:`~membrane.persistence.redis_backend.Redis` when
+:class:`~membrane.persistence.redis.Redis` when
 durability or cross-process sharing is required.
 
 Thread safety:

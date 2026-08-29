@@ -10,7 +10,7 @@ historical analysis.
 The metrics track:
 
 * **Hit/miss counts** — direct observations from
-  :class:`~membrane.kv_cache_manager.KVCache` and similar.
+  :class:`~membrane.kv.KVCache` and similar.
 * **Total requests** — convenience aggregate, equal to
   ``hits + misses``.
 * **Total KV bytes missed** — cumulative size of KV payloads

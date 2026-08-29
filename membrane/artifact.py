@@ -7,7 +7,7 @@ an external source (web fetch, RAG corpus, file ingestion).
 
 Artifacts are conceptually different from
 :class:`~membrane.prefix.Prefix` and
-:class:`~membrane.kv_segment.Segment`:
+:class:`~membrane.segment.Segment`:
 
 * A prefix is a *logical* token sequence produced by a tokenizer.
 * A KV segment is the *physical* KV-cache tensor for a model.
@@ -94,7 +94,7 @@ class Artifact:
             Fragment: An immutable fragment carrying the artifact's
             identity, embedding, and lifecycle metadata. The
             embedding is preserved as-is (not re-generated from
-            shape, unlike :meth:`~membrane.kv_segment.Segment
+            shape, unlike :meth:`~membrane.segment.Segment
             .materialize`).
         """
         signature = Signature(

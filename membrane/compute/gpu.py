@@ -10,7 +10,7 @@ records one of three states:
   is ``True`` → use CUDA.
 * **CPU fallback**: ``torch`` missing or CUDA unavailable →
   delegate every call to a held
-  :class:`~membrane.compute.cpu_backend.CPU`.
+  :class:`~membrane.compute.cpu.CPU`.
 
 This means callers do not need to special-case missing CUDA —
 they can simply instantiate ``GPU()`` and rely on the

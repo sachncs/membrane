@@ -3,15 +3,15 @@
 This package groups the network-facing components that connect
 Membrane nodes together:
 
-* :class:`~membrane.network.cluster_manager.Cluster` —
+* :class:`~membrane.network.cluster.Cluster` —
   high-level peer lifecycle (join, leave, discovery).
 * :class:`~membrane.network.config.ClusterConfig` — declarative
   configuration for cluster endpoints.
-* :class:`~membrane.network.gossip_state.GossipState` —
+* :class:`~membrane.network.gossip.GossipState` —
   eventually-consistent state propagation via gossip.
-* :class:`~membrane.network.peer_client.Peer` —
+* :class:`~membrane.network.peer.Peer` —
   request/response transport to a specific peer.
-* :class:`~membrane.network.remote_transfer.Transfer`
+* :class:`~membrane.network.transfer.Transfer`
   — remote fragment transfer between nodes.
 
 The public API of the package is the union of these classes; all

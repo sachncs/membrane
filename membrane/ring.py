@@ -1,7 +1,7 @@
 """Ring: consistent hashing for memory ID distribution.
 
 This module implements a minimal *consistent hash ring* used by
-:class:`~membrane.shard_manager.Shard` to map
+:class:`~membrane.shard.Shard` to map
 ``content_hash`` values to responsible nodes.
 
 Each physical node is replicated across ``virtual_nodes`` points

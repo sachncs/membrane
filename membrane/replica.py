@@ -1,21 +1,21 @@
 """Replica: hot regional cache with warming support.
 
 This module defines :class:`Replica`, a specialized
-:class:`~membrane.membrane_node.Node` that holds
+:class:`~membrane.node.Node` that holds
 *non-primary* copies of fragments. Replicas exist to reduce read
 latency for nearby clients and to absorb traffic from the origin.
 
 Two mechanisms are exposed:
 
 * :meth:`warm_from_origin` — proactively pull a batch of hashes
-  from an :class:`~membrane.origin_node.Origin` so that the
+  from an :class:`~membrane.origin.Origin` so that the
   replica is ready to serve them when requests arrive.
 * :meth:`store` — overridden to force ``is_primary=False``,
   preventing the replica from accidentally claiming primary
   ownership of a fragment.
 
 The replica delegates transport to a
-:class:`~membrane.transfer_service.TransferService` so the same
+:class:`~membrane.transfer.TransferService` so the same
 transport used for gossip can also be used for warming.
 """
 

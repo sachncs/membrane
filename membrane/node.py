@@ -5,7 +5,7 @@ plane node that hosts fragments on a single machine. It owns:
 
 * A :class:`~membrane.fragment.Fragment` dictionary keyed by
   ``content_hash``.
-* An :class:`~membrane.index_system.Index` that maintains
+* An :class:`~membrane.index.Index` that maintains
   the four in-memory indexes for the fragments it holds.
 * A :class:`~membrane.graph_manager.GraphManager` used during
   graph-aware eviction.

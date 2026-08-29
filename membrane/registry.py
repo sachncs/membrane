@@ -3,7 +3,7 @@
 This module defines :class:`Registry`, the routing-plane
 registry that tracks cluster membership and the set of nodes
 holding each fragment. Unlike
-:class:`~membrane.distributed_directory.Directory`
+:class:`~membrane.directory.Directory`
 (which delegates to supernodes), this implementation stores the
 membership and placement tables directly in memory.
 
@@ -44,7 +44,7 @@ class Registry:
 
     Attributes:
         nodes: Mapping from ``node_id`` to the registered
-            :class:`~membrane.membrane_node.Node`.
+            :class:`~membrane.node.Node`.
         fragment_locations: Mapping from ``content_hash`` to the
             set of node IDs holding a replica.
     """
@@ -119,7 +119,7 @@ class Registry:
 
         Samples up to ``max_prefix_attempts`` prefix lengths
         (uniformly spaced along the prompt) and hashes each one
-        with :func:`~membrane.fragmentation_engine.compute_content_hash`.
+        with :func:`~membrane.fragmenter.compute_content_hash`.
         Every node that already holds at least one of these
         prefixes contributes to its score; nodes that look heavily
         loaded (high heart beat) get a small penalty.

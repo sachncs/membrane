@@ -95,8 +95,8 @@ class Predict:
         The current heuristic picks the node with the lowest
         memory pressure (``heartbeat()``). It does not consider
         GPU load or latency; callers that need a richer signal
-        should use :class:`~membrane.economic_router.Economic`
-        or :class:`~membrane.joint_optimizer.Joint`
+        should use :class:`~membrane.economic.Economic`
+        or :class:`~membrane.joint.Joint`
         instead.
 
         Args:

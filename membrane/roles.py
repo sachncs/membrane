@@ -1,7 +1,7 @@
 """Roles: node dynamically switches role based on system state.
 
 This module implements a small role-assignment policy that
-:class:`~membrane.membrane_node.Node` instances can use to
+:class:`~membrane.node.Node` instances can use to
 decide whether to behave as a *memory host*, *prefill worker*, or
 *decode worker* in a disaggregated inference cluster.
 

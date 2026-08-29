@@ -1,9 +1,9 @@
 """Transfer: network-aware fragment transfer.
 
 This module defines :class:`Transfer`, a subclass of
-:class:`~membrane.transfer_service.TransferService` that can move
+:class:`~membrane.transfer.TransferService` that can move
 fragments between a mix of local
-:class:`~membrane.membrane_node.Node` instances and
+:class:`~membrane.node.Node` instances and
 remote peers (identified by their ``node_id`` string).
 
 Routing rules:
@@ -11,7 +11,7 @@ Routing rules:
 * ``source`` and ``target`` both local → delegate to the base
   :class:`TransferService`.
 * ``source`` is a remote id → fetch the fragment via the peer's
-  :class:`~membrane.network.peer_client.Peer` and store
+  :class:`~membrane.network.peer.Peer` and store
   it on the local target.
 * ``target`` is a remote id → read the fragment locally and push
   it via the peer's ``request_replicate`` verb.

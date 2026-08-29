@@ -13,7 +13,7 @@ similarity computation only needs to multiply the query embedding
 by each fragment embedding, rather than recomputing norms.
 
 Thread safety:
-    Like :class:`~membrane.exact_index.Exacts`, this class is
+    Like :class:`~membrane.exacts.Exacts`, this class is
     **not thread-safe**. The fragments list and the norms dict are
     mutated without locks. Callers must provide external
     synchronization when sharing across threads.
@@ -43,7 +43,7 @@ def compute_norm(embedding: Sequence[float]) -> float:
     A zero norm is replaced by ``1.0`` so that downstream cosine
     similarity divisions never divide by zero. In practice, all
     fragments produced by
-    :func:`membrane.fragmentation_engine.generate_embedding` are
+    :func:`membrane.fragmenter.generate_embedding` are
     unit-normalized, so this branch is never taken in the normal
     pipeline.
 

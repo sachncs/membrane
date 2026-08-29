@@ -1,10 +1,10 @@
 """Origin: canonical memory authority that propagates to replicas.
 
 This module defines :class:`Origin`, a specialized
-:class:`~membrane.membrane_node.Node` that acts as the
+:class:`~membrane.node.Node` that acts as the
 canonical authority for a region. In addition to the regular
 in-memory store, an origin can push fragments to replica nodes
-via a :class:`~membrane.transfer_service.TransferService`.
+via a :class:`~membrane.transfer.TransferService`.
 
 Writes flow through the origin so that a single source of truth
 exists for each fragment; reads can be served by either the origin

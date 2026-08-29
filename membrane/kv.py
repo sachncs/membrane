@@ -2,7 +2,7 @@
 
 This module defines :class:`KVCache`, a single-region
 memory cache that bundles a
-:class:`~membrane.index_system.Index`, an LRU eviction
+:class:`~membrane.index.Index`, an LRU eviction
 front, and a :class:`~membrane.cache_metrics.CacheMetrics`
 tracker.
 

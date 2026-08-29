@@ -3,7 +3,7 @@
 This module defines :class:`KVReturn`, a small
 helper that copies every fragment produced by a remote prefill
 from the compute node back to the requesting node via the
-:class:`~membrane.transfer_service.TransferService`.
+:class:`~membrane.transfer.TransferService`.
 
 The class is intentionally minimal — it is essentially a
 loop over the prefill fragments. Keeping it as a dedicated class

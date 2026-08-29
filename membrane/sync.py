@@ -1,6 +1,6 @@
 """DeltaSync: inventory-based delta synchronization between nodes.
 
-Builds on :class:`~membrane.transfer_service.TransferService` to
+Builds on :class:`~membrane.transfer.TransferService` to
 provide efficient, version-aware batch synchronization. Computes
 the minimal set of fragments that need to move between two nodes,
 schedules batch transfers, and tracks sync progress.

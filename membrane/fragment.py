@@ -17,7 +17,7 @@ Design rationale:
       is essential for safe sharing across threads, processes, and nodes.
     * **Content addressing**: ``content_hash`` is the primary key in every
       index and store. It is computed by
-      :func:`membrane.fragmentation_engine.compute_content_hash`.
+      :func:`membrane.fragmenter.compute_content_hash`.
     * **Lifecycle metadata**: ``ttl`` and ``reuse_score`` drive eviction and
       promotion decisions made by
       :class:`membrane.promotion_policy.Promotion`.
@@ -58,7 +58,7 @@ class Fragment:
             fragments with the same hash are considered byte-identical and
             may be deduplicated.
         embedding: Dense vector representation of the fragment content,
-            typically produced by :func:`membrane.fragmentation_engine
+            typically produced by :func:`membrane.fragmenter
             .generate_embedding`. Used for semantic indexing.
         structural_signature: Model, layer range, and token span metadata
             describing the fragment's origin and position within a model

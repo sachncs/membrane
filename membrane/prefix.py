@@ -8,7 +8,7 @@ for storage in the fragment store.
 
 In the broader Membrane design, a prefix represents a *logical* unit of
 memory (a sequence of tokens that may be reused across requests). The
-companion :class:`~membrane.kv_segment.Segment` represents the
+companion :class:`~membrane.segment.Segment` represents the
 *physical* KV-cache tensors produced for that prefix by a particular
 model. The two are linked through ``content_hash`` and the model's
 structural signature.
@@ -20,7 +20,7 @@ Typical lifecycle:
     3. When a request arrives, the prefix is materialized into a
        :class:`~membrane.fragment.Fragment` whose underlying bytes are
        the actual KV tensors (handled by the
-       :class:`~membrane.reconstruction_engine.Reconstructor`).
+       :class:`~membrane.reconstructor.Reconstructor`).
 """
 
 import logging
@@ -52,10 +52,10 @@ class Prefix:
             identifies this prefix. Identity is defined by this tuple.
         content_hash: Deterministic cryptographic hash of the token
             sequence. Computed by
-            :func:`membrane.fragmentation_engine.compute_content_hash`.
+            :func:`membrane.fragmenter.compute_content_hash`.
         semantic_hash: Approximate (LSH-style) hash of the embedding
             of the tokens. Used by
-            :class:`~membrane.semantic_index.Semantics` for
+            :class:`~membrane.semantics.Semantics` for
             similarity lookups without exposing the raw embedding.
         size_bytes: Estimated serialized storage footprint of the
             prefix metadata and (eventually) its KV payload.

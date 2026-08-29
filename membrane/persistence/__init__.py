@@ -1,8 +1,8 @@
 """Persistence backends for Membrane production serving.
 
 This package groups the storage backends that can be plugged in
-behind the :class:`~membrane.persistence.memory_backend.Memory`
-and :class:`~membrane.persistence.redis_backend.Redis`
+behind the :class:`~membrane.persistence.memory.Memory`
+and :class:`~membrane.persistence.redis.Redis`
 interfaces.
 
 The two backends expose the same conceptual surface (set / get /

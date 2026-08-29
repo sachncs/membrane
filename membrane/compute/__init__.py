@@ -8,18 +8,18 @@ code.
 
 Available backends:
 
-* :class:`~membrane.compute.cpu_backend.CPU` — pure-Python
+* :class:`~membrane.compute.cpu.CPU` — pure-Python
   reference implementation; always available.
-* :class:`~membrane.compute.gpu_backend.GPU` — PyTorch
+* :class:`~membrane.compute.gpu.GPU` — PyTorch
   CUDA backend; requires the ``[gpu]`` extra.
-* :class:`~membrane.compute.transformers_backend.Transformers`
+* :class:`~membrane.compute.transformers.Transformers`
   — HuggingFace Transformers backend; requires the
   ``[local-llm]`` extra.
-* :class:`~membrane.compute.openai_backend.OpenAI` —
+* :class:`~membrane.compute.openai.OpenAI` —
   OpenAI API backend; requires the ``openai`` package.
-* :class:`~membrane.compute.anthropic_backend.Anthropic`
+* :class:`~membrane.compute.anthropic.Anthropic`
   — Anthropic API backend; requires the ``anthropic`` package.
-* :class:`~membrane.compute.ollama_backend.Ollama` —
+* :class:`~membrane.compute.ollama.Ollama` —
   Ollama local server backend.
 
 Optional backends are imported lazily and listed in
@@ -52,10 +52,10 @@ def try_register(name: str, module_path: str) -> None:
 
 
 for _backend_name, _backend_path in (
-    ("GPU", "membrane.compute.gpu_backend"),
-    ("Ollama", "membrane.compute.ollama_backend"),
-    ("OpenAI", "membrane.compute.openai_backend"),
-    ("Anthropic", "membrane.compute.anthropic_backend"),
-    ("Transformers", "membrane.compute.transformers_backend"),
+    ("GPU", "membrane.compute.gpu"),
+    ("Ollama", "membrane.compute.ollama"),
+    ("OpenAI", "membrane.compute.openai"),
+    ("Anthropic", "membrane.compute.anthropic"),
+    ("Transformers", "membrane.compute.transformers"),
 ):
     try_register(_backend_name, _backend_path)

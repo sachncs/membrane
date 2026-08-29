@@ -3,10 +3,10 @@
 This module defines :class:`TransferService`, the in-process
 *transfer plane* used by
 :class:`~membrane.delta_sync.DeltaSync`,
-:class:`~membrane.cluster_replicator.Replicator`,
-:class:`~membrane.origin_node.Origin`, and
-:class:`~membrane.replica_node.Replica` to move fragments
-between :class:`~membrane.membrane_node.Node` instances.
+:class:`~membrane.replicator.Replicator`,
+:class:`~membrane.origin.Origin`, and
+:class:`~membrane.replica.Replica` to move fragments
+between :class:`~membrane.node.Node` instances.
 
 The service exposes three primitives:
 

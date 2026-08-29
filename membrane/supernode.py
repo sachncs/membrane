@@ -5,7 +5,7 @@ service that aggregates fragment-location information for a slice
 of the cluster. A deployment typically runs several supernodes,
 each covering a subset of the hash ring; together they form a
 *hierarchical directory* that the
-:class:`~membrane.distributed_directory.Directory`
+:class:`~membrane.directory.Directory`
 queries in parallel.
 
 The supernode is intentionally minimal:

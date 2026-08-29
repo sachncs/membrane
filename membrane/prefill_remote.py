@@ -2,7 +2,7 @@
 
 This module defines :class:`PrefillRemote`, a
 synchronous counterpart to
-:class:`~membrane.async_prefill_dispatcher.PrefillAsync`.
+:class:`~membrane.prefill_async.PrefillAsync`.
 It runs prefill on a single pre-chosen remote node, stores the
 resulting fragments on that node as non-primary replicas, and
 returns the :class:`~membrane.prefill_adapter.PrefillResult`.

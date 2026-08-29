@@ -1,7 +1,7 @@
 """Chunks: split fragments into chunks for partial retrieval.
 
 This module implements a minimal chunked-transfer protocol used when
-moving fragments between :class:`~membrane.membrane_node.Node`
+moving fragments between :class:`~membrane.node.Node`
 instances. Large payloads can be split into fixed-size chunks so that
 partial progress is preserved across connection failures and so that
 remote peers only need to fetch the chunks they are missing.
@@ -10,7 +10,7 @@ Note:
     This implementation chunks the fragment's *content hash string*
     rather than its underlying tensor bytes — it is therefore intended
     as a lightweight *transport sharding* mechanism used by the
-    :class:`~membrane.transfer_service.TransferService` and tests,
+    :class:`~membrane.transfer.TransferService` and tests,
     not as a byte-stream chunker for raw KV tensors. Real tensor
     transport goes through :class:`~membrane.transport.http_server
     .HTTPServer` / :class:`~membrane.transport.grpc_server.GrpcServer`
@@ -58,7 +58,7 @@ class Chunks:
 
     The class is stateless beyond its configured ``chunk_size``. It
     acts as a thin coordinator between two
-    :class:`~membrane.membrane_node.Node` instances, deciding
+    :class:`~membrane.node.Node` instances, deciding
     which chunks still need to flow across the network.
 
     Attributes:
@@ -127,13 +127,13 @@ class Chunks:
 
         Args:
             source: Node holding the parent fragment. Its
-                :meth:`~membrane.membrane_node.Node.retrieve`
+                :meth:`~membrane.node.Node.retrieve`
                 method must return the parent for the transfer to
                 proceed.
             target: Node that should receive missing chunks. It must
-                expose :meth:`~membrane.membrane_node.Node
+                expose :meth:`~membrane.node.Node
                 .store` and
-                :meth:`~membrane.membrane_node.Node.retrieve`.
+                :meth:`~membrane.node.Node.retrieve`.
             chunks: The full chunk list for the fragment. Only the
                 first chunk is inspected to recover the parent
                 ``content_hash``.

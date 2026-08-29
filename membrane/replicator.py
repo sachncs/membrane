@@ -7,7 +7,7 @@ connected component discovered via
 source node to multiple target nodes.
 
 The replicator is intentionally thin: it delegates every fragment
-move to a :class:`~membrane.transfer_service.TransferService` and
+move to a :class:`~membrane.transfer.TransferService` and
 records per-target success lists. Callers can compose it with the
 graph layer to push hot subgraphs to multiple regions in parallel.
 """

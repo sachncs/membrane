@@ -6,11 +6,11 @@ threshold. The clustering is intended for low-cardinality workloads
 (``k`` in the hundreds to low thousands); for larger collections
 swap in a proper clustering algorithm (DBSCAN, HDBSCAN, k-means)
 or rely on
-:class:`~membrane.semantic_index.Semantics`'s top-K search.
+:class:`~membrane.semantics.Semantics`'s top-K search.
 
 Algorithm:
     1. Insert every fragment into the supplied
-       :class:`~membrane.semantic_index.Semantics` for fast
+       :class:`~membrane.semantics.Semantics` for fast
        neighbor lookup.
     2. Repeatedly pick the lowest-index unassigned fragment as the
        *seed* of a new cluster.
@@ -40,7 +40,7 @@ class SemanticCluster:
     """Groups fragments into clusters based on embedding similarity.
 
     The class is intentionally stateless beyond its
-    :class:`~membrane.semantic_index.Semantics` reference, so
+    :class:`~membrane.semantics.Semantics` reference, so
     instances can be shared across threads as long as the supplied
     index is itself thread-safe (it is not).
     """
@@ -51,7 +51,7 @@ class SemanticCluster:
         Args:
             semantic_index: Index for similarity lookups. A
                 default empty
-                :class:`~membrane.semantic_index.Semantics` is
+                :class:`~membrane.semantics.Semantics` is
                 created when ``None``.
         """
         self.semantic_index = semantic_index or Semantics()

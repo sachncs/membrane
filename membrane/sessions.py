@@ -12,7 +12,7 @@ Typical consumers:
   forecast the next likely prefix for a given session.
 * :class:`~membrane.value_density.density` reads recent
   accesses when computing the value of a candidate fragment.
-* The :class:`~membrane.co_access_index.Coaccess` ingests
+* The :class:`~membrane.coaccess.Coaccess` ingests
   session-level access patterns to learn which fragments are
   frequently accessed together.
 
