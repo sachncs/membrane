@@ -226,19 +226,28 @@ class Server:
         """Initialize the persistence backend.
 
         When ``redis_url`` is set and reachable, use Redis;
-        otherwise fall back to the in-memory backend.
+        otherwise fall back to the in-memory backend. Whichever
+        backend is selected, wrap it in a
+        :class:`~membrane.persistence.cache.CachingPersistence` so
+        repeated reads for the same fragment are served from a local
+        in-process cache instead of crossing the network on every
+        request.
         """
-        self.persistence: Any = Memory()
+        from membrane.persistence.cache import CachingPersistence
+
+        backend: Any = Memory()
         if redis_url:
             try:
                 redis_backend = Redis(redis_url)
                 if redis_backend.ping():
-                    self.persistence = redis_backend
+                    backend = redis_backend
                     logger.info("Redis connected at %s", redis_url)
                 else:
                     logger.warning("Redis at %s unreachable; using in-memory persistence", redis_url)
             except Exception as exc:
                 logger.warning("Redis connection failed (%s); using in-memory persistence", exc)
+
+        self.persistence = CachingPersistence(backend)
 
     def setup_cluster(
         self,

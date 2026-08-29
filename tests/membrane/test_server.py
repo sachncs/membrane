@@ -69,3 +69,55 @@ class TestMembraneServer:
         events = srv.recent_events(n=5)
         assert len(events) == 5
         assert events[-1].message == "event-19"
+
+    def test_persistence_is_caching_wrapper(self):
+        """setup_persistence must wrap the underlying backend in
+        :class:`CachingPersistence` so repeated reads hit the local
+        cache instead of crossing the network on every call.
+        """
+        from membrane.persistence.cache import CachingPersistence
+
+        node = Node("s-cache")
+        srv = Server(node=node, transport="http", compute="cpu")
+        assert isinstance(srv.persistence, CachingPersistence)
+
+    def test_persistence_caching_serves_repeated_reads(self):
+        """The CachingPersistence wrapping should make the second
+        positive retrieve hit the in-memory cache instead of
+        crossing the inner backend."""
+        from membrane.fragment import Fragment
+        from membrane.persistence.cache import CachingPersistence
+        from membrane.signature import Signature
+
+        node = Node("s-cache2")
+        srv = Server(node=node, transport="http", compute="cpu")
+        assert isinstance(srv.persistence, CachingPersistence)
+
+        # Seed the inner backend with a known fragment, then
+        # instrument its retrieve to count invocations.
+        frag = Fragment(
+            content_hash="cache-test",
+            embedding=(0.0,),
+            structural_signature=Signature("m", (0, 1), (0, 0)),
+            size=10,
+            ttl=3600.0,
+            reuse_score=0.5,
+            version_id=1,
+        )
+        inner = srv.persistence.inner
+        inner.store_fragment(frag, "s-cache2", is_primary=True)
+
+        calls = {"n": 0}
+        original = inner.retrieve_fragment
+
+        def counting_retrieve(content_hash):
+            calls["n"] += 1
+            return original(content_hash)
+
+        inner.retrieve_fragment = counting_retrieve  # type: ignore[method-assign]
+
+        # First retrieve: cache miss → inner backend (1 call).
+        # Second retrieve: cache hit → inner backend skipped (still 1).
+        srv.persistence.retrieve_fragment("cache-test")
+        srv.persistence.retrieve_fragment("cache-test")
+        assert calls["n"] == 1
