@@ -25,7 +25,9 @@ Strategies:
 
 from __future__ import annotations
 
+import itertools
 import logging
+import signal
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -33,12 +35,49 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
-from membrane.errors import CapacityError
+from membrane.errors import CapacityError, TimeoutError
 from membrane.errors import ConnectionError as PersistenceConnectionError
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+# Per-process counter that tags each guard entry with a unique id.
+# The signal-driven timeout captures the active id; the handler
+# raises only if the captured id still matches the active one
+# (otherwise the SIGALRM belongs to a retired guard).
+_guard_counter = itertools.count()
+_active_guard_id: int = 0
+_alarm_supported: bool = hasattr(signal, "SIGALRM") and hasattr(signal, "signal")
+
+
+def _next_guard_id() -> int:
+    """Increment the active-guard counter and return the new id."""
+    global _active_guard_id
+    new_id = next(_guard_counter)
+    _active_guard_id = new_id
+    return new_id
+
+
+def _restore_prior_guard_id(prior: int) -> None:
+    """Reset the active-guard counter to its pre-guard value."""
+    global _active_guard_id
+    _active_guard_id = prior
+
+
+def _current_guard_id() -> int:
+    """Return the id of the guard currently active in this process."""
+    return _active_guard_id
+
+
+def _signal_alarm_handler(signum: int, frame: Any) -> None:
+    """SIGALRM handler: raise :class:`TimeoutError` in the main thread.
+
+    Only fires if the guard id captured at ``signal.alarm`` scheduling
+    time still matches the active guard id, so a stale SIGALRM
+    (one whose guard has already exited) is a silent no-op.
+    """
+    raise TimeoutError("resilience: timeout exceeded")
 
 
 @dataclass(frozen=True)
@@ -197,14 +236,33 @@ class ResiliencePolicy:
 
     @contextmanager
     def guard(self) -> Iterator[None]:
-        """Context manager that applies bulkhead and breaker entry/exit.
+        """Context manager that applies bulkhead, timeout, and breaker entry/exit.
 
         Use this around an operation; on success/failure the breaker
         state is updated. The retry policy is applied separately via
         :meth:`run`.
+
+        Timeout enforcement uses :func:`signal.alarm` to schedule a
+        SIGALRM after the configured wall-clock budget; the alarm
+        handler raises :class:`~membrane.errors.TimeoutError` in
+        the main thread. This is the standard sync-Python idiom and
+        is the only reliable way to interrupt a blocking operation
+        (a daemon :class:`threading.Timer` cannot preempt blocking
+        I/O on the main thread). On platforms without ``signal.alarm``
+        the timeout is a no-op; callers relying on cross-platform
+        timeouts should use the async path.
         """
         if self.bulkhead_sem is not None and not self.bulkhead_sem.acquire(blocking=False):
             raise CapacityError("bulkhead saturated")
+        prior_handler: Any = None
+        prior_id = _active_guard_id
+        _next_guard_id()
+        alarm_armed = False
+        if self.timeout is not None and _alarm_supported:
+            prior_handler = signal.signal(signal.SIGALRM, _signal_alarm_handler)
+            signal.alarm(max(1, int(self.timeout.seconds * 1000)) // 1)
+            signal.setitimer(signal.ITIMER_REAL, self.timeout.seconds)
+            alarm_armed = True
         try:
             self.check_breaker()
             yield
@@ -213,6 +271,12 @@ class ResiliencePolicy:
             self.record_failure()
             raise
         finally:
+            if alarm_armed:
+                # Disarm the alarm so a later SIGALRM doesn't hit a
+                # retired guard. setitimer(0) cancels the timer.
+                signal.setitimer(signal.ITIMER_REAL, 0)
+                signal.signal(signal.SIGALRM, prior_handler)
+            _restore_prior_guard_id(prior_id)
             if self.bulkhead_sem is not None:
                 self.bulkhead_sem.release()
 

@@ -58,5 +58,9 @@ class CapacityError(Error):
     """Raised when a store or cache is full and cannot accept new entries."""
 
 
+class TimeoutError(Error):
+    """Raised when an operation exceeds its configured wall-clock budget."""
+
+
 class MigrationError(Error):
     """Raised when shard migration between nodes fails irrecoverably."""
