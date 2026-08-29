@@ -1,36 +1,48 @@
-"""FastAPI route handlers.
+"""FastAPI route bindings.
 
-Module-level functions that wire Membrane's business logic to FastAPI
-endpoints. The corresponding stdlib HTTP version lives in
-:mod:`membrane.transport.routes` and shares the same URL contract
-and semantics; this module is the async-friendly binding.
+This module binds the operations in :mod:`membrane.transport._ops`
+to FastAPI endpoints. The Pydantic models at the top describe the
+request bodies; the handlers are thin shims that pass the validated
+request into the corresponding operation.
 
-Pydantic models at the top of the module describe the request bodies.
-Each handler is registered via :func:`register_routes`, which is the
-single place to add or remove endpoints.
+The stdlib HTTP version lives in :mod:`membrane.transport.routes`
+and shares the same URL contract. Both transports delegate to the
+shared operations so the actual store / retrieve / sync logic
+lives in exactly one place.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
-from urllib.request import Request, urlopen
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from membrane.compute.cpu import CPU
-from membrane.serialization import from_dict as deserialize_fragment
-from membrane.serialization import to_dict as serialize_fragment
+from membrane.transport._ops import (
+    MAX_BODY_BYTES,
+    op_gossip,
+    op_heartbeat,
+    op_inventory,
+    op_join,
+    op_leave,
+    op_metrics,
+    op_peers,
+    op_prefill,
+    op_replicate,
+    op_retrieve,
+    op_store,
+    op_sync,
+)
 
 logger = logging.getLogger(__name__)
 
 
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Pydantic request models
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 
 class FragmentPayload(BaseModel):
@@ -121,24 +133,9 @@ class GossipRequest(BaseModel):
     inventory_digest: dict[str, int] = {}
 
 
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Endpoint handlers
-# ------------------------------------------------------------------
-
-
-def heartbeat(app: FastAPI) -> dict[str, Any]:
-    """``GET /heartbeat`` — node health and load snapshot."""
-    if not app.state.node:
-        return {"error": "no node"}
-    stats = app.state.node.get_stats()
-    return {
-        "node_id": app.state.node.node_id,
-        "load": app.state.node.heartbeat(),
-        "memory_used_bytes": stats.memory_used_bytes,
-        "memory_limit_bytes": stats.memory_limit_bytes,
-        "fragment_count": stats.fragment_count,
-        "healthy": True,
-    }
+# ---------------------------------------------------------------------------
 
 
 def livez(_app: FastAPI) -> dict[str, str]:
@@ -153,215 +150,67 @@ def readyz(app: FastAPI):
     stats = app.state.node.get_stats()
     if stats.memory_used_bytes >= stats.memory_limit_bytes:
         return JSONResponse(
-            {"status": "memory saturated", "memory_used_bytes": stats.memory_used_bytes},
+            {
+                "status": "memory saturated",
+                "memory_used_bytes": stats.memory_used_bytes,
+            },
             status_code=503,
         )
     return {"status": "ready"}
 
 
-def metrics(app: FastAPI):
-    """``GET /metrics`` — Prometheus text exposition."""
-    if app.state.metrics_registry is not None:
-        return PlainTextResponse(
-            app.state.metrics_registry.render(),
-            media_type="text/plain; version=0.0.4",
-        )
-    # Legacy JSON fallback when no registry was supplied.
-    if not app.state.node:
-        return {"error": "no node"}
-    stats = app.state.node.get_stats()
-    return {
-        "node_id": app.state.node.node_id,
-        "memory_used_bytes": stats.memory_used_bytes,
-        "memory_limit_bytes": stats.memory_limit_bytes,
-        "fragment_count": stats.fragment_count,
-        "primary_count": stats.primary_count,
-        "load": app.state.node.heartbeat(),
-    }
-
-
-def metrics_json(app: FastAPI) -> dict[str, Any]:
-    """``GET /metrics.json`` — legacy JSON snapshot for the TUI."""
-    if not app.state.node:
-        return {"error": "no node"}
-    stats = app.state.node.get_stats()
-    return {
-        "node_id": app.state.node.node_id,
-        "memory_used_bytes": stats.memory_used_bytes,
-        "memory_limit_bytes": stats.memory_limit_bytes,
-        "fragment_count": stats.fragment_count,
-        "primary_count": stats.primary_count,
-        "load": app.state.node.heartbeat(),
-    }
-
-
-def retrieve(app: FastAPI, content_hash: str) -> dict[str, Any]:
-    """``GET /retrieve?content_hash=...``."""
-    if not app.state.node:
-        return {"found": False, "fragment": None}
-    frag = app.state.node.retrieve(content_hash)
-    if frag:
-        return {"found": True, "fragment": serialize_fragment(frag)}
-    return {"found": False, "fragment": None}
-
-
-def inventory(app: FastAPI) -> dict[str, Any]:
-    """``GET /inventory`` — node's inventory digest."""
-    if not app.state.node:
-        return {"node_id": "", "digest": {}}
-    digest = {h: frag.version_id for h, frag in app.state.node.fragments.items()}
-    return {"node_id": app.state.node.node_id, "digest": digest}
-
-
-def peers(app: FastAPI) -> dict[str, Any]:
-    """``GET /peers`` — cluster membership view."""
-    if app.state.cluster_manager:
-        return {"peers": app.state.cluster_manager.get_peers()}
-    return {"error": "cluster manager not enabled"}
-
-
-def store(app: FastAPI, req: StoreRequest) -> dict[str, Any]:
-    """``POST /store``."""
-    try:
-        frag = deserialize_fragment(req.fragment.to_wire_dict())
-        ok = app.state.node.store(frag, is_primary=req.is_primary) if app.state.node else False
-        return {"success": ok, "content_hash": frag.content_hash}
-    except Exception:
-        logger.exception("store failed")
-        return {"error": "internal"}
-
-
-def replicate(app: FastAPI, req: ReplicateRequest) -> dict[str, Any]:
-    """``POST /replicate`` — store a fragment as a non-primary replica."""
-    try:
-        frag = deserialize_fragment(req.fragment.to_wire_dict())
-        ok = app.state.node.store(frag, is_primary=False) if app.state.node else False
-        return {"success": ok, "content_hash": frag.content_hash}
-    except Exception:
-        logger.exception("replicate failed")
-        return {"error": "internal"}
-
-
-def sync(app: FastAPI, req: SyncRequest) -> dict[str, Any]:
-    """``POST /sync`` — pull missing fragments from a source URL."""
-    source_url = req.source_url
-    if not source_url:
-        return {"error": "missing source_url"}
-    try:
-        with urlopen(Request(f"{source_url}/inventory"), timeout=5) as resp:  # noqa: S310
-            remote_data = json.loads(resp.read().decode())
-        remote_digest = remote_data.get("digest", {})
-        local_digest = app.state.transfer_service.inventory_digest(app.state.node)
-        missing = app.state.transfer_service.compare_inventories(local_digest, remote_digest)
-        transferred: list[str] = []
-        for h in missing:
-            with urlopen(Request(f"{source_url}/retrieve?content_hash={h}"), timeout=5) as resp:  # noqa: S310
-                remote_frag_data = json.loads(resp.read().decode())
-            if remote_frag_data.get("found"):
-                frag = deserialize_fragment(remote_frag_data["fragment"])
-                if app.state.node.store(frag, is_primary=False):
-                    transferred.append(h)
-        return {"success": True, "transferred": transferred}
-    except Exception:
-        logger.exception("sync failed")
-        return {"error": "internal"}
-
-
-def prefill(app: FastAPI, req: PrefillRequest) -> dict[str, Any]:
-    """``POST /prefill`` — run prefill and store fragments as primary."""
-    backend = app.state.compute_backend or CPU()
-    try:
-        fragments = backend.prefill(req.prompt_tokens, req.model_id)
-        for frag in fragments:
-            if app.state.node:
-                app.state.node.store(frag, is_primary=True)
-        return {
-            "success": True,
-            "fragments": [serialize_fragment(f) for f in fragments],
-        }
-    except Exception:
-        logger.exception("prefill failed")
-        return {"error": "internal"}
-
-
-def join(app: FastAPI, req: JoinRequest) -> dict[str, Any]:
-    """``POST /join``."""
-    if not req.node_id or not req.host or not req.port:
-        return {"error": "missing node_id, host, or port"}
-    if app.state.cluster_manager:
-        return app.state.cluster_manager.on_peer_join(req.node_id, req.host, req.port)
-    return {"error": "cluster manager not enabled"}
-
-
-def leave(app: FastAPI, req: LeaveRequest) -> dict[str, Any]:
-    """``POST /leave``."""
-    if not req.node_id:
-        return {"error": "missing node_id"}
-    if app.state.cluster_manager:
-        app.state.cluster_manager.on_peer_leave(req.node_id)
-        return {"success": True}
-    return {"error": "cluster manager not enabled"}
-
-
-def gossip(app: FastAPI, req: GossipRequest) -> dict[str, Any]:
-    """``POST /gossip``."""
-    if app.state.cluster_manager:
-        return app.state.cluster_manager.on_gossip(req.model_dump())
-    return {"error": "cluster manager not enabled"}
-
-
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Route registration
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 
 def register_routes(app: FastAPI) -> None:
     """Register every Membrane HTTP route on ``app``.
 
-    This is the single place to add or remove endpoints. Each route
-    is paired with its handler above; the registration glue is here
-    so that a single change to a URL or method is local.
+    Each route delegates to the corresponding operation in
+    :mod:`membrane.transport._ops`. The Pydantic models at the top
+    of this module validate request bodies; the inline lambdas
+    capture ``app`` so the registered functions take only the
+    request body.
 
     Args:
         app: The FastAPI app to configure.
     """
-    # GET endpoints
-    app.add_api_route("/heartbeat", lambda: heartbeat(app), methods=["GET"])
+    # GET endpoints that have no body.
+    app.add_api_route("/heartbeat", lambda: _heartbeat(app), methods=["GET"])
     app.add_api_route("/livez", lambda: livez(app), methods=["GET"])
     app.add_api_route("/readyz", lambda: readyz(app), methods=["GET"])
-    app.add_api_route("/metrics", lambda: metrics(app), methods=["GET"])
-    app.add_api_route("/metrics.json", lambda: metrics_json(app), methods=["GET"])
+    app.add_api_route("/metrics", lambda: _metrics(app), methods=["GET"])
+    app.add_api_route("/metrics.json", lambda: _metrics_json(app), methods=["GET"])
+    app.add_api_route(
+        "/retrieve",
+        lambda content_hash: _retrieve(app, content_hash),
+        methods=["GET"],
+    )
+    app.add_api_route("/inventory", lambda: _inventory(app), methods=["GET"])
+    app.add_api_route("/peers", lambda: _peers(app), methods=["GET"])
 
-    def retrieve_handler(content_hash: str):
-        return retrieve(app, content_hash)
-
-    app.add_api_route("/retrieve", retrieve_handler, methods=["GET"])
-    app.add_api_route("/inventory", lambda: inventory(app), methods=["GET"])
-    app.add_api_route("/peers", lambda: peers(app), methods=["GET"])
-
-    # POST endpoints. Use module-level factories (closures) that capture
-    # ``app`` so the route functions take only the request body, which
-    # is the only FastAPI parameter it needs.
+    # POST endpoints.
     def store_handler(req: StoreRequest):
-        return store(app, req)
+        return _store(app, req)
 
     def replicate_handler(req: ReplicateRequest):
-        return replicate(app, req)
+        return _replicate(app, req)
 
     def sync_handler(req: SyncRequest):
-        return sync(app, req)
+        return _sync(app, req)
 
     def prefill_handler(req: PrefillRequest):
-        return prefill(app, req)
+        return _prefill(app, req)
 
     def join_handler(req: JoinRequest):
-        return join(app, req)
+        return _join(app, req)
 
     def leave_handler(req: LeaveRequest):
-        return leave(app, req)
+        return _leave(app, req)
 
     def gossip_handler(req: GossipRequest):
-        return gossip(app, req)
+        return _gossip(app, req)
 
     app.add_api_route("/store", store_handler, methods=["POST"], response_model=None)
     app.add_api_route("/replicate", replicate_handler, methods=["POST"], response_model=None)
@@ -372,4 +221,86 @@ def register_routes(app: FastAPI) -> None:
     app.add_api_route("/gossip", gossip_handler, methods=["POST"], response_model=None)
 
 
-__all__ = ["register_routes"]
+def _heartbeat(app: FastAPI):
+    status, body = op_heartbeat(app.state.node)
+    return _respond(status, body)
+
+
+def _metrics(app: FastAPI):
+    """``GET /metrics`` — Prometheus text or legacy JSON."""
+    status, payload = op_metrics(app.state.node, app.state.metrics_registry)
+    if status == 200 and isinstance(payload, tuple):
+        text, headers = payload
+        return PlainTextResponse(text, media_type=headers["media_type"])
+    return _respond(status, payload)
+
+
+def _metrics_json(app: FastAPI):
+    """``GET /metrics.json`` — legacy JSON snapshot for the TUI."""
+    status, body = op_metrics(app.state.node)
+    return _respond(status, body)
+
+
+def _inventory(app: FastAPI):
+    status, body = op_inventory(app.state.node)
+    return _respond(status, body)
+
+
+def _peers(app: FastAPI):
+    status, body = op_peers(app.state.cluster_manager)
+    return _respond(status, body)
+
+
+def _retrieve(app: FastAPI, content_hash: str):
+    status, body = op_retrieve(app.state.node, content_hash)
+    return _respond(status, body)
+
+
+def _store(app: FastAPI, req: StoreRequest):
+    status, body = op_store(app.state.node, req.fragment.to_wire_dict(), req.is_primary)
+    return _respond(status, body)
+
+
+def _replicate(app: FastAPI, req: ReplicateRequest):
+    status, body = op_replicate(app.state.node, req.fragment.to_wire_dict())
+    return _respond(status, body)
+
+
+def _sync(app: FastAPI, req: SyncRequest):
+    status, body = op_sync(app.state.node, app.state.transfer_service, req.source_url)
+    return _respond(status, body)
+
+
+def _prefill(app: FastAPI, req: PrefillRequest):
+    status, body = op_prefill(
+        app.state.node,
+        app.state.compute_backend or CPU(),
+        req.prompt_tokens,
+        req.model_id,
+    )
+    return _respond(status, body)
+
+
+def _join(app: FastAPI, req: JoinRequest):
+    status, body = op_join(app.state.cluster_manager, req.node_id, req.host, req.port)
+    return _respond(status, body)
+
+
+def _leave(app: FastAPI, req: LeaveRequest):
+    status, body = op_leave(app.state.cluster_manager, req.node_id)
+    return _respond(status, body)
+
+
+def _gossip(app: FastAPI, req: GossipRequest):
+    status, body = op_gossip(app.state.cluster_manager, req.model_dump())
+    return _respond(status, body)
+
+
+def _respond(status: int, body: Any) -> Any:
+    """Translate an operation's ``(status, body)`` to a FastAPI response."""
+    if status == 200:
+        return body
+    return JSONResponse(body, status_code=status)
+
+
+__all__ = ["register_routes", "MAX_BODY_BYTES"]
