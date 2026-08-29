@@ -5,9 +5,141 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-08-30
 
-### Added
+Principal-level architectural refactor. Internal-only; no public-API
+behavior change unless called out below.
+
+### Changed
+
+- **Domain model**: Centralized the four magic model_id strings
+  ("prefix", "kv", "artifact", "tool", "weighted_graph") as a
+  type-safe `membrane.fragment_kind.FragmentKind` enum. All memory
+  objects (`Prefix`, `Segment`, `Artifact`, `Trace`) and the
+  weighted-graph placeholder use the enum; `Isolation` keys off the
+  enum rather than raw strings. Wire format strings are unchanged.
+- **Stores**: Deleted `membrane.store.Store` and
+  `StoreMetrics`. `Node` is the single canonical in-memory
+  fragment store; `Memory` in `membrane.persistence.memory`
+  remains the `PersistenceBackend` reference implementation.
+- **Directories**: Deleted `membrane.directory.Directory` and
+  `membrane.supernode.Supernode` (parallel dead implementations of
+  the same concept). `membrane.registry.Registry` is the surviving
+  canonical directory, used by the cluster subsystem.
+- **Transfer plane**: Folded `membrane.network.transfer.Transfer`
+  into `membrane.transfer.TransferService`. The unified class
+  dispatches over local nodes or remote peer ids based on
+  constructor wiring.
+- **Replicator**: Folded the two parallel `Replicator` classes
+  (`membrane.replicator` and `membrane.network.replicator`) into a
+  single `Replicator` that supports both one-shot
+  `replicate_cluster` and the background `loop()` mode.
+- **Prefill**: Folded `Adapter`, `PrefillAsync`, and
+  `PrefillRemote` into the new `membrane.prefiller.Prefiller`
+  with `dispatch` (async race) and `dispatch_sync` (single
+  target) entry points.
+- **Dashboards**: Folded `membrane.cli.poll` into
+  `membrane.cli.dashboard`. The `membrane dashboard` subcommand
+  moved to `membrane.cli.commands.dashboard`.
+- **Transport routes**: Extracted the stdlib-HTTP and FastAPI
+  handler bodies into `membrane.transport._ops` (a single
+  transport-agnostic operations module). Both transports now
+  delegate to the shared operations.
+- **Routers / selectors / policies / offload** are now
+  importable only from their own modules; they are no longer
+  re-exported from `membrane`.
+- **Resilience**: `TimeoutPolicy` is now actually enforced via
+  `signal.alarm` / `signal.setitimer` inside
+  `ResiliencePolicy.guard`. (Previously the policy was
+  configurable but the guard ignored it.) `signal.signal(SIGALRM, ...)`
+  is restored on every guard exit so the alarm never leaks.
+- **Persistence**: `Server.setup_persistence` now wraps the
+  selected backend (Memory or Redis) in
+  `CachingPersistence`. Repeated reads are served from the local
+  in-process cache instead of crossing the network on every call.
+- **Cluster**: `Cluster.__init__` constructs an
+  `EagerMigrator` by default and binds `_migrate_primary` to it.
+  `Cluster.on_peer_leave` collects the leaving peer's primaries
+  via `Shard.primary_map` and hands them to the migrator; the
+  local node is promoted and the leaving peer is removed from
+  `Shard.replica_map`. `RateLimitedMigrator` enforces a
+  configurable migrations-per-second ceiling.
+- **Public API**: `membrane/__init__.py` re-exports only the
+  durable domain concepts (~50 names). Sub-indexes, the graph
+  layer, decision classes, model helpers, CLI helpers,
+  observability primitives, and resilience policies are
+  importable from their own modules; the docstring lists the
+  deep paths.
+- **Tests**: Renamed 13 test files so the file name matches the
+  class it exercises (`test_kv_cache_manager.py` →
+  `test_kv.py`, `test_origin_node.py` → `test_origin.py`,
+  `test_fragmentation_engine.py` → `test_fragmenter.py`, ...).
+  Removed the autouse-fixture trick that injected
+  `make_fragment` into test module namespaces; each test file
+  now imports the factory explicitly. Dropped the `F821` ignore
+  in `pyproject.toml` since ruff can now see every reference.
+
+### Fixed
+
+- **`Index.remove`**: Replaced the short-circuit OR chain with
+  four unconditional sub-index removals so a co-access entry
+  is reliably cleaned up when the underlying fragment is
+  removed. Added regression tests.
+- **Stale docstring paths**: Rewrote every stale
+  `:class:`~membrane.fragmentation_engine.XXX`` reference
+  (~30 occurrences across the source tree) to point at the
+  actual current paths (`fragmenter`, `index`, `exacts`,
+  `semantics`, `coaccess`, `tree`, `node`, `origin`, `replica`,
+  `transfer`, `store`, `registry`, `deltasync`, `latency`,
+  `economic`, `joint`, `peer`, `compute.cpu`, `compute.gpu`,
+  `compute.ollama`, `compute.openai`, `compute.anthropic`,
+  `compute.transformers`, etc.).
+- **Adapter / PrefillAsync wiring**: `Adapter.prefill` has
+  always computed a `RoutingDecision` from
+  `model.router.Router`; `PrefillAsync.dispatch` previously
+  ignored it. Now a `target="pd-p"` decision skips the remote
+  race and serves locally; the check is gated on a configured
+  router so test adapters without a router are not perturbed.
+  Added tests covering both `pd-p` and `membrane` targets.
+- **Unit-formatting**: 25 files were reformatted via `ruff
+  format`; 47 import-order / unused-import violations were fixed
+  via `ruff check --fix`.
+- **MD5 in compute backends**: every `hashlib.md5(...)` call
+  in the compute / content-addressing layers now passes
+  `usedforsecurity=False`. The hashes are used for content
+  addressing, not authentication, so bandit no longer flags
+  them as B324 (high severity).
+
+### Removed
+
+- `membrane/types.py` (unimported, broken self-alias).
+- `membrane/semhash.py` (only used by its own test).
+- `membrane/protocols.py` (declared Protocols no concrete
+  class implemented).
+- `membrane/store.py` and `StoreMetrics` (no production
+  callers; `Node` is the canonical in-memory store).
+- `membrane/directory.py` and `membrane/supernode.py`
+  (parallel dead directory implementations).
+- `membrane/network/transfer.py` and the `RemoteTransfer`
+  alias (folded into `TransferService`).
+- `membrane/network/replicator.py` (folded into the top-level
+  `Replicator`).
+- `membrane/cli/poll.py` (folded into `cli/dashboard`).
+- `membrane/prefill_async.py` and `membrane/prefill_remote.py`
+  (folded into `membrane/prefiller.py`).
+- `membrane/kvreturn.py` (a 70-line wrapper around
+  `TransferService.transfer_fragment`; re-implemented its
+  test against `TransferService` directly).
+- `auth/apikey.py::ensure_runtime_checkable` and
+  `ignore_unused` (asserts at import time and a no-op helper).
+- `membrane/telemetry::telemetry` (the function collided with
+  the `Telemetry` class; the function was never called).
+- `models` removed in commit 1.
+- Stale per-file ruff ignores for `cli.py` and `grpc_server.py`
+  (renamed/deleted in earlier commits).
+- All `_`-prefixed application helpers in `auth/apikey.py`.
+
+## [0.1.2] - 2026-07-12
 - MIT License file.
 - CONTRIBUTING.md with development guidelines and conventional commits.
 - CODE_OF_CONDUCT.md (Contributor Covenant v2.1).
@@ -201,7 +333,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI with live TUI dashboard, cluster status, and interactive setup wizard.
 - Comprehensive test suite (548+ tests) and CI pipeline for Python 3.10–3.13.
 
-[Unreleased]: https://github.com/sachncs/membrane/compare/v0.1.2...HEAD
+[0.2.0]: https://github.com/sachncs/membrane/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/sachncs/membrane/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/sachncs/membrane/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/sachncs/membrane/releases/tag/v0.1.0
