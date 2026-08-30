@@ -43,6 +43,17 @@ moved to deep imports:
   ``Promotion``, ``Offload``, ``Isolation``, ``Selector``, ``Roles``,
   ``Predict``, ``Workload``) — import from
   ``membrane.analytical``.
+
+v0.3.0 removed the following previously-exported research-only
+names; deep-import paths continue to work but the names are
+no longer at the package root:
+
+* ``Adapter`` — import from ``membrane.adapter``.
+* ``Prefiller`` — import from ``membrane.prefiller``.
+
+These classes are not wired into the production serving plane;
+they live in their own modules for research and are exercised
+by tests/demos.
 * Resilience policies, metrics primitives, observability helpers,
   model analytical code, and CLI commands — import from their own
   modules.
@@ -83,7 +94,6 @@ from membrane.persistence.base import PersistenceBackend
 from membrane.persistence.cache import CachingPersistence
 from membrane.persistence.memory import Memory
 from membrane.persistence.redis import Redis
-from membrane.prefiller import Prefiller
 from membrane.prefix import Prefix
 from membrane.reconstructor import Reconstructor
 from membrane.replica import Replica
@@ -153,6 +163,4 @@ __all__ = [
     "TimeoutError",
     # Logging
     "configure_logging",
-    # Prefill
-    "Prefiller",
 ]
