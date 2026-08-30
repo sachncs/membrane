@@ -124,11 +124,11 @@ class _RemoteEndpoint:
         self.node_id = node_id
         self._cluster = cluster
 
-    def _client(self) -> Peer | None:
+    def client_for(self) -> Peer | None:
         return self._cluster.membership.get_client(self.node_id)
 
     def inventory(self) -> dict[str, int] | None:
-        client = self._client()
+        client = self.client_for()
         if client is None:
             return None
         resp = client.get_inventory()
@@ -137,13 +137,13 @@ class _RemoteEndpoint:
         return resp.get("digest", {})
 
     def retrieve(self, content_hash: str) -> Fragment | None:
-        client = self._client()
+        client = self.client_for()
         if client is None:
             return None
         return client.retrieve_fragment(content_hash)
 
     def push(self, fragment: Fragment) -> bool:
-        client = self._client()
+        client = self.client_for()
         if client is None:
             return False
         return client.request_replicate(fragment)
