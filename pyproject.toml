@@ -96,6 +96,10 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "stress: 64-thread concurrent stress suite; gated by the dedicated 'stress' CI job",
+    "chaos: toxiproxy-aware chaos suite; gated by the dedicated 'chaos' CI job",
+]
 
 [tool.ruff]
 target-version = "py310"
