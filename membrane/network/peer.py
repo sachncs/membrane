@@ -183,6 +183,53 @@ class Peer:
         resp = self.request_with_retry("POST", "/replicate", payload)
         return resp is not None and resp.get("success", False)
 
+    def request_delete(
+        self,
+        content_hash: str,
+        node_id: str,
+        tombstone_until: float | None = None,
+    ) -> bool:
+        """Send ``POST /delete`` for ``content_hash``.
+
+        Args:
+            content_hash: Hash to soft-delete.
+            node_id: Local node identifier propagated to the peer.
+            tombstone_until: Optional Unix deadline.
+
+        Returns:
+            bool: ``True`` when the peer's :func:`op_delete`
+            succeeded.
+        """
+        body: dict[str, object] = {
+            "content_hash": content_hash,
+            "node_id": node_id,
+        }
+        if tombstone_until is not None:
+            body["tombstone_until"] = tombstone_until
+        resp = self.request_with_retry("POST", "/delete", body)
+        return resp is not None and bool(resp.get("success", False))
+
+    def request_tombstone(
+        self,
+        content_hash: str,
+        until: float,
+        node_id: str,
+    ) -> bool:
+        """Send ``POST /tombstone`` marking a soft-delete.
+
+        Args:
+            content_hash: Hash to tombstone.
+            until: Wall-clock deadline.
+            node_id: Originating node identifier.
+
+        Returns:
+            bool: ``True`` when the peer's :func:`op_tombstone`
+            succeeded.
+        """
+        body = {"content_hash": content_hash, "until": until, "node_id": node_id}
+        resp = self.request_with_retry("POST", "/tombstone", body)
+        return resp is not None and bool(resp.get("success", False))
+
     def get_peers(self) -> JsonDict | None:
         """Send ``GET /peers``."""
         return self.request_with_retry("GET", "/peers")

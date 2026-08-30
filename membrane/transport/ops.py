@@ -20,11 +20,13 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, cast
 from urllib.request import Request, urlopen
 
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
+from membrane.gc import TombstoneTable
 from membrane.metrics import MetricsCollector
 from membrane.network.cluster import Cluster
 from membrane.network.peer import JsonDict
@@ -263,8 +265,100 @@ def op_gossip(cluster: Cluster | None, data: JsonDict) -> tuple[int, JsonDict]:
     return _ok(cluster.gossip.handle(data))
 
 
+def op_delete(
+    node: Node | None,
+    tombstones: TombstoneTable | None,
+    content_hash: str,
+    node_id: str,
+    tombstone_until: float | None = None,
+) -> tuple[int, JsonDict]:
+    """``POST /delete`` — soft-delete a fragment on the local node.
+
+    Writes a tombstone first so peer gossip has time to converge,
+    then removes the fragment from the local :class:`Node`. If
+    ``tombstones`` is ``None`` the operation degrades to an
+    immediate hard delete (the producer is a single-process
+    in-memory deployment with no replicas).
+
+    Args:
+        node: Local :class:`Node` or ``None`` to fail-fast.
+        tombstones: Shared :class:`TombstoneTable` instance, or
+            ``None`` to skip the soft-delete step.
+        content_hash: Hash of the fragment to delete.
+        node_id: Identifier of the node announcing the delete.
+        tombstone_until: Optional explicit deadline (Unix time).
+            ``None`` defaults to ``time.time() + 60.0``.
+
+    Returns:
+        tuple[int, JsonDict]: ``(200, {"success": bool, ...})``.
+    """
+    if node is None:
+        return _ok({"error": "no node"})
+    if content_hash not in node.fragments:
+        return _ok({"success": True, "noop": True, "content_hash": content_hash})
+    if tombstones is not None:
+        deadline = tombstone_until if tombstone_until is not None else time.time() + 60.0
+        tombstones.record(content_hash, until=deadline, node_ids={node_id})
+    node.remove_fragment(content_hash)
+    return _ok({"success": True, "content_hash": content_hash})
+
+
+def op_tombstone(
+    tombstones: TombstoneTable | None,
+    content_hash: str,
+    until: float,
+    node_id: str,
+) -> tuple[int, JsonDict]:
+    """``POST /tombstone`` — record a soft-delete mark without removing.
+
+    Used by gossip delivery to seed a tombstone when a peer
+    announces a delete without forcing every replica to call
+    :func:`op_delete` separately.
+
+    Args:
+        tombstones: Shared :class:`TombstoneTable`.
+        content_hash: Hash being tombstoned.
+        until: Wall-clock deadline after which the tombstone is
+            considered expired.
+        node_id: Identifier of the node announcing the delete.
+
+    Returns:
+        tuple[int, JsonDict]: ``(200, {"success": bool})``.
+    """
+    if tombstones is None:
+        return _ok({"error": "no tombstone table configured"})
+    tombstones.record(content_hash, until=until, node_ids={node_id})
+    return _ok({"success": True, "content_hash": content_hash})
+
+
+def op_purge(
+    node: Node | None,
+    tombstones: TombstoneTable | None,
+    content_hash: str,
+) -> tuple[int, JsonDict]:
+    """``POST /purge`` — admin force-delete bypassing the soft-delete.
+
+    Args:
+        node: Local :class:`Node`.
+        tombstones: Shared :class:`TombstoneTable`.
+        content_hash: Hash to delete unconditionally.
+
+    Returns:
+        tuple[int, JsonDict]: ``(200, {"success": bool})``.
+    """
+    if node is None:
+        return _ok({"error": "no node"})
+    if tombstones is not None:
+        tombstones.sweep_expired()  # opportunistic, not blocking
+    removed = content_hash in node.fragments
+    if removed:
+        node.remove_fragment(content_hash)
+    return _ok({"success": removed, "content_hash": content_hash})
+
+
 __all__ = [
     "MAX_BODY_BYTES",
+    "op_delete",
     "op_gossip",
     "op_heartbeat",
     "op_inventory",
@@ -273,8 +367,10 @@ __all__ = [
     "op_metrics",
     "op_peers",
     "op_prefill",
+    "op_purge",
     "op_replicate",
     "op_retrieve",
     "op_store",
     "op_sync",
+    "op_tombstone",
 ]
