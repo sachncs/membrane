@@ -2,7 +2,7 @@
 
 import pytest
 
-from membrane.workload import Workload
+from membrane.analytical import Workload
 
 
 class TestWorkloadAnalyzer:

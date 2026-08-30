@@ -4,7 +4,7 @@ from tests.conftest import make_fragment
 
 import pytest
 
-from membrane.analytical import Isolation, Tenant
+from membrane.analytical import Isolation, Tenant, Workload
 from membrane.canonical import Canonical
 from membrane.chunks import Chunks
 from membrane.delta import DeltaEncoder
@@ -30,7 +30,6 @@ from membrane.signature import Signature
 from membrane.telemetry import Telemetry
 from membrane.versions import Versions
 from membrane.weighted import Weighted
-from membrane.workload import Workload
 
 
 class TestMembraneIntegration:

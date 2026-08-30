@@ -4,8 +4,8 @@ from tests.conftest import make_fragment
 
 import pytest
 
+from membrane.analytical import Predict
 from membrane.node import Node
-from membrane.predict import Predict
 
 
 class TestPredictor:

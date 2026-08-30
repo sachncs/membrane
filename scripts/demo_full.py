@@ -3,7 +3,7 @@
 
 import logging
 
-from membrane.analytical import Isolation, Tenant
+from membrane.analytical import Isolation, Tenant, Workload
 from membrane.canonical import Canonical
 from membrane.delta import DeltaEncoder
 from membrane.economic import Economic
@@ -21,7 +21,6 @@ from membrane.sessions import Sessions
 from membrane.signature import Signature
 from membrane.telemetry import Telemetry
 from membrane.weighted import Weighted
-from membrane.workload import Workload
 
 logger = logging.getLogger(__name__)
 

@@ -23,6 +23,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from collections import Counter
 from dataclasses import dataclass
 
 from membrane.economic import Economic, EconomicRouterConfig
@@ -30,12 +31,12 @@ from membrane.fragment import Fragment
 from membrane.fragment_kind import FragmentKind
 from membrane.joint import Joint, PlacementDecision
 from membrane.latency import Latency
+from membrane.model.profiler import kv_size
+from membrane.node import Node
 from membrane.offload import Offload, OffloadConfig, OffloadResult
 from membrane.policy import Promotion, PromotionConfig, PromotionResult
-from membrane.predict import Predict
 from membrane.roles import NodeRole, Roles, SystemState
 from membrane.selector import Selector, SelectorConfig
-from membrane.workload import Workload
 
 
 @dataclass(frozen=True)
@@ -125,3 +126,79 @@ __all__ = [
     "Tenant",
     "Workload",
 ]
+
+class Predict:
+    """Lightweight heuristic predictor for KV size, reuse probability, and optimal region.
+
+    Attributes:
+        kv_size_bias: Multiplicative bias applied to KV size
+            estimates, useful for inflating or deflating the
+            expected footprint to match a specific deployment.
+    """
+
+    def __init__(self, kv_size_bias: float = 1.0) -> None:
+        """Initialize the predictor."""
+        self.kv_size_bias = kv_size_bias
+
+    def predict_kv_size(self, prompt_tokens: list[int]) -> float:
+        """Predict KV cache size for a prompt."""
+        return kv_size(len(prompt_tokens)) * self.kv_size_bias
+
+    def predict_reuse_probability(
+        self,
+        content_hash: str,
+        session_history: list[str],
+    ) -> float:
+        """Predict likelihood of reuse based on session history."""
+        if not session_history:
+            return 0.0
+        recent = session_history[-10:]
+        count = recent.count(content_hash)
+        return min(1.0, count / len(recent))
+
+    def predict_optimal_region(
+        self,
+        prompt_tokens: list[int],
+        nodes: list[Node],
+    ) -> str:
+        """Predict the optimal node for a prompt based on heartbeat load."""
+        if not nodes:
+            return ""
+        best = min(nodes, key=lambda node: node.heartbeat())
+        return best.node_id
+
+
+class Workload:
+    """Analyzes access logs to detect repeated prefix patterns."""
+
+    def __init__(self) -> None:
+        """Initialize the analyzer."""
+
+    def analyze_patterns(self, access_log: list[str]) -> dict[str, float]:
+        """Compute a content_hash -> normalized frequency map."""
+        if not access_log:
+            return {}
+        counts = Counter(access_log)
+        total = len(access_log)
+        return {h: count / total for h, count in counts.items()}
+
+    def top_patterns(
+        self,
+        access_log: list[str],
+        k: int = 5,
+    ) -> list[tuple[str, float]]:
+        """Return the top-k most frequent patterns."""
+        frequencies = self.analyze_patterns(access_log)
+        sorted_items = sorted(
+            frequencies.items(), key=lambda item: item[1], reverse=True
+        )
+        return sorted_items[:k]
+
+    def reuse_ratio(self, access_log: list[str]) -> float:
+        """Fraction of accesses that repeat an earlier hash."""
+        if not access_log:
+            return 0.0
+        unique = len(set(access_log))
+        total = len(access_log)
+        return (total - unique) / total if total > unique else 0.0
+
