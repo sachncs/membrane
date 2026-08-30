@@ -19,13 +19,13 @@ simulation, and ``generate`` returns an empty result with a
 warning.
 """
 
-import hashlib
 import json
 import logging
 from typing import Any
 
 import httpx
 
+from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
 from membrane.fragment import Fragment
 from membrane.signature import Signature
@@ -58,18 +58,6 @@ class Ollama(Backend):
             self.client = httpx.Client(timeout=30.0)
         except ImportError:
             logger.warning("Ollama: httpx not installed")
-
-    def hash_tokens(self, tokens: list[int]) -> str:
-        """MD5-hash a token chunk.
-
-        Args:
-            tokens: Token IDs.
-
-        Returns:
-            str: Hexadecimal digest.
-        """
-        payload = ",".join(str(t) for t in tokens)
-        return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Fetch embeddings from Ollama and convert to fragments.
@@ -109,7 +97,7 @@ class Ollama(Backend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self.hash_tokens(chunk)
+            h = token_hash(chunk)
             emb_slice = (
                 embedding[: len(chunk)]
                 if len(embedding) >= len(chunk)
@@ -215,7 +203,7 @@ class Ollama(Backend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self.hash_tokens(chunk)
+            h = token_hash(chunk)
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),

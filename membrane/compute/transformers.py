@@ -26,10 +26,10 @@ The embedding is truncated to 256 dimensions to keep
 of the underlying model's hidden size.
 """
 
-import hashlib
 import logging
 from typing import Any
 
+from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
 from membrane.fragment import Fragment
 from membrane.signature import Signature
@@ -105,18 +105,6 @@ class Transformers(Backend):
             # Network errors, OOM, or invalid model IDs land here.
             logger.warning("Transformers: failed to load model (%s)", exc)
 
-    def hash_tokens(self, tokens: list[int]) -> str:
-        """MD5-hash a token chunk.
-
-        Args:
-            tokens: Token IDs to hash.
-
-        Returns:
-            str: Hexadecimal digest.
-        """
-        payload = ",".join(str(t) for t in tokens)
-        return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
-
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Run a forward pass to obtain hidden-state embeddings.
 
@@ -162,7 +150,7 @@ class Transformers(Backend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self.hash_tokens(chunk)
+            h = token_hash(chunk)
             # Average embeddings over the chunk window so each
             # fragment is represented by a single fixed-size
             # vector.
@@ -269,7 +257,7 @@ class Transformers(Backend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self.hash_tokens(chunk)
+            h = token_hash(chunk)
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),

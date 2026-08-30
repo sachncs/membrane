@@ -23,13 +23,13 @@ Security:
       approved proxy.
 """
 
-import hashlib
 import json
 import logging
 from typing import Any
 
 import httpx
 
+from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
 from membrane.fragment import Fragment
 from membrane.signature import Signature
@@ -78,18 +78,6 @@ class Anthropic(Backend):
         except ImportError:
             logger.warning("Anthropic: httpx not installed")
 
-    def hash_tokens(self, tokens: list[int]) -> str:
-        """MD5-hash a token chunk.
-
-        Args:
-            tokens: Token IDs.
-
-        Returns:
-            str: Hexadecimal digest.
-        """
-        payload = ",".join(str(t) for t in tokens)
-        return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
-
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Produce content-addressed fragments by hashing the prompt.
 
@@ -111,7 +99,7 @@ class Anthropic(Backend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self.hash_tokens(chunk)
+            h = token_hash(chunk)
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),

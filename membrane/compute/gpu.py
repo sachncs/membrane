@@ -28,6 +28,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
@@ -88,7 +89,7 @@ class GPU(Backend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = CPU.hash_tokens(chunk)
+            h = token_hash(chunk)
             # Allocate a small GPU tensor for the chunk. The
             # sum() forces a synchronous kernel launch so the
             # simulator actually exercises the GPU even when no

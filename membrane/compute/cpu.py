@@ -18,6 +18,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
 from membrane.fragment import Fragment
 from membrane.signature import Signature
@@ -60,7 +61,7 @@ class CPU(Backend):
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = self.hash_tokens(chunk)
+            h = token_hash(chunk)
             frag = Fragment(
                 content_hash=h,
                 embedding=(float(i), float(len(chunk))),
@@ -114,18 +115,3 @@ class CPU(Backend):
             str: Always ``"cpu"``.
         """
         return "cpu"
-
-    @staticmethod
-    def hash_tokens(tokens: list[int]) -> str:
-        """Compute a deterministic MD5 digest over a token chunk.
-
-        Args:
-            tokens: Token IDs to hash.
-
-        Returns:
-            str: Hexadecimal MD5 digest.
-        """
-        import hashlib
-
-        payload = ",".join(str(t) for t in tokens)
-        return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
