@@ -56,6 +56,12 @@ dev = [
 server = ["grpcio>=1.83.1", "grpcio-tools>=1.83.1", "redis>=8.1.0", "fastapi>=0.141.1", "uvicorn[standard]>=0.52.4", "httpx>=0.28.1", "pydantic>=2.13.5"]
 gpu = ["torch>=2.13.0"]
 local-llm = ["transformers>=5.16.1", "tokenizers>=0.23.1", "torch>=2.13.0", "sentencepiece>=0.2.2", "protobuf>=7.36.0"]
+# LMCache is the v2.0+ canonical KV substrate. Optional install;
+# operators opt in via `pip install membrane[lmcache]`. The exact
+# pin is left to the deployment image so the protobuf <-> grpcio
+# version conflict in 0.5.4 can be resolved in CI without
+# breaking the existing `[server]` extras.
+lmcache = ["lmcache>=0.5,<0.6"]
 
 [project.scripts]
 membrane = "membrane.cli:main"
