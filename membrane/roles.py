@@ -1,18 +1,6 @@
 """Roles: node dynamically switches role based on system state.
 
-This module implements a small role-assignment policy that
-:class:`~membrane.node.Node` instances can use to
-decide whether to behave as a *memory host*, *prefill worker*, or
-*decode worker* in a disaggregated inference cluster.
-
-The manager is intentionally simple: it inspects the node's
-current memory pressure (via
-:meth:`Node.heartbeat`) and the cluster's average GPU
-load, then picks a role from a fixed decision table. Callers that
-need richer policies can subclass and override
-:meth:`Roles.evaluate_role`.
-
-Heuristic summary:
+Heuristic:
 
     * Memory pressure ``< 0.3`` and GPU load ``> 0.7`` →
       ``PREFILL_WORKER`` (lots of compute, little memory needed).
@@ -21,6 +9,13 @@ Heuristic summary:
     * Otherwise: pick the role that matches the current
       cluster-wide deficit (compute-dominant → ``DECODE_WORKER``,
       memory-dominant → ``MEMORY_HOST``).
+
+The decision table is published at module scope as
+:meth:`Roles.ROLE_TABLE` and is consulted from
+:meth:`Roles.evaluate_role` via the helper
+:meth:`Roles._classify_state` that returns the row label
+for a given (memory_pressure, gpu_load) pair. The
+default-vs-deficit fallback chain is preserved.
 """
 
 import logging
@@ -29,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 from enum import Enum
+from typing import ClassVar
 
 from membrane.node import Node
 
@@ -84,14 +80,45 @@ class SystemState:
 class Roles:
     """Evaluates and assigns dynamic roles to nodes.
 
-    The manager is stateless; instances are safe to share across
-    threads as long as the underlying ``Node`` references
-    are themselves safe to query concurrently.
+    The decision table maps a (memory_pressure, gpu_load)
+    classification to one of three decisions:
+
+    * ``"prefill"`` — call it for the PREFILL_WORKER role.
+    * ``"memory"`` — call it for the MEMORY_HOST role.
+    * ``"deficit"`` — defer to the cluster-wide deficit
+      column (``compute_demand`` vs ``memory_demand``).
     """
+
+    #: Classification table consulted before falling through to the
+    #: deficit-based decision. The key ``"default"`` matches every
+    #: (memory_pressure, gpu_load) pair that does not appear earlier.
+    ROLE_TABLE: ClassVar[dict[str, NodeRole]] = {
+        "default": NodeRole.MEMORY_HOST,
+        "prefill": NodeRole.PREFILL_WORKER,
+        "memory": NodeRole.MEMORY_HOST,
+        "deficit": NodeRole.DECODE_WORKER,
+    }
 
     def __init__(self) -> None:
         """Initialize the role manager."""
         pass
+
+    @staticmethod
+    def _classify_state(memory_pressure: float, gpu_load: float) -> str:
+        """Map (memory_pressure, gpu_load) to a role-table row label.
+
+        Args:
+            memory_pressure: Memory pressure ratio in ``[0, 1]``.
+            gpu_load: GPU load ratio in ``[0, 1]``.
+
+        Returns:
+            str: One of ``"prefill"`` / ``"memory"`` / ``"default"``.
+        """
+        if memory_pressure < 0.3 and gpu_load > 0.7:
+            return "prefill"
+        if memory_pressure > 0.7 and gpu_load < 0.3:
+            return "memory"
+        return "default"
 
     def evaluate_role(
         self,
@@ -100,14 +127,6 @@ class Roles:
     ) -> NodeRole:
         """Decide the best role for ``node`` given ``system_state``.
 
-        Heuristic:
-
-        * High memory pressure + low GPU load → ``MEMORY_HOST``.
-        * Low memory pressure + high GPU load → ``PREFILL_WORKER``.
-        * Otherwise: role matching the cluster-wide deficit
-          (compute-dominant → ``DECODE_WORKER``, otherwise
-          ``MEMORY_HOST``).
-
         Args:
             node: Node to evaluate.
             system_state: Current cluster state.
@@ -115,22 +134,16 @@ class Roles:
         Returns:
             NodeRole: Recommended role.
         """
-        # heart beat reports memory pressure in [0, 1].
         memory_pressure = node.heartbeat()
         gpu_load = system_state.average_gpu_load
 
-        # Lots of GPU available, plenty of memory room →
-        # prefill (compute-heavy) worker.
-        if memory_pressure < 0.3 and gpu_load > 0.7:
-            return NodeRole.PREFILL_WORKER
+        row = self._classify_state(memory_pressure, gpu_load)
+        if row != "default":
+            return self.ROLE_TABLE[row]
 
-        # Memory-constrained node with idle GPU → host fragments.
-        if memory_pressure > 0.7 and gpu_load < 0.3:
-            return NodeRole.MEMORY_HOST
-
-        # Otherwise pick based on the dominant cluster-wide
-        # deficit.
         if system_state.total_compute_demand > system_state.total_memory_demand:
-            return NodeRole.DECODE_WORKER
+            return self.ROLE_TABLE["deficit"]
+        return self.ROLE_TABLE["default"]
 
-        return NodeRole.MEMORY_HOST
+
+__all__ = ["NodeRole", "Roles", "SystemState"]
