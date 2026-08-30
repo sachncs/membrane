@@ -28,7 +28,11 @@ class TestTransformersBackend:
         backend.model = None
         frags = backend.prefill([1, 2, 3, 4], "m")
         assert len(frags) == 1
-        assert frags[0].embedding == (0.0, 4.0)
+        # Surrogate fallback stamps the token span onto the
+        # identity; the synthetic embedding surrogate is gone
+        # in the v2 schema.
+        assert frags[0].identity.token_span == (0, 3)
+        assert frags[0].identity.model_id == "m"
 
     def test_generate_when_model_none(self):
         backend = Transformers(model_id="gpt2")
