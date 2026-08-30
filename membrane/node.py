@@ -1,34 +1,19 @@
 """Node: in-memory fragment storage, TTL, and graph-aware eviction.
 
-This module defines :class:`Node`, the in-memory serving
-plane node that hosts fragments on a single machine. It owns:
+This module defines :class:`Node` and :class:`NodeAttributes`.
 
-* A :class:`~membrane.fragment.Fragment` dictionary keyed by
-  ``content_hash``.
-* An :class:`~membrane.index.Index` that maintains
-  the four in-memory indexes for the fragments it holds.
-* A :class:`~membrane.graph.Graph` used during
-  graph-aware eviction.
-
-The node enforces a ``max_memory_bytes`` budget and supports three
-eviction phases:
-
-1. **TTL expiry** — fragments whose ``ttl`` has elapsed are
-   removed first.
-2. **Weighted LRU** — remaining candidates are sorted by
-   ``last_access / (reuse_score + ε)``; cold fragments with low
-   reuse_score are evicted first.
-3. **Graph-aware co-eviction** — after phases 1 and 2, the node
-   inspects the graph neighbors of the evicted fragments and
-   removes cold neighbors as well, packing the storage more
-   tightly around hot prefixes.
-
-Thread safety:
-    All public methods are protected by a
-    :class:`threading.RLock` so the node can be safely shared
-    across threads (including re-entrant calls from within
-    eviction phases).
+The :class:`NodeAttributes` dataclass carries the locality metadata
+used by Phase 6: ``region`` (e.g. ``"eu-west-1"``) and ``zone``
+(e.g. ``"us-east-1a"``) place a node in the deployment topology,
+and ``bandwidth_class`` is a coarse-grained signal (0 = unmetered,
+higher = metered) that :class:`~membrane.replicator.Replicator`
+consults when picking which replica to fill. The attributes are
+attached to the :class:`Node` instance and shipped in the
+heartbeat response so peers can compute locality-aware
+placements.
 """
+
+from __future__ import annotations
 
 import logging
 
@@ -46,6 +31,34 @@ from membrane.index import Index
 
 if TYPE_CHECKING:
     from membrane.content_store import ContentStore
+
+
+@dataclass(frozen=True)
+class NodeAttributes:
+    """Locality / bandwidth metadata advertised by a node.
+
+    Attributes:
+        region: Coarse deployment region, e.g. ``"us-east-1"``,
+            ``"eu-west-1"``. ``"default"`` when unset.
+        zone: Finer-grained availability zone, e.g. ``"us-east-1a"``;
+            used by :class:`~membrane.shard.Shard`'s locality
+            scoring. ``"default"`` when unset.
+        bandwidth_class: Coarse metric of egress cost. ``0`` is
+            unmetered (same-zone, free); higher values are
+            proportional to inter-region cost. Default ``0``.
+    """
+
+    region: str = "default"
+    zone: str = "default"
+    bandwidth_class: int = 0
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-friendly dict (used by heartbeats)."""
+        return {
+            "region": self.region,
+            "zone": self.zone,
+            "bandwidth_class": self.bandwidth_class,
+        }
 
 
 @dataclass(frozen=True)
@@ -88,7 +101,8 @@ class Node:
         max_memory_bytes: int = 1 << 30,
         index_system: Index | None = None,
         graph: Graph | None = None,
-        content_store: "ContentStore | None" = None,
+        content_store: ContentStore | None = None,
+        attributes: NodeAttributes | None = None,
     ) -> None:
         """Initialize the node.
 
@@ -104,11 +118,16 @@ class Node:
                 a private in-process store; production nodes
                 should pass ``FilesystemBlob(...)`` or a similar
                 implementation so payloads survive process exit.
+            attributes: Optional :class:`NodeAttributes` (region,
+                zone, bandwidth_class). ``None`` falls back to
+                the default ``("default", "default", 0)``
+                triple so single-node deployments are unaffected.
         """
         self.node_id = node_id
         self.max_memory_bytes = max_memory_bytes
         self.index_system = index_system or Index()
         self.graph = graph or Graph()
+        self.attributes = attributes or NodeAttributes()
 
         if content_store is None:
             from membrane.content_store import InProcessBytes

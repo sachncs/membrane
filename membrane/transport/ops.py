@@ -103,6 +103,7 @@ def op_heartbeat(
             "fragment_count": stats.fragment_count,
             "primary_count": stats.primary_count,
             "healthy": True,
+            "attributes": node.attributes.to_dict(),
         }
     )
 
