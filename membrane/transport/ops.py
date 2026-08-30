@@ -117,7 +117,7 @@ def op_peers(cluster: Any) -> tuple[int, dict[str, Any]]:
     """``GET /peers`` — cluster membership view."""
     if cluster is None:
         return _ok({"error": "cluster manager not enabled"})
-    return _ok({"peers": cluster.get_peers()})
+    return _ok({"peers": cluster.membership.to_json()})
 
 
 def op_retrieve(node: Node | None, content_hash: str) -> tuple[int, dict[str, Any]]:
@@ -219,7 +219,8 @@ def op_join(
         return _ok({"error": "missing node_id, host, or port"})
     if cluster is None:
         return _ok({"error": "cluster manager not enabled"})
-    return _ok(cluster.on_peer_join(node_id, host, port))
+    cluster.membership.add(node_id, host, port)
+    return _ok({"success": True, "peers": cluster.membership.to_json()})
 
 
 def op_leave(cluster: Any, node_id: str) -> tuple[int, dict[str, Any]]:
@@ -228,7 +229,15 @@ def op_leave(cluster: Any, node_id: str) -> tuple[int, dict[str, Any]]:
         return _ok({"error": "missing node_id"})
     if cluster is None:
         return _ok({"error": "cluster manager not enabled"})
-    cluster.on_peer_leave(node_id)
+    cluster.membership.remove(node_id)
+    leaving_hashes = {
+        h for h, primary in cluster.shard_manager.primary_map.items() if primary == node_id
+    }
+    if cluster.migrator is not None and leaving_hashes:
+        try:
+            cluster.migrator.migrate(leaving_hashes, node_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("migrator.migrate(%d hashes, leaving=%s) failed: %s", len(leaving_hashes), node_id, exc)
     return _ok({"success": True})
 
 
@@ -236,7 +245,7 @@ def op_gossip(cluster: Any, data: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     """``POST /gossip``."""
     if cluster is None:
         return _ok({"error": "cluster manager not enabled"})
-    return _ok(cluster.on_gossip(data))
+    return _ok(cluster.gossip.handle(data))
 
 
 __all__ = [

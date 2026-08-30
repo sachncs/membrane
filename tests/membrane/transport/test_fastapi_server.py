@@ -118,13 +118,14 @@ class TestFastAPIServer:
         backend = CPU()
         transfer = TransferService()
         cluster = MagicMock()
-        cluster.on_peer_join.return_value = {"success": True, "peers": []}
+        cluster.membership.add.return_value = None
+        cluster.membership.to_json.return_value = []
         app = create_app(node=node, compute_backend=backend, transfer_service=transfer, cluster_manager=cluster)
         client = TestClient(app)
         resp = client.post("/join", json={"node_id": "n2", "host": "127.0.0.1", "port": 8081})
         assert resp.status_code == 200
         assert resp.json()["success"] is True
-        cluster.on_peer_join.assert_called_once_with("n2", "127.0.0.1", 8081)
+        cluster.membership.add.assert_called_once_with("n2", "127.0.0.1", 8081)
 
     def test_server_start_stop(self):
         node = Node("n1", max_memory_bytes=10000)

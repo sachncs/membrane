@@ -11,68 +11,53 @@ from membrane.signature import Signature
 class TestClusterManager:
     """Test suite for Cluster membership and failure detection."""
 
-    def test_add_peer(self):
+    def _mgr(self, **cfg_kwargs) -> tuple[Node, Cluster]:
+        migrator = cfg_kwargs.pop("migrator", None)
         node = Node("n1", max_memory_bytes=10000)
-        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
-        mgr = Cluster("n1", "127.0.0.1", 8080, node, cfg)
-        mgr.add_peer("n2", "127.0.0.2", 8081)
-        peers = mgr.get_peers()
+        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080, **cfg_kwargs)
+        return node, Cluster("n1", "127.0.0.1", 8080, node, cfg, migrator=migrator)
+
+    def test_add_peer(self):
+        _, mgr = self._mgr()
+        mgr.membership.add("n2", "127.0.0.2", 8081)
+        peers = mgr.membership.to_json()
         assert len(peers) == 1
         assert peers[0]["node_id"] == "n2"
         assert peers[0]["host"] == "127.0.0.2"
         assert peers[0]["port"] == 8081
 
     def test_remove_peer(self):
-        node = Node("n1", max_memory_bytes=10000)
-        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
-        mgr = Cluster("n1", "127.0.0.1", 8080, node, cfg)
-        mgr.add_peer("n2", "127.0.0.2", 8081)
-        assert mgr.remove_peer("n2") is True
-        assert mgr.get_peers() == []
-        assert mgr.remove_peer("n2") is False
+        _, mgr = self._mgr()
+        mgr.membership.add("n2", "127.0.0.2", 8081)
+        assert mgr.membership.remove("n2") is True
+        assert mgr.membership.to_json() == []
+        assert mgr.membership.remove("n2") is False
 
     def test_self_peer_ignored(self):
-        node = Node("n1", max_memory_bytes=10000)
-        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
-        mgr = Cluster("n1", "127.0.0.1", 8080, node, cfg)
-        mgr.add_peer("n1", "127.0.0.1", 8080)
-        assert mgr.get_peers() == []
+        _, mgr = self._mgr()
+        mgr.membership.add("n1", "127.0.0.1", 8080)
+        assert mgr.membership.to_json() == []
 
     def test_on_peer_join(self):
-        node = Node("n1", max_memory_bytes=10000)
-        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
-        mgr = Cluster("n1", "127.0.0.1", 8080, node, cfg)
-        mgr.add_peer("n2", "127.0.0.2", 8081)
-        result = mgr.on_peer_join("n3", "127.0.0.3", 8082)
-        assert result["success"] is True
-        assert len(result["peers"]) == 2  # n2 and n1 (self not included)
+        _, mgr = self._mgr()
+        mgr.membership.add("n2", "127.0.0.2", 8081)
+        mgr.membership.add("n3", "127.0.0.3", 8082)
+        assert len(mgr.membership.to_json()) == 2
 
     def test_on_heartbeat(self):
-        node = Node("n1", max_memory_bytes=10000)
-        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
-        mgr = Cluster("n1", "127.0.0.1", 8080, node, cfg)
-        mgr.add_peer("n2", "127.0.0.2", 8081)
-        resp = mgr.on_heartbeat("n2")
-        assert resp["node_id"] == "n1"
-        assert resp["healthy"] is True
-        assert mgr.is_peer_healthy("n2") is True
+        _, mgr = self._mgr()
+        mgr.membership.add("n2", "127.0.0.2", 8081)
+        mgr.membership.record_heartbeat("n2")
+        peer = mgr.membership.find("n2")
+        assert peer is not None
+        assert peer.healthy is True
 
     def test_failure_detection(self):
-        node = Node("n1", max_memory_bytes=10000)
-        cfg = ClusterConfig(
-            node_id="n1",
-            host="127.0.0.1",
-            port=8080,
-            failure_suspect_threshold=1,
-            failure_remove_threshold=2,
-        )
-        mgr = Cluster("n1", "127.0.0.1", 8080, node, cfg)
-        mgr.add_peer("n2", "127.0.0.2", 8081)
-        # Simulate missed heartbeats by reaching into membership.
+        _, mgr = self._mgr(failure_suspect_threshold=1, failure_remove_threshold=2)
+        mgr.membership.add("n2", "127.0.0.2", 8081)
         peer = mgr.membership.find("n2")
         assert peer is not None
         peer.missed_heartbeats = 2
-        # Use the Failure subsystem's detector directly.
         for p in mgr.membership.snapshot():
             if p.missed_heartbeats >= mgr.config.failure_remove_threshold and mgr.failure.detector.should_remove(
                 peer_id=p.node_id,
@@ -80,14 +65,12 @@ class TestClusterManager:
                 suspect_votes=0,
                 healthy_peer_count=len(mgr.membership.healthy()) + 1,
             ):
-                mgr.remove_peer(p.node_id)
-        assert mgr.get_peers() == []
+                mgr.membership.remove(p.node_id)
+        assert mgr.membership.to_json() == []
 
     def test_on_gossip(self):
-        node = Node("n1", max_memory_bytes=10000)
-        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
-        mgr = Cluster("n1", "127.0.0.1", 8080, node, cfg)
-        result = mgr.on_gossip(
+        _, mgr = self._mgr()
+        result = mgr.gossip.handle(
             {
                 "node_id": "n2",
                 "timestamp": 1000.0,
@@ -97,27 +80,14 @@ class TestClusterManager:
             }
         )
         assert result["node_id"] == "n1"
-        assert len(mgr.get_peers()) == 1
+        assert len(mgr.membership.to_json()) == 1
 
     def test_on_peer_leave_migrates_primaries_to_local(self):
         """When a peer leaves, primaries it owned are migrated to the
         local node by the configured Migrator."""
-        node = Node("n1", max_memory_bytes=10000)
-        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
-        mgr = Cluster(
-            "n1",
-            "127.0.0.1",
-            8080,
-            node,
-            cfg,
-            migrator=EagerMigrator(),
-        )
-        # Seed the shard table: leaving peer n2 is the primary of
-        # h-mig; n1 is already a replica.
+        node, mgr = self._mgr(migrator=EagerMigrator())
         mgr.shard_manager.primary_map["h-mig"] = "n2"
         mgr.shard_manager.replica_map["h-mig"] = {"n1"}
-        # Seed a fragment on the local node so the migrator can
-        # promote it.
         node.fragments["h-mig"] = Fragment(
             content_hash="h-mig",
             embedding=(0.0,),
@@ -128,31 +98,27 @@ class TestClusterManager:
             version_id=1,
         )
 
-        mgr.on_peer_leave("n2")
+        mgr.membership.remove("n2")
+        leaving_hashes = {h for h, primary in mgr.shard_manager.primary_map.items() if primary == "n2"}
+        if mgr.migrator is not None and leaving_hashes:
+            mgr.migrator.migrate(leaving_hashes, "n2")
 
-        # Migrator re-homed the hash: n1 promoted to primary, n2 dropped from replicas.
         assert mgr.shard_manager.primary_map["h-mig"] == "n1"
         assert "n2" not in mgr.shard_manager.replica_map["h-mig"]
         assert "h-mig" in node.primary_hashes
 
     def test_on_peer_leave_uses_rate_limited_migrator(self):
         """RateLimitedMigrator with max_per_second=10 takes ~0.1s for 1 hash."""
-        node = Node("n1", max_memory_bytes=10000)
-        cfg = ClusterConfig(node_id="n1", host="127.0.0.1", port=8080)
-        mgr = Cluster(
-            "n1",
-            "127.0.0.1",
-            8080,
-            node,
-            cfg,
-            migrator=RateLimitedMigrator(max_per_second=10.0),
-        )
-        mgr.shard_manager.primary_map["h-rate"] = "n2"
-        mgr.shard_manager.replica_map["h-rate"] = {"n1"}
         import time
 
+        _, mgr = self._mgr(migrator=RateLimitedMigrator(max_per_second=10.0))
+        mgr.shard_manager.primary_map["h-rate"] = "n2"
+        mgr.shard_manager.replica_map["h-rate"] = {"n1"}
+
+        mgr.membership.remove("n2")
+        leaving_hashes = {h for h, primary in mgr.shard_manager.primary_map.items() if primary == "n2"}
+
         start = time.monotonic()
-        mgr.on_peer_leave("n2")
+        mgr.migrator.migrate(leaving_hashes, "n2")
         elapsed = time.monotonic() - start
-        # 1 migration at 10/s = 0.1s sleep; allow some slack.
         assert elapsed >= 0.05

@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
 
 from membrane.network.bootstrap import bootstrap
 from membrane.network.config import ClusterConfig
@@ -33,7 +32,6 @@ from membrane.network.failure import Failure
 from membrane.network.gossip_loop import Gossip
 from membrane.network.heartbeat import Heartbeat
 from membrane.network.membership import Membership, PeerInfo
-from membrane.network.peer import Peer
 from membrane.network.strategy import (
     EagerMigrator,
     FailureDetector,
@@ -201,68 +199,6 @@ class Cluster:
         """One-shot bootstrap wrapper for the daemon thread."""
         bootstrap(self.membership, self.config, self.node_id, self.host, self.port)
 
-    # ------------------------------------------------------------------
-    # Membership API (preserved for backward compatibility)
-    # ------------------------------------------------------------------
-
-    def add_peer(self, node_id: str, host: str, port: int) -> None:
-        """Add or update a peer; delegates to :meth:`Membership.add`."""
-        self.membership.add(node_id, host, port)
-
-    def remove_peer(self, node_id: str) -> bool:
-        """Remove a peer; delegates to :meth:`Membership.remove`."""
-        return self.membership.remove(node_id)
-
-    def get_peers(self) -> list[dict[str, Any]]:
-        """Return a snapshot of the membership table."""
-        return self.membership.to_json()
-
-    def is_peer_healthy(self, node_id: str) -> bool:
-        """Return whether a peer is currently healthy."""
-        p = self.membership.find(node_id)
-        return p.healthy if p else False
-
-    def get_peer_client(self, node_id: str) -> Peer | None:
-        """Return the cached HTTP client for a peer."""
-        return self.membership.get_client(node_id)
-
-    def get_peer_url(self, node_id: str) -> str | None:
-        """Return the HTTP base URL for a peer."""
-        return self.membership.get_url(node_id)
-
-    # ------------------------------------------------------------------
-    # Event handlers (called by HTTP server) — preserved for compat
-    # ------------------------------------------------------------------
-
-    def on_peer_join(self, node_id: str, host: str, port: int) -> dict[str, Any]:
-        """Handle a ``POST /join`` request from a peer."""
-        self.add_peer(node_id, host, port)
-        return {"success": True, "peers": self.membership.to_json()}
-
-    def on_peer_leave(self, node_id: str) -> None:
-        """Handle a ``POST /leave`` request.
-
-        Removes the peer from membership and triggers the configured
-        :class:`Migrator` to rebalance the leaving peer's primaries.
-        Migration is skipped when the migrator's transfer function is
-        unset (so tests that don't exercise migration don't need to
-        wire it).
-        """
-        self.remove_peer(node_id)
-        # The leaving peer may still own primaries in the local shard
-        # table; collect them so the migrator can re-home them.
-        leaving_hashes = {h for h, primary in self.shard_manager.primary_map.items() if primary == node_id}
-        if self.migrator is not None and leaving_hashes:
-            try:
-                self.migrator.migrate(leaving_hashes, node_id)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "migrator.migrate(%d hashes, leaving=%s) failed: %s",
-                    len(leaving_hashes),
-                    node_id,
-                    exc,
-                )
-
     def _migrator_callback(self, content_hash: str, leaving_peer: str) -> None:
         """Default ``Migrator.transfer_fn`` that delegates to :meth:`Shard.migrate_primary`."""
         self.shard_manager.migrate_primary(
@@ -271,20 +207,3 @@ class Cluster:
             local_node_id=self.node_id,
             node=self.node,
         )
-
-    def on_heartbeat(self, node_id: str) -> dict[str, Any]:
-        """Handle a ``POST /heartbeat`` request."""
-        self.membership.record_heartbeat(node_id)
-        stats = self.node.get_stats()
-        return {
-            "node_id": self.node_id,
-            "load": self.node.heartbeat(),
-            "memory_used_bytes": stats.memory_used_bytes,
-            "memory_limit_bytes": stats.memory_limit_bytes,
-            "fragment_count": stats.fragment_count,
-            "healthy": True,
-        }
-
-    def on_gossip(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Handle a ``POST /gossip`` request; delegates to :class:`Gossip`."""
-        return self.gossip.handle(data)
