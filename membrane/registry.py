@@ -94,6 +94,47 @@ class Registry:
         """
         self.fragment_locations.setdefault(content_hash, set()).add(node_id)
 
+    def forget_fragment_location(self, content_hash: str, node_id: str) -> bool:
+        """Drop ``node_id`` from the holder set for ``content_hash``.
+
+        Used by the deletion-propagation path: a peer's
+        ``op_delete`` or gossip tombstone announces that this
+        node no longer holds the fragment, so the directory must
+        follow suit. When the holder set drops to empty the
+        entry is removed entirely to keep the table bounded.
+
+        Args:
+            content_hash: Hash to forget.
+            node_id: Node identifier to drop from the set.
+
+        Returns:
+            bool: ``True`` when a holder was actually removed,
+            ``False`` when the hash or node was absent.
+        """
+        holders = self.fragment_locations.get(content_hash)
+        if holders is None:
+            return False
+        removed = node_id in holders
+        holders.discard(node_id)
+        if not holders:
+            self.fragment_locations.pop(content_hash, None)
+        return removed
+
+    def forget_fragment(self, content_hash: str) -> bool:
+        """Remove every entry for ``content_hash``.
+
+        Used by the directory after a tombstone expires so a
+        re-add requires a fresh ``record_fragment_location``,
+        not a refresh from a stale peer.
+
+        Args:
+            content_hash: Hash to remove.
+
+        Returns:
+            bool: ``True`` when an entry was removed.
+        """
+        return self.fragment_locations.pop(content_hash, None) is not None
+
     def locate_fragment(self, content_hash: str) -> set[str]:
         """Return node IDs that hold the given fragment.
 

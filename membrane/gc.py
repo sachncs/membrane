@@ -256,6 +256,7 @@ class Sweeper:
     thread: threading.Thread | None = None
     on_evict_expired: SweepHook | None = None
     on_tombstones_expired: SweepHook | None = None
+    on_post_sweep: SweepHook | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
@@ -299,14 +300,22 @@ class Sweeper:
             tombstones: Optional :class:`TombstoneTable` whose
                 expired records will be purged.
         """
+        total: list[str] = []
         if evict_expired is not None:
             evicted = evict_expired()
             if self.on_evict_expired is not None and evicted:
                 self.on_evict_expired(evicted)
+            total.extend(evicted)
         if tombstones is not None:
             expired = tombstones.sweep_expired()
             if self.on_tombstones_expired is not None and expired:
                 self.on_tombstones_expired(expired)
+            total.extend(expired)
+        if self.on_post_sweep is not None and total:
+            # De-duplicate so the post-sweep observer sees each
+            # affected hash exactly once even when both phases
+            # evicted it.
+            self.on_post_sweep(sorted(set(total)))
 
     def _run(self) -> None:
         """Worker loop. Uses ``stop_event.wait`` so ``stop`` is prompt."""
