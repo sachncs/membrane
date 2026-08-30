@@ -29,7 +29,7 @@ import threading
 from membrane.network.bootstrap import bootstrap
 from membrane.network.config import ClusterConfig
 from membrane.network.failure import Failure
-from membrane.network.gossip_loop import Gossip
+from membrane.network.gossip import Gossip
 from membrane.network.heartbeat import Heartbeat
 from membrane.network.membership import Membership, PeerInfo
 from membrane.network.strategy import (
