@@ -7,7 +7,7 @@ plane node that hosts fragments on a single machine. It owns:
   ``content_hash``.
 * An :class:`~membrane.index.Index` that maintains
   the four in-memory indexes for the fragments it holds.
-* A :class:`~membrane.graph_manager.GraphManager` used during
+* A :class:`~membrane.graph.Graph` used during
   graph-aware eviction.
 
 The node enforces a ``max_memory_bytes`` budget and supports three
@@ -40,7 +40,7 @@ import time
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.graph import GraphManager
+from membrane.graph import Graph
 from membrane.index import Index
 
 
@@ -72,7 +72,7 @@ class Node:
 
     Supports TTL expiry, LRU eviction weighted by ``reuse_score``,
     and graph-aware co-eviction via an owned
-    :class:`GraphManager`.
+    :class:`Graph`.
 
     All public methods are thread-safe via an internal
     :class:`threading.RLock`.
@@ -83,7 +83,7 @@ class Node:
         node_id: str,
         max_memory_bytes: int = 1 << 30,
         index_system: Index | None = None,
-        graph_manager: GraphManager | None = None,
+        graph: Graph | None = None,
     ) -> None:
         """Initialize the node.
 
@@ -92,13 +92,13 @@ class Node:
             max_memory_bytes: Memory budget in bytes.
             index_system: Optional index system. A fresh one is
                 created when ``None``.
-            graph_manager: Optional graph manager. A fresh one is
-                created when ``None``.
+            graph: Optional fragment graph. A fresh one is created
+                when ``None``.
         """
         self.node_id = node_id
         self.max_memory_bytes = max_memory_bytes
         self.index_system = index_system or Index()
-        self.graph_manager = graph_manager or GraphManager()
+        self.graph = graph or Graph()
 
         self.fragments: dict[str, Fragment] = {}
         self.primary_hashes: set[str] = set()
@@ -162,7 +162,7 @@ class Node:
                 self.memory_usage += fragment.size
                 self.insertion_times[fragment.content_hash] = now
                 self.index_system.insert(fragment, {self.node_id})
-                self.graph_manager.register(fragment)
+                self.graph.add_node(fragment)
                 logger.debug("Stored fragment %s on %s", fragment.content_hash, self.node_id)
 
             self.access_times[fragment.content_hash] = now
@@ -301,7 +301,7 @@ class Node:
 
         For every seed hash evicted in earlier phases, look up its
         structural neighbors via
-        :meth:`GraphManager.eviction_candidates` and remove any
+        :meth:`Graph.eviction_neighbors` and remove any
         neighbor that is still resident on this node.
 
         Args:
@@ -317,7 +317,7 @@ class Node:
             for h in list(seed_hashes):
                 if freed >= target_bytes:
                     break
-                neighbors = self.graph_manager.eviction_candidates(h)
+                neighbors = self.graph.eviction_neighbors(h)
                 for neighbor_hash in neighbors:
                     if neighbor_hash not in self.fragments:
                         continue

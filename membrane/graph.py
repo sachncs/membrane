@@ -1,12 +1,11 @@
-"""Graph: typed fragment graph plus its application-level managers.
+"""Graph: typed fragment graph with prefetch and eviction hints.
 
-This module defines three classes:
+This module defines two classes:
 
 * :class:`Graph` — the structural data structure (nodes are
   fragments keyed by ``content_hash``; edges are typed
-  relationships).
-* :class:`GraphManager` — application-level wrapper that exposes
-  prefetch and eviction hints on top of a :class:`Graph`.
+  relationships). It also exposes the prefetch and eviction-hint
+  policies that higher-level components need.
 * :class:`SubgraphRetrieval` — bounded BFS over a
   :class:`~membrane.weighted.Weighted` for retrieving connected
   components.
@@ -38,11 +37,16 @@ logger = logging.getLogger(__name__)
 
 
 class Graph:
-    """Directed typed graph over fragments.
+    """Directed typed graph over fragments with prefetch/eviction hints.
 
     Nodes are keyed by ``content_hash``. Edges are keyed by
     ``(source, target, type)``. Adjacency is stored per node per
     edge type for fast traversal.
+
+    The graph also owns the prefetch and eviction policy helpers
+    that previously lived in :class:`GraphManager`. They are pure
+    functions of the adjacency structure, so keeping them on the
+    graph avoids the thin-wrapper class.
 
     Attributes:
         nodes: Mapping from ``content_hash`` to the corresponding
@@ -143,7 +147,6 @@ class Graph:
         types = self.adjacency.get(content_hash, {})
         if edge_type is not None:
             return set(types.get(edge_type, set()))
-        # Aggregate across all edge types, deduplicating.
         result: set[str] = set()
         for neighbors in types.values():
             result.update(neighbors)
@@ -161,62 +164,7 @@ class Graph:
         """
         return self.nodes.get(content_hash)
 
-
-class GraphManager:
-    """Application-level wrapper around :class:`Graph`.
-
-    Exposes three operations that higher-level Membrane components
-    care about:
-
-    * **Registration** (:meth:`register`) — add a fragment as a graph
-      node.
-    * **Linking** (:meth:`link`) — declare a typed relationship
-      between two fragments.
-    * **Suggestion** (:meth:`suggest_prefetch`,
-      :meth:`eviction_candidates`) — derive hints for prefetching
-      and eviction from the graph.
-
-    The manager does not own the graph — it delegates every
-    operation to an internal :class:`Graph`. This separation keeps
-    the data structure reusable independently of the manager's
-    higher-level semantics.
-
-    Attributes:
-        graph: The underlying :class:`Graph`. Held by reference
-            so callers may iterate it directly when they need
-            lower-level access.
-    """
-
-    def __init__(self) -> None:
-        """Initialize the manager with an empty fragment graph."""
-        logger.info("Initialized %s", self.__class__.__name__)
-        self.graph = Graph()
-
-    def register(self, fragment: Fragment) -> None:
-        """Register a fragment in the graph.
-
-        Args:
-            fragment: Fragment to add as a node.
-        """
-        self.graph.add_node(fragment)
-
-    def link(self, source_hash: str, target_hash: str, edge_type: str) -> None:
-        """Create a typed relationship between two fragments.
-
-        The edge is directed. Endpoints do not need to exist in
-        the graph ahead of time — the underlying :class:`Graph`
-        will lazily create empty adjacency entries.
-
-        Args:
-            source_hash: Source fragment hash.
-            target_hash: Target fragment hash.
-            edge_type: Relationship type
-                (e.g., ``"co_access"``, ``"semantic"``,
-                ``"positional"``).
-        """
-        self.graph.add_edge(source_hash, target_hash, edge_type)
-
-    def suggest_prefetch(
+    def prefetch_suggest(
         self,
         content_hash: str,
         edge_type: str | None = None,
@@ -238,10 +186,10 @@ class GraphManager:
             list[str]: Suggested neighbor hashes, ordered by
             iteration order of the underlying set.
         """
-        neighbors = self.graph.neighbors(content_hash, edge_type)
+        neighbors = self.neighbors(content_hash, edge_type)
         return list(neighbors)[:limit]
 
-    def eviction_candidates(
+    def eviction_neighbors(
         self,
         content_hash: str,
         edge_type: str | None = None,
@@ -260,7 +208,7 @@ class GraphManager:
         Returns:
             set[str]: Neighbor hashes for graph-aware eviction.
         """
-        return self.graph.neighbors(content_hash, edge_type)
+        return self.neighbors(content_hash, edge_type)
 
 
 class SubgraphRetrieval:
@@ -331,8 +279,6 @@ class SubgraphRetrieval:
         frontier: set[str] = {seed_hash}
 
         for _ in range(max_depth):
-            # next_frontier collects every node reached in this
-            # BFS layer.
             next_frontier: set[str] = set()
             for node in frontier:
                 neighbors = self.graph.get_strong_neighbors(node, min_weight=min_weight)
@@ -342,8 +288,6 @@ class SubgraphRetrieval:
                         next_frontier.add(neighbor)
             frontier = next_frontier
             if not frontier:
-                # No new nodes reached; the component is fully
-                # explored and we can stop early.
                 break
 
         return visited
@@ -373,14 +317,11 @@ class SubgraphRetrieval:
         seen: set[str] = set()
         for seed in seed_hashes:
             if seed in seen:
-                # Already covered by a prior cluster.
                 continue
             component = self.retrieve_component(seed, min_weight, max_depth)
             clusters.append(component)
-            # Mark every node in this component so future seeds
-            # that fall inside it are skipped.
             seen.update(component)
         return clusters
 
 
-__all__ = ["Graph", "GraphManager", "SubgraphRetrieval"]
+__all__ = ["Graph", "SubgraphRetrieval"]

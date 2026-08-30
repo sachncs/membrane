@@ -58,7 +58,7 @@ def test_graph_aware_eviction():
     b = make_fragment("b", 100, reuse_score=0.1)
     node.store(a)
     node.store(b)
-    node.graph_manager.link("a", "b", "co_access")
+    node.graph.add_edge("a", "b", "co_access")
     node.evict(50)
     # a is evicted because low reuse_score, b may follow via graph-aware
     assert "a" not in node.fragments or "b" not in node.fragments
