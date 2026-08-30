@@ -6,16 +6,7 @@ optional Redis persistence layer into a single runnable
 service.
 
 The server is also the entry point for the CLI's ``serve``
-command and the TUI dashboard. It owns:
-
-* A :class:`Node` instance.
-* A :class:`Backend`.
-* A persistence backend (:class:`Memory` or
-  :class:`Redis`).
-* An optional :class:`Cluster` and matching
-  :class:`~membrane.transfer.TransferService`.
-* An in-memory event log surfaced via
-  :meth:`recent_events` for the dashboard.
+command and the TUI dashboard.
 """
 
 import logging
@@ -25,8 +16,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from membrane.compute.base import Backend
-from membrane.compute.cpu import CPU
-from membrane.compute.gpu import GPU
 from membrane.metrics import (
     ClusterMetrics,
     MetricsCollector,
@@ -44,6 +33,71 @@ from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.http import HTTPServer
 
 logger = logging.getLogger(__name__)
+
+
+# Registry mapping CLI/backend name strings to backend factories.
+# Each factory receives (llm_url, llm_model, api_key) and returns
+# a Backend instance. Backends whose optional dependencies are not
+# installed fall back to RuntimeError at construction time when
+# the CLI tries to instantiate them — same behavior as the
+# previous inline string-dispatch code.
+COMPUTE_BACKENDS: dict[str, Any] = {}
+
+
+def _register_compute_backends() -> None:
+    """Populate the COMPUTE_BACKENDS registry from optional-backend imports."""
+    from membrane.compute.cpu import CPU
+
+    COMPUTE_BACKENDS["cpu"] = lambda _url, _model, _key: CPU()
+    COMPUTE_BACKENDS["gpu"] = lambda _url, _model, _key: _try_import("GPU")()
+    COMPUTE_BACKENDS["ollama"] = lambda url, model, _key: _try_import("Ollama")(
+        base_url=url or "http://localhost:11434",
+        model=model or "llama3.2",
+    )
+    COMPUTE_BACKENDS["openai"] = lambda _url, model, key: _try_import("OpenAI")(
+        model=model or "gpt-4o-mini",
+        api_key=key,
+    )
+    COMPUTE_BACKENDS["anthropic"] = lambda _url, model, key: _try_import("Anthropic")(
+        model=model or "claude-3-sonnet-20240229",
+        api_key=key,
+    )
+    COMPUTE_BACKENDS["transformers"] = lambda _url, model, _key: _try_import("Transformers")(
+        model_id=model or "gpt2",
+    )
+
+
+def _try_import(class_name: str) -> type[Backend]:
+    """Import an optional backend class by name.
+
+    Args:
+        class_name: Backend class to import (e.g., ``"Ollama"``).
+
+    Returns:
+        The backend class.
+
+    Raises:
+        RuntimeError: If the optional backend dependency is
+            not installed.
+    """
+    from membrane.compute import anthropic as _anthropic  # noqa: F401
+    from membrane.compute import gpu as _gpu  # noqa: F401
+    from membrane.compute import ollama as _ollama  # noqa: F401
+    from membrane.compute import openai as _openai  # noqa: F401
+    from membrane.compute import transformers as _t  # noqa: F401
+
+    module_map = {
+        "Ollama": _ollama,
+        "OpenAI": _openai,
+        "Anthropic": _anthropic,
+        "GPU": _gpu,
+        "Transformers": _t,
+    }
+    module = module_map[class_name]
+    return getattr(module, class_name)
+
+
+_register_compute_backends()
 
 
 @dataclass
@@ -116,6 +170,7 @@ class Server:
             HTTP), or ``"grpc"``.
         compute: ``"cpu"``, ``"gpu"``, ``"ollama"``,
             ``"openai"``, ``"anthropic"``, or ``"transformers"``.
+            Alternatively an existing :class:`Backend` instance.
         redis_url: Redis URL, or ``""`` to disable persistence.
         host: Bind address.
         port: Listen port.
@@ -130,7 +185,7 @@ class Server:
         self,
         node: Node,
         transport: str = "http",
-        compute: str = "cpu",
+        compute: str | Backend = "cpu",
         redis_url: str = "",
         host: str = "0.0.0.0",
         port: int = 8080,
@@ -142,7 +197,6 @@ class Server:
         """Initialize the server with all configured subsystems."""
         self.node = node
         self.transport_type = transport
-        self.compute_type = compute
         self.redis_url = redis_url
         self.host = host
         self.port = port
@@ -154,108 +208,27 @@ class Server:
         self.events: list[ServerEvent] = []
         self.connected_nodes: set[str] = set()
 
-        # Observability — registry is constructed once here and passed
-        # into subsystems that need to record metrics.
         self.metrics_registry = MetricsCollector()
         self.metrics_transport = TransportMetrics(self.metrics_registry)
         self.metrics_cluster = ClusterMetrics(self.metrics_registry)
         self.metrics_persistence = PersistenceMetrics(self.metrics_registry)
         self.metrics_node = NodeMetrics(self.metrics_registry)
 
-        # Compute backend.
-        self.compute_backend = self.make_compute_backend(compute, llm_url, llm_model, api_key)
+        if isinstance(compute, Backend):
+            self.compute_backend = compute
+            self.compute_type = compute.device_name()
+        else:
+            self.compute_type = compute
+            factory = COMPUTE_BACKENDS.get(compute)
+            if factory is None:
+                raise ValueError(
+                    f"Unknown compute backend '{compute}'. "
+                    f"Available: {sorted(COMPUTE_BACKENDS)}"
+                )
+            self.compute_backend = factory(llm_url, llm_model, api_key)
 
-        # Persistence.
-        self.setup_persistence(redis_url)
+        self.persistence = self._build_persistence(redis_url)
 
-        # Cluster.
-        self.setup_cluster(cluster_config, host, port)
-
-        # Transport.
-        self.setup_transport(transport, host, port)
-
-    def make_compute_backend(
-        self,
-        compute: str,
-        llm_url: str,
-        llm_model: str,
-        api_key: str,
-    ) -> Backend:
-        """Construct the compute backend matching ``compute``.
-
-        Args:
-            compute: Backend name.
-            llm_url: Base URL (used for Ollama).
-            llm_model: Model identifier.
-            api_key: API key (used for OpenAI / Anthropic).
-
-        Returns:
-            Backend: The constructed backend instance.
-        """
-        if compute == "gpu":
-            return GPU()
-        if compute == "ollama":
-            from membrane.compute.ollama import Ollama
-
-            url = llm_url or "http://localhost:11434"
-            model = llm_model or "llama3.2"
-            return Ollama(base_url=url, model=model)
-        if compute == "openai":
-            from membrane.compute.openai import OpenAI
-
-            model = llm_model or "gpt-4o-mini"
-            return OpenAI(api_key=api_key, model=model)
-        if compute == "anthropic":
-            from membrane.compute.anthropic import Anthropic
-
-            model = llm_model or "claude-3-sonnet-20240229"
-            return Anthropic(api_key=api_key, model=model)
-        if compute == "transformers":
-            from membrane.compute.transformers import Transformers
-
-            model = llm_model or "gpt2"
-            return Transformers(model_id=model)
-        # Default: CPU backend.
-        return CPU()
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def setup_persistence(self, redis_url: str) -> None:
-        """Initialize the persistence backend.
-
-        When ``redis_url`` is set and reachable, use Redis;
-        otherwise fall back to the in-memory backend. Whichever
-        backend is selected, wrap it in a
-        :class:`~membrane.persistence.cache.CachingPersistence` so
-        repeated reads for the same fragment are served from a local
-        in-process cache instead of crossing the network on every
-        request.
-        """
-        from membrane.persistence.cache import CachingPersistence
-
-        backend: Any = Memory()
-        if redis_url:
-            try:
-                redis_backend = Redis(redis_url)
-                if redis_backend.ping():
-                    backend = redis_backend
-                    logger.info("Redis connected at %s", redis_url)
-                else:
-                    logger.warning("Redis at %s unreachable; using in-memory persistence", redis_url)
-            except Exception as exc:
-                logger.warning("Redis connection failed (%s); using in-memory persistence", exc)
-
-        self.persistence = CachingPersistence(backend)
-
-    def setup_cluster(
-        self,
-        cluster_config: ClusterConfig | None,
-        host: str,
-        port: int,
-    ) -> None:
-        """Initialize the cluster manager and transfer service."""
         self.cluster_manager: Cluster | None = None
         self.transfer_service = TransferService(
             cluster_manager=self.cluster_manager,
@@ -269,26 +242,31 @@ class Server:
                 node=self.node,
                 config=cluster_config,
             )
-            # Re-bind the transfer service to the now-available
-            # cluster manager.
             self.transfer_service.cluster_manager = self.cluster_manager
 
-    def setup_transport(
-        self,
-        transport: str,
-        host: str,
-        port: int,
-    ) -> None:
-        """Initialize the wire-protocol transport.
+        self.transport = self._build_transport(transport, host, port)
+        self.running = False
+        self.thread: threading.Thread | None = None
 
-        Args:
-            transport: ``"http"``, ``"stdlib"``, or ``"grpc"``.
-            host: Bind host.
-            port: Listen port.
-        """
-        self.transport: Any
+    def _build_persistence(self, redis_url: str) -> Any:
+        from membrane.persistence.cache import CachingPersistence
+
+        backend: Any = Memory()
+        if redis_url:
+            try:
+                redis_backend = Redis(redis_url)
+                if redis_backend.ping():
+                    backend = redis_backend
+                    logger.info("Redis connected at %s", redis_url)
+                else:
+                    logger.warning("Redis at %s unreachable; using in-memory persistence", redis_url)
+            except Exception as exc:
+                logger.warning("Redis connection failed (%s); using in-memory persistence", exc)
+        return CachingPersistence(backend)
+
+    def _build_transport(self, transport: str, host: str, port: int) -> Any:
         if transport == "http":
-            self.transport = FastAPIServer(
+            return FastAPIServer(
                 node=self.node,
                 host=host,
                 port=port,
@@ -297,8 +275,8 @@ class Server:
                 cluster_manager=self.cluster_manager,
                 metrics_registry=self.metrics_registry,
             )
-        elif transport == "stdlib":
-            self.transport = HTTPServer(
+        if transport == "stdlib":
+            return HTTPServer(
                 node=self.node,
                 host=host,
                 port=port,
@@ -306,29 +284,21 @@ class Server:
                 transfer_service=self.transfer_service,
                 cluster_manager=self.cluster_manager,
             )
-        else:
-            from membrane.transport.grpc import GrpcServer
+        from membrane.transport.grpc import GrpcServer
 
-            self.transport = GrpcServer(
-                node=self.node,
-                host=host,
-                port=port,
-                compute_backend=self.compute_backend,
-            )
-
-        self.running = False
-        self.thread: threading.Thread | None = None
+        return GrpcServer(
+            node=self.node,
+            host=host,
+            port=port,
+            compute_backend=self.compute_backend,
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Start the server in a background thread.
-
-        Also starts the :class:`Cluster` (if configured)
-        in its own background threads.
-        """
+        """Start the server in a background thread."""
         self.running = True
         if self.cluster_manager:
             self.cluster_manager.start()
@@ -337,11 +307,7 @@ class Server:
         self.log_event("info", f"Server started on {self.host}:{self.port}")
 
     def stop(self) -> None:
-        """Stop the server gracefully.
-
-        Stops the transport and (when configured) the cluster
-        manager. The background thread exits shortly thereafter.
-        """
+        """Stop the server gracefully."""
         self.running = False
         self.transport.stop()
         if self.cluster_manager:
@@ -369,12 +335,6 @@ class Server:
         Events are stored in a bounded buffer (the most recent
         10,000 events are kept; older entries are trimmed to
         the most recent 5,000).
-
-        Args:
-            level: Log level.
-            message: Human-readable description.
-            node_id: Optional node identifier.
-            bytes_affected: Optional size in bytes.
         """
         event = ServerEvent(
             timestamp=time.time(),
@@ -392,12 +352,7 @@ class Server:
     # ------------------------------------------------------------------
 
     def diagnostics(self) -> ServerDiagnostics:
-        """Return a current snapshot of server health.
-
-        Returns:
-            ServerDiagnostics: Snapshot suitable for the TUI
-            dashboard or external monitoring.
-        """
+        """Return a current snapshot of server health."""
         stats = self.node.get_stats()
         now = time.time()
         connected = len(self.connected_nodes)
@@ -421,16 +376,5 @@ class Server:
         )
 
     def recent_events(self, n: int = 20) -> list[ServerEvent]:
-        """Return the last ``n`` events.
-
-        Args:
-            n: Maximum number of events to return. Values
-                larger than the buffer length return the whole
-                buffer.
-
-        Returns:
-            list[ServerEvent]: Newest events first when
-            ``n`` is negative; otherwise the tail of the
-            buffer.
-        """
+        """Return the last ``n`` events."""
         return self.events[-n:]
