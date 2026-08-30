@@ -72,21 +72,23 @@ def _peer_headers(request: Request) -> dict[str, str]:
 class FragmentPayload(BaseModel):
     """Wire format for a serialized Fragment.
 
-    Mirrors the v2 canonical schema in
+    Mirrors the 2.0 canonical schema in
     :mod:`membrane.serialization`. The :class:`~membrane.identity.PayloadIdentity`
-    is carried as a nested ``identity`` object whose structure
-    round-trips through :meth:`PayloadIdentity.to_dict` /
-    :meth:`PayloadIdentity.from_dict`. Ranges are JSON arrays of
-    two ints; ``shape`` is a list of ints.
+    is carried as a nested ``identity`` object; ranges are JSON
+    arrays of two ints; ``shape`` is a list of ints; ``consistency``
+    is one of strong / quorum / eventual; ``hlc`` is the wire
+    integer from :class:`~membrane.hlc.HLC`.
     """
 
-    schema_version: int = 2
+    schema_version: int = 3
     identity: dict[str, Any]
     payload_ref: str | None = None
     payload_size: int
     ttl: float
     reuse_score: float
     version_id: int
+    consistency: str = "strong"
+    hlc: int = 0
 
     def to_wire_dict(self) -> JsonDict:
         """Transform into the canonical wire dict accepted by
@@ -99,6 +101,8 @@ class FragmentPayload(BaseModel):
             "ttl": self.ttl,
             "reuse_score": self.reuse_score,
             "version_id": self.version_id,
+            "consistency": self.consistency,
+            "hlc": self.hlc,
         }
 
 

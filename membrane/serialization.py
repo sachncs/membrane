@@ -24,7 +24,7 @@ from membrane.errors import SchemaError
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 
-SCHEMA_VERSION: int = 2
+SCHEMA_VERSION: int = 3
 
 #: JSON-compatible value type used at every wire boundary.
 #:
@@ -51,7 +51,8 @@ def to_dict(fragment: Fragment) -> dict[str, Any]:
     Returns:
         A plain ``dict`` carrying ``schema_version``, the full
         :class:`~membrane.identity.PayloadIdentity` (expanded into a
-        sub-dict), the payload reference, and the lifecycle metadata.
+        sub-dict), the payload reference, the lifecycle metadata,
+        and the consistency + HLC fields added at 2.0.
     """
     return {
         "schema_version": SCHEMA_VERSION,
@@ -61,6 +62,8 @@ def to_dict(fragment: Fragment) -> dict[str, Any]:
         "ttl": fragment.ttl,
         "reuse_score": fragment.reuse_score,
         "version_id": fragment.version_id,
+        "consistency": fragment.consistency,
+        "hlc": fragment.hlc,
     }
 
 
@@ -76,6 +79,8 @@ def from_dict(data: dict[str, Any]) -> Fragment:
     Raises:
         SchemaError: If ``data["schema_version"]`` does not match
             ``SCHEMA_VERSION``, or if a required field is missing.
+            Schema 1 and 2 payloads are deliberately rejected; the
+            2.0 contract carries no shims for older shapes.
     """
     if "schema_version" not in data:
         raise SchemaError("serialized fragment missing schema_version")
@@ -86,6 +91,12 @@ def from_dict(data: dict[str, Any]) -> Fragment:
     try:
         identity_obj: dict[str, Any] = data["identity"]
         identity = PayloadIdentity.from_dict(identity_obj)
+        # 2.0 added consistency and hlc; both are required for
+        # every fragment the wire carries.
+        if "consistency" not in data:
+            raise SchemaError("missing required field: consistency")
+        if "hlc" not in data:
+            raise SchemaError("missing required field: hlc")
         return Fragment(
             identity=identity,
             payload_ref=data["payload_ref"],
@@ -93,6 +104,8 @@ def from_dict(data: dict[str, Any]) -> Fragment:
             ttl=float(data["ttl"]),
             reuse_score=float(data["reuse_score"]),
             version_id=int(data["version_id"]),
+            consistency=str(data["consistency"]),
+            hlc=int(data["hlc"]),
         )
     except KeyError as exc:
         raise SchemaError(f"missing required field: {exc.args[0]}") from exc
