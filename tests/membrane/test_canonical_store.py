@@ -33,7 +33,10 @@ def test_canonicalize_round_trip():
 
 
 def test_canonicalize_schema_version_constant():
-    assert CANONICAL_SCHEMA_VERSION == 2
+    # v4 reader accepts v2 frames; the v1 surface is the
+    # 2.0+ schema. The constant is bumped in lockstep with the
+    # on-disk layout, not the read-compatibility window.
+    assert CANONICAL_SCHEMA_VERSION == 4
 
 
 def test_parse_canonical_rejects_bad_magic():
