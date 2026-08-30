@@ -61,7 +61,7 @@ local-llm = ["transformers>=5.16.1", "tokenizers>=0.23.1", "torch>=2.13.0", "sen
 # pin is left to the deployment image so the protobuf <-> grpcio
 # version conflict in 0.5.4 can be resolved in CI without
 # breaking the existing `[server]` extras.
-lmcache = ["lmcache>=0.5,<0.6"]
+lmcache = ["lmcache>=0.5.4,<0.6"]
 # Engine integrations for v2.0+. The pins are loose on purpose:
 # the v2.0 release is the first one that targets the v0.10+
 # vLLM KVConnector v1 surface, the SGLang radix-cache pool,
