@@ -32,6 +32,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from collections.abc import Callable
 from typing import Any
 
 from membrane.node import Node
@@ -228,16 +229,23 @@ class Shard:
         local_node_id: str,
         node: Node | None = None,
         transfer_service: object | None = None,
-    ) -> None:
+        pull_fn: Callable[[str], bool] | None = None,
+        verify_fn: Callable[[str], bool] | None = None,
+    ) -> bool:
         """Re-home ``content_hash`` from ``leaving_peer`` onto ``local_node_id``.
 
-        Used as the default :class:`~membrane.network.strategy.Migrator`
-        transfer_fn. Promotes the local node to primary owner of
-        the hash, updates the replica set to drop the leaving
-        peer, and (when ``transfer_service`` is supplied) asks
-        the :class:`~membrane.transfer.TransferService` to push
-        any locally-held fragment bytes through the canonical
-        wire path so a remote replica can pick them up.
+        Production path at 2.0+: pull bytes from ``leaving_peer``
+        via ``pull_fn``, then verify them via ``verify_fn``, then
+        flip the primary_map. A failed pull or verify aborts the
+        migration so the cluster never lands an orphan primary
+        that gossip would then propagate to the rest of the
+        ring.
+
+        The legacy ``transfer_service`` argument is retained so
+        existing callers keep working: when supplied, the helper
+        falls back to :meth:`TransferService.transfer_fragment`
+        for the local-push path used during in-memory
+        replications.
 
         Args:
             content_hash: Content hash whose primary is leaving.
@@ -249,12 +257,57 @@ class Shard:
                 sync.
             transfer_service: Optional
                 :class:`~membrane.transfer.TransferService`
-                instance. When supplied and the local node
-                holds the fragment, the bytes are forwarded to
-                a remote replica. The argument is typed loosely
-                (``object``) so this module avoids importing the
-                full TransferService and creating a cycle.
+                instance.
+            pull_fn: Callable returning ``True`` when the local
+                node has just stored the bytes via a verified
+                pull from ``leaving_peer``. Migration aborts when
+                the callable is absent or returns ``False`` (the
+                latter is the documented "fail closed" behaviour).
+            verify_fn: Callable returning ``True`` when the
+                destination-side
+                :func:`~membrane.transport.ops.op_verify_received`
+                ran successfully against the just-pulled bytes.
+
+        Returns:
+            bool: ``True`` when the migration completes (pull +
+            verify + table flip), ``False`` on any failed step.
         """
+        # Phase 3 verified-migration path: pull + verify + flip.
+        if pull_fn is not None and node is not None:
+            pulled = False
+            try:
+                pulled = bool(pull_fn(content_hash))
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "migrate_primary pull_fn raised for %s: %s",
+                    content_hash,
+                    exc,
+                )
+                pulled = False
+            if not pulled:
+                logger.warning(
+                    "migrate_primary: pull failed for %s from %s -- aborting flip",
+                    content_hash,
+                    leaving_peer,
+                )
+                return False
+            if verify_fn is not None:
+                verified = False
+                try:
+                    verified = bool(verify_fn(content_hash))
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning(
+                        "migrate_primary verify_fn raised for %s: %s",
+                        content_hash,
+                        exc,
+                    )
+                if not verified:
+                    logger.warning(
+                        "migrate_primary: verify failed for %s -- aborting flip",
+                        content_hash,
+                    )
+                    return False
+
         replicas = self.replica_map.get(content_hash, set())
         if leaving_peer in replicas:
             replicas.discard(leaving_peer)
@@ -264,15 +317,14 @@ class Shard:
         if node is not None and content_hash in node.fragments:
             node.primary_hashes.add(content_hash)
         if (
-            transfer_service is not None
+            pull_fn is None
+            and transfer_service is not None
             and node is not None
             and node.node_id == local_node_id
         ):
-            # The migration lands on this node and we hold the
-            # bytes. Ask the TransferService to push them through
-            # its canonical inbound path so any remaining replica
-            # receives an up-to-date copy. Failures degrade
-            # gracefully — the table is updated regardless.
+            # Legacy in-memory push path: only used when the
+            # caller has not wired pull_fn. Production
+            # deployments at 2.0+ always use pull_fn.
             push_fn = getattr(transfer_service, "transfer_fragment", None)
             if callable(push_fn) and content_hash in node.fragments:
                 try:
@@ -289,6 +341,7 @@ class Shard:
             leaving_peer,
             local_node_id,
         )
+        return True
 
     # ------------------------------------------------------------------
     # Snapshot / durability
