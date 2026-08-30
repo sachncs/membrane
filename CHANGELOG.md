@@ -21,6 +21,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still cross-checked by `pip-audit`, code-level issues by
   `bandit`, secrets by `gitleaks`.
 
+## [0.5.0] - 2026-08-30
+
+Six additional atomic commits continuing the 0.4.0
+refactor. Focus on stronger typing and the decision-class
+cleanup that the directive asked for.
+
+### Changed
+
+- **Decision-class strategy cleanup (rule #8, #13)**:
+  - ``Roles.evaluate_role`` no longer uses an if/elif ladder;
+    the (memory_pressure, gpu_load) classification is a
+    separate ``_classify_state`` helper that returns a row
+    label, and ``Roles.ROLE_TABLE`` (ClassVar[dict]) maps
+    the label to ``NodeRole``. The deficit-fallback branch
+    shares the same table.
+  - ``Latency.pick_target`` splits into ``_pick_local``,
+    ``_pick_replica``, ``_pick_fallback`` helpers; each is
+    independently testable.
+  - ``Offload.decide`` splits into ``_local_choice``
+    (``OffloadResult | None``) and ``_score(length)``
+    candidate-scorer. The two early returns are now guard
+    chains.
+
+- **JsonDict over ``dict[str, Any]``**:
+  - ``PeerEndpoint`` / ``GossipState`` wire payload methods
+    are typed with ``JsonDict``.
+  - ``Gossip.handle`` payload argument is ``JsonDict``.
+  - ``HttpTransport.send_json`` / ``read_json`` (already
+    JSON in shape) keep ``dict[str, Any]`` (the format is
+    untyped at that boundary) but the surrounding modules
+    pass ``JsonDict`` typed payloads to them.
+
+- **CLI dashboard typing**: ``_header_panel_inproc`` and
+  ``_metrics_panel`` take ``ServerDiagnostics`` instead of
+  ``Any``. Remote panels keep ``dict[str, Any]`` because
+  their input is raw JSON.
+
+- **Transport Protocol**: ``membrane.transport.Transport``
+  is now a run-time-checkable Protocol capturing
+  ``start`` / ``stop`` / ``host`` / ``port``. Server's
+  transport attribute is structurally typed as
+  ``Transport | None``.
+
+### External contracts preserved
+
+Wire format (JSON, gRPC protobuf, CLI flags), ``Server.__init__``
+signature, persistence format, error hierarchy — all unchanged.
+
 ## [0.4.0] - 2026-08-30
 
 Six additional atomic commits continuing the 0.3.0
