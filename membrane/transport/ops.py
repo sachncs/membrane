@@ -20,11 +20,14 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 from urllib.request import Request, urlopen
 
+from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
+from membrane.metrics import MetricsCollector
+from membrane.network.cluster import Cluster
 from membrane.node import Node
+from membrane.serialization import JsonDict
 from membrane.serialization import from_dict as deserialize_fragment
 from membrane.serialization import to_dict as serialize_fragment
 from membrane.transfer import TransferService
@@ -41,12 +44,12 @@ MAX_BODY_BYTES: int = 100 << 20
 # ---------------------------------------------------------------------------
 
 
-def _err(status: int, message: str) -> tuple[int, dict[str, Any]]:
+def _err(status: int, message: str) -> tuple[int, JsonDict]:
     """Build a uniform ``(status, body)`` error tuple."""
     return status, {"error": message}
 
 
-def _ok(body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def _ok(body: JsonDict) -> tuple[int, JsonDict]:
     """Build a uniform ``(status, body)`` success tuple."""
     return 200, body
 
@@ -56,7 +59,7 @@ def _ok(body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def op_heartbeat(node: Node | None) -> tuple[int, dict[str, Any]]:
+def op_heartbeat(node: Node | None) -> tuple[int, JsonDict]:
     """``GET /heartbeat`` — node health and load snapshot.
 
     Always returns 200 with the body indicating status, mirroring
@@ -82,9 +85,15 @@ def op_heartbeat(node: Node | None) -> tuple[int, dict[str, Any]]:
 
 def op_metrics(
     node: Node | None,
-    metrics_registry: Any = None,
-) -> tuple[int, Any]:
-    """``GET /metrics`` — Prometheus exposition or legacy JSON fallback."""
+    metrics_registry: MetricsCollector | None = None,
+) -> tuple[int, JsonDict | tuple[str, dict[str, str]]]:
+    """``GET /metrics`` — Prometheus exposition or legacy JSON fallback.
+
+    Returns ``(200, (text, headers))`` when a Prometheus
+    registry is configured, ``(200, json_dict)`` when falling
+    back to the node snapshot. The transport layer dispatches
+    on the body type.
+    """
     if metrics_registry is not None:
         return 200, (
             metrics_registry.render(),
@@ -105,7 +114,7 @@ def op_metrics(
     )
 
 
-def op_inventory(node: Node | None) -> tuple[int, dict[str, Any]]:
+def op_inventory(node: Node | None) -> tuple[int, JsonDict]:
     """``GET /inventory`` — node's inventory digest."""
     if node is None:
         return _ok({"node_id": "", "digest": {}})
@@ -113,14 +122,14 @@ def op_inventory(node: Node | None) -> tuple[int, dict[str, Any]]:
     return _ok({"node_id": node.node_id, "digest": digest})
 
 
-def op_peers(cluster: Any) -> tuple[int, dict[str, Any]]:
+def op_peers(cluster: Cluster | None) -> tuple[int, JsonDict]:
     """``GET /peers`` — cluster membership view."""
     if cluster is None:
         return _ok({"error": "cluster manager not enabled"})
     return _ok({"peers": cluster.membership.to_json()})
 
 
-def op_retrieve(node: Node | None, content_hash: str) -> tuple[int, dict[str, Any]]:
+def op_retrieve(node: Node | None, content_hash: str) -> tuple[int, JsonDict]:
     """``GET /retrieve?content_hash=...``."""
     if node is None:
         return _ok({"found": False, "fragment": None})
@@ -132,9 +141,9 @@ def op_retrieve(node: Node | None, content_hash: str) -> tuple[int, dict[str, An
 
 def op_store(
     node: Node | None,
-    fragment_payload: dict[str, Any],
+    fragment_payload: JsonDict,
     is_primary: bool = False,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, JsonDict]:
     """``POST /store``."""
     if node is None:
         return _ok({"error": "no node"})
@@ -145,8 +154,8 @@ def op_store(
 
 def op_replicate(
     node: Node | None,
-    fragment_payload: dict[str, Any],
-) -> tuple[int, dict[str, Any]]:
+    fragment_payload: JsonDict,
+) -> tuple[int, JsonDict]:
     """``POST /replicate`` — store a fragment as a non-primary replica."""
     if node is None:
         return _ok({"error": "no node"})
@@ -157,10 +166,10 @@ def op_replicate(
 
 def op_prefill(
     node: Node | None,
-    backend: Any,
+    backend: Backend | None,
     prompt_tokens: list[int],
     model_id: str = "default",
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, JsonDict]:
     """``POST /prefill`` — run prefill and store fragments as primary."""
     if node is None:
         return _ok({"error": "no node"})
@@ -180,7 +189,7 @@ def op_sync(
     node: Node | None,
     transfer_service: TransferService,
     source_url: str,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, JsonDict]:
     """``POST /sync`` — pull missing fragments from a source URL."""
     if not source_url:
         return _ok({"error": "missing source_url"})
@@ -209,11 +218,11 @@ def op_sync(
 
 
 def op_join(
-    cluster: Any,
+    cluster: Cluster | None,
     node_id: str,
     host: str,
     port: int,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, JsonDict]:
     """``POST /join``."""
     if not node_id or not host or not port:
         return _ok({"error": "missing node_id, host, or port"})
@@ -223,7 +232,7 @@ def op_join(
     return _ok({"success": True, "peers": cluster.membership.to_json()})
 
 
-def op_leave(cluster: Any, node_id: str) -> tuple[int, dict[str, Any]]:
+def op_leave(cluster: Cluster | None, node_id: str) -> tuple[int, JsonDict]:
     """``POST /leave``."""
     if not node_id:
         return _ok({"error": "missing node_id"})
@@ -241,7 +250,7 @@ def op_leave(cluster: Any, node_id: str) -> tuple[int, dict[str, Any]]:
     return _ok({"success": True})
 
 
-def op_gossip(cluster: Any, data: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def op_gossip(cluster: Cluster | None, data: JsonDict) -> tuple[int, JsonDict]:
     """``POST /gossip``."""
     if cluster is None:
         return _ok({"error": "cluster manager not enabled"})
