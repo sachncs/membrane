@@ -285,8 +285,22 @@ def _retrieve(app: FastAPI, content_hash: str):
 
 
 def _store(app: FastAPI, req: StoreRequest):
-    status, body = op_store(app.state.node, req.fragment.to_wire_dict(), req.is_primary)
+    status, body = op_store(
+        app.state.node,
+        req.fragment.to_wire_dict(),
+        req.is_primary,
+        cluster=getattr(app.state, "cluster_manager", None),
+        quorum_attempt=getattr(app.state, "quorum_attempt", None),
+    )
     return _respond(status, body)
+
+
+def _respond_with_retry_after(status: int, body: JsonDict, retry_after: int) -> Response:
+    return JSONResponse(
+        body,
+        status_code=status,
+        headers={"Retry-After": str(retry_after)},
+    )
 
 
 def _replicate(app: FastAPI, req: ReplicateRequest):

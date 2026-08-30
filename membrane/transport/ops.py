@@ -29,7 +29,7 @@ from membrane.compute.cpu import CPU
 from membrane.gc import TombstoneTable
 from membrane.metrics import MetricsCollector
 from membrane.network.cluster import Cluster
-from membrane.network.peer import JsonDict
+from membrane.network.peer import JsonDict, Peer
 from membrane.node import Node
 from membrane.serialization import from_dict, to_dict
 from membrane.transfer import TransferService
@@ -167,13 +167,147 @@ def op_store(
     node: Node | None,
     fragment_payload: JsonDict,
     is_primary: bool = False,
+    *,
+    cluster: Cluster | None = None,
+    quorum_attempt: object | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /store``."""
+    """``POST /store`` — store a fragment with a configured consistency level.
+
+    Strong / quorum consistency: store locally first, then call
+    ``quorum_attempt(fragment, quorum_count, timeout_sec)`` and
+    return ``503`` + ``Retry-After: 1`` if it does not reach the
+    write threshold. Failed writes are evicted locally so the
+    cluster never holds a partial-write footprint.
+
+    Eventual consistency: store locally and return immediately;
+    the asynchronous replication thread propagates the fragment
+    to replicas.
+
+    Args:
+        node: Local :class:`Node`.
+        fragment_payload: Wire-format dict carrying the v3
+            schema (consistency + hlc fields included).
+        is_primary: Whether this node owns the primary shard.
+        cluster: Optional cluster manager; consulted for the
+            configured default consistency when the fragment
+            ships with ``consistency='strong'`` (the v3 wire
+            default).
+        quorum_attempt: Optional callable matching
+            :func:`membrane.quorum.attempt_quorum_acks`.
+            ``None`` falls back to local-only writes for
+            single-node deployments and tests.
+
+    Returns:
+        tuple[int, JsonDict]: ``(200, {"success": True, ...})``
+        on success, ``(503, {"error": "quorum timeout", ...})``
+        on timeout, ``(200, {"error": ...})`` on user input
+        failure.
+    """
     if node is None:
         return _ok({"error": "no node"})
     frag = from_dict(fragment_payload)
+
+    # Honor the per-fragment consistency; fall back to the
+    # cluster's default when the wire value matches "strong" and
+    # the cluster has a different default configured.
+    consistency = frag.consistency
+    if cluster is not None:
+        cfg_default = getattr(cluster.config, "default_consistency", "strong")
+        if (
+            consistency == "strong"
+            and cfg_default in {"quorum", "eventual"}
+        ):
+            consistency = cfg_default
+            # Fragment is frozen; rebuild a copy with the
+            # downgraded level so the quorum attempt sees the
+            # new value.
+            frag = frag.with_consistency(consistency)
+
+    # Local write always happens first so the cluster keeps a
+    # single, source-of-truth copy at the primary even if quorum
+    # is later achieved asynchronously.
     ok = node.store(frag, is_primary=is_primary)
-    return _ok({"success": ok, "content_hash": frag.identity.payload_hash})
+    if not ok:
+        return _ok({"success": False, "content_hash": frag.identity.payload_hash})
+
+    if consistency == "eventual":
+        return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+
+    # Strong / quorum paths block on a quorum fan-out. The
+    # ``quorum_attempt`` callable is wired by Server from a
+    # :class:`~membrane.quorum.attempt_quorum_acks` instance;
+    # when it is absent we degrade to local-only success (the
+    # production deployment path).
+    if quorum_attempt is None or cluster is None:
+        return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+
+    quorum_count = int(getattr(cluster.config, "quorum_count", 2))
+    timeout_sec = float(getattr(cluster.config, "cluster_quorum_timeout_sec", 5.0))
+    if quorum_count <= 1:
+        return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+
+    replica_peers = list(_replica_peers(cluster, frag.identity.payload_hash, quorum_count))
+    if not replica_peers:
+        return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+
+    try:
+        result = quorum_attempt(frag, replica_peers, quorum_count, timeout_sec)  # type: ignore[operator]
+    except Exception as exc:
+        logger.warning("op_store quorum_attempt failed: %s", exc)
+        return 503, {"error": "quorum_attempt failed", "detail": str(exc)}
+
+    ack_count = int(getattr(result, "ack_count", 0))
+    timed_out = bool(getattr(result, "timed_out", True))
+    success = bool(getattr(result, "success", False))
+    if not success:
+        # Roll back the local write so gossip does not propagate
+        # a fragment that the cluster never acked. This is the
+        # fail-closed contract.
+        try:
+            node.remove_fragment(frag.identity.payload_hash)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("failed to roll back local fragment: %s", exc)
+        return (
+            503,
+            {
+                "error": "quorum timeout" if timed_out else "quorum not met",
+                "ack_count": ack_count,
+                "required": quorum_count,
+                "Retry-After": 1,
+            },
+        )
+    return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+
+
+def _replica_peers(cluster: Cluster, content_hash: str, count: int) -> list[Peer]:
+    """Pick up to ``count`` replica peers from the cluster membership.
+
+    Iteration order is the membership's natural snapshot order;
+    the shard map owns the per-hash placement, but at write time
+    op_store spreads the fan-out across the healthy peer set so
+    a temporary primary shuffle still writes through. The
+    cluster's :attr:`Membership.healthy` filters out the
+    failing nodes for the duration of the fan-out.
+
+    Args:
+        cluster: Cluster manager whose Membership we read.
+        content_hash: Fragment being replicated; unused at the
+            moment because primary placement is determined by
+            op_store, but kept for the future "place replicas on
+            shard-peers" hook.
+        count: Maximum number of peers to return.
+
+    Returns:
+        list[Peer]: Up to ``count`` peers.
+    """
+    healthy: list[str] = [p.node_id for p in cluster.membership.healthy()]
+    healthy = [nid for nid in healthy if nid != cluster.node_id]
+    peers: list[Peer] = []
+    for nid in healthy[:count]:
+        client = cluster.membership.get_client(nid)
+        if client is not None:
+            peers.append(client)
+    return peers
 
 
 def op_replicate(

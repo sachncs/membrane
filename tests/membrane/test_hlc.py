@@ -130,7 +130,7 @@ class TestClock:
 
     def test_merge_observes(self):
         clk = Clock()
-        v_local = clk.tick()
+        v_local = clk.tick()  # noqa: F841  -- reserved for future assertions
         # Inject a higher observed value.
         observed = pack(HLC(physical_ms=int(time.time() * 1000) + 60000, logical=0))
         v_new = clk.merge(observed)
