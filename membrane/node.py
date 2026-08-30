@@ -38,10 +38,14 @@ logger = logging.getLogger(__name__)
 import threading
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from membrane.fragment import Fragment
 from membrane.graph import Graph
 from membrane.index import Index
+
+if TYPE_CHECKING:
+    from membrane.content_store import ContentStore
 
 
 @dataclass(frozen=True)
@@ -84,6 +88,7 @@ class Node:
         max_memory_bytes: int = 1 << 30,
         index_system: Index | None = None,
         graph: Graph | None = None,
+        content_store: "ContentStore | None" = None,
     ) -> None:
         """Initialize the node.
 
@@ -94,11 +99,23 @@ class Node:
                 created when ``None``.
             graph: Optional fragment graph. A fresh one is created
                 when ``None``.
+            content_store: Optional :class:`~membrane.content_store.ContentStore`
+                where canonical payload frames live. ``None`` uses
+                a private in-process store; production nodes
+                should pass ``FilesystemBlob(...)`` or a similar
+                implementation so payloads survive process exit.
         """
         self.node_id = node_id
         self.max_memory_bytes = max_memory_bytes
         self.index_system = index_system or Index()
         self.graph = graph or Graph()
+
+        if content_store is None:
+            from membrane.content_store import InProcessBytes
+
+            self.content_store: ContentStore = InProcessBytes()
+        else:
+            self.content_store = content_store
 
         self.fragments: dict[str, Fragment] = {}
         self.primary_hashes: set[str] = set()
@@ -164,6 +181,20 @@ class Node:
                 self.insertion_times[content_hash] = now
                 self.index_system.insert(fragment, {self.node_id})
                 self.graph.add_node(fragment)
+                # A metadata-only fragment (payload_ref is None)
+                # has no body to persist; everything else must
+                # already be in the configured ContentStore by the
+                # time the producer (compute backend) constructs
+                # the Fragment. Verify presence so callers learn
+                # about mis-piped ContentStore configurations
+                # rather than discovering them on retrieval.
+                if fragment.payload_ref is not None and not self.content_store.has(fragment.payload_ref):
+                    logger.warning(
+                        "Fragment %s on %s references missing payload_ref=%s",
+                        content_hash,
+                        self.node_id,
+                        fragment.payload_ref,
+                    )
                 logger.debug("Stored fragment %s on %s", content_hash, self.node_id)
 
             self.access_times[content_hash] = now
@@ -223,6 +254,10 @@ class Node:
             self.primary_hashes.discard(content_hash)
             self.access_times.pop(content_hash, None)
             self.insertion_times.pop(content_hash, None)
+            # Drop the canonical frame from the active store too.
+            # A None payload_ref is metadata-only; skip cleanly.
+            if frag.payload_ref is not None:
+                self.content_store.delete(frag.payload_ref)
             return frag
 
     def evict_expired(
