@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import typer
 
-from membrane.cli.commands import cluster, config, dashboard, llm, serve
+from membrane.cli.commands import admin, cluster, config, dashboard, llm, serve
 
 app = typer.Typer(
     name="membrane",
@@ -37,6 +37,7 @@ app.command(name="dashboard", help="Open a live TUI dashboard against a remote s
 app.command(name="cluster-status", help="Show cluster membership and peer health.")(cluster.main)
 app.command(name="llm-status", help="Show active LLM backend status and model info.")(llm.main)
 app.command(name="config", help="Show Membrane configuration and environment.")(config.main)
+app.command(name="admin", help="Admin operations against a running Membrane node.")(admin.main)
 
 
 def main() -> None:
