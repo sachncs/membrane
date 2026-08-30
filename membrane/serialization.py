@@ -24,7 +24,7 @@ from membrane.errors import SchemaError
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 
-SCHEMA_VERSION: int = 4
+SCHEMA_VERSION: int = 5
 
 #: JSON-compatible value type used at every wire boundary.
 #:
@@ -49,14 +49,16 @@ def to_dict(fragment: Fragment) -> dict[str, Any]:
         fragment: The fragment to serialize.
 
     Returns:
-        A plain ``dict`` carrying ``schema_version``, the full
-        :class:`~membrane.identity.PayloadIdentity` (expanded into a
-        sub-dict), the payload reference, the lifecycle metadata,
-        the consistency + HLC fields added at 2.0, and the
-        v2.0+ ``fingerprint_compat`` field.
+        A plain ``dict`` carrying ``schema_version`` (=5), the
+        full :class:`~membrane.identity.PayloadIdentity`
+        (expanded into a sub-dict), the payload reference, the
+        lifecycle metadata, the consistency + HLC fields added
+        at 2.0, the v2.0+ ``fingerprint_compat`` field, and the
+        v3.0+ ``tenant_id`` field.
     """
     return {
             "schema_version": SCHEMA_VERSION,
+            "tenant_id": fragment.tenant_id,
             "identity": fragment.identity.to_dict(),
             "payload_ref": fragment.payload_ref,
             "payload_size": fragment.payload_size,
@@ -80,9 +82,9 @@ def from_dict(data: dict[str, Any]) -> Fragment:
 
     Raises:
         SchemaError: If ``data["schema_version"]`` does not match
-            ``SCHEMA_VERSION``, or if a required field is missing.
-            Schema 1 and 2 payloads are deliberately rejected; the
-            2.0 contract carries no shims for older shapes.
+            5, or if a required field is missing. Older schemas
+            (1 through 4) are deliberately rejected: the v3.0.0
+            contract carries no shims for older shapes.
     """
     if "schema_version" not in data:
         raise SchemaError("serialized fragment missing schema_version")
@@ -93,14 +95,13 @@ def from_dict(data: dict[str, Any]) -> Fragment:
     try:
         identity_obj: dict[str, Any] = data["identity"]
         identity = PayloadIdentity.from_dict(identity_obj)
-        # 2.0 added consistency and hlc; both are required for
-        # every fragment the wire carries.
         if "consistency" not in data:
             raise SchemaError("missing required field: consistency")
         if "hlc" not in data:
             raise SchemaError("missing required field: hlc")
         if "fingerprint_compat" not in data:
             raise SchemaError("missing required field: fingerprint_compat")
+        tenant_id = str(data.get("tenant_id", "public"))
         return Fragment(
             identity=identity,
             payload_ref=data["payload_ref"],
@@ -111,6 +112,7 @@ def from_dict(data: dict[str, Any]) -> Fragment:
             consistency=str(data["consistency"]),
             hlc=int(data["hlc"]),
             fingerprint_compat=str(data["fingerprint_compat"]),
+            tenant_id=tenant_id,
         )
     except KeyError as exc:
         raise SchemaError(f"missing required field: {exc.args[0]}") from exc

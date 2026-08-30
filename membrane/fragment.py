@@ -56,6 +56,26 @@ from membrane.identity import PayloadIdentity
 _CONSISTENCY_LEVELS: tuple[str, ...] = ("strong", "quorum", "eventual")
 
 
+def _validate_tenant_id(tenant_id: str) -> None:
+    """Validate a tenant id at construction time.
+
+    Args:
+        tenant_id: The string the caller intends to use.
+
+    Raises:
+        ValueError: When the tenant id is empty, too long, or
+            contains characters that would break the audit log
+            or cost-routing lookups.
+    """
+    if not isinstance(tenant_id, str) or not tenant_id:
+        raise ValueError("tenant_id must be a non-empty string")
+    if len(tenant_id) > 128:
+        raise ValueError(f"tenant_id must be <= 128 chars, got {len(tenant_id)}")
+    forbidden = set(" :/\\\"\n\t\r")
+    if any(ch in forbidden for ch in tenant_id):
+        raise ValueError(f"tenant_id contains forbidden character in {tenant_id!r}")
+
+
 @dataclass(frozen=True)
 class Fragment:
     """Immutable content-addressed fragment.
@@ -66,8 +86,9 @@ class Fragment:
     live (:attr:`payload_ref`), the byte size (:attr:`payload_size`),
     the consistency level (:attr:`consistency`), a hybrid logical
     clock (:attr:`hlc`), the v2.0+ compatibility fingerprint
-    (:attr:`fingerprint_compat`), and the metadata required for
-    routing and lifecycle decisions.
+    (:attr:`fingerprint_compat`), the v3.0+ tenant namespace
+    (:attr:`tenant_id`), and the metadata required for routing and
+    lifecycle decisions.
 
     Instances are hashable and equality-comparable on all fields; this
     is what enables content-based deduplication and safe use as
@@ -115,6 +136,12 @@ class Fragment:
             synthesising a Fragment by hand). On :func:`op_store`
             the v2 server fills this in from the active compute
             backend's adapter.
+        tenant_id: Tenant namespace the fragment belongs to. The
+            v3.0.0 release defaults to ``"public"`` (the system
+            tenant); per-tenant filter on
+            :func:`membrane.transport.ops.op_store` rejects
+            cross-tenant writes unless the caller holds the
+            ``admin`` scope.
     """
 
     identity: PayloadIdentity
@@ -126,6 +153,7 @@ class Fragment:
     consistency: str = "strong"
     hlc: int = 0
     fingerprint_compat: str = ""
+    tenant_id: str = "public"
 
     def __post_init__(self) -> None:
         """Validate invariants after construction.
@@ -138,8 +166,9 @@ class Fragment:
         Raises:
             ValueError: If any of ``payload_size < 0``, ``ttl < 0``,
                 ``reuse_score`` outside ``[0, 1]``, ``version_id``
-                below 1, or ``consistency`` not in the supported
-                levels.
+                below 1, ``consistency`` not in the supported
+                levels, or ``tenant_id`` empty / contains a
+                forbidden character.
         """
         if self.payload_size < 0:
             raise ValueError(f"Fragment payload_size must be >= 0, got {self.payload_size}")
@@ -156,6 +185,7 @@ class Fragment:
                 f"Fragment consistency must be one of {_CONSISTENCY_LEVELS}, "
                 f"got {self.consistency!r}"
             )
+        _validate_tenant_id(self.tenant_id)
         if self.hlc < 0:
             raise ValueError(f"Fragment hlc must be >= 0, got {self.hlc}")
         # ``fingerprint_compat`` is either the empty string
@@ -205,6 +235,7 @@ class Fragment:
             consistency=level,
             hlc=self.hlc,
             fingerprint_compat=self.fingerprint_compat,
+            tenant_id=self.tenant_id,
         )
 
     def with_fingerprint(self, fingerprint: str) -> Fragment:
@@ -226,6 +257,29 @@ class Fragment:
             consistency=self.consistency,
             hlc=self.hlc,
             fingerprint_compat=fingerprint,
+            tenant_id=self.tenant_id,
+        )
+
+    def with_tenant(self, tenant_id: str) -> Fragment:
+        """Return a copy with ``tenant_id`` overridden.
+
+        Args:
+            tenant_id: Tenant namespace to assign the copy to.
+
+        Returns:
+            Fragment: New instance with the updated field.
+        """
+        return Fragment(
+            identity=self.identity,
+            payload_ref=self.payload_ref,
+            payload_size=self.payload_size,
+            ttl=self.ttl,
+            reuse_score=self.reuse_score,
+            version_id=self.version_id,
+            consistency=self.consistency,
+            hlc=self.hlc,
+            fingerprint_compat=self.fingerprint_compat,
+            tenant_id=tenant_id,
         )
 
     def merge(self, other: Fragment) -> Fragment:
@@ -238,6 +292,10 @@ class Fragment:
         TombstoneTable TTL math) but no longer gates merge
         resolution at 2.0+.
 
+        Two fragments with different ``tenant_id`` cannot merge: a
+        v3.0+ write that crosses tenant boundaries is a logic
+        error and the merge call raises.
+
         Args:
             other: The other fragment to merge.
 
@@ -245,11 +303,16 @@ class Fragment:
             Fragment: The fragment with the higher ``hlc``.
 
         Raises:
-            ValueError: If ``other.identity != self.identity``.
+            ValueError: If ``other.identity != self.identity`` or
+                ``other.tenant_id != self.tenant_id``.
         """
         if other.identity != self.identity:
             raise ValueError(
                 f"cannot merge fragments with different identity: {self.identity} vs {other.identity}"
+            )
+        if other.tenant_id != self.tenant_id:
+            raise ValueError(
+                f"cannot merge fragments across tenants: {self.tenant_id} vs {other.tenant_id}"
             )
         if self.hlc >= other.hlc:
             return self
@@ -263,6 +326,7 @@ class Fragment:
             consistency=self.consistency,
             hlc=other.hlc,
             fingerprint_compat=other.fingerprint_compat or self.fingerprint_compat,
+            tenant_id=self.tenant_id,
         )
 
 

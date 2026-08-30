@@ -2,6 +2,7 @@
 
 from membrane.canonical import (
     CANONICAL_SCHEMA_VERSION,
+    MAGIC,
     canonicalize,
     parse_canonical,
 )
@@ -33,10 +34,11 @@ def test_canonicalize_round_trip():
 
 
 def test_canonicalize_schema_version_constant():
-    # v4 reader accepts v2 frames; the v1 surface is the
-    # 2.0+ schema. The constant is bumped in lockstep with the
-    # on-disk layout, not the read-compatibility window.
-    assert CANONICAL_SCHEMA_VERSION == 4
+    # v3.0.0 reader accepts only v5 frames. The constant is
+    # bumped in lockstep with the on-disk layout; there is no
+    # backward-compatible reader.
+    assert CANONICAL_SCHEMA_VERSION == 5
+    assert MAGIC == b"\xc0\xde\x01\x05"
 
 
 def test_parse_canonical_rejects_bad_magic():

@@ -6,12 +6,12 @@ carries the :class:`~membrane.identity.PayloadIdentity` and a payload
 length, and the trailer carries a truncated SHA-256 for cheap integrity
 checks on read without re-parsing the entire blob.
 
-Frame layout (schema v4)::
+Frame layout (schema v5)::
 
     +-------------------------------+
-    | MAGIC       4 B  = 0xC0DE0104 |   (last byte = 0x04 for v4)
+    | MAGIC       4 B  = 0xC0DE0105 |   (last byte = 0x05 for v5)
     +-------------------------------+
-    | schema      2 B              |   (= 4 for v4; the on-disk
+    | schema      2 B              |   (= 5 for v5; the on-disk
     +-------------------------------+    version is the wire schema)
     | reserved    4 B  (= 0)        |
     +-------------------------------+
@@ -30,16 +30,11 @@ The trailer is verified in :func:`parse_canonical`. A mismatch raises
 :class:`membrane.errors.CorruptPayloadError` rather than retry, because a
 mismatch indicates storage corruption, not transient failure.
 
-The frame's binary layout is intentionally compatible with
-LMCache's ``MemoryObj`` body: ``identity_json`` is the
-:class:`~membrane.identity.PayloadIdentity` payload (the model
-and tokenizer metadata), and ``payload`` is the same byte
-stream LMCache stores inside a ``TensorMemoryObj`` once the
-canonical frame has been packed. LMCache's high-level engine
-treating the canonical frame as a K/V tensor body is wired in
-Phase 5+; the v1 of this module just keeps the on-disk layout
-identical so a future LMCache ``connector`` can read it without
-extra translation.
+The v3.0.0 release accepts only the v5 magic. Older versions (v2, v4)
+are hard-failed with :class:`membrane.errors.SchemaError`; there is no
+backward-compatible reader. Operators upgrading from a 2.0 deployment
+must convert frames via a one-shot migration script before booting a
+3.0.0 cluster.
 
 Frames are immutable; the on-disk file should be written atomically
 (temp file + :func:`os.replace`) by the storage backend, not by this
@@ -56,16 +51,10 @@ from typing import Final
 from membrane.errors import CorruptPayloadError, SchemaError
 from membrane.identity import PayloadIdentity
 
-MAGIC: Final[bytes] = b"\xc0\xde\x01\x04"
-#: Fixed header length = MAGIC (4) + schema (2) + reserved (4) + identity_len (4)
+MAGIC: Final[bytes] = b"\xc0\xde\x01\x05"
 HEADER_LEN: Final[int] = 14
 TRAILER_LEN: Final[int] = 8
-CANONICAL_SCHEMA_VERSION: Final[int] = 4
-#: v2 schema magic for backward-compatible reading. The v4 reader
-#: also accepts v2 frames so existing on-disk blobs survive the
-#: upgrade; the v2 writer is no longer available.
-_CANONICAL_V2_MAGIC: Final[bytes] = b"\xc0\xde\x01\x02"
-_CANONICAL_V2_SCHEMA: Final[int] = 2
+CANONICAL_SCHEMA_VERSION: Final[int] = 5
 
 
 def canonicalize(identity: PayloadIdentity, raw: bytes) -> bytes:
@@ -93,10 +82,10 @@ def canonicalize(identity: PayloadIdentity, raw: bytes) -> bytes:
 def parse_canonical(buf: bytes) -> tuple[PayloadIdentity, bytes]:
     """Parse a canonical frame back into identity + payload.
 
-    The v4 reader accepts v2 frames (CANONICAL_SCHEMA_VERSION=2) so
-    on-disk blobs written by the 1.x series survive the upgrade.
-    The 2.0 writer only produces v4 frames; old readers are
-    deliberately not supported.
+    The v3.0.0 reader accepts only v5 frames. Older schemas
+    raise :class:`~membrane.errors.SchemaError` with a clear
+    message; operators upgrading from 2.x must run the
+    one-shot migration script documented in CHANGELOG.
 
     Args:
         buf: The full frame produced by :func:`canonicalize`.
@@ -106,16 +95,17 @@ def parse_canonical(buf: bytes) -> tuple[PayloadIdentity, bytes]:
         payload bytes.
 
     Raises:
-        SchemaError: If the magic or schema version does not match.
-        CorruptPayloadError: If the trailer's truncated SHA-256 disagrees
-            with the payload bytes.
+        SchemaError: If the magic or schema version does not
+            match v5. There is no backward-compatible reader.
+        CorruptPayloadError: If the trailer's truncated SHA-256
+            disagrees with the payload bytes.
     """
     if len(buf) < HEADER_LEN + TRAILER_LEN:
         raise CorruptPayloadError(f"frame too short: {len(buf)} bytes")
-    if buf[:4] != MAGIC and buf[:4] != _CANONICAL_V2_MAGIC:
+    if buf[:4] != MAGIC:
         raise SchemaError(f"bad magic in canonical frame: {buf[:4]!r}")
     schema = struct.unpack_from("<H", buf, 4)[0]
-    if schema not in (CANONICAL_SCHEMA_VERSION, _CANONICAL_V2_SCHEMA):
+    if schema != CANONICAL_SCHEMA_VERSION:
         raise SchemaError(
             f"canonical schema version mismatch: {schema} vs {CANONICAL_SCHEMA_VERSION}"
         )
