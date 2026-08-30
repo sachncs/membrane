@@ -48,7 +48,6 @@ from dataclasses import dataclass
 from membrane.hlc import HLC, unpack
 from membrane.identity import PayloadIdentity
 
-
 #: Consistency levels supported on the wire at 2.0+. Producers
 #: stamp a default of "strong" at construction time; the
 #: :class:`~membrane.server.Server` may reset the level according
@@ -179,7 +178,7 @@ class Fragment:
         """
         return unpack(self.hlc)
 
-    def with_consistency(self, level: str) -> "Fragment":
+    def with_consistency(self, level: str) -> Fragment:
         """Return a copy with ``consistency`` overridden.
 
         Used by :class:`~membrane.server.Server` to enforce the
@@ -208,7 +207,7 @@ class Fragment:
             fingerprint_compat=self.fingerprint_compat,
         )
 
-    def with_fingerprint(self, fingerprint: str) -> "Fragment":
+    def with_fingerprint(self, fingerprint: str) -> Fragment:
         """Return a copy with ``fingerprint_compat`` overridden.
 
         Args:
@@ -229,7 +228,7 @@ class Fragment:
             fingerprint_compat=fingerprint,
         )
 
-    def merge(self, other: "Fragment") -> "Fragment":
+    def merge(self, other: Fragment) -> Fragment:
         """Return the fragment with the higher ``hlc``.
 
         Concurrent writes on the same ``identity`` are resolved

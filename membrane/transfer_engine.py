@@ -26,7 +26,7 @@ import logging
 import struct
 import threading
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -42,15 +42,15 @@ logger = logging.getLogger(__name__)
 class MemoryPool(Protocol):
     """Abstract GPU / host memory pool."""
 
-    def alloc(self, shape: tuple[int, ...], dtype: str) -> "TensorHandle":
+    def alloc(self, shape: tuple[int, ...], dtype: str) -> TensorHandle:
         """Allocate a tensor with the given shape and dtype."""
         ...
 
-    def copy_to(self, src: "TensorHandle", dst: "TensorHandle") -> None:
+    def copy_to(self, src: TensorHandle, dst: TensorHandle) -> None:
         """Copy ``src`` into ``dst``."""
         ...
 
-    def pin_host(self, src: "TensorHandle") -> "TensorHandle":
+    def pin_host(self, src: TensorHandle) -> TensorHandle:
         """Pin ``src`` to host (page-locked) memory."""
         ...
 
@@ -183,7 +183,7 @@ class CompressionTransport:
     METHOD_ZSTD: str = "zstd"
     METHOD_LZ4: str = "lz4"
 
-    _METHOD_IDS: dict[str, int] = {
+    _METHOD_IDS: ClassVar[dict[str, int]] = {
         METHOD_RAW: 1,
         METHOD_DEFLATE: 2,
         METHOD_ZSTD: 3,
@@ -304,7 +304,7 @@ class KVTransferEngine:
         self,
         k_handle: TensorHandle,
         v_handle: TensorHandle,
-    ) -> "TransferEnvelope":
+    ) -> TransferEnvelope:
         """Bundle ``k_handle`` and ``v_handle`` into a :class:`TransferEnvelope`."""
         raw_k = k_handle.tobytes()
         raw_v = v_handle.tobytes()
@@ -334,7 +334,7 @@ class KVTransferEngine:
 
     def receive_kv(
         self,
-        envelope: "TransferEnvelope",
+        envelope: TransferEnvelope,
     ) -> tuple[TensorHandle, TensorHandle]:
         """Inverse of :func:`transfer_kv`."""
         payload = self.transport.decompress(envelope.compressed)

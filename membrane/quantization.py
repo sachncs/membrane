@@ -363,7 +363,7 @@ class FP8E4M3Quantizer:
         try:
             import torch
 
-            fp8 = torch.float8_e4m3fn
+            _ = torch.float8_e4m3fn
         except (ImportError, AttributeError):
             return False
         try:
@@ -454,7 +454,7 @@ class FP8E5M2Quantizer:
         try:
             import torch
 
-            fp8 = torch.float8_e5m2
+            _ = torch.float8_e5m2
         except (ImportError, AttributeError):
             return False
         try:
@@ -580,13 +580,11 @@ class NF4Quantizer:
         table = np.asarray(self._NF4_TABLE, dtype="float32")
         distances = np.abs(normalized[:, :, None] - table[None, None, :])
         indices = distances.argmin(axis=-1).astype("uint8")
-        n_pairs = (n_cols + 1) // 2
-        if n_cols % 2:
-            padded = np.concatenate(
-                [indices, np.zeros((n_rows, 1), dtype="uint8")], axis=1
-            )
-        else:
-            padded = indices
+        padded = (
+            np.concatenate([indices, np.zeros((n_rows, 1), dtype="uint8")], axis=1)
+            if n_cols % 2
+            else indices
+        )
         packed = (padded[:, 0::2] << 4) | padded[:, 1::2]
         return (
             struct.pack("<I", n_rows)

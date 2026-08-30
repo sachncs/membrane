@@ -111,7 +111,7 @@ class ModelCompatibilityFingerprint:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "ModelCompatibilityFingerprint":
+    def from_dict(cls, data: dict[str, object]) -> ModelCompatibilityFingerprint:
         """Reconstruct from the output of :meth:`to_dict`.
 
         Args:
@@ -270,7 +270,7 @@ class MembraneValidator:
         validator.validate(stored_fragment)
     """
 
-    def __init__(self, fingerprint: "ModelCompatibilityFingerprint") -> None:
+    def __init__(self, fingerprint: ModelCompatibilityFingerprint) -> None:
         """Initialize with the live engine fingerprint.
 
         Args:

@@ -82,7 +82,7 @@ def main():
     logger.info("[Phase 4] Delta Encoding")
     enc = DeltaEncoder()
     base = tuple(range(10))
-    new = tuple(range(10)) + (99, 100)
+    new = (*tuple(range(10)), 99, 100)
     delta = enc.encode(base, new)
     reconstructed = enc.decode(base, delta)
     logger.info(

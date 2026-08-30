@@ -14,7 +14,7 @@ HuggingFace, vLLM, or SGLang engine.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from membrane.compat import ModelCompatibilityFingerprint
@@ -213,7 +213,7 @@ class ValidationResult:
     errors: tuple[str, ...] = ()
 
     @classmethod
-    def ok(cls) -> "ValidationResult":
+    def ok(cls) -> ValidationResult:
         """Return a success result.
 
         Returns:
@@ -222,7 +222,7 @@ class ValidationResult:
         return cls(is_ok=True, errors=())
 
     @classmethod
-    def fail(cls, *errors: str) -> "ValidationResult":
+    def fail(cls, *errors: str) -> ValidationResult:
         """Return a failure result carrying one or more errors.
 
         Args:
@@ -267,17 +267,12 @@ class BaseAdapter:
             return b"MVKV" + struct.pack("<H", 1) + struct.pack("<I", 0)
         # Per-layer dtype is uniform; we encode it once and
         # require the whole bundle to share.
-        element_size = {
+        _ = {
             "float16": 2,
             "bfloat16": 2,
             "float32": 4,
             "float64": 8,
         }.get(tensor.layers[0].dtype, 2)
-        per_layer_bytes = (
-            tensor.shape[0] * tensor.shape[1] * tensor.shape[2] * element_size
-        )
-        k_bytes = per_layer_bytes
-        v_bytes = per_layer_bytes
         parts: list[bytes] = [
             b"MVKV",
             struct.pack("<H", 1),
@@ -346,8 +341,6 @@ class BaseAdapter:
         element_size = 2
         head_dim = shape2
         per_layer_bytes = shape0 * shape1 * head_dim * element_size
-        from membrane.adapters import LayerKV, KVTensor  # noqa: F401  -- type self-check
-
         layers: list[LayerKV] = []
         for _ in range(n_layers):
             k_bytes = payload[offset : offset + per_layer_bytes]
@@ -390,7 +383,6 @@ class BaseAdapter:
         errors: list[str] = []
         if not tensor.layers:
             errors.append("tensor has no layers")
-        head_dim = tensor.shape[2] if len(tensor.shape) >= 3 else 0
         for layer in tensor.layers:
             if layer.head_range != tensor.head_range:
                 errors.append(
@@ -427,8 +419,8 @@ class BaseAdapter:
 
 __all__ = [
     "BaseAdapter",
-    "KVTensor",
     "KVAdapter",
+    "KVTensor",
     "LayerKV",
     "ValidationResult",
 ]

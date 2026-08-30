@@ -6,8 +6,8 @@ import pytest
 
 from membrane.adapters import (
     BaseAdapter,
-    KVTensor,
     KVAdapter,
+    KVTensor,
     LayerKV,
     ValidationResult,
 )
