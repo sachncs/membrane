@@ -125,7 +125,7 @@ class _RemoteEndpoint:
         self._cluster = cluster
 
     def _client(self) -> Peer | None:
-        return self._cluster.get_peer_client(self.node_id)
+        return self._cluster.membership.get_client(self.node_id)
 
     def inventory(self) -> dict[str, int] | None:
         client = self._client()
@@ -206,17 +206,18 @@ class TransferService:
     def transfer_remote_source(
         self,
         source: RemoteEndpoint,
-        target: LocalEndpoint | RemoteEndpoint,
+        target: RemoteEndpoint,
         content_hash: str,
     ) -> bool:
-        """Fetch a fragment from a remote source and store on the target."""
+        """Fetch a fragment from a remote source and push via the remote target.
+
+        Remote-to-remote transfers chain through the source
+        peer's HTTP API: the source serves the fragment over
+        GET /retrieve; the target pulls it via POST /replicate.
+        """
         fragment = source.retrieve(content_hash)
         if fragment is None:
             return False
-        if isinstance(target, _LocalEndpoint):
-            return target.store(fragment, is_primary=False)
-        # Remote-to-remote: chain via the source peer's HTTP
-        # API by asking the source's /replicate endpoint.
         return target.push(fragment)
 
     def transfer_remote_target(
@@ -293,16 +294,23 @@ class TransferService:
         except ValueError:
             return False
 
-        src_local = isinstance(src_endpoint, _LocalEndpoint)
-        tgt_local = isinstance(tgt_endpoint, _LocalEndpoint)
-        if src_local and tgt_local:
+        if isinstance(src_endpoint, _LocalEndpoint) and isinstance(tgt_endpoint, _LocalEndpoint):
             return self.transfer_local_endpoint(src_endpoint, tgt_endpoint, content_hash)
-        if not src_local:
+        if isinstance(src_endpoint, _RemoteEndpoint):
             return self.transfer_remote_source(
-                src_endpoint, tgt_endpoint, content_hash  # type: ignore[arg-type]
+                src_endpoint,
+                tgt_endpoint,  # type: ignore[arg-type]
+                content_hash,
             )
+        # isinstance(tgt_endpoint, _RemoteEndpoint)  (mypy narrowing)
+        if not isinstance(src_endpoint, _LocalEndpoint) or not isinstance(
+            tgt_endpoint, _RemoteEndpoint
+        ):
+            return False
         return self.transfer_remote_target(
-            src_endpoint, tgt_endpoint, content_hash  # type: ignore[arg-type]
+            src_endpoint,
+            tgt_endpoint,
+            content_hash,
         )
 
     def sync_nodes(
@@ -327,16 +335,25 @@ class TransferService:
 
         missing = self.compare_inventories(tgt_digest, src_digest)
         transferred: list[str] = []
-        src_local = isinstance(src_endpoint, _LocalEndpoint)
-        tgt_local = isinstance(tgt_endpoint, _LocalEndpoint)
         for h in missing:
-            ok = False
-            if src_local and tgt_local:
-                ok = self.transfer_local_endpoint(src_endpoint, tgt_endpoint, h)
-            elif not src_local:
-                ok = self.transfer_remote_source(src_endpoint, tgt_endpoint, h)
-            elif not tgt_local:
-                ok = self.transfer_remote_target(src_endpoint, tgt_endpoint, h)
+            if isinstance(src_endpoint, _LocalEndpoint) and isinstance(
+                tgt_endpoint, _LocalEndpoint
+            ):
+                ok: bool = self.transfer_local_endpoint(src_endpoint, tgt_endpoint, h)
+            elif isinstance(src_endpoint, _RemoteEndpoint):
+                ok = self.transfer_remote_source(
+                    src_endpoint,
+                    tgt_endpoint,  # type: ignore[arg-type]
+                    h,
+                )
+            elif isinstance(tgt_endpoint, _RemoteEndpoint):
+                ok = self.transfer_remote_target(
+                    src_endpoint,  # type: ignore[arg-type]
+                    tgt_endpoint,
+                    h,
+                )
+            else:
+                ok = False
             if ok:
                 transferred.append(h)
         return transferred
@@ -348,7 +365,7 @@ class TransferService:
         missing = self.compare_inventories(local, remote)
         transferred: list[str] = []
         for h in missing:
-            if self.transfer_local(_LocalEndpoint(source), _LocalEndpoint(target), h):
+            if self.transfer_local(source, target, h):
                 transferred.append(h)
         return transferred
 
@@ -364,7 +381,9 @@ class TransferService:
         :meth:`transfer_local_endpoint` for callers that pass
         :class:`Node` instances directly.
         """
-        return self.transfer_local_endpoint(_LocalEndpoint(source), _LocalEndpoint(target), content_hash)
+        return self.transfer_local_endpoint(
+            _LocalEndpoint(source), _LocalEndpoint(target), content_hash
+        )
 
     def pull_from_remote(
         self,
@@ -384,11 +403,19 @@ class TransferService:
         """
         if self.cluster_manager is None:
             return False
+        src_endpoint = _RemoteEndpoint(source_id, self.cluster_manager)
         try:
-            src_endpoint = _RemoteEndpoint(source_id, self.cluster_manager)
             tgt_endpoint = self._resolve_endpoint(target)
         except ValueError:
             return False
+        if isinstance(tgt_endpoint, _LocalEndpoint):
+            fragment = src_endpoint.retrieve(content_hash)
+            if fragment is None:
+                return False
+            return tgt_endpoint.store(fragment, is_primary=False)
+        if not isinstance(tgt_endpoint, _RemoteEndpoint):
+            return False
+        # Remote target: chain peer-to-peer.
         return self.transfer_remote_source(src_endpoint, tgt_endpoint, content_hash)
 
     def push_to_remote(

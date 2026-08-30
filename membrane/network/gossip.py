@@ -288,4 +288,4 @@ class Gossip:
         return self.build_state().to_json()
 
 
-__all__ = ["Gossip", GossipState, "PeerEndpoint"]
+__all__ = ["Gossip", "GossipState", "PeerEndpoint"]

@@ -51,7 +51,7 @@ Handler = Callable[[Any], None]
 # ---------------------------------------------------------------------------
 
 
-def _send(handler: Any, status_body: tuple[int, dict[str, Any]]) -> None:
+def _send(handler: Any, status_body: Any) -> None:
     """Translate an operation's ``(status, body)`` to ``send_json``."""
     status, body = status_body
     handler.send_json(status, body)

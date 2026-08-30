@@ -297,7 +297,7 @@ def _gossip(app: FastAPI, req: GossipRequest):
     return _respond(status, body)
 
 
-def _respond(status: int, body: JsonDict) -> Response:
+def _respond(status: int, body: JsonDict | tuple[str, dict[str, str]] | object) -> Response:
     """Translate an operation's ``(status, body)`` to a FastAPI response."""
     if status == 200:
         return JSONResponse(body)

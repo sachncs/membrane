@@ -82,14 +82,22 @@ def _register_compute_backends() -> None:
     )
 
 
-def _try_import(class_name: str) -> type[Backend]:
+def _try_import(class_name: str) -> Any:
     """Import an optional backend class by name.
+
+    Returns the class object so callers can construct an
+    instance with provider-specific kwargs (BaseURL, API
+    key, model, etc.). The class is typed as ``Any`` here
+    because each concrete provider's constructor accepts
+    different arguments and Backend's own signature is the
+    empty ``__init__(self)``.
 
     Args:
         class_name: Backend class to import (e.g., ``"Ollama"``).
 
     Returns:
-        The backend class.
+        Any: The backend class (typed loosely so provider-
+        specific constructors are accepted).
 
     Raises:
         RuntimeError: If the optional backend dependency is
