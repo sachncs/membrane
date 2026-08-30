@@ -83,10 +83,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Trivy image scan
+      - name: Trivy filesystem scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "python:3.12-slim"
+          scan-type: "fs"
+          scan-ref: "."
           severity: "HIGH,CRITICAL"
           exit-code: "1"
 

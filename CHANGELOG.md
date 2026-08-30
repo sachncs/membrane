@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **CI security job**: The `aquasecurity/trivy-action` step was
+  configured to scan the upstream `python:3.12-slim` base image
+  (`scan-type: image, image-ref: python:3.12-slim`), which produced
+  19 HIGH/CRITICAL CVEs in debian Trixie 13.6 base packages
+  (perl-base, ncurses-base, libssl3, libsqlite3-0, gzip, libacl1,
+  openssl). Those CVEs are upstream Debian stable issues and
+  cannot be fixed from inside this repository. Switched the scan
+  to filesystem mode (`scan-type: fs, scan-ref: .`) so the weekly
+  audit now covers the Membrane codebase. Python-dep CVEs are
+  still cross-checked by `pip-audit`, code-level issues by
+  `bandit`, secrets by `gitleaks`.
+
 ## [0.2.0] - 2026-08-30
 
 Principal-level architectural refactor. Internal-only; no public-API
