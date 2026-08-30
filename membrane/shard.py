@@ -227,20 +227,33 @@ class Shard:
         leaving_peer: str,
         local_node_id: str,
         node: Node | None = None,
+        transfer_service: object | None = None,
     ) -> None:
         """Re-home ``content_hash`` from ``leaving_peer`` onto ``local_node_id``.
 
-        Used as the default ``Migrator.transfer_fn``. Promotes the
-        local node to primary owner of the hash and updates the
-        replica set to drop the leaving peer.
+        Used as the default :class:`~membrane.network.strategy.Migrator`
+        transfer_fn. Promotes the local node to primary owner of
+        the hash, updates the replica set to drop the leaving
+        peer, and (when ``transfer_service`` is supplied) asks
+        the :class:`~membrane.transfer.TransferService` to push
+        any locally-held fragment bytes through the canonical
+        wire path so a remote replica can pick them up.
 
         Args:
             content_hash: Content hash whose primary is leaving.
             leaving_peer: Identifier of the peer being removed.
-            local_node_id: Identifier of the node that should take
-                ownership.
-            node: Optional local :class:`~membrane.node.Node` whose
-                ``primary_hashes`` set should be kept in sync.
+            local_node_id: Identifier of the node that should
+                take ownership.
+            node: Optional local :class:`~membrane.node.Node`
+                whose ``primary_hashes`` set should be kept in
+                sync.
+            transfer_service: Optional
+                :class:`~membrane.transfer.TransferService`
+                instance. When supplied and the local node
+                holds the fragment, the bytes are forwarded to
+                a remote replica. The argument is typed loosely
+                (``object``) so this module avoids importing the
+                full TransferService and creating a cycle.
         """
         replicas = self.replica_map.get(content_hash, set())
         if leaving_peer in replicas:
@@ -250,6 +263,26 @@ class Shard:
         self.primary_map[content_hash] = local_node_id
         if node is not None and content_hash in node.fragments:
             node.primary_hashes.add(content_hash)
+        if (
+            transfer_service is not None
+            and node is not None
+            and node.node_id == local_node_id
+        ):
+            # The migration lands on this node and we hold the
+            # bytes. Ask the TransferService to push them through
+            # its canonical inbound path so any remaining replica
+            # receives an up-to-date copy. Failures degrade
+            # gracefully — the table is updated regardless.
+            push_fn = getattr(transfer_service, "transfer_fragment", None)
+            if callable(push_fn) and content_hash in node.fragments:
+                try:
+                    push_fn(node, content_hash)
+                except Exception as exc:  # pragma: no cover - cluster path
+                    logger.warning(
+                        "transfer_service.transfer_fragment for %s failed: %s",
+                        content_hash,
+                        exc,
+                    )
         logger.debug(
             "migrated %s from %s to local (%s)",
             content_hash,

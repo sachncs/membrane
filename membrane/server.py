@@ -295,6 +295,10 @@ class Server:
                 config=cluster_config,
             )
             self.transfer_service.cluster_manager = self.cluster_manager
+            # Wire TransferService into the cluster so the migrator's
+            # transfer_fn can push canonical bytes through the wire
+            # path during shard migrations.
+            self.cluster_manager.transfer_service = self.transfer_service
 
         self.transport = self.build_transport(transport, host, port)
         self.running = False

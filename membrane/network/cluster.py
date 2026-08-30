@@ -93,6 +93,10 @@ class Cluster:
         self.hash_ring = hash_ring or Ring()
         self.shard_manager = shard_manager or Shard(self.hash_ring)
         self.directory = directory or Registry()
+        # TransferService is injected by Server after the Cluster
+        # is constructed; default to None so tests that don't
+        # care about cross-node byte motion still work.
+        self.transfer_service: object | None = None
         self.tombstones = tombstones or TombstoneTable()
 
         # Lifecycle state — must be initialized before subsystem
@@ -208,10 +212,18 @@ class Cluster:
         )
 
     def on_peer_leave_rehome(self, content_hash: str, leaving_peer: str) -> None:
-        """Default ``Migrator.transfer_fn`` that delegates to :meth:`Shard.migrate_primary`."""
+        """Default ``Migrator.transfer_fn`` that delegates to :meth:`Shard.migrate_primary`.
+
+        When a :class:`~membrane.transfer.TransferService` has
+        been attached to the cluster (typical during
+        ``Server.__init__``), the migration also forwards the
+        canonical bytes through the wire path so the leaving
+        peer's replicas stay in sync.
+        """
         self.shard_manager.migrate_primary(
             content_hash,
             leaving_peer,
             local_node_id=self.node_id,
             node=self.node,
+            transfer_service=self.transfer_service,
         )
