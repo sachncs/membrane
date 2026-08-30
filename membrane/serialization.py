@@ -24,7 +24,7 @@ from membrane.errors import SchemaError
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 
-SCHEMA_VERSION: int = 3
+SCHEMA_VERSION: int = 4
 
 #: JSON-compatible value type used at every wire boundary.
 #:
@@ -52,19 +52,21 @@ def to_dict(fragment: Fragment) -> dict[str, Any]:
         A plain ``dict`` carrying ``schema_version``, the full
         :class:`~membrane.identity.PayloadIdentity` (expanded into a
         sub-dict), the payload reference, the lifecycle metadata,
-        and the consistency + HLC fields added at 2.0.
+        the consistency + HLC fields added at 2.0, and the
+        v2.0+ ``fingerprint_compat`` field.
     """
     return {
-        "schema_version": SCHEMA_VERSION,
-        "identity": fragment.identity.to_dict(),
-        "payload_ref": fragment.payload_ref,
-        "payload_size": fragment.payload_size,
-        "ttl": fragment.ttl,
-        "reuse_score": fragment.reuse_score,
-        "version_id": fragment.version_id,
-        "consistency": fragment.consistency,
-        "hlc": fragment.hlc,
-    }
+            "schema_version": SCHEMA_VERSION,
+            "identity": fragment.identity.to_dict(),
+            "payload_ref": fragment.payload_ref,
+            "payload_size": fragment.payload_size,
+            "ttl": fragment.ttl,
+            "reuse_score": fragment.reuse_score,
+            "version_id": fragment.version_id,
+            "consistency": fragment.consistency,
+            "hlc": fragment.hlc,
+            "fingerprint_compat": fragment.fingerprint_compat,
+        }
 
 
 def from_dict(data: dict[str, Any]) -> Fragment:
@@ -97,6 +99,8 @@ def from_dict(data: dict[str, Any]) -> Fragment:
             raise SchemaError("missing required field: consistency")
         if "hlc" not in data:
             raise SchemaError("missing required field: hlc")
+        if "fingerprint_compat" not in data:
+            raise SchemaError("missing required field: fingerprint_compat")
         return Fragment(
             identity=identity,
             payload_ref=data["payload_ref"],
@@ -106,6 +110,7 @@ def from_dict(data: dict[str, Any]) -> Fragment:
             version_id=int(data["version_id"]),
             consistency=str(data["consistency"]),
             hlc=int(data["hlc"]),
+            fingerprint_compat=str(data["fingerprint_compat"]),
         )
     except KeyError as exc:
         raise SchemaError(f"missing required field: {exc.args[0]}") from exc

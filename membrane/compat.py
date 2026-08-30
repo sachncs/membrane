@@ -232,7 +232,75 @@ def compute_config_hash(model_config: dict[str, object] | object) -> str:
 
 
 __all__ = [
+    "MembraneIncompatibleError",
+    "MembraneValidator",
     "ModelCompatibilityFingerprint",
     "compat_hash",
     "compute_config_hash",
 ]
+
+
+class MembraneIncompatibleError(RuntimeError):
+    """Raised when a fragment's compatibility fingerprint disagrees
+    with the live engine's fingerprint.
+
+    This is the v2.0+ counterpart to a model-version mismatch.
+    Operators that swap a model archive without bumping the
+    digest trigger this error at retrieval time so the
+    cluster refuses to install a payload built by the previous
+    model into the new engine.
+    """
+
+
+class MembraneValidator:
+    """Validates that a stored fragment matches the live engine.
+
+    The validator is constructed with a live
+    :class:`ModelCompatibilityFingerprint` (the one stamped by
+    the active compute backend on every :func:`op_store` call).
+    Each :meth:`validate` compares the stored fragment's
+    ``fingerprint_compat`` against the live fingerprint's
+    :meth:`ModelCompatibilityFingerprint.compatibility_hash`.
+
+    Usage::
+
+        fingerprint = adapter.active_fingerprint()
+        validator = MembraneValidator(fingerprint)
+        # ...
+        validator.validate(stored_fragment)
+    """
+
+    def __init__(self, fingerprint: "ModelCompatibilityFingerprint") -> None:
+        """Initialize with the live engine fingerprint.
+
+        Args:
+            fingerprint: The active engine's compatibility
+                fingerprint; :meth:`validate` compares incoming
+                fragments to this.
+        """
+        self.fingerprint = fingerprint
+        self._hash = fingerprint.compatibility_hash()
+
+    def validate(self, fragment: object) -> None:
+        """Verify ``fragment.fingerprint_compat`` matches the live hash.
+
+        Args:
+            fragment: Any object with a ``fingerprint_compat`` field.
+
+        Raises:
+            MembraneIncompatibleError: When the live hash and the
+                stored hash disagree, or when the stored fragment
+                ships with the empty string (legacy / tests; a
+                v2.0+ deployment must populate the field).
+        """
+        stored = getattr(fragment, "fingerprint_compat", "")
+        if not stored:
+            raise MembraneIncompatibleError(
+                "fragment has no compatibility fingerprint; v2.0+ deployments must "
+                "populate fragment.fingerprint_compat before op_store."
+            )
+        if stored != self._hash:
+            raise MembraneIncompatibleError(
+                f"fragment.fingerprint_compat={stored!r} disagrees with the live "
+                f"engine fingerprint {self._hash!r}"
+            )

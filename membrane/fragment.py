@@ -18,6 +18,11 @@ Design rationale:
       covers *what* the bytes are; the remaining nine fields cover
       *where* in the computation the bytes belong and on which
       model/tokenizer/revision/dtype the bytes can be consumed.
+    * **Compatibility fingerprint (2.0+)**: The optional
+      :attr:`fingerprint_compat` field carries the
+      :class:`~membrane.compat.ModelCompatibilityFingerprint`
+      digest so operators that swap model archives catch the
+      mismatch before bytes are imported into the wrong engine.
     * **Payload reference, not bytes**: The fragment dataclass holds a
       ``payload_ref`` pointer (the blob key in the canonical
       :class:`~membrane.persistence.ContentStore`) and a
@@ -27,17 +32,8 @@ Design rationale:
       Once constructed, identity, payload reference, and metadata
       cannot drift, which is essential for safe sharing across
       threads, processes, and nodes.
-* **Lifecycle metadata**: ``ttl`` and ``reuse_score`` drive
+    * **Lifecycle metadata**: ``ttl`` and ``reuse_score`` drive
       eviction and promotion decisions.
-    * **Consistency + HLC (2.0+)**: ``consistency`` selects the write
-      level on the cluster boundary; ``hlc`` is the per-fragment
-      hybrid logical clock used for conflict resolution.
-
-At 2.0+ the dataclass gained two fields: ``consistency`` (one of
-``"strong" | "quorum" | "eventual"``) and ``hlc`` (a 64-bit HLC
-integer). :func:`membrane.serialization.to_dict` writes both;
-missing keys on the wire trigger :class:`SchemaError` because the
-2.0 reader refuses older payloads (no shims).
 """
 
 from __future__ import annotations
@@ -51,6 +47,7 @@ from dataclasses import dataclass
 
 from membrane.hlc import HLC, unpack
 from membrane.identity import PayloadIdentity
+
 
 #: Consistency levels supported on the wire at 2.0+. Producers
 #: stamp a default of "strong" at construction time; the
@@ -69,8 +66,9 @@ class Fragment:
     identity (:attr:`identity`), a pointer to where the actual bytes
     live (:attr:`payload_ref`), the byte size (:attr:`payload_size`),
     the consistency level (:attr:`consistency`), a hybrid logical
-    clock (:attr:`hlc`), and the metadata required for routing and
-    lifecycle decisions.
+    clock (:attr:`hlc`), the v2.0+ compatibility fingerprint
+    (:attr:`fingerprint_compat`), and the metadata required for
+    routing and lifecycle decisions.
 
     Instances are hashable and equality-comparable on all fields; this
     is what enables content-based deduplication and safe use as
@@ -111,39 +109,13 @@ class Fragment:
             conflict resolution during gossip convergence and
             data-migration ordering. Default ``0`` is replaced by
             the writer at every :func:`op_store`.
-
-    Raises:
-        ValueError: Raised by :meth:`__post_init__` when any invariant
-            (non-negative ``payload_size``/``ttl``, ``reuse_score`` in
-            ``[0, 1]``, ``version_id >= 1``, ``consistency`` in
-            {strong, quorum, eventual}) is violated.
-
-    Example:
-        >>> from membrane.fragment import Fragment
-        >>> from membrane.identity import PayloadIdentity
-        >>> ident = PayloadIdentity(
-        ...     payload_hash="a" * 64,
-        ...     model_id="llama-3-8b",
-        ...     model_revision="main",
-        ...     tokenizer_name="llama-3-8b",
-        ...     tokenizer_revision="main",
-        ...     layer_range=(0, 32),
-        ...     head_range=(-1, -1),
-        ...     token_span=(0, 128),
-        ...     dtype="float16",
-        ...     shape=(1, 32, 32, 128, 64),
-        ... )
-        >>> frag = Fragment(
-        ...     identity=ident,
-        ...     payload_ref="a" * 64,
-        ...     payload_size=8 * 1024 * 1024,
-        ...     ttl=3600.0,
-        ...     reuse_score=0.87,
-        ...     version_id=1,
-        ...     consistency="strong",
-        ...     hlc=0,
-        ... )
-        >>> frag.identity.payload_hash[:16]
+        fingerprint_compat: 64-character hex digest of the
+            :class:`~membrane.compat.ModelCompatibilityFingerprint`
+            that produced the bytes. ``""`` when the v2.0+
+            compatibility layer is not active (e.g. tests
+            synthesising a Fragment by hand). On :func:`op_store`
+            the v2 server fills this in from the active compute
+            backend's adapter.
     """
 
     identity: PayloadIdentity
@@ -154,6 +126,7 @@ class Fragment:
     version_id: int
     consistency: str = "strong"
     hlc: int = 0
+    fingerprint_compat: str = ""
 
     def __post_init__(self) -> None:
         """Validate invariants after construction.
@@ -186,6 +159,17 @@ class Fragment:
             )
         if self.hlc < 0:
             raise ValueError(f"Fragment hlc must be >= 0, got {self.hlc}")
+        # ``fingerprint_compat`` is either the empty string
+        # (legacy / tests) or a 64-character hex digest. Anything
+        # else indicates a wire-side bug.
+        if self.fingerprint_compat and (
+            len(self.fingerprint_compat) != 64
+            or not all(c in "0123456789abcdef" for c in self.fingerprint_compat)
+        ):
+            raise ValueError(
+                "fingerprint_compat must be the empty string or a 64-char hex digest, "
+                f"got {self.fingerprint_compat!r}"
+            )
 
     def hlc_state(self) -> HLC:
         """Decode :attr:`hlc` into its :class:`HLC` components.
@@ -195,7 +179,7 @@ class Fragment:
         """
         return unpack(self.hlc)
 
-    def with_consistency(self, level: str) -> Fragment:
+    def with_consistency(self, level: str) -> "Fragment":
         """Return a copy with ``consistency`` overridden.
 
         Used by :class:`~membrane.server.Server` to enforce the
@@ -221,9 +205,31 @@ class Fragment:
             version_id=self.version_id,
             consistency=level,
             hlc=self.hlc,
+            fingerprint_compat=self.fingerprint_compat,
         )
 
-    def merge(self, other: Fragment) -> Fragment:
+    def with_fingerprint(self, fingerprint: str) -> "Fragment":
+        """Return a copy with ``fingerprint_compat`` overridden.
+
+        Args:
+            fingerprint: 64-character hex digest or empty string.
+
+        Returns:
+            Fragment: New instance with the updated field.
+        """
+        return Fragment(
+            identity=self.identity,
+            payload_ref=self.payload_ref,
+            payload_size=self.payload_size,
+            ttl=self.ttl,
+            reuse_score=self.reuse_score,
+            version_id=self.version_id,
+            consistency=self.consistency,
+            hlc=self.hlc,
+            fingerprint_compat=fingerprint,
+        )
+
+    def merge(self, other: "Fragment") -> "Fragment":
         """Return the fragment with the higher ``hlc``.
 
         Concurrent writes on the same ``identity`` are resolved
@@ -257,6 +263,7 @@ class Fragment:
             version_id=self.version_id,
             consistency=self.consistency,
             hlc=other.hlc,
+            fingerprint_compat=other.fingerprint_compat or self.fingerprint_compat,
         )
 
 

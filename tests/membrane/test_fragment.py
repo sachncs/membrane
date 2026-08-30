@@ -61,7 +61,9 @@ def test_fragment_is_hashable():
         reuse_score=0.5,
         version_id=1,
     )
-    assert hash(frag) == hash((ident, "h", 10, 60.0, 0.5, 1, "strong", 0))
+    assert hash(frag) == hash(
+    (ident, "h", 10, 60.0, 0.5, 1, "strong", 0, "")
+)
     assert len({frag}) == 1
 
 

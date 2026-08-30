@@ -80,7 +80,7 @@ class FragmentPayload(BaseModel):
     integer from :class:`~membrane.hlc.HLC`.
     """
 
-    schema_version: int = 3
+    schema_version: int = 4
     identity: dict[str, Any]
     payload_ref: str | None = None
     payload_size: int
@@ -89,6 +89,7 @@ class FragmentPayload(BaseModel):
     version_id: int
     consistency: str = "strong"
     hlc: int = 0
+    fingerprint_compat: str = ""
 
     def to_wire_dict(self) -> JsonDict:
         """Transform into the canonical wire dict accepted by
@@ -103,6 +104,7 @@ class FragmentPayload(BaseModel):
             "version_id": self.version_id,
             "consistency": self.consistency,
             "hlc": self.hlc,
+            "fingerprint_compat": self.fingerprint_compat,
         }
 
 
