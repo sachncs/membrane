@@ -61,10 +61,10 @@ class Weighted:
     def ensure_node(self, content_hash: str) -> None:
         """Insert a placeholder fragment into the structural graph if missing.
 
-        The dummy fragment carries a single-element zero embedding
-        and a synthetic ``model_id="weighted_graph"`` signature.
-        ``size=0`` and ``ttl=0.0`` reflect that the node carries
-        no payload.
+        The dummy fragment carries a synthetic
+        ``model_id="weighted_graph"`` identity.
+        ``payload_size=0`` and ``ttl=0.0`` reflect that the node
+        carries no payload.
 
         Args:
             content_hash: Identifier of the node to ensure exists.
@@ -74,17 +74,24 @@ class Weighted:
         # Local imports keep this module importable without the
         # full data-model dependency graph at module load time.
         from membrane.fragment import Fragment
-        from membrane.signature import Signature
+        from membrane.identity import PayloadIdentity
 
+        identity = PayloadIdentity(
+            payload_hash=content_hash,
+            model_id=FragmentKind.WEIGHTED,
+            model_revision="",
+            tokenizer_name=FragmentKind.WEIGHTED,
+            tokenizer_revision="",
+            layer_range=(0, 0),
+            head_range=(-1, -1),
+            token_span=(0, 0),
+            dtype="float16",
+            shape=(1, 1, 1, 1, 64),
+        )
         dummy = Fragment(
-            content_hash=content_hash,
-            embedding=(0.0,),
-            structural_signature=Signature(
-                model_id=FragmentKind.WEIGHTED,
-                layer_range=(0, 0),
-                token_span=(0, 0),
-            ),
-            size=0,
+            identity=identity,
+            payload_ref=content_hash,
+            payload_size=0,
             ttl=0.0,
             reuse_score=0.0,
             version_id=1,

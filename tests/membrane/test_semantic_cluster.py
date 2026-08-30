@@ -20,28 +20,34 @@ class TestSemanticCluster:
         assert len(clusters) == 1
         assert clusters[0] == [frag]
 
-    def test_identical_embeddings_clustered(self):
+    def test_identical_payload_hashes_clustered(self):
+        """Under the new schema, clustering is by ``payload_hash``.
+
+        Fragments that share a payload hash are byte-identical and
+        collapse into a single cluster regardless of ``similarity_threshold``.
+        """
         sc = SemanticCluster()
         f1 = make_fragment("a", (1.0, 0.0))
-        f2 = make_fragment("b", (1.0, 0.0))
+        f2 = make_fragment("a", (1.0, 0.0))
         clusters = sc.cluster([f1, f2], similarity_threshold=0.99)
         assert len(clusters) == 1
         assert set(clusters[0]) == {f1, f2}
 
-    def test_different_embeddings_separate_clusters(self):
+    def test_different_payload_hashes_separate_clusters(self):
         sc = SemanticCluster()
         f1 = make_fragment("a", (1.0, 0.0))
         f2 = make_fragment("b", (0.0, 1.0))
         clusters = sc.cluster([f1, f2], similarity_threshold=0.9)
         assert len(clusters) == 2
 
-    def test_threshold_controls_clustering(self):
+    def test_threshold_does_not_affect_hash_clustering(self):
         sc = SemanticCluster()
         f1 = make_fragment("a", (1.0, 0.0))
         f2 = make_fragment("b", (0.8, 0.2))
         clusters_loose = sc.cluster([f1, f2], similarity_threshold=0.8)
         clusters_tight = sc.cluster([f1, f2], similarity_threshold=0.99)
-        assert len(clusters_loose) == 1
+        # Distinct hashes — never clustered together.
+        assert len(clusters_loose) == 2
         assert len(clusters_tight) == 2
 
     def test_cosine_similarity_orthogonal(self):

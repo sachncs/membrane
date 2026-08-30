@@ -126,11 +126,11 @@ class Node:
             larger than ``max_memory_bytes`` or eviction could not
             free enough space.
         """
-        if fragment.size > self.max_memory_bytes:
+        if fragment.payload_size > self.max_memory_bytes:
             logger.warning(
                 "Fragment %s size %s exceeds node %s limit %s",
-                fragment.content_hash,
-                fragment.size,
+                fragment.identity.payload_hash,
+                fragment.payload_size,
                 self.node_id,
                 self.max_memory_bytes,
             )
@@ -138,37 +138,38 @@ class Node:
 
         with self.lock:
             now = time.time()
+            content_hash = fragment.identity.payload_hash
 
-            if fragment.content_hash not in self.fragments:
-                required = self.memory_usage + fragment.size
+            if content_hash not in self.fragments:
+                required = self.memory_usage + fragment.payload_size
                 if required > self.max_memory_bytes:
                     # Try to make room by evicting.
-                    freed = self.evict(fragment.size)
-                    if self.memory_usage + fragment.size > self.max_memory_bytes:
+                    freed = self.evict(fragment.payload_size)
+                    if self.memory_usage + fragment.payload_size > self.max_memory_bytes:
                         logger.warning(
                             "Could not store %s on %s: insufficient memory after eviction",
-                            fragment.content_hash,
+                            content_hash,
                             self.node_id,
                         )
                         return False
                     logger.info(
                         "Evicted %s bytes to make room for %s on %s",
                         freed,
-                        fragment.content_hash,
+                        content_hash,
                         self.node_id,
                     )
 
-                self.fragments[fragment.content_hash] = fragment
-                self.memory_usage += fragment.size
-                self.insertion_times[fragment.content_hash] = now
+                self.fragments[content_hash] = fragment
+                self.memory_usage += fragment.payload_size
+                self.insertion_times[content_hash] = now
                 self.index_system.insert(fragment, {self.node_id})
                 self.graph.add_node(fragment)
-                logger.debug("Stored fragment %s on %s", fragment.content_hash, self.node_id)
+                logger.debug("Stored fragment %s on %s", content_hash, self.node_id)
 
-            self.access_times[fragment.content_hash] = now
+            self.access_times[content_hash] = now
 
             if is_primary:
-                self.primary_hashes.add(fragment.content_hash)
+                self.primary_hashes.add(content_hash)
 
             return True
 
@@ -218,7 +219,7 @@ class Node:
         """
         with self.lock:
             frag = self.fragments.pop(content_hash)
-            self.memory_usage -= frag.size
+            self.memory_usage -= frag.payload_size
             self.primary_hashes.discard(content_hash)
             self.access_times.pop(content_hash, None)
             self.insertion_times.pop(content_hash, None)
@@ -247,7 +248,7 @@ class Node:
                 if freed >= target_bytes:
                     break
                 frag = self.remove_fragment(h)
-                freed += frag.size
+                freed += frag.payload_size
                 evicted.append(h)
             return evicted, freed
 
@@ -288,7 +289,7 @@ class Node:
                 if freed >= target_bytes:
                     break
                 self.remove_fragment(h)
-                freed += frag.size
+                freed += frag.payload_size
                 evicted.append(h)
             return evicted, freed
 
@@ -324,7 +325,7 @@ class Node:
                     if freed >= target_bytes:
                         break
                     neighbor_frag = self.remove_fragment(neighbor_hash)
-                    freed += neighbor_frag.size
+                    freed += neighbor_frag.payload_size
                     evicted.append(neighbor_hash)
             return evicted, freed
 

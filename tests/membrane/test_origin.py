@@ -7,7 +7,6 @@ import pytest
 from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.origin import Origin
-from membrane.signature import Signature
 from membrane.transfer import TransferService
 
 
@@ -25,7 +24,7 @@ class TestOriginNode:
         origin = Origin("origin-1")
         replica = Node("replica-1")
         frag = make_fragment("xyz", size=50)
-        assert frag.content_hash not in origin.fragments
+        assert frag.identity.payload_hash not in origin.fragments
         origin.promote_to_replica(frag, replica)
         assert origin.retrieve("xyz") is not None
 

@@ -32,8 +32,7 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.fragment_kind import FragmentKind
-from membrane.fragmenter import generate_embedding
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 
 @dataclass(frozen=True)
@@ -99,9 +98,8 @@ class Prefix:
     def materialize(self) -> Fragment:
         """Materialize this prefix into a storable :class:`Fragment`.
 
-        Produces a fragment whose embedding is derived from the
-        token sequence and whose structural signature identifies the
-        span as belonging to the synthetic ``"prefix"`` model. The
+        Produces a fragment whose identity identifies the span as
+        belonging to the synthetic ``"prefix"`` model. The
         returned fragment is the *logical* fragment used by the
         canonical store; the actual KV tensors for the prefix are
         produced separately by the reconstruction engine.
@@ -113,28 +111,30 @@ class Prefix:
             fragment with an incremented version.
 
         Note:
-            The fragment's ``content_hash`` is propagated unchanged
-            from the prefix so that ``Fragment`` and ``Prefix`` are
-            interchangeable as cache keys.
+            The fragment's ``payload_ref`` is propagated unchanged
+            from the prefix's ``content_hash`` so that ``Fragment``
+            and ``Prefix`` are interchangeable as cache keys.
         """
-        # Embedding is generated from the token sequence at a fixed
-        # dimensionality so that downstream indexes can rely on a
-        # stable vector size.
-        embedding = generate_embedding(self.tokens, 128)
         # The synthetic "prefix" model id marks the fragment as a
         # logical (not model-specific) unit of memory. Real KV
         # fragments produced by a compute backend carry the actual
-        # model id in their Signature.
-        signature = Signature(
+        # model id in their PayloadIdentity.
+        identity = PayloadIdentity(
+            payload_hash=self.content_hash,
             model_id=FragmentKind.PREFIX,
+            model_revision="",
+            tokenizer_name=FragmentKind.PREFIX,
+            tokenizer_revision="",
             layer_range=(0, 0),
-            token_span=(0, self.token_count - 1),
+            head_range=(-1, -1),
+            token_span=(0, max(0, self.token_count - 1)),
+            dtype="float16",
+            shape=(1, 1, 1, max(1, self.token_count), 64),
         )
         return Fragment(
-            content_hash=self.content_hash,
-            embedding=embedding,
-            structural_signature=signature,
-            size=self.size_bytes,
+            identity=identity,
+            payload_ref=self.content_hash,
+            payload_size=self.size_bytes,
             ttl=3600.0,
             reuse_score=self.reuse_score,
             version_id=1,
@@ -164,7 +164,7 @@ class Prefix:
             ``content_hash``, ``semantic_hash``, ``size_bytes``,
             ``token_count``, and ``reuse_score``.
         """
-        span = fragment.structural_signature.token_span
+        span = fragment.identity.token_span
         # The token span is inclusive on both ends; convert to count.
         count = span[1] - span[0] + 1
         return cls(
@@ -172,11 +172,11 @@ class Prefix:
             # synthesize a placeholder range so the prefix is still
             # usable as a structural key (count, hashes, etc.).
             tokens=tuple(range(count)),
-            content_hash=fragment.content_hash,
+            content_hash=fragment.identity.payload_hash,
             # semantic_hash is not stored on Fragment; reuse the
             # content_hash prefix as a stable surrogate.
-            semantic_hash=fragment.content_hash,
-            size_bytes=fragment.size,
+            semantic_hash=fragment.identity.payload_hash,
+            size_bytes=fragment.payload_size,
             token_count=count,
             reuse_score=fragment.reuse_score,
         )

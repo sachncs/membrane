@@ -1,14 +1,12 @@
 """Tests for Index facade."""
 
-from membrane.fragment import Fragment
 from membrane.index import Index
-from membrane.signature import Signature
+from tests.conftest import make_fragment
 
 
 def test_cross_index_query():
     sys = Index()
-    sig = Signature("m", (0, 1), (0, 10))
-    frag = Fragment("h1", (0.1, 0.0, 0.0), sig, 10, 60.0, 0.5, 1)
+    frag = make_fragment("h1", token_span=(0, 10))
     sys.insert(frag, {"node-a"})
 
     exact = sys.exact_lookup("h1")
@@ -17,14 +15,13 @@ def test_cross_index_query():
     assert "node-a" in exact.locations
 
     semantic = sys.semantic_lookup((0.1, 0.0, 0.0), k=1)
-    assert semantic[0].content_hash == "h1"
+    assert semantic[0].identity.payload_hash == "h1"
 
 
 def test_batch_insert_and_query():
     sys = Index()
-    sig = Signature("m", (0, 1), (0, 10))
     for i in range(5):
-        frag = Fragment(f"h{i}", (float(i), 0.0, 0.0), sig, 10, 60.0, 0.5, 1)
+        frag = make_fragment(f"h{i}", token_span=(i, i + 10))
         sys.insert(frag, {"node-a"})
 
     assert len(sys.semantic_lookup((0.0, 0.0, 0.0), k=3)) == 3
@@ -44,8 +41,7 @@ def test_remove_clears_co_access_even_when_exact_matches():
     edges after the underlying fragment was gone.
     """
     sys = Index()
-    sig = Signature("m", (0, 1), (0, 10))
-    frag = Fragment("h1", (0.1, 0.0, 0.0), sig, 10, 60.0, 0.5, 1)
+    frag = make_fragment("h1", token_span=(0, 10))
     sys.insert(frag, {"node-a"})
     sys.record_co_access("h1", "h2")
     assert sys.co_access_neighbors("h1") == {"h2"}

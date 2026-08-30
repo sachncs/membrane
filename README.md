@@ -101,18 +101,36 @@ membrane llm-status
 import membrane
 from membrane.fragment import Fragment
 from membrane.fragment_store import FragmentStore
-from membrane.structural_signature import StructuralSignature
+from membrane.identity import PayloadIdentity
 
 # Verify install and inspect the public surface.
 print(f"{len(membrane.__all__)} exports available")
 
 # Create a fragment store and store a fragment.
-sig = StructuralSignature(model="llama-3", layer=0, token_span=(0, 128))
-frag = Fragment(content=b"kv-data", signature=sig)
+identity = PayloadIdentity(
+    payload_hash="placeholder",
+    model_id="llama-3",
+    model_revision="",
+    tokenizer_name="llama-3",
+    tokenizer_revision="",
+    layer_range=(0, 1),
+    head_range=(-1, -1),
+    token_span=(0, 128),
+    dtype="float16",
+    shape=(1, 1, 1, 128, 64),
+)
+frag = Fragment(
+    identity=identity,
+    payload_ref="blob-key",
+    payload_size=8 * 1024 * 1024,
+    ttl=3600.0,
+    reuse_score=0.5,
+    version_id=1,
+)
 
 store = FragmentStore()
 store.put(frag)
-retrieved = store.get(frag.content_hash)
+retrieved = store.get(frag.identity.payload_hash)
 ```
 
 ### Docker

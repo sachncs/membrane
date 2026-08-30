@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 
 from membrane.compute._hash import token_hash
 from membrane.fragment import Fragment
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 
 class Backend(ABC):
@@ -97,9 +97,9 @@ class Backend(ABC):
 
         Shared helper for every backend's fallback path. The
         returned fragment uses ``token_hash`` for content
-        addressing and stores ``(start_offset, chunk_length)``
-        as the embedding so the chunk is recoverable from the
-        fragment alone.
+        addressing and stamps a synthetic layer/head/token span
+        on the :class:`~membrane.identity.PayloadIdentity` so
+        the chunk is recoverable from the fragment alone.
 
         Args:
             chunk: Token IDs for this window.
@@ -108,22 +108,31 @@ class Backend(ABC):
             total_prompt_tokens: Total prompt size, used to
                 clip the final window's ``token_span``.
             model_id: Model identifier stamped on the
-                fragment's structural signature.
+                fragment's identity.
             window_size: Window size that produced this chunk.
 
         Returns:
             Fragment: Placeholder fragment with deterministic
             content hash and synthetic embedding.
         """
+        payload_hash = token_hash(chunk)
+        token_span_end = min(chunk_index + window_size, total_prompt_tokens) - 1
+        identity = PayloadIdentity(
+            payload_hash=payload_hash,
+            model_id=model_id,
+            model_revision="",
+            tokenizer_name=model_id,
+            tokenizer_revision="",
+            layer_range=(0, 1),
+            head_range=(-1, -1),
+            token_span=(chunk_index, token_span_end),
+            dtype="float16",
+            shape=(1, 1, len(chunk), 1, 64),
+        )
         return Fragment(
-            content_hash=token_hash(chunk),
-            embedding=(float(chunk_index), float(len(chunk))),
-            structural_signature=Signature(
-                model_id=model_id,
-                layer_range=(0, 1),
-                token_span=(chunk_index, min(chunk_index + window_size, total_prompt_tokens) - 1),
-            ),
-            size=len(chunk) * 64,
+            identity=identity,
+            payload_ref=payload_hash,
+            payload_size=len(chunk) * 64,
             ttl=3600.0,
             reuse_score=0.5,
             version_id=1,

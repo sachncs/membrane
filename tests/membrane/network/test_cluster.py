@@ -1,11 +1,9 @@
 """Tests for Cluster."""
 
-from membrane.fragment import Fragment
 from membrane.network.cluster import Cluster
 from membrane.network.config import ClusterConfig
 from membrane.network.strategy import EagerMigrator, RateLimitedMigrator
 from membrane.node import Node
-from membrane.signature import Signature
 
 
 class TestClusterManager:
@@ -85,18 +83,12 @@ class TestClusterManager:
     def test_on_peer_leave_migrates_primaries_to_local(self):
         """When a peer leaves, primaries it owned are migrated to the
         local node by the configured Migrator."""
+        from tests.conftest import make_fragment
+
         node, mgr = self._mgr(migrator=EagerMigrator())
         mgr.shard_manager.primary_map["h-mig"] = "n2"
         mgr.shard_manager.replica_map["h-mig"] = {"n1"}
-        node.fragments["h-mig"] = Fragment(
-            content_hash="h-mig",
-            embedding=(0.0,),
-            structural_signature=Signature("m", (0, 1), (0, 0)),
-            size=10,
-            ttl=3600.0,
-            reuse_score=0.5,
-            version_id=1,
-        )
+        node.fragments["h-mig"] = make_fragment("h-mig", size=10)
 
         mgr.membership.remove("n2")
         leaving_hashes = {h for h, primary in mgr.shard_manager.primary_map.items() if primary == "n2"}

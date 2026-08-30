@@ -146,7 +146,7 @@ class Reconstructor:
         longest = self.longest_match(prompt_tokens, model_id)
         if longest is not None:
             assembled.append(longest)
-            start, end = longest.structural_signature.token_span
+            start, end = longest.identity.token_span
             for i in range(max(0, start), min(end + 1, length)):
                 coverage[i] = True
 
@@ -157,7 +157,7 @@ class Reconstructor:
             if next_frag is None:
                 break
             assembled.append(next_frag)
-            f_start, f_end = next_frag.structural_signature.token_span
+            f_start, f_end = next_frag.identity.token_span
             for i in range(max(0, f_start), min(f_end + 1, length)):
                 coverage[i] = True
             current_end = self.covered_end(coverage)
@@ -169,7 +169,7 @@ class Reconstructor:
             gap_embedding = generate_embedding(gap_tokens, 128)
             candidates = self.index_system.semantic_lookup(gap_embedding, k=3)
             for cand in candidates:
-                c_start, c_end = cand.structural_signature.token_span
+                c_start, c_end = cand.identity.token_span
                 if c_start >= gap_start and c_end <= gap_end:
                     assembled.append(cand)
                     for i in range(c_start, min(c_end + 1, length)):
@@ -191,7 +191,7 @@ class Reconstructor:
                         # Index the new fragment with no
                         # locations — the local index is enough.
                         self.index_system.insert(frag, set())
-                        f_start, f_end = frag.structural_signature.token_span
+                        f_start, f_end = frag.identity.token_span
                         # Map fragment span (relative to the gap)
                         # to absolute prompt positions.
                         abs_start = gap_start + f_start
@@ -237,7 +237,7 @@ class Reconstructor:
         Args:
             prompt_tokens: Input token IDs.
             model_id: Model identifier; only fragments whose
-                structural signature carries this ``model_id``
+                :class:`PayloadIdentity` carries this ``model_id``
                 are considered matches.
             max_prefix_attempts: Maximum number of prefix
                 lengths to try. Defaults to
@@ -263,9 +263,9 @@ class Reconstructor:
                 # Only accept fragments produced by the same
                 # model — different models produce
                 # incompatible KV tensors.
-                if frag.structural_signature.model_id == model_id and (
+                if frag.identity.model_id == model_id and (
                     best is None
-                    or i > (best.structural_signature.token_span[1] - best.structural_signature.token_span[0] + 1)
+                    or i > (best.identity.token_span[1] - best.identity.token_span[0] + 1)
                 ):
                     best = frag
         return best
@@ -293,9 +293,9 @@ class Reconstructor:
         """
         candidates = self.index_system.positional_adjacent(current_end, max_gap=self.config.max_gap_tokens)
         for cand in candidates:
-            if cand.structural_signature.model_id != model_id:
+            if cand.identity.model_id != model_id:
                 continue
-            c_start, c_end = cand.structural_signature.token_span
+            c_start, c_end = cand.identity.token_span
             if c_start <= current_end:
                 # Not strictly after the current end — skip.
                 continue
@@ -357,13 +357,13 @@ class Reconstructor:
         seen: set[str] = set()
         unique: list[Fragment] = []
         for frag in fragments:
-            if frag.content_hash not in seen:
-                seen.add(frag.content_hash)
+            if frag.identity.payload_hash not in seen:
+                seen.add(frag.identity.payload_hash)
                 unique.append(frag)
         # Sort by token-span start so downstream consumers can
         # consume the chain in left-to-right order without
         # re-sorting.
-        unique.sort(key=lambda f: f.structural_signature.token_span[0])
+        unique.sort(key=lambda f: f.identity.token_span[0])
         return unique
 
     def record_graph_links(self, fragments: list[Fragment]) -> None:
@@ -380,7 +380,7 @@ class Reconstructor:
             fragments: Ordered list of fragments from a
             reconstruction.
         """
-        hashes = [f.content_hash for f in fragments]
+        hashes = [f.identity.payload_hash for f in fragments]
         for i in range(len(hashes)):
             for j in range(i + 1, len(hashes)):
                 self.index_system.record_co_access(hashes[i], hashes[j])

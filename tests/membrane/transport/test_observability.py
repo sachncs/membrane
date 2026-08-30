@@ -42,8 +42,7 @@ def test_readyz_returns_ready(client):
 
 def test_readyz_returns_503_when_over_capacity():
     """``GET /readyz`` returns 503 when the node's memory budget is exhausted."""
-    from membrane.fragment import Fragment
-    from membrane.signature import Signature
+    from tests.conftest import make_fragment
 
     node = Node("n1", max_memory_bytes=10)
     transfer = TransferService()
@@ -55,21 +54,12 @@ def test_readyz_returns_503_when_over_capacity():
         cluster_manager=None,
         metrics_registry=registry,
     )
-    sig = Signature(model_id="m", layer_range=(0, 1), token_span=(0, 1))
     # Saturate the node by stuffing its memory-usage counter
     # past the configured limit. The store() path requires
     # evict() to make room; bypassing it with a direct
     # fragment insertion exercises the readiness check
     # without engaging the eviction logic.
-    node.fragments["h"] = Fragment(
-        content_hash="h",
-        embedding=(0.0,),
-        structural_signature=sig,
-        size=11,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=1,
-    )
+    node.fragments["h"] = make_fragment("h", size=11)
     node.memory_usage = node.max_memory_bytes
     test_client = TestClient(app)
     resp = test_client.get("/readyz")

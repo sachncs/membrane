@@ -2,9 +2,7 @@ from tests.conftest import make_fragment
 
 """Tests for Memory."""
 
-from membrane.fragment import Fragment
 from membrane.persistence.memory import Memory
-from membrane.signature import Signature
 
 
 class TestInMemoryBackend:
@@ -22,8 +20,8 @@ class TestInMemoryBackend:
         self.backend.store_fragment(frag, "n1", is_primary=True)
         retrieved = self.backend.retrieve_fragment("abc")
         assert retrieved is not None
-        assert retrieved.content_hash == "abc"
-        assert retrieved.size == 100
+        assert retrieved.identity.payload_hash == "abc"
+        assert retrieved.payload_size == 100
 
     def test_retrieve_missing(self):
         assert self.backend.retrieve_fragment("missing") is None
@@ -65,7 +63,6 @@ class TestInMemoryBackend:
         frag = make_fragment("round", size=42)
         data = self.backend.serialize_fragment(frag)
         restored = self.backend.deserialize_fragment(data)
-        assert restored.content_hash == frag.content_hash
-        assert restored.size == frag.size
-        assert restored.embedding == frag.embedding
-        assert restored.structural_signature == frag.structural_signature
+        assert restored.identity.payload_hash == frag.identity.payload_hash
+        assert restored.payload_size == frag.payload_size
+        assert restored.identity == frag.identity

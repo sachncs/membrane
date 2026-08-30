@@ -7,7 +7,6 @@ import pytest
 from membrane.fragment import Fragment
 from membrane.latency import Latency
 from membrane.node import Node
-from membrane.signature import Signature
 
 
 class TestLatencyRouter:

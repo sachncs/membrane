@@ -2,11 +2,9 @@
 
 import pytest
 
-from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.prefilling import Adapter, PrefillResult
 from membrane.prefilling import Prefiller as PrefillRemote
-from membrane.signature import Signature
 
 
 class TestPrefillerSync:
@@ -20,7 +18,7 @@ class TestPrefillerSync:
         assert isinstance(result, PrefillResult)
         assert len(result.fragments) > 0
         for frag in result.fragments:
-            assert target.retrieve(frag.content_hash) is not None
+            assert target.retrieve(frag.identity.payload_hash) is not None
 
     def test_dispatch_sync_empty_prompt(self):
         """An empty prompt produces no fragments; dispatch_sync

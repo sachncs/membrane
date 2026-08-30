@@ -31,7 +31,7 @@ def test_tool_trace_materialize():
         reuse_score=0.5,
     )
     frag = t.materialize()
-    assert frag.content_hash == "ch"
+    assert frag.identity.payload_hash == "ch"
 
 
 def test_tool_trace_from_fragment():

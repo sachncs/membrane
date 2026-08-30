@@ -55,7 +55,7 @@ import math
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 
 @dataclass(frozen=True)
@@ -173,7 +173,7 @@ class Fragmenter:
             prompt_tokens: Token IDs to fragment. May be empty, in
                 which case an empty list is returned.
             model_id: Model identifier stamped on every fragment's
-                :class:`~membrane.structural_signature.Signature`.
+                :class:`~membrane.identity.PayloadIdentity`.
 
         Returns:
             list[Fragment]: Ordered fragments covering the full
@@ -196,21 +196,26 @@ class Fragmenter:
             window_tokens = tuple(prompt_tokens[start : end + 1])
 
             content_hash = compute_content_hash(window_tokens)
-            embedding = generate_embedding(window_tokens, self.config.embedding_dim)
-            signature = Signature(
+            identity = PayloadIdentity(
+                payload_hash=content_hash,
                 model_id=model_id,
+                model_revision="",
+                tokenizer_name=model_id,
+                tokenizer_revision="",
                 layer_range=(0, 0),
+                head_range=(-1, -1),
                 token_span=(start, end),
+                dtype="float16",
+                shape=(1, 1, 1, len(window_tokens), 64),
             )
 
             frag = Fragment(
-                content_hash=content_hash,
-                embedding=embedding,
-                structural_signature=signature,
+                identity=identity,
+                payload_ref=content_hash,
                 # 64 bytes/token is a conservative upper-bound
                 # estimate for serialized KV tensors; used for
                 # capacity accounting, not for transport.
-                size=len(window_tokens) * 64,
+                payload_size=len(window_tokens) * 64,
                 ttl=3600.0,
                 reuse_score=0.5,
                 version_id=1,
@@ -228,7 +233,7 @@ class Fragmenter:
         """Split a fragment at given token positions within its span.
 
         Split points are interpreted as absolute token positions
-        (matching ``Signature.token_span``). Points
+        (matching ``PayloadIdentity.token_span``). Points
         outside the fragment's span, or duplicates, are ignored.
         Each split point becomes the inclusive start of the next
         sub-fragment.
@@ -252,7 +257,7 @@ class Fragmenter:
         if not split_points:
             return [fragment]
 
-        f_start, f_end = fragment.structural_signature.token_span
+        f_start, f_end = fragment.identity.token_span
         # Drop points outside the span and deduplicate while
         # preserving order via sorted().
         points = sorted({p for p in split_points if f_start < p < f_end})
@@ -265,8 +270,8 @@ class Fragmenter:
         # is one past the fragment's last token.
         boundaries = [f_start] + [p + 1 for p in points] + [f_end + 1]
         fragments = []
-        model_id = fragment.structural_signature.model_id
-        layer_range = fragment.structural_signature.layer_range
+        model_id = fragment.identity.model_id
+        layer_range = fragment.identity.layer_range
 
         for i in range(len(boundaries) - 1):
             sub_start = boundaries[i]
@@ -291,18 +296,23 @@ class Fragmenter:
                     )
 
             content_hash = compute_content_hash(sub_tokens)
-            embedding = generate_embedding(sub_tokens, len(fragment.embedding))
-            signature = Signature(
+            identity = PayloadIdentity(
+                payload_hash=content_hash,
                 model_id=model_id,
+                model_revision="",
+                tokenizer_name=model_id,
+                tokenizer_revision="",
                 layer_range=layer_range,
+                head_range=(-1, -1),
                 token_span=(sub_start, sub_end),
+                dtype="float16",
+                shape=(1, 1, 1, len(sub_tokens), 64),
             )
 
             sub_frag = Fragment(
-                content_hash=content_hash,
-                embedding=embedding,
-                structural_signature=signature,
-                size=(sub_end - sub_start + 1) * 64,
+                identity=identity,
+                payload_ref=content_hash,
+                payload_size=(sub_end - sub_start + 1) * 64,
                 # Preserve lifecycle metadata from the parent so
                 # child fragments don't appear "fresher" than
                 # their ancestor.
@@ -351,25 +361,25 @@ class Fragmenter:
             return None
 
         first = fragments[0]
-        model_id = first.structural_signature.model_id
-        layer_range = first.structural_signature.layer_range
+        model_id = first.identity.model_id
+        layer_range = first.identity.layer_range
         total_size = 0
         total_reuse = 0.0
 
         for i, frag in enumerate(fragments):
             # All fragments must come from the same model and layer.
-            if frag.structural_signature.model_id != model_id:
+            if frag.identity.model_id != model_id:
                 return None
-            if frag.structural_signature.layer_range != layer_range:
+            if frag.identity.layer_range != layer_range:
                 return None
             # Contiguity check: each fragment must start exactly
             # one token after the previous one ended.
             if i > 0:
-                prev_end = fragments[i - 1].structural_signature.token_span[1]
-                curr_start = frag.structural_signature.token_span[0]
+                prev_end = fragments[i - 1].identity.token_span[1]
+                curr_start = frag.identity.token_span[0]
                 if curr_start != prev_end + 1:
                     return None
-            total_size += frag.size
+            total_size += frag.payload_size
             total_reuse += frag.reuse_score
 
         avg_reuse = total_reuse / len(fragments)
@@ -378,8 +388,8 @@ class Fragmenter:
         if avg_reuse > self.config.merge_reuse_threshold:
             return None
 
-        start = first.structural_signature.token_span[0]
-        end = fragments[-1].structural_signature.token_span[1]
+        start = first.identity.token_span[0]
+        end = fragments[-1].identity.token_span[1]
 
         if token_sequences is not None and len(token_sequences) == len(fragments):
             # Concatenate the actual token sequences so the merged
@@ -402,18 +412,23 @@ class Fragmenter:
                 )
 
         content_hash = compute_content_hash(merged_tokens)
-        embedding = generate_embedding(merged_tokens, len(first.embedding))
-        signature = Signature(
+        identity = PayloadIdentity(
+            payload_hash=content_hash,
             model_id=model_id,
+            model_revision="",
+            tokenizer_name=model_id,
+            tokenizer_revision="",
             layer_range=layer_range,
+            head_range=(-1, -1),
             token_span=(start, end),
+            dtype="float16",
+            shape=(1, 1, 1, len(merged_tokens), 64),
         )
 
         return Fragment(
-            content_hash=content_hash,
-            embedding=embedding,
-            structural_signature=signature,
-            size=total_size,
+            identity=identity,
+            payload_ref=content_hash,
+            payload_size=total_size,
             # Inherit TTL from the earliest (lowest-version) child.
             ttl=first.ttl,
             # Use the average reuse as a smoother signal than any

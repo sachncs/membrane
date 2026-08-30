@@ -9,7 +9,6 @@ from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.serialization import to_dict
-from membrane.signature import Signature
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer, create_app
 from tests.conftest import make_fragment
@@ -54,7 +53,7 @@ class TestFastAPIServer:
         assert resp.status_code == 200
         data = resp.json()
         assert data["found"] is True
-        assert data["fragment"]["content_hash"] == "abc"
+        assert data["fragment"]["identity"]["payload_hash"] == "abc"
 
     def test_retrieve_not_found(self, client):
         resp = client.get("/retrieve?content_hash=missing")

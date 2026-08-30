@@ -2,9 +2,7 @@ from tests.conftest import make_fragment
 
 """Tests for TransferService."""
 
-from membrane.fragment import Fragment
 from membrane.node import Node
-from membrane.signature import Signature
 from membrane.transfer import TransferService
 
 

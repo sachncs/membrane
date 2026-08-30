@@ -1,12 +1,10 @@
-from membrane.fragment import Fragment
 from membrane.graph import Graph
-from membrane.signature import Signature
+from tests.conftest import make_fragment
 
 
 def test_add_node_and_edge():
     g = Graph()
-    sig = Signature("m", (0, 1), (0, 10))
-    frag = Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1)
+    frag = make_fragment("h1")
     g.add_node(frag)
     g.add_edge("h1", "h2", edge_type="co_access")
     assert g.has_node("h1")
@@ -15,8 +13,7 @@ def test_add_node_and_edge():
 
 def test_neighbors_by_type():
     g = Graph()
-    sig = Signature("m", (0, 1), (0, 10))
-    g.add_node(Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1))
+    g.add_node(make_fragment("h1"))
     g.add_edge("h1", "h2", "co_access")
     g.add_edge("h1", "h3", "semantic")
     assert g.neighbors("h1", "co_access") == {"h2"}
@@ -26,8 +23,7 @@ def test_neighbors_by_type():
 
 def test_get_fragment():
     g = Graph()
-    sig = Signature("m", (0, 1), (0, 10))
-    frag = Fragment("h1", (0.1,), sig, 10, 60.0, 0.5, 1)
+    frag = make_fragment("h1")
     g.add_node(frag)
     assert g.get_fragment("h1") == frag
     assert g.get_fragment("missing") is None

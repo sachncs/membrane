@@ -6,7 +6,6 @@ import pytest
 
 from membrane.density import density
 from membrane.fragment import Fragment
-from membrane.signature import Signature
 
 
 def test_compute_with_empty_history():

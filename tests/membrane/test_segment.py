@@ -32,8 +32,8 @@ def test_kv_segment_materialize():
         reuse_score=0.5,
     )
     frag = seg.materialize()
-    assert frag.content_hash == seg.content_hash
-    assert frag.structural_signature.layer_range == (1, 1)
+    assert frag.identity.payload_hash == seg.content_hash
+    assert frag.identity.layer_range == (1, 1)
 
 
 def test_kv_segment_from_fragment():

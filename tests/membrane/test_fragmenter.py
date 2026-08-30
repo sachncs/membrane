@@ -1,12 +1,13 @@
 """Tests for Fragmenter."""
 
+from membrane.fragment import Fragment
 from membrane.fragmenter import (
     Fragmenter,
     FragmenterConfig,
     compute_content_hash,
     generate_embedding,
 )
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 
 def test_create_windows_produces_correct_spans():
@@ -14,9 +15,9 @@ def test_create_windows_produces_correct_spans():
     tokens = list(range(10))
     frags = engine.create_windows(tokens, model_id="m")
     assert len(frags) == 3
-    assert frags[0].structural_signature.token_span == (0, 3)
-    assert frags[1].structural_signature.token_span == (4, 7)
-    assert frags[2].structural_signature.token_span == (8, 9)
+    assert frags[0].identity.token_span == (0, 3)
+    assert frags[1].identity.token_span == (4, 7)
+    assert frags[2].identity.token_span == (8, 9)
 
 
 def test_create_windows_empty_prompt():
@@ -31,8 +32,8 @@ def test_split_preserves_coverage():
     parent = frags[0]
     children = engine.split(parent, [3])
     assert len(children) == 2
-    assert children[0].structural_signature.token_span == (0, 3)
-    assert children[1].structural_signature.token_span == (4, 7)
+    assert children[0].identity.token_span == (0, 3)
+    assert children[1].identity.token_span == (4, 7)
 
 
 def test_split_generates_new_hashes():
@@ -41,9 +42,9 @@ def test_split_generates_new_hashes():
     frags = engine.create_windows(tokens, model_id="m")
     parent = frags[0]
     children = engine.split(parent, [1, 2])
-    hashes = {c.content_hash for c in children}
+    hashes = {c.identity.payload_hash for c in children}
     assert len(hashes) == 3
-    assert parent.content_hash not in hashes
+    assert parent.identity.payload_hash not in hashes
 
 
 def test_merge_combines_adjacent():
@@ -52,7 +53,7 @@ def test_merge_combines_adjacent():
     frags = engine.create_windows(tokens, model_id="m")
     merged = engine.merge(frags)
     assert merged is not None
-    assert merged.structural_signature.token_span == (0, 7)
+    assert merged.identity.token_span == (0, 7)
 
 
 def test_merge_rejects_non_adjacent():
@@ -73,21 +74,19 @@ def test_merge_rejects_high_reuse():
     engine = Fragmenter(FragmenterConfig(window_size=4))
     a = engine.create_windows(list(range(4)), model_id="m")[0]
     b = engine.create_windows(list(range(4, 8)), model_id="m")[0]
-    # Manually create high-reuse copies
-    high_a = a.__class__(
-        content_hash=a.content_hash,
-        embedding=a.embedding,
-        structural_signature=a.structural_signature,
-        size=a.size,
+    # Manually create high-reuse copies using the new schema.
+    high_a = Fragment(
+        identity=a.identity,
+        payload_ref=a.payload_ref,
+        payload_size=a.payload_size,
         ttl=a.ttl,
         reuse_score=0.9,
         version_id=a.version_id,
     )
-    high_b = b.__class__(
-        content_hash=b.content_hash,
-        embedding=b.embedding,
-        structural_signature=b.structural_signature,
-        size=b.size,
+    high_b = Fragment(
+        identity=b.identity,
+        payload_ref=b.payload_ref,
+        payload_size=b.payload_size,
         ttl=b.ttl,
         reuse_score=0.9,
         version_id=b.version_id,
@@ -107,3 +106,19 @@ def test_embedding_is_normalized():
     emb = generate_embedding((1, 2, 3), dim=64)
     norm = sum(v * v for v in emb) ** 0.5
     assert abs(norm - 1.0) < 1e-6
+
+
+def test_payload_identity_round_trip():
+    identity = PayloadIdentity(
+        payload_hash="abc",
+        model_id="m",
+        model_revision="",
+        tokenizer_name="m",
+        tokenizer_revision="",
+        layer_range=(0, 1),
+        head_range=(-1, -1),
+        token_span=(0, 3),
+        dtype="float16",
+        shape=(1, 1, 1, 4, 64),
+    )
+    assert identity.fingerprint() == identity.fingerprint()

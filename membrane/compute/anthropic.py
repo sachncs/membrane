@@ -76,8 +76,8 @@ class Anthropic(RemoteLLMBackend):
 
         Args:
             prompt_tokens: Input token IDs.
-            model_id: Model identifier for the structural
-                signature.
+            model_id: Model identifier for the fragment's
+                identity.
 
         Returns:
             list[Fragment]: One fragment per 128-token window.

@@ -30,14 +30,14 @@ class TestOllamaBackend:
         frags = backend.prefill([1, 2, 3, 4], "m")
         assert len(frags) == 1
         assert isinstance(frags[0], Fragment)
-        assert len(frags[0].embedding) == 4
+        assert frags[0].identity.payload_hash
         mock_client.post.assert_called_once()
 
     def test_prefill_fallback_when_client_none(self, backend):
         backend.client = None
         frags = backend.prefill([1, 2, 3, 4], "m")
         assert len(frags) == 1
-        assert frags[0].embedding == (0.0, 4.0)
+        assert frags[0].identity.payload_hash
 
     def test_generate_success(self, backend):
         mock_resp = MagicMock()

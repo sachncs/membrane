@@ -82,9 +82,8 @@ class TestMembraneServer:
         """The CachingPersistence wrapping should make the second
         positive retrieve hit the in-memory cache instead of
         crossing the inner backend."""
-        from membrane.fragment import Fragment
         from membrane.persistence.cache import CachingPersistence
-        from membrane.signature import Signature
+        from tests.conftest import make_fragment
 
         node = Node("s-cache2")
         srv = Server(node=node, transport="http", compute="cpu")
@@ -92,15 +91,7 @@ class TestMembraneServer:
 
         # Seed the inner backend with a known fragment, then
         # instrument its retrieve to count invocations.
-        frag = Fragment(
-            content_hash="cache-test",
-            embedding=(0.0,),
-            structural_signature=Signature("m", (0, 1), (0, 0)),
-            size=10,
-            ttl=3600.0,
-            reuse_score=0.5,
-            version_id=1,
-        )
+        frag = make_fragment("cache-test", size=10)
         inner = srv.persistence.inner
         inner.store_fragment(frag, "s-cache2", is_primary=True)
 

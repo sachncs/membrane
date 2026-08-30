@@ -23,14 +23,16 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from membrane.fragment import Fragment
-from membrane.serialization import JsonDict
-from membrane.serialization import from_dict as deserialize_fragment
-from membrane.serialization import to_dict as serialize_fragment
+from membrane.serialization import from_dict, to_dict
 
 logger = logging.getLogger(__name__)
+
+
+#: A JSON object (used for every Membrane wire payload).
+JsonDict = dict[str, Any]
 
 
 @runtime_checkable
@@ -151,7 +153,7 @@ class Peer:
 
     def store_fragment(self, fragment: Fragment, is_primary: bool = False) -> bool:
         """Send ``POST /store`` with ``fragment`` and ``is_primary``."""
-        payload = {"fragment": serialize_fragment(fragment), "is_primary": is_primary}
+        payload = {"fragment": to_dict(fragment), "is_primary": is_primary}
         resp = self.request_with_retry("POST", "/store", payload)
         return resp is not None and resp.get("success", False)
 
@@ -159,7 +161,7 @@ class Peer:
         """Send ``GET /retrieve?content_hash=...``."""
         resp = self.request_with_retry("GET", f"/retrieve?content_hash={content_hash}")
         if resp and resp.get("found"):
-            return deserialize_fragment(resp["fragment"])
+            return from_dict(resp["fragment"])
         return None
 
     def join_cluster(self, node_id: str, host: str, port: int) -> JsonDict | None:
@@ -177,7 +179,7 @@ class Peer:
 
     def request_replicate(self, fragment: Fragment) -> bool:
         """Send ``POST /replicate`` with ``fragment``."""
-        payload = {"fragment": serialize_fragment(fragment)}
+        payload = {"fragment": to_dict(fragment)}
         resp = self.request_with_retry("POST", "/replicate", payload)
         return resp is not None and resp.get("success", False)
 

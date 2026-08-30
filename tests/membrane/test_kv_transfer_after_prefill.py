@@ -10,10 +10,8 @@ exercises the same behavior with no extra wrapper.
 
 import pytest
 
-from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.prefilling import Adapter
-from membrane.signature import Signature
 from membrane.transfer import TransferService
 from tests.conftest import make_fragment
 
@@ -22,8 +20,8 @@ def _ship(prefill_result, source, target, transfer):
     """Move every fragment via ``transfer`` and return the successes."""
     transferred = []
     for frag in prefill_result.fragments:
-        if transfer.transfer_fragment(source, target, frag.content_hash):
-            transferred.append(frag.content_hash)
+        if transfer.transfer_fragment(source, target, frag.identity.payload_hash):
+            transferred.append(frag.identity.payload_hash)
     return transferred
 
 

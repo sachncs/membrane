@@ -39,9 +39,9 @@ logger = logging.getLogger(__name__)
 class Graph:
     """Directed typed graph over fragments with prefetch/eviction hints.
 
-    Nodes are keyed by ``content_hash``. Edges are keyed by
-    ``(source, target, type)``. Adjacency is stored per node per
-    edge type for fast traversal.
+    Nodes are keyed by ``payload_hash`` (``identity.payload_hash``).
+    Edges are keyed by ``(source, target, type)``. Adjacency is
+    stored per node per edge type for fast traversal.
 
     The graph also owns the prefetch and eviction policy helpers
     that previously lived in :class:`GraphManager`. They are pure
@@ -49,7 +49,7 @@ class Graph:
     graph avoids the thin-wrapper class.
 
     Attributes:
-        nodes: Mapping from ``content_hash`` to the corresponding
+        nodes: Mapping from ``payload_hash`` to the corresponding
             :class:`~membrane.fragment.Fragment`. Allows callers to
             recover fragment metadata from a node reference.
         adjacency: Nested mapping
@@ -65,7 +65,7 @@ class Graph:
     def add_node(self, fragment: Fragment) -> None:
         """Add a fragment as a graph node.
 
-        Existing entries with the same ``content_hash`` are
+        Existing entries with the same ``payload_hash`` are
         overwritten. The node's adjacency dict is initialized so
         that subsequent :meth:`add_edge` calls do not need to
         guard against missing keys.
@@ -73,8 +73,8 @@ class Graph:
         Args:
             fragment: Fragment to add.
         """
-        self.nodes[fragment.content_hash] = fragment
-        self.adjacency.setdefault(fragment.content_hash, {})
+        self.nodes[fragment.identity.payload_hash] = fragment
+        self.adjacency.setdefault(fragment.identity.payload_hash, {})
 
     def add_edge(
         self,

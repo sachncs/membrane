@@ -5,13 +5,14 @@ from tests.conftest import make_fragment
 import pytest
 
 from membrane.analytical import Isolation, Tenant, Workload
-from membrane.canonical import Canonical
+from membrane.canonical import canonicalize, parse_canonical
 from membrane.chunks import Chunks
 from membrane.delta import DeltaEncoder
 from membrane.density import density
 from membrane.economic import Economic
 from membrane.fragment import Fragment
 from membrane.graph import SubgraphRetrieval
+from membrane.identity import PayloadIdentity
 from membrane.joint import Joint
 from membrane.kv import KVCache
 from membrane.latency import Latency
@@ -26,7 +27,6 @@ from membrane.ring import Ring
 from membrane.roles import NodeRole, Roles, SystemState
 from membrane.semantics import SemanticCluster
 from membrane.sessions import Sessions
-from membrane.signature import Signature
 from membrane.telemetry import Telemetry
 from membrane.versions import Versions
 from membrane.weighted import Weighted
@@ -121,12 +121,25 @@ class TestMembraneIntegration:
         frag = make_fragment("h1", reuse_score=0.9)
         assert ti.can_share(frag, "t1", "t2")
 
-        cs = Canonical()
-        cs.store_canonical(frag, "t1")
-        cs.store_canonical(frag, "t2")
-        shared = cs.get_shared_fragments("t1")
-        assert len(shared) == 1
-        assert shared[0].content_hash == "h1"
+        # Use the new canonical byte-framing module in place of the
+        # deleted :class:`Canonical` content-addressed cache.
+        identity = PayloadIdentity(
+            payload_hash=frag.identity.payload_hash,
+            model_id=frag.identity.model_id,
+            model_revision=frag.identity.model_revision,
+            tokenizer_name=frag.identity.tokenizer_name,
+            tokenizer_revision=frag.identity.tokenizer_revision,
+            layer_range=frag.identity.layer_range,
+            head_range=frag.identity.head_range,
+            token_span=frag.identity.token_span,
+            dtype=frag.identity.dtype,
+            shape=frag.identity.shape,
+        )
+        payload = b"h1-payload"
+        frame = canonicalize(identity, payload)
+        parsed_identity, parsed_payload = parse_canonical(frame)
+        assert parsed_identity == identity
+        assert parsed_payload == payload
 
     def test_phase_10_role_and_joint_optimization(self):
         mgr = Roles()

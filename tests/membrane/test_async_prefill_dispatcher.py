@@ -13,6 +13,7 @@ import asyncio
 import pytest
 
 from membrane.fragment import Fragment
+from membrane.identity import PayloadIdentity
 from membrane.node import Node
 from membrane.prefilling import (
     Adapter,
@@ -22,7 +23,6 @@ from membrane.prefilling import (
 from membrane.prefilling import (
     Prefiller as PrefillAsync,
 )
-from membrane.signature import Signature
 
 
 class FixedAdapter(Adapter):
@@ -46,11 +46,23 @@ class FixedAdapter(Adapter):
     def prefill(self, prompt_tokens: list[int], model_id: str) -> PrefillResult:
         self.call_count += 1
         length = len(prompt_tokens)
+        h = f"{self.hash_prefix}-{length}"
+        identity = PayloadIdentity(
+            payload_hash=h,
+            model_id=model_id,
+            model_revision="",
+            tokenizer_name=model_id,
+            tokenizer_revision="",
+            layer_range=(0, 1),
+            head_range=(-1, -1),
+            token_span=(0, max(0, length - 1)),
+            dtype="float16",
+            shape=(1, 1, 1, max(1, length), 64),
+        )
         frag = Fragment(
-            content_hash=f"{self.hash_prefix}-{length}",
-            embedding=(float(length),),
-            structural_signature=Signature(model_id=model_id, layer_range=(0, 1), token_span=(0, length - 1)),
-            size=10,
+            identity=identity,
+            payload_ref=h,
+            payload_size=10,
             ttl=3600.0,
             reuse_score=0.5,
             version_id=1,
@@ -81,7 +93,7 @@ async def test_fastest_node_wins_race():
 
     assert fast.retrieve("fast-10") is not None
     assert result.kv_size == 1.0
-    assert result.fragments[0].content_hash == "fast-10"
+    assert result.fragments[0].identity.payload_hash == "fast-10"
 
 
 @pytest.mark.anyio
@@ -99,7 +111,7 @@ async def test_timeout_cancels_slow_node():
 
     result = await dispatcher.dispatch(list(range(10)), "m", [win, lose], local_node=None)
 
-    assert result.fragments[0].content_hash == "win-10"
+    assert result.fragments[0].identity.payload_hash == "win-10"
     assert win.retrieve("win-10") is not None
     assert lose.retrieve("win-10") is None
 
@@ -120,7 +132,7 @@ async def test_all_timeout_fallback_local():
 
     result = await dispatcher.dispatch(list(range(10)), "m", [slow1, slow2], local_node=local)
 
-    assert result.fragments[0].content_hash == "local-10"
+    assert result.fragments[0].identity.payload_hash == "local-10"
     assert local.retrieve("local-10") is not None
     assert "local-10" in local.get_shard_hashes()
 
@@ -180,7 +192,7 @@ async def test_empty_fragments_treated_as_failure():
 
     result = await dispatcher.dispatch(list(range(10)), "m", [bad_node, good_node], local_node=None)
 
-    assert result.fragments[0].content_hash == "good-10"
+    assert result.fragments[0].identity.payload_hash == "good-10"
     assert good_node.retrieve("good-10") is not None
 
 
@@ -215,7 +227,7 @@ async def test_exception_in_prefill_treated_as_failure():
 
     result = await dispatcher.dispatch(list(range(10)), "m", [bad_node, good_node], local_node=None)
 
-    assert result.fragments[0].content_hash == "good-10"
+    assert result.fragments[0].identity.payload_hash == "good-10"
     assert good_node.retrieve("good-10") is not None
 
 
@@ -228,7 +240,7 @@ async def test_no_candidates_uses_local():
     local = Node("local")
     result = await dispatcher.dispatch(list(range(10)), "m", [], local_node=local)
 
-    assert result.fragments[0].content_hash == "local-10"
+    assert result.fragments[0].identity.payload_hash == "local-10"
     assert local.retrieve("local-10") is not None
     assert "local-10" in local.get_shard_hashes()
 
@@ -272,7 +284,7 @@ async def test_partial_failure_one_succeeds():
 
     result = await dispatcher.dispatch(list(range(10)), "m", [fail_node, ok_node], local_node=None)
 
-    assert result.fragments[0].content_hash == "ok-10"
+    assert result.fragments[0].identity.payload_hash == "ok-10"
     assert ok_node.retrieve("ok-10") is not None
 
 
@@ -292,7 +304,7 @@ async def test_cancellation_cleanup_on_success():
 
     result = await dispatcher.dispatch(list(range(10)), "m", [win, pending1, pending2], local_node=None)
 
-    assert result.fragments[0].content_hash == "win-10"
+    assert result.fragments[0].identity.payload_hash == "win-10"
     await asyncio.sleep(0.05)
     assert pending1.retrieve("win-10") is None
     assert pending2.retrieve("win-10") is None
@@ -313,5 +325,5 @@ async def test_timeout_per_node_not_global():
 
     result = await dispatcher.dispatch(list(range(10)), "m", [slow, ok], local_node=None)
 
-    assert result.fragments[0].content_hash == "ok-10"
+    assert result.fragments[0].identity.payload_hash == "ok-10"
     assert ok.retrieve("ok-10") is not None

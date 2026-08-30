@@ -14,12 +14,26 @@ durability or cross-process sharing is required.
 Thread safety:
     The class is **not thread-safe**. Provide external locking
     when sharing across threads.
+
+.. note::
+    The legacy on-wire flat-dict format included
+    ``model_id`` / ``layer_start`` / ``layer_end`` /
+    ``token_start`` / ``token_end`` derived from the old
+    ``Signature`` field, plus a JSON-encoded ``embedding``. The
+    new ``PayloadIdentity`` exposes ten structured fields
+    (including revision, head range, dtype, and shape) so the
+    flat dict now flattens those into ``identity.*`` keys with
+    a different naming convention. The :meth:`deserialize_fragment`
+    companion method populates a minimal ``PayloadIdentity`` —
+    callers that need the full identity should round-trip through
+    :meth:`membrane.serialization.to_dict` /
+    :meth:`from_dict`.
 """
 
 import time
 
 from membrane.fragment import Fragment
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 
 class Memory:
@@ -70,7 +84,7 @@ class Memory:
         Returns:
             bool: Always ``True`` for the in-memory backend.
         """
-        h = fragment.content_hash
+        h = fragment.identity.payload_hash
         self.fragments[h] = fragment
         self.node_fragments.setdefault(node_id, set()).add(h)
         if is_primary:
@@ -242,15 +256,23 @@ class Memory:
             dict[str, str]: Flat string-keyed mapping suitable
             for storage in a key-value backend.
         """
+        identity = fragment.identity
         return {
-            "content_hash": fragment.content_hash,
-            "embedding": str(list(fragment.embedding)),
-            "model_id": fragment.structural_signature.model_id,
-            "layer_start": str(fragment.structural_signature.layer_range[0]),
-            "layer_end": str(fragment.structural_signature.layer_range[1]),
-            "token_start": str(fragment.structural_signature.token_span[0]),
-            "token_end": str(fragment.structural_signature.token_span[1]),
-            "size": str(fragment.size),
+            "payload_hash": identity.payload_hash,
+            "model_id": identity.model_id,
+            "model_revision": identity.model_revision,
+            "tokenizer_name": identity.tokenizer_name,
+            "tokenizer_revision": identity.tokenizer_revision,
+            "layer_start": str(identity.layer_range[0]),
+            "layer_end": str(identity.layer_range[1]),
+            "head_start": str(identity.head_range[0]),
+            "head_end": str(identity.head_range[1]),
+            "token_start": str(identity.token_span[0]),
+            "token_end": str(identity.token_span[1]),
+            "dtype": identity.dtype,
+            "shape": ",".join(str(d) for d in identity.shape),
+            "payload_ref": "" if fragment.payload_ref is None else fragment.payload_ref,
+            "payload_size": str(fragment.payload_size),
             "ttl": str(fragment.ttl),
             "reuse_score": str(fragment.reuse_score),
             "version_id": str(fragment.version_id),
@@ -266,17 +288,28 @@ class Memory:
         Returns:
             Fragment: Reconstructed fragment instance.
         """
-        import json
-
-        return Fragment(
-            content_hash=data["content_hash"],
-            embedding=tuple(json.loads(data["embedding"])),
-            structural_signature=Signature(
-                model_id=data["model_id"],
-                layer_range=(int(data["layer_start"]), int(data["layer_end"])),
-                token_span=(int(data["token_start"]), int(data["token_end"])),
+        model_id = data.get("model_id", "")
+        shape = tuple(int(d) for d in data.get("shape", "1").split(",") if d)
+        identity = PayloadIdentity(
+            payload_hash=data["payload_hash"],
+            model_id=model_id,
+            model_revision=data.get("model_revision", ""),
+            tokenizer_name=data.get("tokenizer_name", model_id),
+            tokenizer_revision=data.get("tokenizer_revision", ""),
+            layer_range=(int(data["layer_start"]), int(data["layer_end"])),
+            head_range=(
+                int(data.get("head_start", -1)),
+                int(data.get("head_end", -1)),
             ),
-            size=int(data["size"]),
+            token_span=(int(data["token_start"]), int(data["token_end"])),
+            dtype=data.get("dtype", "float16"),
+            shape=shape,
+        )
+        payload_ref = data.get("payload_ref") or None
+        return Fragment(
+            identity=identity,
+            payload_ref=payload_ref,
+            payload_size=int(data["payload_size"]),
             ttl=float(data["ttl"]),
             reuse_score=float(data["reuse_score"]),
             version_id=int(data["version_id"]),

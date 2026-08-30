@@ -82,21 +82,23 @@ class Chunks:
         """Split a fragment into fixed-size chunks.
 
         The payload used for chunking is the UTF-8 encoding of the
-        fragment's ``content_hash``. This is sufficient for
-        content-addressed transport (the receiving node resolves the
-        hash back to the full fragment) while keeping the chunker
-        independent of the fragment's underlying tensor type.
+        fragment's ``payload_hash`` (carried on
+        ``identity.payload_hash``). This is sufficient for
+        content-addressed transport (the receiving node resolves
+        the hash back to the full fragment) while keeping the
+        chunker independent of the fragment's underlying tensor
+        type.
 
         Args:
             fragment: The fragment to chunk. Only its
-                ``content_hash`` is read.
+                ``identity.payload_hash`` is read.
 
         Returns:
             list[Chunk]: Ordered list of chunks with strictly
             increasing ``chunk_index`` values, suitable for
             streaming or reassembly.
         """
-        data = fragment.content_hash.encode("utf-8")
+        data = fragment.identity.payload_hash.encode("utf-8")
         chunks: list[Chunk] = []
         # Walk the payload in fixed-size windows; integer division
         # gives the zero-based chunk index for each window.
@@ -104,7 +106,7 @@ class Chunks:
             chunk_data = data[i : i + self.chunk_size]
             chunks.append(
                 Chunk(
-                    content_hash=fragment.content_hash,
+                    content_hash=fragment.identity.payload_hash,
                     chunk_index=i // self.chunk_size,
                     chunk_data=chunk_data,
                 )
@@ -161,7 +163,7 @@ class Chunks:
             # and to defend against races in concurrent transfers.
             return []
 
-        if target.retrieve(parent.content_hash) is not None:
+        if target.retrieve(parent.identity.payload_hash) is not None:
             # Target already has the parent fragment — no need to
             # transfer any chunks. Idempotent and safe to call
             # repeatedly.

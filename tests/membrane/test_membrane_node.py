@@ -6,7 +6,6 @@ import time
 
 from membrane.fragment import Fragment
 from membrane.node import Node
-from membrane.signature import Signature
 
 
 def test_store_increases_memory():

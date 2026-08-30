@@ -21,7 +21,7 @@ class TestAnthropicBackend:
     def test_prefill_returns_fragments(self, backend):
         frags = backend.prefill([1, 2, 3, 4], "m")
         assert len(frags) == 1
-        assert frags[0].content_hash is not None
+        assert frags[0].identity.payload_hash is not None
 
     def test_generate_success(self, backend):
         mock_resp = MagicMock()

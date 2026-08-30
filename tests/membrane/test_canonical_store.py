@@ -1,76 +1,64 @@
-from tests.conftest import make_fragment
+"""Tests for canonical byte framing (canonical module)."""
 
-"""Tests for canonical_store module."""
+from membrane.canonical import (
+    CANONICAL_SCHEMA_VERSION,
+    canonicalize,
+    parse_canonical,
+)
+from membrane.identity import PayloadIdentity
 
-import pytest
 
-from membrane.canonical import Canonical, CanonicalRef
-from membrane.fragment import Fragment
-from membrane.signature import Signature
+def _identity() -> PayloadIdentity:
+    return PayloadIdentity(
+        payload_hash="a" * 64,
+        model_id="m",
+        model_revision="",
+        tokenizer_name="m",
+        tokenizer_revision="",
+        layer_range=(0, 1),
+        head_range=(-1, -1),
+        token_span=(0, 7),
+        dtype="float16",
+        shape=(1, 1, 1, 8, 64),
+    )
 
 
-class TestCanonicalStore:
-    """Test suite for Canonical."""
+def test_canonicalize_round_trip():
+    identity = _identity()
+    payload = b"hello, world"
+    buf = canonicalize(identity, payload)
+    parsed_identity, parsed_payload = parse_canonical(buf)
+    assert parsed_identity == identity
+    assert parsed_payload == payload
 
-    def test_store_canonical_new(self):
-        cs = Canonical()
-        frag = make_fragment("h1")
-        ref = cs.store_canonical(frag, "t1")
-        assert ref.canonical_hash == "h1"
-        assert "t1" in ref.tenant_ids
 
-    def test_store_canonical_deduplicates(self):
-        cs = Canonical()
-        frag = make_fragment("h1")
-        cs.store_canonical(frag, "t1")
-        cs.store_canonical(frag, "t2")
-        ref = cs.store_canonical(frag, "t3")
-        assert ref.tenant_ids == frozenset({"t1", "t2", "t3"})
-        assert len(cs.canonical_fragments) == 1
+def test_canonicalize_schema_version_constant():
+    assert CANONICAL_SCHEMA_VERSION == 2
 
-    def test_retrieve_canonical(self):
-        cs = Canonical()
-        frag = make_fragment("h1")
-        ref = cs.store_canonical(frag, "t1")
-        retrieved = cs.retrieve_canonical(ref)
-        assert retrieved == frag
 
-    def test_retrieve_canonical_missing(self):
-        cs = Canonical()
-        ref = CanonicalRef("missing", frozenset())
-        assert cs.retrieve_canonical(ref) is None
+def test_parse_canonical_rejects_bad_magic():
+    from membrane.errors import SchemaError
 
-    def test_get_shared_fragments(self):
-        cs = Canonical()
-        f1 = make_fragment("h1")
-        f2 = make_fragment("h2")
-        cs.store_canonical(f1, "t1")
-        cs.store_canonical(f1, "t2")
-        cs.store_canonical(f2, "t2")
-        shared = cs.get_shared_fragments("t1")
-        assert len(shared) == 1
-        assert shared[0].content_hash == "h1"
+    identity = _identity()
+    buf = canonicalize(identity, b"x")
+    # Corrupt the magic header
+    bad = b"\x00\x00\x00\x00" + buf[4:]
+    try:
+        parse_canonical(bad)
+    except SchemaError:
+        pass
+    else:
+        raise AssertionError("expected SchemaError on bad magic")
 
-    def test_get_shared_fragments_no_match(self):
-        cs = Canonical()
-        f1 = make_fragment("h1")
-        cs.store_canonical(f1, "t1")
-        assert cs.get_shared_fragments("t2") == []
 
-    def test_lru_eviction_on_overflow(self):
-        cs = Canonical(max_entries=2)
-        cs.store_canonical(make_fragment("a"), "t1")
-        cs.store_canonical(make_fragment("b"), "t1")
-        cs.store_canonical(make_fragment("c"), "t1")
-        assert len(cs.canonical_fragments) == 2
-        assert "a" not in cs.canonical_fragments
+def test_parse_canonical_rejects_truncated_frame():
+    from membrane.errors import CorruptPayloadError
 
-    def test_lru_keeps_recently_accessed(self):
-        cs = Canonical(max_entries=2)
-        cs.store_canonical(make_fragment("a"), "t1")
-        cs.store_canonical(make_fragment("b"), "t1")
-        # Access "a" to make it recently used
-        cs.retrieve_canonical(CanonicalRef("a", frozenset()))
-        cs.store_canonical(make_fragment("c"), "t1")
-        assert "a" in cs.canonical_fragments
-        assert "b" not in cs.canonical_fragments
+    identity = _identity()
+    buf = canonicalize(identity, b"abc")
+    try:
+        parse_canonical(buf[:5])
+    except CorruptPayloadError:
+        pass
+    else:
+        raise AssertionError("expected CorruptPayloadError on truncated frame")

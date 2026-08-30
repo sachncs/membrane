@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from membrane.fragment import Fragment
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,7 @@ class Handler:
         success = self.node.store(frag, is_primary=request.is_primary)
         return self.pb2_module.StoreResponse(
             success=success,
-            content_hash=frag.content_hash,
+            content_hash=frag.identity.payload_hash,
         )
 
     def RetrieveFragment(self, request, context):
@@ -203,7 +203,7 @@ class Handler:
         return self.pb2_module.PrefillResponse(
             success=True,
             fragments=[self.fragment_to_pb(f) for f in frags],
-            kv_size_mib=sum(f.size for f in frags) / (1024 * 1024),
+            kv_size_mib=sum(f.payload_size for f in frags) / (1024 * 1024),
             latency_seconds=latency,
         )
 
@@ -236,21 +236,36 @@ class Handler:
     def pb_to_fragment(self, msg) -> Fragment:
         """Convert a protobuf Fragment message to a Fragment dataclass.
 
+        The proto schema still carries the legacy
+        ``model_id`` / ``layer_start`` / ``layer_end`` /
+        ``token_start`` / ``token_end`` fields and a JSON
+        ``embedding``. We map those into the new
+        :class:`PayloadIdentity` schema, falling back to
+        ``""`` for revisions and ``-1, -1`` for ``head_range``
+        (the proto schema does not yet carry head information).
+
         Args:
             msg: ``FragmentMessage`` protobuf instance.
 
         Returns:
             Fragment: Reconstructed fragment.
         """
+        identity = PayloadIdentity(
+            payload_hash=msg.content_hash,
+            model_id=msg.model_id,
+            model_revision="",
+            tokenizer_name=msg.model_id,
+            tokenizer_revision="",
+            layer_range=(msg.layer_start, msg.layer_end),
+            head_range=(-1, -1),
+            token_span=(msg.token_start, msg.token_end),
+            dtype="float16",
+            shape=(1, 1, 1, max(1, msg.token_end - msg.token_start + 1), 64),
+        )
         return Fragment(
-            content_hash=msg.content_hash,
-            embedding=tuple(msg.embedding),
-            structural_signature=Signature(
-                model_id=msg.model_id,
-                layer_range=(msg.layer_start, msg.layer_end),
-                token_span=(msg.token_start, msg.token_end),
-            ),
-            size=msg.size,
+            identity=identity,
+            payload_ref=msg.content_hash,
+            payload_size=msg.size,
             ttl=msg.ttl,
             reuse_score=msg.reuse_score,
             version_id=msg.version_id,
@@ -266,15 +281,16 @@ class Handler:
             FragmentMessage: Protobuf message suitable for
             transport over gRPC.
         """
+        identity = frag.identity
         return self.pb2_module.FragmentMessage(
-            content_hash=frag.content_hash,
-            embedding=list(frag.embedding),
-            model_id=frag.structural_signature.model_id,
-            layer_start=frag.structural_signature.layer_range[0],
-            layer_end=frag.structural_signature.layer_range[1],
-            token_start=frag.structural_signature.token_span[0],
-            token_end=frag.structural_signature.token_span[1],
-            size=frag.size,
+            content_hash=identity.payload_hash,
+            embedding=[],
+            model_id=identity.model_id,
+            layer_start=identity.layer_range[0],
+            layer_end=identity.layer_range[1],
+            token_start=identity.token_span[0],
+            token_end=identity.token_span[1],
+            size=frag.payload_size,
             ttl=frag.ttl,
             reuse_score=frag.reuse_score,
             version_id=frag.version_id,

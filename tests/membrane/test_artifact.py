@@ -30,8 +30,8 @@ def test_artifact_materialize():
         reuse_score=0.5,
     )
     frag = a.materialize()
-    assert frag.content_hash == "ch"
-    assert frag.embedding == (0.5, -0.5)
+    assert frag.identity.payload_hash == "ch"
+    assert frag.payload_size == 128
 
 
 def test_artifact_from_fragment():

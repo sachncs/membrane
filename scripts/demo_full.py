@@ -9,6 +9,7 @@ from membrane.delta import DeltaEncoder
 from membrane.economic import Economic
 from membrane.fragment import Fragment
 from membrane.graph import SubgraphRetrieval
+from membrane.identity import PayloadIdentity
 from membrane.joint import Joint
 from membrane.kv import KVCache
 from membrane.node import Node
@@ -18,7 +19,6 @@ from membrane.replica import Replica
 from membrane.replicator import Replicator
 from membrane.roles import Roles, SystemState
 from membrane.sessions import Sessions
-from membrane.signature import Signature
 from membrane.telemetry import Telemetry
 from membrane.weighted import Weighted
 
@@ -26,13 +26,23 @@ logger = logging.getLogger(__name__)
 
 
 def make_fragment(content_hash, embedding=(0.0, 0.0), reuse_score=0.5, size=10):
+    del embedding
+    identity = PayloadIdentity(
+        payload_hash=content_hash,
+        model_id="m",
+        model_revision="",
+        tokenizer_name="m",
+        tokenizer_revision="",
+        layer_range=(0, 1),
+        head_range=(-1, -1),
+        token_span=(0, 1),
+        dtype="float16",
+        shape=(1, 1, 1, 1, 64),
+    )
     return Fragment(
-        content_hash=content_hash,
-        embedding=embedding,
-        structural_signature=Signature(
-            model_id="m", layer_range=(0, 1), token_span=(0, 1)
-        ),
-        size=size,
+        identity=identity,
+        payload_ref=content_hash,
+        payload_size=size,
         ttl=3600.0,
         reuse_score=reuse_score,
         version_id=1,

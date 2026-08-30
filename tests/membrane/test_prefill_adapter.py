@@ -30,8 +30,8 @@ def test_convert_kv_to_fragments_produces_fragments():
     tokens = list(range(100))
     frags = adapter.kv_fragments(tokens, "m", kv_size=10.0)
     assert len(frags) > 0
-    assert all(isinstance(f.content_hash, str) for f in frags)
-    assert sum(f.size for f in frags) > 0
+    assert all(isinstance(f.identity.payload_hash, str) for f in frags)
+    assert sum(f.payload_size for f in frags) > 0
 
 
 def test_empty_prompt_returns_empty():
@@ -54,7 +54,7 @@ def test_fragments_cover_full_prompt():
     adapter = Adapter()
     tokens = list(range(500))
     frags = adapter.kv_fragments(tokens, "m", kv_size=5.0)
-    spans = [f.structural_signature.token_span for f in frags]
+    spans = [f.identity.token_span for f in frags]
     assert spans[0][0] == 0
     assert spans[-1][1] == 499
     # Adjacency: each span starts right after the previous ends

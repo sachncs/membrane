@@ -8,10 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from membrane.fragment import Fragment
 from membrane.network.peer import Peer
 from membrane.serialization import to_dict
-from membrane.signature import Signature
 from tests.conftest import make_fragment
 
 
@@ -55,7 +53,7 @@ class TestPeerClient:
         peer = Peer("http://peer:8080", transport=transport, max_retries=1)
         result = peer.retrieve_fragment("r1")
         assert result is not None
-        assert result.content_hash == "r1"
+        assert result.identity.payload_hash == "r1"
 
     def test_retrieve_fragment_not_found(self):
         """retrieve_fragment returns None when peer reports missing."""

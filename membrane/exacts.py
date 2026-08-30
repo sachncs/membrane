@@ -1,9 +1,10 @@
-"""Exact index: content_hash -> Fragment + location set.
+"""Exact index: payload_hash -> Fragment + location set.
 
 This module implements :class:`Exacts`, the simplest of the
 four in-memory lookup structures that ship with Membrane. It maps a
-fragment's ``content_hash`` to the fragment itself together with the
-set of node IDs currently holding a replica of it.
+fragment's ``payload_hash`` (carried on ``identity.payload_hash``)
+to the fragment itself together with the set of node IDs
+currently holding a replica of it.
 
 The exact index is the source of truth for *authoritative* lookups:
 if a hash is present here, the system can resolve the underlying
@@ -52,7 +53,7 @@ class IndexEntry:
 
 
 class Exacts:
-    """In-memory exact index keyed by ``content_hash``.
+    """In-memory exact index keyed by ``payload_hash``.
 
     .. note::
         This class is **not thread-safe**.  The internal ``entries``
@@ -74,17 +75,19 @@ class Exacts:
         """Insert or overwrite a fragment and its locations.
 
         Insertion is *upsert*: if a fragment with the same
-        ``content_hash`` already exists, it is replaced.
+        ``payload_hash`` already exists, it is replaced.
 
         Args:
             fragment: The fragment to index.
             locations: Set of node IDs holding the fragment. The
                 set is converted to a ``frozenset`` for immutability.
         """
-        self.entries[fragment.content_hash] = IndexEntry(fragment=fragment, locations=frozenset(locations))
+        self.entries[fragment.identity.payload_hash] = IndexEntry(
+            fragment=fragment, locations=frozenset(locations)
+        )
 
     def lookup(self, content_hash: str) -> IndexEntry | None:
-        """Look up a fragment by its content hash.
+        """Look up a fragment by its payload hash.
 
         Args:
             content_hash: Hash to look up.

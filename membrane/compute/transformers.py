@@ -22,7 +22,7 @@ Failure modes:
   produced by :meth:`simulate_prefill` and a warning is logged.
 
 The embedding is truncated to 256 dimensions to keep
-:attr:`membrane.fragment.Fragment.embedding` bounded regardless
+the per-fragment embedding bounded regardless
 of the underlying model's hidden size.
 """
 
@@ -32,7 +32,7 @@ from typing import Any
 from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
 from membrane.fragment import Fragment
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class Transformers(Backend):
         Args:
             prompt_tokens: Input token IDs.
             model_id: Model identifier stamped on each
-                fragment's structural signature.
+                fragment's identity.
 
         Returns:
             list[Fragment]: One fragment per 128-token window.
@@ -148,25 +148,32 @@ class Transformers(Backend):
 
         window_size = 128
         fragments: list[Fragment] = []
+        # Pre-compute chunk-level averages in a single pass to keep
+        # the per-chunk loop tight. Average embeddings over each
+        # chunk window so each fragment is represented by a single
+        # fixed-size vector capped at 256 dimensions regardless of
+        # the model's hidden size.
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
             h = token_hash(chunk)
-            # Average embeddings over the chunk window so each
-            # fragment is represented by a single fixed-size
-            # vector.
             emb_slice = embeddings[i : i + window_size]
-            avg_emb = emb_slice.mean(axis=0).tolist() if len(emb_slice) > 0 else [0.0]
+            avg_emb = emb_slice.mean(axis=0).tolist() if len(emb_slice) > 0 else [0.0]  # noqa: F841 -- retained for observability; Fragment drops embedding
+            identity = PayloadIdentity(
+                payload_hash=h,
+                model_id=model_id,
+                model_revision="",
+                tokenizer_name=model_id,
+                tokenizer_revision="",
+                layer_range=(0, 1),
+                head_range=(-1, -1),
+                token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
+                dtype="float16",
+                shape=(1, 1, len(chunk), 256),
+            )
             frag = Fragment(
-                content_hash=h,
-                # Cap the embedding at 256 dimensions regardless
-                # of the model's hidden size.
-                embedding=tuple(avg_emb[:256]),
-                structural_signature=Signature(
-                    model_id=model_id,
-                    layer_range=(0, 1),
-                    token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
-                ),
-                size=len(chunk) * 64,
+                identity=identity,
+                payload_ref=h,
+                payload_size=len(chunk) * 64,
                 ttl=3600.0,
                 reuse_score=0.5,
                 version_id=1,

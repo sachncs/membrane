@@ -28,13 +28,12 @@ Security:
       itself; rely on Redis ACLs for access control.
 """
 
-import json
 import logging
 import time
 from typing import Any, cast
 
 from membrane.fragment import Fragment
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +101,7 @@ class Redis:
         Returns:
             bool: True if stored.
         """
-        h = fragment.content_hash
+        h = fragment.identity.payload_hash
         data = self.serialize_fragment(fragment)
         # Use a pipeline so the fragment, the per-node set, the
         # primary key, and the LRU score are written atomically
@@ -292,15 +291,23 @@ class Redis:
             dict[str, str]: Mapping suitable for storage in a
             Redis hash.
         """
+        identity = fragment.identity
         return {
-            "content_hash": fragment.content_hash,
-            "embedding": json.dumps(list(fragment.embedding)),
-            "model_id": fragment.structural_signature.model_id,
-            "layer_start": str(fragment.structural_signature.layer_range[0]),
-            "layer_end": str(fragment.structural_signature.layer_range[1]),
-            "token_start": str(fragment.structural_signature.token_span[0]),
-            "token_end": str(fragment.structural_signature.token_span[1]),
-            "size": str(fragment.size),
+            "payload_hash": identity.payload_hash,
+            "model_id": identity.model_id,
+            "model_revision": identity.model_revision,
+            "tokenizer_name": identity.tokenizer_name,
+            "tokenizer_revision": identity.tokenizer_revision,
+            "layer_start": str(identity.layer_range[0]),
+            "layer_end": str(identity.layer_range[1]),
+            "head_start": str(identity.head_range[0]),
+            "head_end": str(identity.head_range[1]),
+            "token_start": str(identity.token_span[0]),
+            "token_end": str(identity.token_span[1]),
+            "dtype": identity.dtype,
+            "shape": ",".join(str(d) for d in identity.shape),
+            "payload_ref": "" if fragment.payload_ref is None else fragment.payload_ref,
+            "payload_size": str(fragment.payload_size),
             "ttl": str(fragment.ttl),
             "reuse_score": str(fragment.reuse_score),
             "version_id": str(fragment.version_id),
@@ -316,15 +323,28 @@ class Redis:
         Returns:
             Fragment: Reconstructed fragment instance.
         """
-        return Fragment(
-            content_hash=data["content_hash"],
-            embedding=tuple(json.loads(data["embedding"])),
-            structural_signature=Signature(
-                model_id=data["model_id"],
-                layer_range=(int(data["layer_start"]), int(data["layer_end"])),
-                token_span=(int(data["token_start"]), int(data["token_end"])),
+        model_id = data.get("model_id", "")
+        shape = tuple(int(d) for d in data.get("shape", "1").split(",") if d)
+        identity = PayloadIdentity(
+            payload_hash=data["payload_hash"],
+            model_id=model_id,
+            model_revision=data.get("model_revision", ""),
+            tokenizer_name=data.get("tokenizer_name", model_id),
+            tokenizer_revision=data.get("tokenizer_revision", ""),
+            layer_range=(int(data["layer_start"]), int(data["layer_end"])),
+            head_range=(
+                int(data.get("head_start", -1)),
+                int(data.get("head_end", -1)),
             ),
-            size=int(data["size"]),
+            token_span=(int(data["token_start"]), int(data["token_end"])),
+            dtype=data.get("dtype", "float16"),
+            shape=shape,
+        )
+        payload_ref = data.get("payload_ref") or None
+        return Fragment(
+            identity=identity,
+            payload_ref=payload_ref,
+            payload_size=int(data["payload_size"]),
             ttl=float(data["ttl"]),
             reuse_score=float(data["reuse_score"]),
             version_id=int(data["version_id"]),

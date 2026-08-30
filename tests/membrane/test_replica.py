@@ -8,7 +8,6 @@ from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.origin import Origin
 from membrane.replica import Replica
-from membrane.signature import Signature
 
 
 class TestReplicaNode:

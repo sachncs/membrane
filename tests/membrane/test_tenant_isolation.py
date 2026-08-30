@@ -5,8 +5,6 @@ from tests.conftest import make_fragment
 import pytest
 
 from membrane.analytical import Isolation, Tenant
-from membrane.fragment import Fragment
-from membrane.signature import Signature
 
 
 class TestTenantIsolation:

@@ -5,7 +5,7 @@ insertion and deletion.  This is a reusable, self-contained data
 structure.
 
 The tree is keyed by interval ``[start, end]`` (taken from each
-fragment's :class:`~membrane.structural_signature.Signature
+fragment's :class:`~membrane.identity.PayloadIdentity
 .token_span`). Each node is augmented with the maximum ``end`` value
 in its subtree so that range queries can prune entire subtrees
 without visiting them.
@@ -54,7 +54,7 @@ class IntervalNode:
         start: Inclusive start position from the fragment's
             ``token_span``. Used as the BST key.
         end: Inclusive end position. Stored explicitly to avoid
-            re-reading the structural signature on every visit.
+            re-reading the identity on every visit.
         max_end: Maximum ``end`` value in this node's subtree.
             Used as the augmentation that enables subtree pruning
             during overlap and adjacency queries.
@@ -75,12 +75,12 @@ class IntervalNode:
 
     @property
     def content_hash(self) -> str:
-        """Return the fragment's ``content_hash``.
+        """Return the fragment's payload hash.
 
         Defined as a property for ergonomic comparisons within
         tree-traversal code.
         """
-        return self.fragment.content_hash
+        return self.fragment.identity.payload_hash
 
 
 class Tree:
@@ -264,12 +264,12 @@ class Tree:
             IntervalNode: The (possibly new) root of the modified
             subtree.
         """
-        start, end = fragment.structural_signature.token_span
+        start, end = fragment.identity.token_span
         if node is None:
             # Base case: create the leaf node and register it in
             # the auxiliary map for O(1) deletion.
             n = IntervalNode(fragment=fragment, start=start, end=end, max_end=end)
-            self.node_map[fragment.content_hash] = n
+            self.node_map[fragment.identity.payload_hash] = n
             return n
         # BST descent on (start, content_hash) for determinism.
         if start < node.start:
@@ -279,7 +279,7 @@ class Tree:
         else:
             # Same start: decide by content_hash to keep tree
             # deterministic across processes.
-            if fragment.content_hash < node.content_hash:
+            if fragment.identity.payload_hash < node.content_hash:
                 node.left = self.insert_node(node.left, fragment)
             else:
                 node.right = self.insert_node(node.right, fragment)

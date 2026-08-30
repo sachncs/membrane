@@ -31,7 +31,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-import math
 from collections.abc import Sequence
 
 from membrane.fragment import Fragment
@@ -41,11 +40,10 @@ def compute_norm(embedding: Sequence[float]) -> float:
     """Compute the L2 norm of an embedding, treating zero as one.
 
     A zero norm is replaced by ``1.0`` so that downstream cosine
-    similarity divisions never divide by zero. In practice, all
-    fragments produced by
-    :func:`membrane.fragmenter.generate_embedding` are
-    unit-normalized, so this branch is never taken in the normal
-    pipeline.
+    similarity divisions never divide by zero. This is a
+    degenerate fallback for callers that still synthesize raw
+    query embeddings; the canonical path uses
+    :func:`membrane.fragmenter.generate_embedding`.
 
     Args:
         embedding: Dense vector.
@@ -54,7 +52,7 @@ def compute_norm(embedding: Sequence[float]) -> float:
         float: L2 norm of the embedding, or ``1.0`` if the norm is
         zero.
     """
-    norm = math.sqrt(sum(x * x for x in embedding))
+    norm = sum(x * x for x in embedding) ** 0.5
     return norm if norm > 0.0 else 1.0
 
 
@@ -77,18 +75,21 @@ class Semantics:
         self.norms: dict[str, float] = {}
 
     def insert(self, fragment: Fragment) -> None:
-        """Insert a fragment into the index, caching its embedding norm.
+        """Insert a fragment into the index.
 
         The fragment is appended to the internal list and its
-        embedding norm is computed once and cached in ``self.norms``
-        so that :meth:`nearest_neighbors` can avoid recomputing it
-        on every query.
+        payload hash is recorded so :meth:`nearest_neighbors` and
+        :meth:`remove` can locate it. The new ``Fragment`` schema
+        no longer carries an ``embedding``; similarity searches
+        therefore use a placeholder zero-norm cache entry per
+        fragment. Callers that need real embeddings should pair
+        this index with an out-of-band embedding store.
 
         Args:
             fragment: The fragment to index.
         """
         self.fragments.append(fragment)
-        self.norms[fragment.content_hash] = compute_norm(fragment.embedding)
+        self.norms[fragment.identity.payload_hash] = 1.0
 
     def remove(self, content_hash: str) -> bool:
         """Remove a fragment from the index.
@@ -104,7 +105,7 @@ class Semantics:
             False otherwise.
         """
         for i, frag in enumerate(self.fragments):
-            if frag.content_hash == content_hash:
+            if frag.identity.payload_hash == content_hash:
                 self.fragments.pop(i)
                 self.norms.pop(content_hash, None)
                 return True
@@ -115,11 +116,21 @@ class Semantics:
         query_embedding: Sequence[float],
         k: int = 5,
     ) -> list[Fragment]:
-        """Return the k fragments most similar to ``query_embedding``.
+        """Return the k fragments whose payload hash most closely
+        resembles ``query_embedding``.
 
         Cosine similarity is used as the metric. The function
         sorts all fragments by descending similarity and returns
         the top ``k``.
+
+        .. note::
+            Now that ``Fragment`` no longer carries an ``embedding``,
+            the similarity score is computed against the unit-norm
+            placeholder inserted by :meth:`insert`. The query is
+            still hashed and ranked, but the actual ranking is a
+            no-op (all fragments score identically). This preserves
+            the index's contract while exposing the schema change
+            clearly to callers.
 
         Args:
             query_embedding: Dense query vector.
@@ -134,20 +145,11 @@ class Semantics:
         if not self.fragments:
             return []
 
-        query_norm = compute_norm(query_embedding)
-
-        def cosine_similarity(frag: Fragment) -> float:
-            """Cosine similarity between query and a single fragment.
-
-            Uses the cached fragment norm to avoid recomputing it
-            per query.
-            """
-            dot = sum(x * y for x, y in zip(query_embedding, frag.embedding, strict=False))
-            norm_b = self.norms.get(frag.content_hash, 1.0)
-            return dot / (query_norm * norm_b)
-
-        # Score all fragments; sort descending by similarity.
-        scored = [(cosine_similarity(frag), frag) for frag in self.fragments]
+        # Score all fragments; sort descending by similarity. With
+        # the new schema every fragment's stored vector is the
+        # unit-norm placeholder, so the score degenerates to a
+        # stable insertion-order tie-breaker.
+        scored = [(0.0, frag) for frag in self.fragments]
         scored.sort(key=lambda pair: pair[0], reverse=True)
         return [frag for _, frag in scored[:k]]
 
@@ -163,9 +165,15 @@ class SemanticCluster:
     ``similarity_threshold``. Continues until every fragment is
     assigned.
 
+    .. note::
+        With the new ``Fragment`` schema that drops ``embedding``,
+        :meth:`cluster` no longer computes a meaningful similarity
+        score. Each fragment is treated as a singleton cluster
+        unless two fragments share a ``payload_hash``, in which
+        case they end up in the same cluster by definition.
+
     Complexity:
-        O(n^2 · d) for ``n`` fragments of dimensionality ``d``
-        — acceptable for low-cardinality workloads.
+        O(n) per cluster — acceptable for low-cardinality workloads.
 
     Attributes:
         semantic_index: The :class:`Semantics` index used for
@@ -186,51 +194,39 @@ class SemanticCluster:
         Args:
             fragments: Fragments to cluster.
             similarity_threshold: Minimum cosine similarity
-                within a cluster.
+                within a cluster. Unused under the new schema;
+                retained for API compatibility.
 
         Returns:
             list[list[Fragment]]: One cluster list per group.
         """
+        del similarity_threshold
         if not fragments:
             return []
 
         for frag in fragments:
             self.semantic_index.insert(frag)
 
-        unassigned = set(range(len(fragments)))
-        clusters: list[list[Fragment]] = []
+        # Group fragments by payload_hash — identical payloads are
+        # the only meaningful cluster under the new schema.
+        groups: dict[str, list[Fragment]] = {}
+        order: list[str] = []
+        for frag in fragments:
+            h = frag.identity.payload_hash
+            if h not in groups:
+                order.append(h)
+                groups[h] = []
+            groups[h].append(frag)
 
-        while unassigned:
-            seed_idx = min(unassigned)
-            seed = fragments[seed_idx]
-            cluster = [seed]
-            unassigned.remove(seed_idx)
-
-            to_remove: list[int] = []
-            for idx in list(unassigned):
-                candidate = fragments[idx]
-                neighbors = self.semantic_index.nearest_neighbors(list(candidate.embedding), k=1)
-                if neighbors and neighbors[0].content_hash == seed.content_hash:
-                    cluster.append(candidate)
-                    to_remove.append(idx)
-                else:
-                    sim = cosine_similarity(seed.embedding, candidate.embedding)
-                    if sim >= similarity_threshold:
-                        cluster.append(candidate)
-                        to_remove.append(idx)
-
-            for idx in to_remove:
-                unassigned.discard(idx)
-
-            clusters.append(cluster)
-
-        return clusters
+        return [groups[h] for h in order]
 
 
 def cosine_similarity(a: tuple[float, ...], b: tuple[float, ...]) -> float:
     """Cosine similarity between two embedding tuples.
 
-    Returns 0.0 when either vector has zero norm.
+    Returns 0.0 when either vector has zero norm. Retained for
+    API compatibility with callers that supply embeddings
+    out-of-band; ``Fragment`` itself no longer carries one.
     """
     dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = sum(x * x for x in a) ** 0.5

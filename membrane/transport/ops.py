@@ -27,10 +27,9 @@ from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
 from membrane.metrics import MetricsCollector
 from membrane.network.cluster import Cluster
+from membrane.network.peer import JsonDict
 from membrane.node import Node
-from membrane.serialization import JsonDict
-from membrane.serialization import from_dict as deserialize_fragment
-from membrane.serialization import to_dict as serialize_fragment
+from membrane.serialization import from_dict, to_dict
 from membrane.transfer import TransferService
 
 logger = logging.getLogger(__name__)
@@ -142,7 +141,7 @@ def op_retrieve(node: Node | None, content_hash: str) -> tuple[int, JsonDict]:
         return _ok({"found": False, "fragment": None})
     frag = node.retrieve(content_hash)
     if frag:
-        return _ok({"found": True, "fragment": serialize_fragment(frag)})
+        return _ok({"found": True, "fragment": to_dict(frag)})
     return _ok({"found": False, "fragment": None})
 
 
@@ -154,9 +153,9 @@ def op_store(
     """``POST /store``."""
     if node is None:
         return _ok({"error": "no node"})
-    frag = deserialize_fragment(fragment_payload)
+    frag = from_dict(fragment_payload)
     ok = node.store(frag, is_primary=is_primary)
-    return _ok({"success": ok, "content_hash": frag.content_hash})
+    return _ok({"success": ok, "content_hash": frag.identity.payload_hash})
 
 
 def op_replicate(
@@ -166,9 +165,9 @@ def op_replicate(
     """``POST /replicate`` — store a fragment as a non-primary replica."""
     if node is None:
         return _ok({"error": "no node"})
-    frag = deserialize_fragment(fragment_payload)
+    frag = from_dict(fragment_payload)
     ok = node.store(frag, is_primary=False)
-    return _ok({"success": ok, "content_hash": frag.content_hash})
+    return _ok({"success": ok, "content_hash": frag.identity.payload_hash})
 
 
 def op_prefill(
@@ -187,7 +186,7 @@ def op_prefill(
     return _ok(
         {
             "success": True,
-            "fragments": [serialize_fragment(f) for f in fragments],
+            "fragments": [to_dict(f) for f in fragments],
         }
     )
 
@@ -215,7 +214,7 @@ def op_sync(
             ) as resp:
                 remote_frag_data = json.loads(resp.read().decode())
             if remote_frag_data.get("found"):
-                frag = deserialize_fragment(remote_frag_data["fragment"])
+                frag = from_dict(remote_frag_data["fragment"])
                 if node.store(frag, is_primary=False):
                     transferred.append(h)
         return _ok({"success": True, "transferred": transferred})

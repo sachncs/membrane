@@ -19,8 +19,8 @@ class TestCPUBackend:
         tokens = list(range(512))
         frags = backend.prefill(tokens, "test-model")
         assert len(frags) > 0
-        assert all(hasattr(f, "content_hash") for f in frags)
-        assert all(f.structural_signature.model_id == "test-model" for f in frags)
+        assert all(hasattr(f, "identity") for f in frags)
+        assert all(f.identity.model_id == "test-model" for f in frags)
 
     def test_prefill_window_size(self):
         backend = CPU()

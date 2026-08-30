@@ -34,7 +34,7 @@ from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
 from membrane.compute.remote import RemoteLLMBackend
 from membrane.fragment import Fragment
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class OpenAI(RemoteLLMBackend):
         Args:
             prompt_tokens: Input token IDs.
             model_id: Model identifier stamped on each
-                fragment's structural signature.
+                fragment's identity.
 
         Returns:
             list[Fragment]: One fragment per 128-token window.
@@ -93,7 +93,7 @@ class OpenAI(RemoteLLMBackend):
             )
             resp.raise_for_status()
             data = resp.json()
-            embedding = data["data"][0]["embedding"]
+            embedding = data["data"][0]["embedding"]  # noqa: F841 -- retained for log/observability even though Fragment drops embedding
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
             # Network/HTTP error, malformed JSON, or unexpected
             # response shape — all degrade to the simulated prefill.
@@ -102,27 +102,32 @@ class OpenAI(RemoteLLMBackend):
 
         # Distribute the (single) embedding across windows by
         # slicing it into chunks of ``window_size`` floats (with
-        # zero-padding if the embedding is shorter than the
-        # chunk).
+        # zero-padding if the embedding is shorter than the chunk).
+        # The ``emb_slice`` is no longer carried on the Fragment
+        # itself — the embedding round-trip is logged but not
+        # persisted, since the new Fragment schema drops
+        # ``embedding``.
         window_size = 128
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
             h = token_hash(chunk)
-            emb_slice = (
-                embedding[: len(chunk)]
-                if len(embedding) >= len(chunk)
-                else embedding + [0.0] * (len(chunk) - len(embedding))
+            identity = PayloadIdentity(
+                payload_hash=h,
+                model_id=model_id,
+                model_revision="",
+                tokenizer_name=model_id,
+                tokenizer_revision="",
+                layer_range=(0, 1),
+                head_range=(-1, -1),
+                token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
+                dtype="float16",
+                shape=(1, 1, len(chunk), 1, 64),
             )
             frag = Fragment(
-                content_hash=h,
-                embedding=tuple(emb_slice),
-                structural_signature=Signature(
-                    model_id=model_id,
-                    layer_range=(0, 1),
-                    token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
-                ),
-                size=len(chunk) * 64,
+                identity=identity,
+                payload_ref=h,
+                payload_size=len(chunk) * 64,
                 ttl=3600.0,
                 reuse_score=0.5,
                 version_id=1,
@@ -191,8 +196,8 @@ class OpenAI(RemoteLLMBackend):
 
         Args:
             prompt_tokens: Input token IDs.
-            model_id: Model identifier for the structural
-                signature.
+            model_id: Model identifier for the fragment's
+                identity.
 
         Returns:
             list[Fragment]: One fragment per 128-token window

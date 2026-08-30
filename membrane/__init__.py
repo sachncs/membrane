@@ -9,7 +9,7 @@ Durable concepts (in import order, by domain):
 * Memory objects — :class:`Fragment` and its family
   :class:`Prefix`, :class:`Segment`, :class:`Artifact`,
   :class:`Trace`, plus the discriminator :class:`FragmentKind` and
-  the structural metadata :class:`Signature`.
+  the structural metadata :class:`PayloadIdentity`.
 * Serving plane — :class:`Node` with its :class:`Origin` and
   :class:`Replica` variants.
 * Index — :class:`Index` aggregate (sub-indexes are deep-imported
@@ -86,6 +86,7 @@ from membrane.errors import (
 )
 from membrane.fragment import Fragment
 from membrane.fragment_kind import FragmentKind
+from membrane.identity import PayloadIdentity
 from membrane.index import Index
 from membrane.logging import configure_logging
 from membrane.node import Node
@@ -101,7 +102,6 @@ from membrane.ring import Ring
 from membrane.segment import Segment
 from membrane.server import Server
 from membrane.shard import Shard
-from membrane.signature import Signature
 from membrane.trace import Trace
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
@@ -141,6 +141,7 @@ __all__ = [
     "OpenAI",
     "Origin",
     # Persistence
+    "PayloadIdentity",
     "PersistenceBackend",
     "PersistenceError",
     "Prefix",
@@ -155,7 +156,6 @@ __all__ = [
     # Composition
     "Server",
     "Shard",
-    "Signature",
     "TimeoutError",
     "Trace",
     # Transfer

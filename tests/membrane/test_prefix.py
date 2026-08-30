@@ -30,8 +30,8 @@ def test_prefix_materialize():
         reuse_score=0.5,
     )
     frag = p.materialize()
-    assert frag.content_hash == p.content_hash
-    assert frag.structural_signature.token_span == (0, 2)
+    assert frag.identity.payload_hash == p.content_hash
+    assert frag.identity.token_span == (0, 2)
 
 
 def test_prefix_from_fragment():

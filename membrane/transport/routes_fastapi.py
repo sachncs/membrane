@@ -49,37 +49,30 @@ logger = logging.getLogger(__name__)
 class FragmentPayload(BaseModel):
     """Wire format for a serialized Fragment.
 
-    Mirrors the canonical schema in :mod:`membrane.serialization`:
-    layer/token bounds are flattened (``layer_start``, ``layer_end``,
-    ``token_start``, ``token_end``) and the embedding is a JSON-encoded
-    string for compactness over the wire.
+    Mirrors the v2 canonical schema in
+    :mod:`membrane.serialization`. The :class:`~membrane.identity.PayloadIdentity`
+    is carried as a nested ``identity`` object whose structure
+    round-trips through :meth:`PayloadIdentity.to_dict` /
+    :meth:`PayloadIdentity.from_dict`. Ranges are JSON arrays of
+    two ints; ``shape`` is a list of ints.
     """
 
-    schema_version: int = 1
-    content_hash: str
-    embedding: str  # JSON-encoded list[float]
-    model_id: str
-    layer_start: int
-    layer_end: int
-    token_start: int
-    token_end: int
-    size: int
+    schema_version: int = 2
+    identity: dict[str, Any]
+    payload_ref: str | None = None
+    payload_size: int
     ttl: float
     reuse_score: float
     version_id: int
 
     def to_wire_dict(self) -> JsonDict:
-        """Transform into the canonical wire dict for ``from_dict``."""
+        """Transform into the canonical wire dict accepted by
+        :func:`membrane.serialization.from_dict`."""
         return {
             "schema_version": self.schema_version,
-            "content_hash": self.content_hash,
-            "embedding": self.embedding,  # already JSON-encoded
-            "model_id": self.model_id,
-            "layer_start": self.layer_start,
-            "layer_end": self.layer_end,
-            "token_start": self.token_start,
-            "token_end": self.token_end,
-            "size": self.size,
+            "identity": self.identity,
+            "payload_ref": self.payload_ref,
+            "payload_size": self.payload_size,
             "ttl": self.ttl,
             "reuse_score": self.reuse_score,
             "version_id": self.version_id,

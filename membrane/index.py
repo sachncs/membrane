@@ -5,7 +5,7 @@ coordinates the four specialized index structures that ship with
 Membrane:
 
 * :class:`~membrane.exacts.Exacts` — primary
-  ``content_hash`` lookup with replica tracking.
+  ``payload_hash`` lookup with replica tracking.
 * :class:`~membrane.semantics.Semantics` — embedding-based
   similarity search.
 * :class:`~membrane.tree.Tree` — token-span overlap and adjacency
@@ -50,7 +50,7 @@ class Index:
     by exposing each sub-index independently.
 
     Attributes:
-        exact: Primary ``content_hash`` -> entry index.
+        exact: Primary ``payload_hash`` -> entry index.
         semantic: Embedding-based similarity index.
         positional: Token-span overlap/adjacency index.
         co_access: Undirected co-access graph.
@@ -83,7 +83,7 @@ class Index:
         self.positional.insert(fragment)
 
     def exact_lookup(self, content_hash: str) -> IndexEntry | None:
-        """Look up a fragment by exact content hash.
+        """Look up a fragment by exact payload hash.
 
         Args:
             content_hash: Hash to look up.
@@ -144,8 +144,8 @@ class Index:
         """Record that two fragments were accessed together.
 
         Args:
-            hash_a: Content hash of the first fragment.
-            hash_b: Content hash of the second fragment.
+            hash_a: Payload hash of the first fragment.
+            hash_b: Payload hash of the second fragment.
         """
         self.co_access.record_access(hash_a, hash_b)
 

@@ -33,8 +33,7 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.fragment_kind import FragmentKind
-from membrane.fragmenter import generate_embedding
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 
 @dataclass(frozen=True)
@@ -97,34 +96,35 @@ class Segment:
     def materialize(self) -> Fragment:
         """Materialize this segment into a storable :class:`Fragment`.
 
-        The embedding is generated from the tensor shape so that
-        shape-equivalent segments cluster together in the semantic
-        index. The structural signature uses ``model_id="kv"`` and a
+        The identity carries ``model_id="kv"`` and a
         single-element ``layer_range`` to mark the fragment as a
         KV-segment rather than a prefix-level fragment.
 
         Returns:
             Fragment: An immutable fragment carrying the segment's
-            ``content_hash``, shape-derived embedding, layer/span
-            signature, and lifecycle metadata.
+            ``payload_ref`` (derived from ``content_hash``),
+            layer/span identity, and lifecycle metadata.
         """
-        # The embedding is derived from the shape so that segments
-        # with the same shape end up near each other in the
-        # semantic index — a useful heuristic for layer-aware
-        # locality.
-        embedding = generate_embedding(tuple(self.tensor_shape), 128)
         # The synthetic "kv" model_id distinguishes segment-level
         # fragments from prefix-level fragments in the indexes.
-        signature = Signature(
+        identity = PayloadIdentity(
+            payload_hash=self.content_hash,
             model_id=FragmentKind.KV,
+            model_revision="",
+            tokenizer_name=FragmentKind.KV,
+            tokenizer_revision="",
             layer_range=(self.layer, self.layer),
+            head_range=(-1, -1),
             token_span=self.token_span,
+            dtype="float16",
+            shape=tuple(self.tensor_shape) + (1,) * (5 - len(self.tensor_shape))
+            if len(self.tensor_shape) < 5
+            else tuple(self.tensor_shape),
         )
         return Fragment(
-            content_hash=self.content_hash,
-            embedding=embedding,
-            structural_signature=signature,
-            size=self.size_bytes,
+            identity=identity,
+            payload_ref=self.content_hash,
+            payload_size=self.size_bytes,
             ttl=3600.0,
             reuse_score=self.reuse_score,
             version_id=1,
@@ -149,19 +149,19 @@ class Segment:
             ``tensor_shape`` and preserved ``content_hash``,
             ``token_span``, ``size_bytes``, and ``reuse_score``.
         """
-        layer_range = fragment.structural_signature.layer_range
+        layer_range = fragment.identity.layer_range
         return cls(
             layer=layer_range[0],
             # head and tensor_shape cannot be reconstructed from
             # the fragment; use placeholders that keep the segment
             # usable as a structural key.
             head=0,
-            token_span=fragment.structural_signature.token_span,
+            token_span=fragment.identity.token_span,
             tensor_shape=(1, 1, 1),
-            content_hash=fragment.content_hash,
+            content_hash=fragment.identity.payload_hash,
             # semantic_hash is not preserved on Fragment; reuse the
             # content_hash as a stable surrogate.
-            semantic_hash=fragment.content_hash,
-            size_bytes=fragment.size,
+            semantic_hash=fragment.identity.payload_hash,
+            size_bytes=fragment.payload_size,
             reuse_score=fragment.reuse_score,
         )

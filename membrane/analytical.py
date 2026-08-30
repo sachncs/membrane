@@ -96,7 +96,7 @@ class Isolation:
         if fragment.reuse_score < self.policy.min_reuse_score_for_share:
             return False
 
-        kind = fragment.structural_signature.model_id
+        kind = fragment.identity.model_id
         return not (
             (kind == FragmentKind.PREFIX and not self.policy.allow_public_prefixes)
             or (kind == FragmentKind.TRACE and not self.policy.allow_tool_traces)

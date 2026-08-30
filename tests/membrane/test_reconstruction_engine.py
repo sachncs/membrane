@@ -3,15 +3,15 @@ from tests.conftest import make_fragment
 """Tests for Reconstructor."""
 
 from membrane.fragment import Fragment
-from membrane.fragmenter import Fragmenter, compute_content_hash, generate_embedding
+from membrane.fragmenter import compute_content_hash
+from membrane.identity import PayloadIdentity
 from membrane.index import Index
 from membrane.prefilling import Adapter
 from membrane.reconstructor import Reconstructor, ReconstructorConfig
-from membrane.signature import Signature
 
 
 def _fragment_for_span(tokens: list[int], start: int, end: int, model_id: str = "m") -> Fragment:
-    """Build a fragment whose ``content_hash`` matches the token slice.
+    """Build a fragment whose ``payload_hash`` matches the token slice.
 
     The reconstructor's exact-index lookup keys fragments by
     ``compute_content_hash(tokens)``; arbitrary placeholder hashes
@@ -24,7 +24,6 @@ def _fragment_for_span(tokens: list[int], start: int, end: int, model_id: str = 
         compute_content_hash(window),
         (start, end),
         model_id=model_id,
-        embedding=generate_embedding(window, 128),
     )
 
 
@@ -64,12 +63,22 @@ def test_gap_filled_by_semantic_similarity():
     tokens = list(range(100))
 
     gap_tokens = tuple(tokens[40:60])
-    gap_embedding = generate_embedding(gap_tokens, 128)
+    identity = PayloadIdentity(
+        payload_hash=compute_content_hash(gap_tokens),
+        model_id="m",
+        model_revision="",
+        tokenizer_name="m",
+        tokenizer_revision="",
+        layer_range=(0, 1),
+        head_range=(-1, -1),
+        token_span=(40, 59),
+        dtype="float16",
+        shape=(1, 1, 1, 20, 64),
+    )
     gap_frag = Fragment(
-        content_hash=compute_content_hash(gap_tokens),
-        embedding=gap_embedding,
-        structural_signature=Signature("m", (0, 1), (40, 59)),
-        size=100,
+        identity=identity,
+        payload_ref=identity.payload_hash,
+        payload_size=100,
         ttl=3600.0,
         reuse_score=0.5,
         version_id=1,
@@ -141,5 +150,5 @@ def test_graph_links_recorded():
     index.insert(b, {"n1"})
 
     engine.rebuild_context(tokens, "m")
-    neighbors = index.co_access_neighbors(a.content_hash)
-    assert b.content_hash in neighbors
+    neighbors = index.co_access_neighbors(a.identity.payload_hash)
+    assert b.identity.payload_hash in neighbors

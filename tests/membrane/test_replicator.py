@@ -7,7 +7,6 @@ import pytest
 from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.replicator import Replicator
-from membrane.signature import Signature
 
 
 class TestClusterReplicator:

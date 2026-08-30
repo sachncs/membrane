@@ -3,8 +3,8 @@
 The four memory objects (:class:`~membrane.prefix.Prefix`,
 :class:`~membrane.segment.Segment`, :class:`~membrane.artifact.Artifact`,
 :class:`~membrane.trace.Trace`) and the weighted graph all materialize
-fragments whose :class:`~membrane.signature.Signature.model_id` is a
-short string discriminator. The strings themselves are part of
+fragments whose :class:`~membrane.identity.PayloadIdentity.model_id`
+is a short string discriminator. The strings themselves are part of
 Membrane's wire format (they appear in serialized fragments and in the
 proto schema indirectly via the embedding / reuse_score fields), so
 they must not change.
@@ -27,7 +27,7 @@ class FragmentKind(str, Enum):
     """Discriminator for Membrane memory-object fragment types.
 
     Values are the wire-format strings used by
-    :class:`~membrane.fragment.Fragment.structural_signature.model_id`.
+    :class:`membrane.fragment.Fragment.identity.model_id`.
     The enum inherits from ``str`` so :class:`FragmentKind` is usable
     anywhere a string is expected, including equality with raw
     ``model_id`` strings stored on legacy data.

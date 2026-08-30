@@ -25,8 +25,7 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.fragment_kind import FragmentKind
-from membrane.fragmenter import generate_embedding
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 
 @dataclass(frozen=True)
@@ -84,38 +83,40 @@ class Trace:
     def materialize(self) -> Fragment:
         """Materialize this trace into a storable :class:`Fragment`.
 
-        The embedding is generated from the byte values of the
-        structured output so that semantically similar tool outputs
-        cluster together in the semantic index. The structural
-        signature uses ``model_id="tool"`` to distinguish trace
+        The identity uses ``model_id="tool"`` to distinguish trace
         fragments from prefix/segment/artifact fragments.
 
         Returns:
             Fragment: An immutable fragment carrying this trace's
-            identity and embedding. The ``token_span`` is sized to
-            match the length of the structured output, with a lower
-            bound of ``0`` to handle empty outputs gracefully.
+            identity. The ``token_span`` is sized to match the
+            length of the structured output, with a lower bound of
+            ``0`` to handle empty outputs gracefully.
         """
         # Map each character of the structured output to an integer
-        # token so the embedding reflects the literal content rather
-        # than just the output hash.
+        # token so the span reflects the literal content rather than
+        # just the output hash.
         tokens = tuple(ord(c) for c in self.structured_output)
-        embedding = generate_embedding(tokens, 128)
         # The synthetic "tool" model_id marks the fragment as a tool
         # trace, allowing downstream routing/eviction logic to treat
         # it differently from prefix or KV fragments if needed.
-        signature = Signature(
+        identity = PayloadIdentity(
+            payload_hash=self.content_hash,
             model_id=FragmentKind.TRACE,
+            model_revision="",
+            tokenizer_name=FragmentKind.TRACE,
+            tokenizer_revision="",
             layer_range=(0, 0),
+            head_range=(-1, -1),
             # Use max(0, len-1) so empty outputs produce a valid
             # (0, 0) span rather than a negative bound.
             token_span=(0, max(0, len(tokens) - 1)),
+            dtype="float16",
+            shape=(1, 1, 1, max(1, len(tokens)), 64),
         )
         return Fragment(
-            content_hash=self.content_hash,
-            embedding=embedding,
-            structural_signature=signature,
-            size=self.size_bytes,
+            identity=identity,
+            payload_ref=self.content_hash,
+            payload_size=self.size_bytes,
             ttl=3600.0,
             reuse_score=self.reuse_score,
             version_id=1,
@@ -147,12 +148,12 @@ class Trace:
             # Preserve output_hash via content_hash — the fragment
             # does not store output_hash separately, so we treat the
             # fragment's content_hash as the closest stable proxy.
-            output_hash=fragment.content_hash,
+            output_hash=fragment.identity.payload_hash,
             structured_output="",
-            content_hash=fragment.content_hash,
+            content_hash=fragment.identity.payload_hash,
             # semantic_hash is not preserved on Fragment; reuse the
             # content_hash as a stable surrogate.
-            semantic_hash=fragment.content_hash,
-            size_bytes=fragment.size,
+            semantic_hash=fragment.identity.payload_hash,
+            size_bytes=fragment.payload_size,
             reuse_score=fragment.reuse_score,
         )

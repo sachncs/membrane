@@ -26,6 +26,7 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.fragmenter import Fragmenter
+from membrane.identity import PayloadIdentity
 from membrane.model.profiler import kv_size, prefill_time
 from membrane.model.router import Router, RoutingDecision
 from membrane.node import Node
@@ -139,16 +140,26 @@ class Adapter:
 
         sized_frags: list[Fragment] = []
         for frag in frags:
-            span = frag.structural_signature.token_span
+            span = frag.identity.token_span
             num_tokens = span[1] - span[0] + 1
             frag_size = int(num_tokens * bytes_per_token)
 
             sized_frags.append(
                 Fragment(
-                    content_hash=frag.content_hash,
-                    embedding=frag.embedding,
-                    structural_signature=frag.structural_signature,
-                    size=max(1, frag_size),
+                    identity=PayloadIdentity(
+                        payload_hash=frag.identity.payload_hash,
+                        model_id=frag.identity.model_id,
+                        model_revision=frag.identity.model_revision,
+                        tokenizer_name=frag.identity.tokenizer_name,
+                        tokenizer_revision=frag.identity.tokenizer_revision,
+                        layer_range=frag.identity.layer_range,
+                        head_range=frag.identity.head_range,
+                        token_span=frag.identity.token_span,
+                        dtype=frag.identity.dtype,
+                        shape=frag.identity.shape,
+                    ),
+                    payload_ref=frag.payload_ref,
+                    payload_size=max(1, frag_size),
                     ttl=frag.ttl,
                     reuse_score=frag.reuse_score,
                     version_id=frag.version_id,

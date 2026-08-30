@@ -119,12 +119,12 @@ class DeltaSync:
                 missing.append(h)
                 frag = source.fragments.get(h)
                 if frag is not None:
-                    estimated_bytes += frag.size
+                    estimated_bytes += frag.payload_size
             elif target_version < source_version:
                 outdated.append(h)
                 frag = source.fragments.get(h)
                 if frag is not None:
-                    estimated_bytes += frag.size
+                    estimated_bytes += frag.payload_size
 
         return SyncPlan(
             source_id=source.node_id,
@@ -169,7 +169,7 @@ class DeltaSync:
                 continue
             if self.transfer_service.transfer_fragment(source, target, h):
                 result.transferred_hashes.append(h)
-                result.bytes_transferred += frag.size
+                result.bytes_transferred += frag.payload_size
             else:
                 result.failed_hashes.append(h)
 

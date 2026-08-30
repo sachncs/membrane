@@ -97,7 +97,7 @@ class KVCache:
         fragment_hashes: list[str] = []
         for frag in kv_fragments:
             self.index_system.insert(frag, {node_id})
-            fragment_hashes.append(frag.content_hash)
+            fragment_hashes.append(frag.identity.payload_hash)
         self.prefix_to_fragments[prefix_hash] = fragment_hashes
         self.lru.touch(prefix_hash)
         # Evict *after* touching the new prefix so the just-

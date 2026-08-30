@@ -28,7 +28,7 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.fragment_kind import FragmentKind
-from membrane.signature import Signature
+from membrane.identity import PayloadIdentity
 
 
 @dataclass(frozen=True)
@@ -93,21 +93,27 @@ class Artifact:
 
         Returns:
             Fragment: An immutable fragment carrying the artifact's
-            identity, embedding, and lifecycle metadata. The
-            embedding is preserved as-is (not re-generated from
-            shape, unlike :meth:`~membrane.segment.Segment
-            .materialize`).
+            identity and lifecycle metadata. The embedding is not
+            carried on Fragment (the new schema drops
+            ``embedding``); callers needing the artifact's semantic
+            vector must persist it externally.
         """
-        signature = Signature(
+        identity = PayloadIdentity(
+            payload_hash=self.content_hash,
             model_id=FragmentKind.ARTIFACT,
+            model_revision="",
+            tokenizer_name=FragmentKind.ARTIFACT,
+            tokenizer_revision="",
             layer_range=(0, 0),
-            token_span=(0, self.token_count - 1),
+            head_range=(-1, -1),
+            token_span=(0, max(0, self.token_count - 1)),
+            dtype="float16",
+            shape=(1, 1, 1, max(1, self.token_count), 64),
         )
         return Fragment(
-            content_hash=self.content_hash,
-            embedding=self.embedding,
-            structural_signature=signature,
-            size=self.size_bytes,
+            identity=identity,
+            payload_ref=self.content_hash,
+            payload_size=self.size_bytes,
             ttl=3600.0,
             reuse_score=self.reuse_score,
             version_id=1,
@@ -117,10 +123,11 @@ class Artifact:
     def from_fragment(cls, fragment: Fragment) -> "Artifact":
         """Reconstruct an :class:`Artifact` from a stored :class:`Fragment`.
 
-        ``source_url`` is not stored on a fragment and is recovered
-        as an empty string. Callers that need the original URL must
-        persist it externally (e.g., in the canonical store's
-        metadata side-table).
+        ``source_url`` and ``embedding`` are not stored on a
+        fragment and are recovered as an empty string and empty
+        tuple respectively. Callers that need the original URL or
+        embedding must persist them externally (e.g., in the
+        canonical store's metadata side-table).
 
         Args:
             fragment: A fragment previously produced by
@@ -128,24 +135,25 @@ class Artifact:
                 compatible signature).
 
         Returns:
-            Artifact: An artifact with preserved ``embedding``,
+            Artifact: An artifact with preserved
             ``content_hash``, ``size_bytes``, ``token_count``,
-            ``reuse_score``, and an empty ``source_url``.
+            ``reuse_score``, and an empty ``source_url`` /
+            ``embedding``.
         """
-        span = fragment.structural_signature.token_span
+        span = fragment.identity.token_span
         # token_span is inclusive on both ends; convert to count.
         count = span[1] - span[0] + 1
         return cls(
             # source_url cannot be reconstructed from the fragment;
             # callers needing the URL must persist it out-of-band.
             source_url="",
-            text_hash=fragment.content_hash,
-            embedding=fragment.embedding,
-            content_hash=fragment.content_hash,
+            text_hash=fragment.identity.payload_hash,
+            embedding=(),
+            content_hash=fragment.identity.payload_hash,
             # semantic_hash is not preserved on Fragment; reuse the
             # content_hash as a stable surrogate.
-            semantic_hash=fragment.content_hash,
-            size_bytes=fragment.size,
+            semantic_hash=fragment.identity.payload_hash,
+            size_bytes=fragment.payload_size,
             token_count=count,
             reuse_score=fragment.reuse_score,
         )

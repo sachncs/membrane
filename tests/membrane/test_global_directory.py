@@ -2,10 +2,8 @@ from tests.conftest import make_fragment
 
 """Tests for Registry."""
 
-from membrane.fragment import Fragment
 from membrane.node import Node
 from membrane.registry import Registry
-from membrane.signature import Signature
 
 
 def test_register_and_unregister():

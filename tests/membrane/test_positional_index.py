@@ -5,7 +5,6 @@ from tests.conftest import make_fragment
 import pytest
 
 from membrane.fragment import Fragment
-from membrane.signature import Signature
 from membrane.tree import Tree
 
 
@@ -15,7 +14,7 @@ def test_overlap_query():
     idx.insert(frag)
     results = idx.find_overlapping(150, 250)
     assert len(results) == 1
-    assert results[0].content_hash == "h1"
+    assert results[0].identity.payload_hash == "h1"
 
 
 def test_adjacent_query():
@@ -66,7 +65,7 @@ def test_nested_intervals():
     idx.insert(make_fragment("outer", (0, 100)))
     idx.insert(make_fragment("inner", (40, 60)))
     results = idx.find_overlapping(45, 55)
-    hashes = {f.content_hash for f in results}
+    hashes = {f.identity.payload_hash for f in results}
     assert hashes == {"outer", "inner"}
 
 
@@ -77,7 +76,7 @@ def test_same_start_different_ends():
     idx.insert(make_fragment("b", (50, 70)))
     idx.insert(make_fragment("c", (50, 80)))
     results = idx.find_overlapping(55, 65)
-    hashes = {f.content_hash for f in results}
+    hashes = {f.identity.payload_hash for f in results}
     assert hashes == {"a", "b", "c"}
 
 
@@ -144,7 +143,7 @@ def test_complex_scenario_multiple_operations():
     for i in range(0, 50, 2):
         idx.remove(f"h{i}")
     results = idx.find_overlapping(0, 100)
-    hashes = {f.content_hash for f in results}
+    hashes = {f.identity.payload_hash for f in results}
     # Only odd-indexed fragments remain
     expected = {f"h{i}" for i in range(1, 50, 2)}
     assert hashes == expected

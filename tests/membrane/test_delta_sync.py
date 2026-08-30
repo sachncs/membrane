@@ -4,9 +4,7 @@ from tests.conftest import make_fragment
 
 import pytest
 
-from membrane.fragment import Fragment
 from membrane.node import Node
-from membrane.signature import Signature
 from membrane.sync import DeltaSync, SyncPlan
 
 

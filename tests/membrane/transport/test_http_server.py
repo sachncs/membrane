@@ -8,7 +8,6 @@ import pytest
 from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
 from membrane.node import Node
-from membrane.signature import Signature
 from membrane.transport.http import HTTPServer
 from tests.conftest import make_fragment
 
@@ -60,7 +59,7 @@ class TestHTTPServer:
         with urllib.request.urlopen(req, timeout=2) as resp:
             data = json.loads(resp.read().decode())
             assert data["found"] is True
-            assert data["fragment"]["content_hash"] == "store-test"
+            assert data["fragment"]["identity"]["payload_hash"] == "store-test"
 
     def test_retrieve_missing(self, server):
         req = urllib.request.Request("http://127.0.0.1:18080/retrieve?content_hash=missing")

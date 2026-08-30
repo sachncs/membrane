@@ -9,7 +9,6 @@ from membrane.fragment import Fragment
 from membrane.fragmenter import compute_content_hash
 from membrane.index import Index
 from membrane.kv import KVCache
-from membrane.signature import Signature
 
 
 class TestKVCacheManager:
@@ -28,7 +27,7 @@ class TestKVCacheManager:
         mgr.store_kv("prefix-a", [frag])
         result = mgr.lookup_kv("prefix-a")
         assert len(result) == 1
-        assert result[0].content_hash == "hit-hash"
+        assert result[0].identity.payload_hash == "hit-hash"
         assert mgr.get_hit_rate() == 1.0
 
     def test_lookup_by_fragment_hash_is_miss(self):
@@ -48,7 +47,7 @@ class TestKVCacheManager:
         mgr.store_kv("prefix-a", [f1, f2])
         result = mgr.lookup_kv("prefix-a")
         assert len(result) == 2
-        hashes = {f.content_hash for f in result}
+        hashes = {f.identity.payload_hash for f in result}
         assert hashes == {"f1", "f2"}
 
     def test_store_overwrites_prefix_mapping(self):
@@ -60,7 +59,7 @@ class TestKVCacheManager:
         mgr.store_kv("prefix-a", [f2])
         result = mgr.lookup_kv("prefix-a")
         assert len(result) == 1
-        assert result[0].content_hash == "f2"
+        assert result[0].identity.payload_hash == "f2"
 
     def test_remove_prefix(self):
         mgr = KVCache()

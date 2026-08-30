@@ -7,7 +7,6 @@ import pytest
 from membrane.chunks import Chunk, Chunks
 from membrane.fragment import Fragment
 from membrane.node import Node
-from membrane.signature import Signature
 
 
 class TestChunkedTransfer:

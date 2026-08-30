@@ -31,7 +31,8 @@ def density(
     signals derived from ``access_history``:
 
     * **Frequency**: ``count * 0.05``, where ``count`` is the number
-      of times ``fragment.content_hash`` appears in the access history.
+      of times ``fragment.identity.payload_hash`` appears in the
+      access history.
     * **Recency**: a flat ``+0.1`` bonus if the most recent access was
       for this fragment.
 
@@ -39,12 +40,12 @@ def density(
     multiplied by ``importance``.
 
     Args:
-        fragment: The fragment to evaluate. Only its ``content_hash``
-            and ``reuse_score`` are read.
-        access_history: Ordered list of recently-accessed
-            ``content_hash`` values, most recent last. May be empty,
-            in which case the fragment's intrinsic ``reuse_score`` is
-            used directly.
+        fragment: The fragment to evaluate. Only its
+            ``identity.payload_hash`` and ``reuse_score`` are read.
+        access_history: Ordered list of recently-accessed payload
+            hash values, most recent last. May be empty, in which
+            case the fragment's intrinsic ``reuse_score`` is used
+            directly.
         importance: Importance multiplier applied to the expected-reuse
             signal. Defaults to ``1.0`` (no weighting).
 
@@ -54,7 +55,7 @@ def density(
     """
     if not access_history:
         return importance * fragment.reuse_score
-    count = access_history.count(fragment.content_hash)
-    recency_bonus = 0.1 if fragment.content_hash == access_history[-1] else 0.0
+    count = access_history.count(fragment.identity.payload_hash)
+    recency_bonus = 0.1 if fragment.identity.payload_hash == access_history[-1] else 0.0
     expected_reuse = min(1.0, fragment.reuse_score + count * 0.05 + recency_bonus)
     return importance * expected_reuse
