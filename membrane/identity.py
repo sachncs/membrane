@@ -12,9 +12,8 @@ The fingerprint is the composite key that:
 
 *   Drives content addressing in :class:`membrane.persistence.ContentStore`.
 *   Drives reuse matching in :class:`membrane.index.Index`.
-*   Is serialized in the wire format (:mod:`membrane.serialization`)
-    and in gRPC payloads (:mod:`membrane.transport.proto`).
-*   Anchors the canonical bytes (:mod:`membrane.canonical`).
+* Is serialized in the wire format (:mod:`membrane.serialization`).
+* Anchors the canonical bytes (:mod:`membrane.canonical`).
 
 All ten fields are required. The dataclass is ``frozen=True`` so the
 fingerprint is hashable and comparable; equality on all ten fields is

@@ -13,8 +13,8 @@ Note:
     :class:`~membrane.transfer.TransferService` and tests,
     not as a byte-stream chunker for raw KV tensors. Real tensor
     transport goes through :class:`~membrane.transport.fastapi.FastAPIServer`
-    / :class:`~membrane.transport.grpc.GrpcServer` which stream the
-    actual payload.
+    which streams the actual payload; a future gRPC transport lands in a
+    follow-up release.
 """
 
 import logging

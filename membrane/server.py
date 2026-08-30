@@ -355,24 +355,18 @@ class Server:
 
     def build_transport(self, transport: str, host: str, port: int) -> Any:
         mtls = self.cluster_config.mtls if self.cluster_config is not None else None
-        if transport == "http":
-            return FastAPIServer(
-                node=self.node,
-                host=host,
-                port=port,
-                compute_backend=self.compute_backend,
-                transfer_service=self.transfer_service,
-                cluster_manager=self.cluster_manager,
-                metrics_registry=self.metrics_registry,
-                tls=mtls,
+        if transport != "http":
+            raise ValueError(
+                f"unsupported transport={transport!r}; v3.0.0 ships the http transport only"
             )
-        from membrane.transport.grpc import GrpcServer
-
-        return GrpcServer(
+        return FastAPIServer(
             node=self.node,
             host=host,
             port=port,
             compute_backend=self.compute_backend,
+            transfer_service=self.transfer_service,
+            cluster_manager=self.cluster_manager,
+            metrics_registry=self.metrics_registry,
             tls=mtls,
         )
 
