@@ -74,6 +74,12 @@ class ClusterConfig:
             closed (HTTP 503 + ``Retry-After``); the
             :func:`~membrane.transport.ops.op_store` route
             never silently degrades to a weaker consistency.
+        repair_interval_sec: Seconds between anti-entropy
+            :meth:`~membrane.replicator.Replicator.repair`
+            passes. Default ``60`` keeps production clusters
+            continuously converged without flooding the wire.
+            Tests and single-node deployments disable this by
+            setting the field to a very large value.
     """
 
     node_id: str = "membrane-0"
@@ -97,3 +103,4 @@ class ClusterConfig:
     default_consistency: str = "strong"
     quorum_count: int = 2
     cluster_quorum_timeout_sec: float = 5.0
+    repair_interval_sec: float = 60.0

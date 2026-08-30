@@ -203,5 +203,81 @@ class Replicator:
             with self.semaphore:
                 do_push()
 
+    def repair(self, peer_id: str) -> int:
+        """Run an anti-entropy round against ``peer_id``.
+
+        Asks the peer for its inventory digest, computes the
+        symmetric difference against the local node, and
+        replicates every hash the peer is missing.
+
+        The function operates on the existing :meth:`node.get_stats`
+        inventory (per :class:`~membrane.node.Node`'s ``fragments``
+        dict) for the local side and on
+        ``client.get_inventory()`` for the peer. Phase 5 will
+        upgrade the inventory exchange to a Bloom + Merkle pair
+        so this method scales sub-linearly; for now the basic
+        diff already covers everything anti-entropy needs.
+
+        Args:
+            peer_id: Destination peer identifier.
+
+        Returns:
+            int: Number of fragments pushed to ``peer_id`` during
+            this round. ``0`` when nothing changed (the peer is
+            already in sync or the round errored).
+        """
+        if self.membership is None or self.node is None:
+            return 0
+        client = self.membership.get_client(peer_id)
+        if client is None:
+            return 0
+        try:
+            remote_resp = client.get_inventory()
+        except Exception as exc:
+            logger.debug("repair: get_inventory from %s failed: %s", peer_id, exc)
+            return 0
+        if not isinstance(remote_resp, dict):
+            return 0
+        remote_versions: dict[str, int] = remote_resp.get("digest", {})
+        local_versions = {h: frag.version_id for h, frag in self.node.fragments.items()}
+        # Pull what we are missing (peer has it, we do not).
+        missing_here = [h for h, v in remote_versions.items() if h not in local_versions or local_versions[h] < v]
+        # Push what the peer is missing.
+        missing_there = [h for h, v in local_versions.items() if h not in remote_versions or remote_versions[h] < v]
+        pushed = 0
+        for h in missing_there:
+            self.push_one(h, peer_id)
+            pushed += 1
+        if missing_here:
+            logger.debug(
+                "repair: peer %s has %s fragments local is missing",
+                peer_id,
+                len(missing_here),
+            )
+        return pushed
+
+    def repair_loop(self) -> None:
+        """Background anti-entropy loop. Iterates healthy peers.
+
+        Runs once on construction (or on the first ``repair_loop``
+        call) and then sleeps for ``config.repair_interval_sec``
+        between passes. ``stop_event`` interrupts the sleep.
+
+        Requires the same constructor args as :meth:`loop`.
+        """
+        if (
+            self.membership is None
+            or self.config is None
+            or self.stop_event is None
+            or self.running is None
+        ):
+            raise RuntimeError("Replicator.repair_loop requires membership, config, stop_event, running")
+        while self.running[0] and not self.stop_event.is_set():
+            for peer in self.membership.healthy():
+                if peer.node_id == self.config.node_id:
+                    continue
+                self.repair(peer.node_id)
+            self.stop_event.wait(timeout=self.config.repair_interval_sec)
+
 
 __all__ = ["Replicator"]
