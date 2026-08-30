@@ -21,6 +21,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still cross-checked by `pip-audit`, code-level issues by
   `bandit`, secrets by `gitleaks`.
 
+## [0.4.0] - 2026-08-30
+
+Six additional atomic commits continuing the 0.3.0
+architectural refactor.
+
+### Changed
+
+- **Transfer polymorphism (rule #13)**: replaced the
+  four-way ``isinstance(source, Node)`` /
+  ``isinstance(target, Node)`` dispatch in
+  ``TransferService.transfer_fragment`` and ``sync_nodes``
+  with explicit ``LocalEndpoint`` and ``RemoteEndpoint``
+  Protocols plus concrete ``_LocalEndpoint`` /
+  ``_RemoteEndpoint`` adapters. ``transfer_fragment``
+  now picks the endpoint pair once, then selects one
+  of three polymorphic operations:
+  ``transfer_local_endpoint``, ``transfer_remote_source``,
+  ``transfer_remote_target``. The existing
+  ``transfer_local`` / ``pull_from_remote`` /
+  ``push_to_remote`` / ``sync_local`` /
+  ``inventory_digest`` convenience methods stay so
+  callers that pass ``Node | str`` directly keep
+  working.
+
+- **Analytical consolidation (rule #34)**: added
+  ``membrane.analytical`` as a flat re-export of the nine
+  routing / prediction classes — ``Economic``, ``Latency``,
+  ``Joint``, ``Selector``, ``Offload``, ``Promotion``,
+  ``Predict``, ``Workload``, ``Roles``. Each class keeps
+  its original module for tests and source-level imports;
+  new code can import the whole surface from the
+  consolidated namespace.
+
+- **Typed wire payloads (rule #39, partial)**: introduced
+  ``JsonDict`` / ``JsonValue`` as recursive types in
+  ``membrane.serialization`` for every wire-payload value;
+  replaced ``dict[str, Any]`` and ``Any | None`` in
+  ``transport/ops.py`` function signatures, plus the
+  ``cluster_manager: Any`` slots in
+  ``FastAPIServer.create_app`` and ``HTTPServer``. ``op_*``
+  functions now return ``tuple[int, JsonDict]``.
+
+- **Public API tightening**: ``Prefiller`` removed from
+  ``membrane.__all__``; the research-only class is still
+  importable from ``membrane.prefiller`` (the deep path
+  is documented in the package docstring).
+
+- **Style**: enabled Ruff's ``RUF`` rule family; sorted
+  ``__all__`` lists; collapsed mutable default arguments,
+  unnecessary comprehensions, and the like. RUF002
+  (unicode-vs-ASCII hyphen) is left in the ignore list
+  so the analytical formulas that use the unicode minus
+  sign keep their math typography.
+
+### External contracts preserved
+
+CLI flags, gRPC method names, HTTP wire format
+(JSON), the ``Server.__init__`` signature, and
+``ClusterConfig`` fields are all unchanged from 0.3.0.
+
 ## [0.3.0] - 2026-08-30
 
 Principal-level architectural refactor of Membrane, continuing
