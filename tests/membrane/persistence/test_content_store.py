@@ -24,7 +24,7 @@ class TestContentStoreProtocol:
         assert isinstance(InProcessBytes(), ContentStore)
 
     def test_filesystem_is_a_content_store(self, tmp_path: Path):
-        store = FilesystemBlob(tmp_path / "blob")
+        store = FilesystemBlob(tmp_path / "blob", tenant_id="acme")
         assert isinstance(store, ContentStore)
 
 
@@ -109,19 +109,19 @@ class TestFilesystemBlob:
     """Round-trip and crash-safety for the on-disk store."""
 
     def test_round_trip(self, tmp_path: Path):
-        store = FilesystemBlob(tmp_path / "blob")
+        store = FilesystemBlob(tmp_path / "blob", tenant_id="acme")
         store.put("abcd1234", b"hello")
         assert store.get("abcd1234") == b"hello"
         assert store.has("abcd1234")
 
     def test_creates_missing_dirs(self, tmp_path: Path):
         root = tmp_path / "nested" / "dirs"
-        FilesystemBlob(root)
+        FilesystemBlob(root, tenant_id="acme")
         assert root.exists()
 
     def test_sharded_layout(self, tmp_path: Path):
         root = tmp_path / "blob"
-        store = FilesystemBlob(root)
+        store = FilesystemBlob(root, tenant_id="acme")
         store.put("abcdef01", b"x")
         # Two-level shard: "ab" / "cd" / "abcdef01.blob"
         expected = root / "ab" / "cd" / "abcdef01.blob"
@@ -129,7 +129,7 @@ class TestFilesystemBlob:
 
     def test_delete_removes_blob_and_empty_dirs(self, tmp_path: Path):
         root = tmp_path / "blob"
-        store = FilesystemBlob(root)
+        store = FilesystemBlob(root, tenant_id="acme")
         store.put("abcdef01", b"hello")
         path = root / "ab" / "cd" / "abcdef01.blob"
         assert path.exists()
@@ -139,29 +139,33 @@ class TestFilesystemBlob:
         # (One of the rmdir calls may succeed; we don't care which.)
 
     def test_delete_missing_returns_false(self, tmp_path: Path):
-        store = FilesystemBlob(tmp_path / "blob")
+        store = FilesystemBlob(tmp_path / "blob", tenant_id="acme")
         assert store.delete("nonexistent") is False
 
     def test_get_missing_returns_none(self, tmp_path: Path):
-        store = FilesystemBlob(tmp_path / "blob")
+        store = FilesystemBlob(tmp_path / "blob", tenant_id="acme")
         assert store.get("nonexistent") is None
 
     def test_short_keys_rejected(self, tmp_path: Path):
-        store = FilesystemBlob(tmp_path / "blob")
+        store = FilesystemBlob(tmp_path / "blob", tenant_id="acme")
         with pytest.raises(ValueError, match="at least 4 chars"):
             store.put("ab", b"x")
 
     def test_persistence_across_instances(self, tmp_path: Path):
+        from membrane.security.encryption import StaticKeyProvider
+
         root = tmp_path / "blob"
-        store_a = FilesystemBlob(root)
+        provider = StaticKeyProvider(key=b"\x00" * 32)
+        store_a = FilesystemBlob(root, tenant_id="acme", key_provider=provider)
         store_a.put("abcdef01", b"hello world")
-        # New instance, same root — must find the prior frame.
-        store_b = FilesystemBlob(root)
+        # New instance, same root + provider — must find the
+        # prior encrypted frame and decrypt it.
+        store_b = FilesystemBlob(root, tenant_id="acme", key_provider=provider)
         assert store_b.get("abcdef01") == b"hello world"
         assert store_b.has("abcdef01")
 
     def test_size_reflects_total(self, tmp_path: Path):
-        store = FilesystemBlob(tmp_path / "blob")
+        store = FilesystemBlob(tmp_path / "blob", tenant_id="acme")
         store.put("aaaa1111", b"12345")
         store.put("bbbb2222", b"678")
         assert store.size() == 8
@@ -169,7 +173,7 @@ class TestFilesystemBlob:
     def test_atomic_write_no_partial(self, tmp_path: Path):
         """A successful put leaves exactly one ``*.blob`` and no ``.tmp`` left behind."""
         root = tmp_path / "blob"
-        store = FilesystemBlob(root)
+        store = FilesystemBlob(root, tenant_id="acme")
         store.put("abcd1234", b"x")
         parents = list(root.rglob("*"))
         # No ``.tmp`` file from the write survived.

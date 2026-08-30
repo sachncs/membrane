@@ -13,7 +13,7 @@ def test_lmcache_disk_store_is_a_filesystem_blob_subclass():
 
 
 def test_round_trip(tmp_path: Path):
-    store = LMCacheDiskStore(tmp_path / "lmcache")
+    store = LMCacheDiskStore(tmp_path / "lmcache", tenant_id="acme")
     store.put("alpha", b"hello lmcache")
     assert store.get("alpha") == b"hello lmcache"
     assert store.has("alpha") is True
@@ -21,7 +21,7 @@ def test_round_trip(tmp_path: Path):
 
 
 def test_atomic_writes(tmp_path: Path):
-    store = LMCacheDiskStore(tmp_path / "lmcache")
+    store = LMCacheDiskStore(tmp_path / "lmcache", tenant_id="acme")
     store.put("k1aa", b"v1")
     store.put("k1aa", b"v2-longer")
     assert store.get("k1aa") == b"v2-longer"

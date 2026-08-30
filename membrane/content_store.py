@@ -45,6 +45,8 @@ import threading
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from membrane.security.encryption import KeyProvider, StaticKeyProvider
+
 
 @runtime_checkable
 class ContentStore(Protocol):
@@ -186,38 +188,62 @@ class InProcessBytes:
 
 
 class FilesystemBlob:
-    """On-disk :class:`ContentStore` with two-level sharded layout.
+    """On-disk :class:`ContentStore` with AES-256-GCM encryption.
 
     Layout::
 
         {root}/{key[:2]}/{key[2:4]}/{key}.blob
 
     The two-level prefix spreads the directory fanout across
-    roughly 65k top-level directories. Writes go through a temp
-    file in the same directory followed by ``os.replace`` which
-    is atomic on POSIX. After the rename we ``os.fsync`` the
-    parent directory so the rename is durable across a crash.
+    roughly 65k top-level directories. Writes go through a
+    temp file in the same directory followed by ``os.replace``
+    which is atomic on POSIX; the parent directory is
+    ``fsync``-ed so the rename is durable across a crash.
+
+    Every put is encrypted with AES-256-GCM under a per-
+    (tenant, content_hash) derived key (Phase 3.4.7). Plain
+    writes are not exposed; the v3.0.0 release drops the
+    plaintext ``FilesystemBlob`` constructor in favor of
+    ``FilesystemBlob(root, tenant_id, key_provider)``.
 
     Thread safety: the public methods are protected by a lock,
     but write atomicity also comes from the temp-file +
-    ``os.replace`` flow, so a single-threaded writer is already
-    crash-safe.
+    ``os.replace`` flow, so a single-threaded writer is
+    already crash-safe.
     """
 
-    def __init__(self, root: str | os.PathLike[str]) -> None:
-        """Initialize the on-disk store.
+    def __init__(
+        self,
+        root: str | os.PathLike[str],
+        tenant_id: str,
+        key_provider: KeyProvider | None = None,
+    ) -> None:
+        """Initialize the encrypted on-disk store.
 
         Args:
-            root: Directory under which blob files are written.
-                Created when missing.
+            root: Directory under which blob files are
+                written. Created when missing.
+            tenant_id: Tenant namespace the store keeps files
+                on behalf of. Different tenants get different
+                derived keys (Phase 3.4.7).
+            key_provider: Optional :class:`KeyProvider`. When
+                ``None``, a :class:`StaticKeyProvider` is
+                constructed and a fresh random master key is
+                generated; production deployments back this
+                with a Vault or AWS KMS secret backend via
+                :mod:`membrane.secrets`.
 
         Raises:
             OSError: When ``root`` cannot be created.
         """
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.tenant_id = tenant_id
         self._lock = threading.RLock()
         self._used_bytes = 0
+        self._plaintext_bytes: dict[str, int] = {}
+        self._key_provider: KeyProvider = key_provider or StaticKeyProvider()
+        self._master_key = self._key_provider.master_key()
 
     def _path_for(self, key: str) -> Path:
         """Return the on-disk path for ``key``.
@@ -241,18 +267,25 @@ class FilesystemBlob:
         return directory / f"{key}.blob"
 
     def put(self, key: str, data: bytes) -> None:
-        """Atomically write ``data`` to ``key``.
+        """Atomically write ``data`` (encrypted) to ``key``.
 
         Args:
             key: Opaque key.
-            data: Byte string.
+            data: Byte string (encrypted before write).
 
         Raises:
             OSError: When the underlying filesystem rejects a
                 write or rename.
         """
+        from membrane.security.encryption import (
+            derive_tenant_key,
+            encrypt_payload,
+        )
+
         target = self._path_for(key)
         target.parent.mkdir(parents=True, exist_ok=True)
+        per_key = derive_tenant_key(self._master_key, self.tenant_id, key)
+        blob = encrypt_payload(data, per_key)
         with self._lock:
             with tempfile.NamedTemporaryFile(
                 delete=False,
@@ -260,19 +293,18 @@ class FilesystemBlob:
                 prefix=f".{key}.",
                 suffix=".tmp",
             ) as tmp:
-                tmp.write(data)
+                tmp.write(blob)
                 tmp.flush()
                 os.fsync(tmp.fileno())
                 tmp_path = tmp.name
             os.replace(tmp_path, target)
-            # fsync the directory so the rename is durable across
-            # process exit on POSIX.
             dir_fd = os.open(str(target.parent), os.O_RDONLY)
             try:
                 os.fsync(dir_fd)
             finally:
                 os.close(dir_fd)
-            self._used_bytes = self._walk_size()
+            self._plaintext_bytes[key] = len(data)
+            self._used_bytes = sum(self._plaintext_bytes.values())
 
     def put_from_file(self, key: str, source_path: str) -> None:
         """Copy ``source_path`` to ``key`` using ``os.sendfile`` when available.
@@ -313,15 +345,39 @@ class FilesystemBlob:
                 os.fsync(dir_fd)
             finally:
                 os.close(dir_fd)
-            self._used_bytes = self._walk_size()
+            self._plaintext_bytes[key] = os.path.getsize(source_path)
+            self._used_bytes = sum(self._plaintext_bytes.values())
 
     def get(self, key: str) -> bytes | None:
-        """Read the bytes stored under ``key`` or ``None``."""
+        """Read and decrypt the bytes stored under ``key``.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bytes | None: Decrypted bytes or ``None`` when the
+            file is absent or the key derivation / decryption
+            fails.
+
+        Raises:
+            OSError: When the underlying filesystem rejects the
+                read.
+        """
+        from membrane.security.encryption import (
+            decrypt_payload,
+            derive_tenant_key,
+        )
+
         path = self._path_for(key)
         if not path.exists():
             return None
         with self._lock:
-            return path.read_bytes()
+            blob = path.read_bytes()
+        per_key = derive_tenant_key(self._master_key, self.tenant_id, key)
+        try:
+            return decrypt_payload(blob, per_key)
+        except Exception:
+            return None
 
     def has(self, key: str) -> bool:
         """Return whether ``key`` is present on disk."""
@@ -340,7 +396,8 @@ class FilesystemBlob:
                     path.parent.rmdir()
                 with contextlib.suppress(OSError):
                     path.parent.parent.rmdir()
-                self._used_bytes = self._walk_size()
+                self._plaintext_bytes.pop(key, None)
+                self._used_bytes = sum(self._plaintext_bytes.values())
                 return True
             except FileNotFoundError:
                 return False
