@@ -23,8 +23,10 @@ from pydantic import BaseModel, Field, conlist
 
 from membrane.auth import AuthContext
 from membrane.compute.cpu import CPU
+from membrane.metrics import TransportMetrics
 from membrane.serialization import JsonDict
 from membrane.transport.authz import enforce_route_scope
+from membrane.transport.metrics import record_transport
 from membrane.transport.ops import (
     MAX_BODY_BYTES,
     op_delete,
@@ -336,13 +338,26 @@ def register_routes(app: FastAPI) -> None:
     app.add_api_route("/verify", verify_handler, methods=["POST"], response_model=None)
 
 
+def _transport_metrics(app: FastAPI) -> TransportMetrics | None:
+    """Return the cluster's TransportMetrics from app.state, if any.
+
+    The :class:`Server` populates ``app.state.transport_metrics``
+    at construction; transport handlers use the helper to
+    record every op invocation.
+    """
+    return getattr(app.state, "transport_metrics", None)
+
+
 def _heartbeat(app: FastAPI, request: Request):
     context = _scope(request, "GET", "/heartbeat")
-    status, body = op_heartbeat(
-        app.state.node,
-        cluster=getattr(app.state, "cluster_manager", None),
-        headers=_peer_headers(request),
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "heartbeat", "GET",
+        lambda: op_heartbeat(
+            app.state.node,
+            cluster=getattr(app.state, "cluster_manager", None),
+            headers=_peer_headers(request),
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
@@ -363,32 +378,44 @@ def _metrics_json(app: FastAPI):
 
 
 def _inventory(app: FastAPI):
-    status, body = op_inventory(app.state.node)
+    status, body = record_transport(
+        _transport_metrics(app), "inventory", "GET",
+        lambda: op_inventory(app.state.node),
+    )
     return _respond(status, body)
 
 
 def _peers(app: FastAPI):
-    status, body = op_peers(app.state.cluster_manager)
+    status, body = record_transport(
+        _transport_metrics(app), "peers", "GET",
+        lambda: op_peers(app.state.cluster_manager),
+    )
     return _respond(status, body)
 
 
 def _retrieve(app: FastAPI, content_hash: str):
-    status, body = op_retrieve(app.state.node, content_hash)
+    status, body = record_transport(
+        _transport_metrics(app), "retrieve", "GET",
+        lambda: op_retrieve(app.state.node, content_hash),
+    )
     return _respond(status, body)
 
 
 def _store(app: FastAPI, req: StoreRequest, request: Request):
     context = _scope(request, "POST", "/store")
-    status, body = op_store(
-        app.state.node,
-        req.fragment.to_wire_dict(),
-        req.is_primary,
-        cluster=getattr(app.state, "cluster_manager", None),
-        quorum_attempt=getattr(app.state, "quorum_attempt", None),
-        draining=bool(getattr(app.state.server, "is_draining", False))
-        if hasattr(app.state, "server")
-        else False,
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "store", "POST",
+        lambda: op_store(
+            app.state.node,
+            req.fragment.to_wire_dict(),
+            req.is_primary,
+            cluster=getattr(app.state, "cluster_manager", None),
+            quorum_attempt=getattr(app.state, "quorum_attempt", None),
+            draining=bool(getattr(app.state.server, "is_draining", False))
+            if hasattr(app.state, "server")
+            else False,
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
@@ -403,115 +430,145 @@ def _respond_with_retry_after(status: int, body: JsonDict, retry_after: int) -> 
 
 def _replicate(app: FastAPI, req: ReplicateRequest, request: Request):
     context = _scope(request, "POST", "/replicate")
-    status, body = op_replicate(
-        app.state.node,
-        req.fragment.to_wire_dict(),
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "replicate", "POST",
+        lambda: op_replicate(
+            app.state.node,
+            req.fragment.to_wire_dict(),
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
 
 def _sync(app: FastAPI, req: SyncRequest, request: Request):
     context = _scope(request, "POST", "/sync")
-    status, body = op_sync(
-        app.state.node,
-        app.state.transfer_service,
-        req.source_url,
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "sync", "POST",
+        lambda: op_sync(
+            app.state.node,
+            app.state.transfer_service,
+            req.source_url,
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
 
 def _prefill(app: FastAPI, req: PrefillRequest, request: Request):
     context = _scope(request, "POST", "/prefill")
-    status, body = op_prefill(
-        app.state.node,
-        app.state.compute_backend or CPU(),
-        req.prompt_tokens,
-        req.model_id,
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "prefill", "POST",
+        lambda: op_prefill(
+            app.state.node,
+            app.state.compute_backend or CPU(),
+            req.prompt_tokens,
+            req.model_id,
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
 
 def _join(app: FastAPI, req: JoinRequest, request: Request):
     context = _scope(request, "POST", "/join")
-    status, body = op_join(
-        app.state.cluster_manager,
-        req.node_id,
-        req.host,
-        req.port,
-        headers=_peer_headers(request),
-        authenticator=_authenticator_for(app),
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "join", "POST",
+        lambda: op_join(
+            app.state.cluster_manager,
+            req.node_id,
+            req.host,
+            req.port,
+            headers=_peer_headers(request),
+            authenticator=_authenticator_for(app),
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
 
 def _leave(app: FastAPI, req: LeaveRequest, request: Request):
     context = _scope(request, "POST", "/leave")
-    status, body = op_leave(
-        app.state.cluster_manager,
-        req.node_id,
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "leave", "POST",
+        lambda: op_leave(
+            app.state.cluster_manager,
+            req.node_id,
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
 
 def _gossip(app: FastAPI, req: GossipRequest, request: Request):
     context = _scope(request, "POST", "/gossip")
-    status, body = op_gossip(
-        app.state.cluster_manager,
-        req.model_dump(),
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "gossip", "POST",
+        lambda: op_gossip(
+            app.state.cluster_manager,
+            req.model_dump(),
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
 
 def _delete(app: FastAPI, req: DeleteRequest, request: Request):
     context = _scope(request, "POST", "/delete")
-    status, body = op_delete(
-        app.state.node,
-        getattr(app.state, "tombstones", None),
-        req.content_hash,
-        req.node_id,
-        req.tombstone_until,
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "delete", "POST",
+        lambda: op_delete(
+            app.state.node,
+            getattr(app.state, "tombstones", None),
+            req.content_hash,
+            req.node_id,
+            req.tombstone_until,
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
 
 def _tombstone(app: FastAPI, req: TombstoneRequest, request: Request):
     context = _scope(request, "POST", "/tombstone")
-    status, body = op_tombstone(
-        getattr(app.state, "tombstones", None),
-        req.content_hash,
-        req.until,
-        req.node_id,
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "tombstone", "POST",
+        lambda: op_tombstone(
+            getattr(app.state, "tombstones", None),
+            req.content_hash,
+            req.until,
+            req.node_id,
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
 
 def _purge(app: FastAPI, req: PurgeRequest, request: Request):
     context = _scope(request, "POST", "/purge")
-    status, body = op_purge(
-        app.state.node,
-        getattr(app.state, "tombstones", None),
-        req.content_hash,
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "purge", "POST",
+        lambda: op_purge(
+            app.state.node,
+            getattr(app.state, "tombstones", None),
+            req.content_hash,
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 
 
 def _verify(app: FastAPI, req: VerifyRequest, request: Request):
     context = _scope(request, "POST", "/verify")
-    status, body = op_verify_received(
-        app.state.node,
-        req.content_hash,
-        req.claimed_size,
-        req.claimed_sha256_hex,
-        auth_context=context,
+    status, body = record_transport(
+        _transport_metrics(app), "verify", "POST",
+        lambda: op_verify_received(
+            app.state.node,
+            req.content_hash,
+            req.claimed_size,
+            req.claimed_sha256_hex,
+            auth_context=context,
+        ),
     )
     return _respond(status, body)
 

@@ -83,6 +83,12 @@ def create_app(
     app.state.transfer_service = transfer_service
     app.state.cluster_manager = cluster_manager
     app.state.metrics_registry = metrics_registry
+    if metrics_registry is not None:
+        from membrane.metrics import TransportMetrics
+
+        app.state.transport_metrics = TransportMetrics(metrics_registry)
+    else:
+        app.state.transport_metrics = None
 
     register_routes(app)
     return app
