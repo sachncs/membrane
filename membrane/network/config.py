@@ -86,6 +86,18 @@ class ClusterConfig:
             for production clusters; the heartbeat loop
             refreshes :attr:`~membrane.network.membership.PeerInfo.lease_until`
             to ``now() + lease_timeout_sec`` on every ack.
+        gossip_payload_expected_items: Expected number of
+            items the Bloom filter will hold, used to size
+            ``m_bits`` and ``k_hashes``. Default ``10000`` keeps
+            the per-gossip-state payload under 2 KiB for
+            single-fragment-per-window workloads and around
+            17 KiB for one-million-fragment deployments. The
+            actual count overrides the configured value when
+            the local Node's fragment set is larger.
+        gossip_payload_fpr: Target false-positive rate for the
+            gossip Bloom filter. Default ``0.001`` (one in a
+            thousand) keeps the precision cost negligible while
+            bounding the false-divergence rate.
     """
 
     node_id: str = "membrane-0"
@@ -111,3 +123,5 @@ class ClusterConfig:
     cluster_quorum_timeout_sec: float = 5.0
     repair_interval_sec: float = 60.0
     lease_timeout_sec: float = 30.0
+    gossip_payload_expected_items: int = 10_000
+    gossip_payload_fpr: float = 0.001

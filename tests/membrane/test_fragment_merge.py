@@ -63,8 +63,8 @@ def test_merge_rejects_different_identity():
         a.merge(b)
 
 
-def test_gossip_state_merge_uses_max_version():
-    """GossipState.merge keeps the higher version_id per hash."""
+def test_gossip_state_merge_uses_max_size():
+    """GossipState.merge keeps the larger inventory_size field."""
     from membrane.network.gossip import GossipState, PeerEndpoint
 
     self_state = GossipState(
@@ -72,22 +72,21 @@ def test_gossip_state_merge_uses_max_version():
         timestamp=1.0,
         peers=[],
         fragment_locations={},
-        inventory_digest={"a": 1, "b": 2},
+        inventory_size=5,
     )
     other_state = GossipState(
         node_id="other",
         timestamp=2.0,
         peers=[],
         fragment_locations={},
-        inventory_digest={"a": 3, "b": 1, "c": 5},
+        inventory_size=12,
     )
     merged = self_state.merge(other_state)
-    # Max wins per key.
-    assert merged.inventory_digest == {"a": 3, "b": 2, "c": 5}
+    assert merged.inventory_size == 12
 
 
 def test_gossip_state_merge_does_not_regress():
-    """A gossip with older version_id does not overwrite newer local state."""
+    """A gossip with smaller inventory_size does not overwrite the larger local value."""
     from membrane.network.gossip import GossipState
 
     self_state = GossipState(
@@ -95,14 +94,14 @@ def test_gossip_state_merge_does_not_regress():
         timestamp=1.0,
         peers=[],
         fragment_locations={},
-        inventory_digest={"a": 10},
+        inventory_size=10,
     )
     stale_state = GossipState(
         node_id="other",
         timestamp=2.0,
         peers=[],
         fragment_locations={},
-        inventory_digest={"a": 5},
+        inventory_size=5,
     )
     merged = self_state.merge(stale_state)
-    assert merged.inventory_digest["a"] == 10
+    assert merged.inventory_size == 10

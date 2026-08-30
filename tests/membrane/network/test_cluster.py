@@ -74,7 +74,9 @@ class TestClusterManager:
                 "timestamp": 1000.0,
                 "peers": [{"node_id": "n2", "host": "127.0.0.2", "port": 8081, "healthy": True}],
                 "fragment_locations": {"h1": ["n2"]},
-                "inventory_digest": {"h1": 1},
+                "inventory_bloom": "",
+                "inventory_merkle_root": "",
+                "inventory_size": 0,
             }
         )
         assert result["node_id"] == "n1"

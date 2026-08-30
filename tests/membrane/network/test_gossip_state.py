@@ -21,7 +21,7 @@ class TestGossipState:
             timestamp=1234.0,
             peers=[PeerEndpoint("n2", "127.0.0.2", 8081)],
             fragment_locations={"h1": ["n1", "n2"]},
-            inventory_digest={"h1": 1},
+            inventory_size=1,
         )
         data = state.to_json()
         restored = GossipState.from_json(data)
@@ -29,7 +29,7 @@ class TestGossipState:
         assert restored.timestamp == 1234.0
         assert len(restored.peers) == 1
         assert restored.fragment_locations == {"h1": ["n1", "n2"]}
-        assert restored.inventory_digest == {"h1": 1}
+        assert restored.inventory_size == 1
 
     def test_merge_combines_peers(self):
         a = GossipState(

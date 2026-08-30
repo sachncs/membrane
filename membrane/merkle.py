@@ -119,7 +119,6 @@ class MerkleTree:
         # lookup. The "remove hash-b" case: hash-b is missing
         # in c, so the diff for a is hash-b; the lookup walks
         # both trees.
-        mine = dict(self.items)
         theirs = dict(other.items)
         out: list[int] = []
         for i, pair in enumerate(self.items):

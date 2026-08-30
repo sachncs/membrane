@@ -109,7 +109,7 @@ class BloomFilter:
         )
 
     @classmethod
-    def deserialize(cls, payload: bytes) -> "BloomFilter":
+    def deserialize(cls, payload: bytes) -> BloomFilter:
         """Decode the wire format produced by :meth:`serialize`.
 
         Returns:
@@ -130,7 +130,7 @@ class BloomFilter:
         return cls(m_bits=m_bits, k_hashes=k_hashes, bits=bits)
 
     @classmethod
-    def tuned_for(cls, expected_items: int, fp_rate: float = 0.001) -> "BloomFilter":
+    def tuned_for(cls, expected_items: int, fp_rate: float = 0.001) -> BloomFilter:
         """Build an empty filter sized for the given capacity and FP rate.
 
         The optimal (m, k) pair comes from the closed-form
