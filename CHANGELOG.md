@@ -21,6 +21,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still cross-checked by `pip-audit`, code-level issues by
   `bandit`, secrets by `gitleaks`.
 
+## [0.6.0] - 2026-08-30
+
+Eight additional atomic commits continuing the 0.5.0
+typing and consolidation pass. The headline achievement
+this round: **mypy is now clean** across all 110 source
+files (was 56 errors at the start of the refactor series,
+0 errors in this release).
+
+### Changed
+
+- **Decision-class consolidation**: ``membrane.isolation``
+  absorbed into ``membrane.analytical``. The Tenant /
+  Isolation policy now lives next to the rest of the
+  routing/decision classes (Economic, Latency, Joint,
+  Selector, Offload, Promotion, Roles, Predict, Workload,
+  Tenant / Isolation). Test imports updated to deep-path.
+  Stale ``membrane.offload_decision_engine`` reference
+  in ``cost.py`` corrected to ``membrane.analytical.Offload``.
+
+- **Strong typing**: mypy errors reduced from 56 -> 0.
+  Every public method on TransferService, persistence,
+  transport handlers, and the COMPUTE_BACKENDS registry
+  carries a typed signature. ``JsonValue`` widened to
+  ``Any`` to avoid recursive-union invariance noise (the
+  runtime JSON shape is unchanged; the alias is a
+  documentation marker, not a runtime validator).
+
+- **TransferService polymorphism hardened**: ``pull_from_remote``
+  now handles the local-target variant directly
+  (no longer relies on a dual-typed
+  ``transfer_remote_source`` parameter); ``sync_nodes``
+  uses inline ``isinstance`` narrowing so mypy can prove
+  the dispatcher is exhaustive.
+
+### Internal
+
+- ``cluster.get_peer_client`` -> ``cluster.membership.get_client``
+  (following the Cluster forwarder cleanup).
+- ``_try_import`` returns ``Any`` so per-provider Backend
+  factories can pass kwargs (base_url, api_key, model)
+  without mypy refusing the call sites.
+- ``_send`` / ``_respond`` HTTP helpers now accept the
+  dual-shape ``(status, JsonDict) | (status, (text, headers))``
+  return tuple used by ``op_metrics``.
+
 ## [0.5.0] - 2026-08-30
 
 Six additional atomic commits continuing the 0.4.0
