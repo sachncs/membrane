@@ -44,6 +44,11 @@ class PeerInfo:
         cluster_epoch: Last cluster epoch this peer advertised;
             lets a recovering node refuse to merge a stale peer
             view. ``0`` when the peer has never published an epoch.
+        peer_cn: Common Name from the peer's mTLS client cert.
+            ``""`` when the cluster does not enforce mTLS.
+            Captured at join time so the membership table records
+            which peer is which (and so a forged peer cannot
+            impersonate an existing CN).
     """
 
     node_id: str
@@ -54,6 +59,7 @@ class PeerInfo:
     suspect: bool = False
     missed_heartbeats: int = 0
     cluster_epoch: int = 0
+    peer_cn: str = ""
 
     def to_json(self) -> dict[str, Any]:
         """Serialize this peer to a JSON-compatible dict."""
@@ -65,6 +71,7 @@ class PeerInfo:
             "suspect": self.suspect,
             "missed_heartbeats": self.missed_heartbeats,
             "cluster_epoch": self.cluster_epoch,
+            "peer_cn": self.peer_cn,
         }
 
 
@@ -96,7 +103,13 @@ class Membership:
         self.clients: dict[str, Peer] = {}
         self.lock = threading.RLock()
 
-    def add(self, node_id: str, host: str, port: int) -> None:
+    def add(
+        self,
+        node_id: str,
+        host: str,
+        port: int,
+        peer_cn: str = "",
+    ) -> None:
         """Add or update a peer.
 
         No-op when ``node_id`` matches the local node.
@@ -105,6 +118,12 @@ class Membership:
             node_id: Peer node identifier.
             host: Peer host.
             port: Peer port.
+            peer_cn: Common Name from the peer's mTLS client
+                cert. ``""`` when the cluster does not enforce
+                mTLS. Stored on the
+                :class:`~membrane.network.membership.PeerInfo`
+                record so a forged peer cannot impersonate an
+                existing CN at join time.
         """
         with self.lock:
             if node_id == self.node_id:
@@ -112,12 +131,19 @@ class Membership:
             if node_id in self.peers:
                 self.peers[node_id].host = host
                 self.peers[node_id].port = port
+                self.peers[node_id].peer_cn = peer_cn
                 return
-            self.peers[node_id] = PeerInfo(node_id=node_id, host=host, port=port, last_heartbeat=time.time())
+            self.peers[node_id] = PeerInfo(
+                node_id=node_id,
+                host=host,
+                port=port,
+                last_heartbeat=time.time(),
+                peer_cn=peer_cn,
+            )
             self.clients[node_id] = Peer(f"http://{host}:{port}")
             self.ring.add_node(node_id)
             self.shard.add_node(node_id)
-            logger.info("Added peer %s at %s:%s", node_id, host, port)
+            logger.info("Added peer %s at %s:%s (cn=%s)", node_id, host, port, peer_cn)
 
     def remove(self, node_id: str) -> bool:
         """Remove a peer; return True when it was registered."""
@@ -191,10 +217,16 @@ class Membership:
             for peer_id in list(self.peers.keys()):
                 self.remove(peer_id)
             for entry in payload:
+                # 1.0.x snapshots predated the mTLS field. Older
+                # payloads will lack "peer_cn"; treat as empty so
+                # the cluster can rebuild from the legacy file
+                # without operator intervention.
+                peer_cn = str(entry.get("peer_cn", ""))
                 self.add(
                     node_id=entry["node_id"],
                     host=entry["host"],
                     port=int(entry["port"]),
+                    peer_cn=peer_cn,
                 )
                 p = self.peers[entry["node_id"]]
                 p.cluster_epoch = int(entry.get("cluster_epoch", 0))

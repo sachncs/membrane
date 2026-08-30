@@ -12,6 +12,10 @@ and pass it to the :class:`~membrane.network.cluster.Cluster` constructor.
 """
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from membrane.transport.tls import MTLSConfig
 
 
 @dataclass
@@ -41,6 +45,18 @@ class ClusterConfig:
             round.
         gossip_max_fragment_entries: Max fragment locations per
             gossip message.
+        mtls: Optional
+            :class:`~membrane.transport.tls.MTLSConfig`. When set,
+            cluster joins and inbound requests must present a
+            verified client certificate signed by the cluster's
+            CA bundle. ``None`` is supported only for the
+            single-node deployment; any multi-node cluster must
+            supply this field at 2.0+.
+        local_peer_cn: The Common Name this node presents as a
+            client cert when calling out to peers. Operators must
+            keep this in lock-step with the ``MTLSConfig.allowed_cns``
+            allow-list on peers — a peer whose CN is not in the
+            list rejects the inbound call.
     """
 
     node_id: str = "membrane-0"
@@ -59,3 +75,5 @@ class ClusterConfig:
     enable_replication: bool = True
     gossip_fanout: int = 2
     gossip_max_fragment_entries: int = 50
+    mtls: "MTLSConfig | None" = None
+    local_peer_cn: str = ""
