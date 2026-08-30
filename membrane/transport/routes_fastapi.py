@@ -303,4 +303,4 @@ def _respond(status: int, body: Any) -> Any:
     return JSONResponse(body, status_code=status)
 
 
-__all__ = ["register_routes", "MAX_BODY_BYTES"]
+__all__ = ["MAX_BODY_BYTES", "register_routes"]

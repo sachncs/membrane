@@ -76,8 +76,8 @@ def evaluate_configuration(
     # Fall back to ``threshold`` when a category is empty so
     # the throughput model has a well-defined representative
     # length to evaluate at.
-    long_len = int(round(mean_long)) if mean_long > 0 else threshold
-    short_len = int(round(mean_short)) if mean_short > 0 else threshold
+    long_len = round(mean_long) if mean_long > 0 else threshold
+    short_len = round(mean_short) if mean_short > 0 else threshold
 
     theta_membrane = throughput.stage_throughput_membrane(
         MEMBRANE_INSTANCES,
@@ -158,7 +158,7 @@ def optimal_homogeneous_pd(
     best_n_d = total_instances - 1
 
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
-    length = int(round(mean_length)) if mean_length > 0 else 32768
+    length = round(mean_length) if mean_length > 0 else 32768
 
     for n_p in range(1, total_instances):
         n_d = total_instances - n_p
@@ -198,7 +198,7 @@ def naive_heterogeneous_pd(
         paper does not model TTFT for this baseline.
     """
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
-    length = int(round(mean_length)) if mean_length > 0 else 32768
+    length = round(mean_length) if mean_length > 0 else 32768
 
     theta_membrane = throughput.stage_throughput_membrane(membrane_instances, EGRESS_BANDWIDTH_GBPS, length)
     theta_pd_d = throughput.decode_throughput(pd_instances, MAX_BATCH_SIZE, DECODE_TIME_SECONDS, OUTPUT_LENGTH)

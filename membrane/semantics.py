@@ -240,4 +240,4 @@ def cosine_similarity(a: tuple[float, ...], b: tuple[float, ...]) -> float:
     return dot / (norm_a * norm_b)
 
 
-__all__ = ["Semantics", "SemanticCluster", "cosine_similarity"]
+__all__ = ["SemanticCluster", "Semantics", "cosine_similarity"]

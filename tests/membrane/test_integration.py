@@ -68,7 +68,7 @@ class TestMembraneIntegration:
     def test_phase_4_delta_roundtrip(self):
         enc = DeltaEncoder()
         base = tuple(range(10))
-        new = tuple(range(10)) + (99, 100)
+        new = (*tuple(range(10)), 99, 100)
         delta = enc.encode(base, new)
         assert enc.decode(base, delta) == new
 

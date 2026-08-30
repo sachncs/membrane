@@ -92,8 +92,8 @@ def run_membrane_pd(
 
     p, mean_long, mean_short = workload.conditional_means(lengths, best_t)
 
-    long_len = int(round(mean_long)) if mean_long > 0 else best_t
-    short_len = int(round(mean_short)) if mean_short > 0 else best_t
+    long_len = round(mean_long) if mean_long > 0 else best_t
+    short_len = round(mean_short) if mean_short > 0 else best_t
 
     theta_membrane = throughput.stage_throughput_membrane(
         optimizer.MEMBRANE_INSTANCES,
@@ -156,7 +156,7 @@ def run_homogeneous_pd(
     best_n_p, best_n_d, best_lambda = optimizer.optimal_homogeneous_pd(lengths, total_instances)
 
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
-    length = int(round(mean_length)) if mean_length > 0 else 32768
+    length = round(mean_length) if mean_length > 0 else 32768
 
     theta_pd_p = throughput.prefill_throughput(best_n_p, length, compute_scale=optimizer.H20_COMPUTE_SCALE)
     theta_pd_d = throughput.decode_throughput(
@@ -204,7 +204,7 @@ def run_naive_heterogeneous_pd(
     lam, _unused = optimizer.naive_heterogeneous_pd(lengths)
 
     mean_length = sum(lengths) / len(lengths) if lengths else 0.0
-    length = int(round(mean_length)) if mean_length > 0 else 32768
+    length = round(mean_length) if mean_length > 0 else 32768
 
     theta_membrane = throughput.stage_throughput_membrane(
         optimizer.MEMBRANE_INSTANCES,

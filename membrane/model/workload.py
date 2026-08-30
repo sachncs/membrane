@@ -59,7 +59,7 @@ def generate_request_lengths(
     lengths: list[int] = []
     while len(lengths) < num_requests:
         sample = rng.lognormvariate(MU, SIGMA)
-        length = int(round(sample))
+        length = round(sample)
         if MIN_LENGTH <= length <= MAX_LENGTH:
             lengths.append(length)
     return lengths
@@ -82,7 +82,7 @@ def mean_and_p90(values: list[float]) -> tuple[float, float]:
     # 0-based index of the 90th percentile. Clamp to a valid
     # index so very small lists return the largest element
     # rather than raising.
-    p90_index = int(math.ceil(0.9 * len(sorted_values))) - 1
+    p90_index = math.ceil(0.9 * len(sorted_values)) - 1
     p90_index = max(0, min(p90_index, len(sorted_values) - 1))
     p90 = sorted_values[p90_index]
     return mean, p90

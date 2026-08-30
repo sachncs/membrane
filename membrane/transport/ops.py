@@ -196,14 +196,14 @@ def op_sync(
     if node is None:
         return _ok({"error": "no node"})
     try:
-        with urlopen(Request(f"{source_url}/inventory"), timeout=5) as resp:  # noqa: S310
+        with urlopen(Request(f"{source_url}/inventory"), timeout=5) as resp:
             remote_data = json.loads(resp.read().decode())
         remote_digest = remote_data.get("digest", {})
         local_digest = transfer_service.inventory_digest(node) or {}
         missing = transfer_service.compare_inventories(local_digest, remote_digest)
         transferred: list[str] = []
         for h in missing:
-            with urlopen(  # noqa: S310
+            with urlopen(
                 Request(f"{source_url}/retrieve?content_hash={h}"), timeout=5
             ) as resp:
                 remote_frag_data = json.loads(resp.read().decode())
@@ -245,7 +245,7 @@ def op_leave(cluster: Cluster | None, node_id: str) -> tuple[int, JsonDict]:
     if cluster.migrator is not None and leaving_hashes:
         try:
             cluster.migrator.migrate(leaving_hashes, node_id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("migrator.migrate(%d hashes, leaving=%s) failed: %s", len(leaving_hashes), node_id, exc)
     return _ok({"success": True})
 
@@ -259,16 +259,16 @@ def op_gossip(cluster: Cluster | None, data: JsonDict) -> tuple[int, JsonDict]:
 
 __all__ = [
     "MAX_BODY_BYTES",
+    "op_gossip",
     "op_heartbeat",
-    "op_metrics",
     "op_inventory",
-    "op_peers",
-    "op_retrieve",
-    "op_store",
-    "op_replicate",
-    "op_prefill",
-    "op_sync",
     "op_join",
     "op_leave",
-    "op_gossip",
+    "op_metrics",
+    "op_peers",
+    "op_prefill",
+    "op_replicate",
+    "op_retrieve",
+    "op_store",
+    "op_sync",
 ]

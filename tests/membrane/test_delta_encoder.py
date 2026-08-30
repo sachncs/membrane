@@ -60,6 +60,6 @@ class TestDeltaEncoder:
     def test_roundtrip_random(self):
         enc = DeltaEncoder()
         base = tuple(range(10))
-        new = tuple(range(7)) + (99, 100)
+        new = (*tuple(range(7)), 99, 100)
         delta = enc.encode(base, new)
         assert enc.decode(base, delta) == new

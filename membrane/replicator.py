@@ -189,7 +189,7 @@ class Replicator:
                 if frag is not None:
                     client.request_replicate(frag)
                     logger.debug("Replicated %s to %s", content_hash, peer_id)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.debug(
                     "Replication of %s to %s failed: %s",
                     content_hash,

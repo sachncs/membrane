@@ -131,4 +131,4 @@ class PersistenceBackend(Storage, Inventory, Protocol):
     """
 
 
-__all__ = ["PersistenceBackend", "Storage", "Inventory"]
+__all__ = ["Inventory", "PersistenceBackend", "Storage"]

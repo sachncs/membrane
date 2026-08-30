@@ -80,11 +80,11 @@ def _try_import(class_name: str) -> type[Backend]:
         RuntimeError: If the optional backend dependency is
             not installed.
     """
-    from membrane.compute import anthropic as _anthropic  # noqa: F401
-    from membrane.compute import gpu as _gpu  # noqa: F401
-    from membrane.compute import ollama as _ollama  # noqa: F401
-    from membrane.compute import openai as _openai  # noqa: F401
-    from membrane.compute import transformers as _t  # noqa: F401
+    from membrane.compute import anthropic as _anthropic
+    from membrane.compute import gpu as _gpu
+    from membrane.compute import ollama as _ollama
+    from membrane.compute import openai as _openai
+    from membrane.compute import transformers as _t
 
     module_map = {
         "Ollama": _ollama,

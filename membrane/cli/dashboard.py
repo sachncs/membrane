@@ -273,4 +273,4 @@ def run_remote_dashboard(
             time.sleep(refresh)
 
 
-__all__ = ["run_dashboard", "run_remote_dashboard", "fetch_json"]
+__all__ = ["fetch_json", "run_dashboard", "run_remote_dashboard"]

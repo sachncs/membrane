@@ -117,10 +117,10 @@ def require_scope(context: AuthContext, scope: str) -> None:
 
 
 __all__ = [
-    "AuthContext",
+    "SCOPES",
     "AuthBackendError",
+    "AuthContext",
     "AuthRequest",
     "Authenticator",
-    "SCOPES",
     "require_scope",
 ]

@@ -123,12 +123,12 @@ def asdict_shallow(fragment: Fragment) -> dict[str, Any]:
 
 
 __all__: list[str] = [
+    "SCHEMA_VERSION",
     "JsonDict",
     "JsonValue",
-    "SCHEMA_VERSION",
-    "to_dict",
+    "asdict_shallow",
+    "from_bytes",
     "from_dict",
     "to_bytes",
-    "from_bytes",
-    "asdict_shallow",
+    "to_dict",
 ]

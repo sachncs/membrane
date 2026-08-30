@@ -109,58 +109,58 @@ from membrane.transport.grpc import GrpcServer
 from membrane.transport.http import HTTPServer
 
 __all__ = [
+    "CPU",
+    "GPU",
+    "Anthropic",
+    "Artifact",
+    # Auth
+    "Authenticator",
+    # Compute
+    "Backend",
+    "BackendError",
+    "CachingPersistence",
+    "CapacityError",
+    "ConfigError",
+    # Errors
+    "Error",
+    # Transports
+    "FastAPIServer",
     # Memory objects
     "Fragment",
     "FragmentKind",
-    "Signature",
-    "Prefix",
-    "Segment",
-    "Artifact",
-    "Trace",
-    # Serving plane
-    "Node",
-    "Origin",
-    "Replica",
-    # Index
-    "Index",
-    # Placement
-    "Ring",
-    "Shard",
-    # Reconstruction
-    "Reconstructor",
-    # Transfer
-    "TransferService",
-    # Persistence
-    "PersistenceBackend",
-    "Memory",
-    "Redis",
-    "CachingPersistence",
-    # Compute
-    "Backend",
-    "CPU",
-    "GPU",
-    "Transformers",
-    "OpenAI",
-    "Anthropic",
-    "Ollama",
-    # Transports
-    "FastAPIServer",
     "GrpcServer",
     "HTTPServer",
-    # Composition
-    "Server",
-    # Auth
-    "Authenticator",
-    # Errors
-    "Error",
-    "BackendError",
-    "CapacityError",
-    "ConfigError",
+    # Index
+    "Index",
+    "Memory",
     "MigrationError",
     "NetworkError",
+    # Serving plane
+    "Node",
+    "Ollama",
+    "OpenAI",
+    "Origin",
+    # Persistence
+    "PersistenceBackend",
     "PersistenceError",
+    "Prefix",
+    # Reconstruction
+    "Reconstructor",
+    "Redis",
+    "Replica",
+    # Placement
+    "Ring",
     "SchemaError",
+    "Segment",
+    # Composition
+    "Server",
+    "Shard",
+    "Signature",
     "TimeoutError",
+    "Trace",
+    # Transfer
+    "TransferService",
+    "Transformers",
     # Logging
     "configure_logging",
 ]

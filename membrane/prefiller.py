@@ -145,7 +145,7 @@ class Prefiller:
                     return decision_result
                 # Decision absent, target != 'pd-p', or no local
                 # node: fall through to the race.
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.debug("analytical prefill for routing decision failed: %s", exc)
 
         if not candidate_nodes:
@@ -291,4 +291,4 @@ class Prefiller:
         return result
 
 
-__all__ = ["PrefillFallbackError", "NodePrefillError", "Prefiller"]
+__all__ = ["NodePrefillError", "PrefillFallbackError", "Prefiller"]

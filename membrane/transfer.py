@@ -118,7 +118,7 @@ class _LocalEndpoint:
 class _RemoteEndpoint:
     """Adapter that promotes a peer node-id + cluster to a :class:`RemoteEndpoint`."""
 
-    __slots__ = ("node_id", "_cluster")
+    __slots__ = ("_cluster", "node_id")
 
     def __init__(self, node_id: str, cluster: Cluster) -> None:
         self.node_id = node_id
@@ -413,4 +413,4 @@ class TransferService:
         )
 
 
-__all__ = ["TransferService", "LocalEndpoint", "RemoteEndpoint"]
+__all__ = ["LocalEndpoint", "RemoteEndpoint", "TransferService"]

@@ -23,8 +23,8 @@ from membrane.network.gossip import GossipState, PeerEndpoint
 from membrane.network.peer import Peer
 
 __all__ = [
-    "ClusterConfig",
     "Cluster",
+    "ClusterConfig",
     "GossipState",
     "Peer",
     "PeerEndpoint",

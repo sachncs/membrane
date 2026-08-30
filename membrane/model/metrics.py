@@ -95,7 +95,7 @@ def aggregate_ttft(
     mean = sum(sorted_ttfts) / len(sorted_ttfts)
     # 0-based index of the 90th percentile; clamped to a valid
     # index for very small batches.
-    p90_index = int(math.ceil(0.9 * len(sorted_ttfts))) - 1
+    p90_index = math.ceil(0.9 * len(sorted_ttfts)) - 1
     p90_index = max(0, min(p90_index, len(sorted_ttfts) - 1))
     p90 = sorted_ttfts[p90_index]
     return mean, p90
