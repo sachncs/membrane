@@ -18,13 +18,27 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Union
 
 from membrane.errors import SchemaError
 from membrane.fragment import Fragment
 from membrane.signature import Signature
 
 SCHEMA_VERSION: int = 1
+
+#: JSON-compatible value type used at every wire boundary.
+JsonValue = Union[
+    str,
+    int,
+    float,
+    bool,
+    None,
+    list["JsonValue"],
+    dict[str, "JsonValue"],
+]
+
+#: A JSON object (used for every Membrane wire payload).
+JsonDict = dict[str, JsonValue]
 
 
 def to_dict(fragment: Fragment) -> dict[str, Any]:
@@ -106,3 +120,15 @@ def asdict_shallow(fragment: Fragment) -> dict[str, Any]:
     only need a structural copy (without the schema_version discriminator).
     """
     return asdict(fragment)
+
+
+__all__: list[str] = [
+    "JsonDict",
+    "JsonValue",
+    "SCHEMA_VERSION",
+    "to_dict",
+    "from_dict",
+    "to_bytes",
+    "from_bytes",
+    "asdict_shallow",
+]

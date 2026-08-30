@@ -21,6 +21,154 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still cross-checked by `pip-audit`, code-level issues by
   `bandit`, secrets by `gitleaks`.
 
+## [0.3.0] - 2026-08-30
+
+Principal-level architectural refactor of Membrane, continuing
+the 0.2.0 cleanup. Each item below corresponds to one of the 16
+atomic commits on the path from 0.2.0 to 0.3.0. The refactor
+preserves every external contract (CLI flags, gRPC method
+names, HTTP wire format, public dataclass shapes) and changes
+only the internal module/class structure.
+
+### Changed
+
+- **No fake private APIs**: dropped leading underscores from
+  `TransferService._transfer_local`, `TransferService._sync_local`,
+  `TransferService._pull_from_remote`, `TransferService._push_to_remote`,
+  renamed them to public `transfer_local`, `sync_local`,
+  `pull_from_remote`, `push_to_remote`. Renamed
+  `membrane.transport._ops` → `membrane.transport.ops`. Moved
+  `Cluster._migrate_primary` → `Shard.migrate_primary` (where
+  the data lives). Inlined `Server.setup_persistence / setup_cluster /
+  setup_transport / make_compute_backend` into `Server.__init__`
+  or replaced the helper with a registry.
+
+- **No thin forwarders**: deleted `GraphManager` and merged its
+  `suggest_prefetch` / `eviction_candidates` policies into `Graph`
+  directly as `prefetch_suggest` and `eviction_neighbors`. Removed
+  twelve `Cluster` forwarders (`add_peer`, `remove_peer`,
+  `get_peers`, `is_peer_healthy`, `get_peer_client`, `get_peer_url`,
+  `on_peer_join`, `on_peer_leave`, `on_heartbeat`, `on_gossip`,
+  `bootstrap_loop`, plus the `_migrate_callback` rename);
+  callers reach `cluster.membership.*` and `cluster.gossip.handle(...)`
+  directly. Deleted `Server.register_peer` and
+  `Server.unregister_peer`; the `connected_nodes` set is exposed
+  by Server for any future diagnostics. Removed the dead
+  `from membrane.delta import Delta` re-export in `prefix.py`.
+
+- **Compute polymorphism**: hoisted `token_hash(tokens)` to
+  `membrane/compute/_hash.py` and deleted the five duplicate
+  copies (CPU `@staticmethod`, OpenAI / Anthropic / Ollama /
+  Transformers instance methods, plus `CPU.hash_tokens` called
+  from GPU). Hoisted `simulate_prefill_fragment(...)` to
+  `Backend` as a static helper; deleted the three
+  `simulate_prefill` instance methods and the two inlined
+  copies. Added `Backend.SIMULATE_WINDOW_SIZE = 128` as the
+  shared window-size constant.
+
+- **Shared HTTP base class**: introduced `RemoteLLMBackend`
+  with `build_client(timeout=, headers=)` and `probe(path)` so
+  OpenAI, Anthropic, and Ollama no longer hand-roll their
+  `httpx.Client` construction and `available()` liveness
+  probes. Each backend still supplies the provider-specific
+  URL paths and request bodies; the boilerplate is gone.
+
+- **Compute registry**: `Server.__init__`'s six-way
+  `if compute == "gpu" / "ollama" / "openai" / "anthropic" /
+  "transformers" / default→CPU` chain is replaced with
+  `COMPUTE_BACKENDS: dict[str, callable]` registry. `Server.compute`
+  is now typed `Backend | str`; an existing `Backend` instance
+  can be passed through.
+
+- **Module consolidation**: merged `membrane/network/gossip_loop.py`
+  into `membrane/network/gossip.py` (one concept, one module).
+  Folded `membrane/clusters.py` (the `SemanticCluster` class)
+  into `membrane/semantics.py` and renamed
+  `clusters.SemanticCluster.cosine_similarity` to module-level
+  `membrane.semantics.cosine_similarity`. Deleted both source
+  modules; tests import from `membrane.semantics`.
+
+- **Persistence split**: the monolithic `PersistenceBackend`
+  Protocol in `membrane/persistence/base.py` is split into
+  two: `Storage` (per-fragment CRUD) and `Inventory`
+  (cross-node directory). `PersistenceBackend` remains as a
+  combined alias for back-compat. Fixed the long-standing
+  `delete_fragment(content_hash, node_id)` vs
+  `delete_fragment(content_hash)` signature mismatch — every
+  concrete backend already used the single-argument form;
+  the Protocol now matches.
+
+- **Diagnostic cleanups**: dropped the
+  `isinstance(self.persistence, Redis) and self.persistence.ping()`
+  tag-check in `Server.diagnostics()`. The field is now the
+  persistence-backend health indicator (returned from
+  `self.persistence.ping()`) and is no longer coupled to a
+  particular backend kind.
+
+- **Tests**: rewrote `tests/membrane/network/test_cluster.py`
+  to drive subsystems directly (no `mgr.add_peer` /
+  `mgr.on_peer_join` forwarders). Updated
+  `tests/membrane/transport/test_fastapi_server.py` to assert
+  against `cluster.membership.add` /
+  `cluster.membership.to_json` instead of the now-deleted
+  `on_peer_join` mock. Updated
+  `tests/membrane/transport/test_observability.py` so the
+  readyz over-capacity test no longer mutates
+  `app.state.node.max_memory_bytes` /
+  `app.state.node.fragments` directly — saturates the node
+  via `node.memory_usage = node.max_memory_bytes`. Dropped
+  `backend.actual_device = "cpu"` mutation from
+  test_transformers_backend.py. Rewrote test_semantic_cluster
+  to import from `membrane.semantics`. test_graph_manager
+  renamed to test_graph with assertions on `Graph` directly.
+
+### Removed
+
+- `membrane/clusters.py` (folded into semantics.py).
+- `membrane/network/gossip_loop.py` (folded into gossip.py).
+- `Cluster.{add_peer, remove_peer, get_peers, is_peer_healthy,
+   get_peer_client, get_peer_url, on_peer_join, on_peer_leave,
+   on_heartbeat, on_gossip, _migrator_callback,
+   bootstrap_loop}` (forwards).
+- `Server.{setup_persistence, setup_cluster, setup_transport,
+   make_compute_backend, register_peer, unregister_peer}`
+  (prefixed helpers + dead forwards).
+- `GraphManager` (folded into Graph).
+- `TransferService.{_transfer_local, _sync_local,
+   _pull_from_remote, _push_to_remote}` underscore prefix.
+- Five per-backend `hash_tokens` methods (replaced with
+  `membrane.compute.token_hash`).
+- Three per-backend `simulate_prefill` methods (replaced
+  with `Backend.simulate_prefill_fragment`).
+- Three duplicate `httpx.Client(...)` constructor blocks.
+- Three duplicate `available()` liveness probes.
+- Side-effect `from membrane.delta import Delta` re-export.
+- `membrane.transport._ops` (underscore module name).
+
+### Notes
+
+- External contracts preserved: gRPC method names, HTTP wire
+  format (JSON), CLI flag set, `Server.__init__` signature,
+  `ClusterConfig` fields, every fragment dataclass. The
+  rename of `GraphManager.suggest_prefetch` →
+  `Graph.prefetch_suggest` is the only public method that
+  has been renamed; the old name is no longer reachable
+  via the public surface.
+
+## [0.2.0] - 2026-08-30
+
+- **CI security job**: The `aquasecurity/trivy-action` step was
+  configured to scan the upstream `python:3.12-slim` base image
+  (`scan-type: image, image-ref: python:3.12-slim`), which produced
+  19 HIGH/CRITICAL CVEs in debian Trixie 13.6 base packages
+  (perl-base, ncurses-base, libssl3, libsqlite3-0, gzip, libacl1,
+  openssl). Those CVEs are upstream Debian stable issues and
+  cannot be fixed from inside this repository. Switched the scan
+  to filesystem mode (`scan-type: fs, scan-ref: .`) so the weekly
+  audit now covers the Membrane codebase. Python-dep CVEs are
+  still cross-checked by `pip-audit`, code-level issues by
+  `bandit`, secrets by `gitleaks`.
+
 ## [0.2.0] - 2026-08-30
 
 Principal-level architectural refactor. Internal-only; no public-API
