@@ -161,7 +161,12 @@ def parse_peer_cn_header(headers: dict[str, str]) -> str | None:
         str | None: The CN string, or ``None`` when the header
         is missing or empty.
     """
-    value = headers.get("x-ssl-client-cn") or headers.get("X-SSL-Client-CN")
+    target = "x-ssl-client-cn"
+    value: str | None = None
+    for key, val in headers.items():
+        if key.lower() == target:
+            value = val
+            break
     if value is None:
         return None
     cleaned = value.strip()
