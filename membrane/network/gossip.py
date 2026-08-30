@@ -14,16 +14,18 @@ holds the local membership table, the directory, and a node
 reference for building snapshots.
 """
 
+from __future__ import annotations
+
 import logging
 import random
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
 from membrane.network.config import ClusterConfig
 from membrane.network.membership import Membership
 from membrane.node import Node
+from membrane.serialization import JsonDict
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +48,8 @@ class PeerEndpoint:
     port: int
     healthy: bool = True
 
-    def to_json(self) -> dict[str, Any]:
-        """Serialize this endpoint to a JSON-compatible dict.
-
-        Returns:
-            dict[str, Any]: ``node_id``, ``host``, ``port``,
-            ``healthy``.
-        """
+    def to_json(self) -> JsonDict:
+        """Serialize this endpoint to a JSON-compatible dict."""
         return {
             "node_id": self.node_id,
             "host": self.host,
@@ -61,16 +58,8 @@ class PeerEndpoint:
         }
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "PeerEndpoint":
-        """Deserialize a peer endpoint from a JSON-compatible dict.
-
-        Args:
-            data: Mapping previously produced by
-                :meth:`to_json`.
-
-        Returns:
-            PeerEndpoint: Reconstructed instance.
-        """
+    def from_json(cls, data: JsonDict) -> PeerEndpoint:
+        """Deserialize a peer endpoint from a JSON-compatible dict."""
         return cls(
             node_id=data["node_id"],
             host=data["host"],
@@ -111,11 +100,11 @@ class GossipState:
     fragment_locations: dict[str, list[str]] = field(default_factory=dict)
     inventory_digest: dict[str, int] = field(default_factory=dict)
 
-    def to_json(self) -> dict[str, Any]:
+    def to_json(self) -> JsonDict:
         """Serialize this state to a JSON-compatible dict.
 
         Returns:
-            dict[str, Any]: ``node_id``, ``timestamp``,
+            JsonDict: ``node_id``, ``timestamp``,
             ``peers`` (each serialized via
             :meth:`PeerEndpoint.to_json`), ``fragment_locations``,
             and ``inventory_digest``.
@@ -129,7 +118,7 @@ class GossipState:
         }
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "GossipState":
+    def from_json(cls, data: JsonDict) -> GossipState:
         """Deserialize a gossip state from a JSON-compatible dict.
 
         Args:
@@ -147,7 +136,7 @@ class GossipState:
             inventory_digest=dict(data.get("inventory_digest", {})),
         )
 
-    def merge(self, other: "GossipState") -> "GossipState":
+    def merge(self, other: GossipState) -> GossipState:
         """Merge another gossip state into a new combined state.
 
         Peer entries are de-duplicated by ``node_id`` with a
@@ -229,7 +218,7 @@ class Gossip:
         self.stop_event = stop_event
         self.running = running
 
-    def build_state(self) -> "GossipState":
+    def build_state(self) -> GossipState:
         """Snapshot local state into a :class:`GossipState`."""
         peers = [
             PeerEndpoint(node_id=p.node_id, host=p.host, port=p.port, healthy=p.healthy)
@@ -273,14 +262,14 @@ class Gossip:
                     logger.debug("Gossip to %s failed: %s", target.node_id, exc)
             self.stop_event.wait(timeout=self.config.gossip_interval_sec)
 
-    def handle(self, data: dict[str, Any]) -> dict[str, Any]:
+    def handle(self, data: JsonDict) -> JsonDict:
         """Apply an incoming gossip payload to local state.
 
         Args:
             data: Incoming gossip payload (parsed JSON).
 
         Returns:
-            dict[str, Any]: Local gossip state for the caller.
+            JsonDict: Local gossip state for the caller.
         """
         try:
             incoming = GossipState.from_json(data)
@@ -299,4 +288,4 @@ class Gossip:
         return self.build_state().to_json()
 
 
-__all__ = ["Gossip", "GossipState", "PeerEndpoint"]
+__all__ = ["Gossip", GossipState, "PeerEndpoint"]
