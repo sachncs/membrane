@@ -81,7 +81,7 @@ class Latency:
         return self.latency_table.get(node_id, float("inf"))
 
     @staticmethod
-    def _holds(node: Node, content_hash: str) -> bool:
+    def holds(node: Node, content_hash: str) -> bool:
         """Return ``True`` when ``node`` actually holds ``content_hash``.
 
         This is an idempotent probe; the call has the side effect
@@ -97,13 +97,13 @@ class Latency:
         """
         return node.retrieve(content_hash) is not None
 
-    def _pick_local(self, content_hash: str, local_node: Node) -> str | None:
+    def pick_local(self, content_hash: str, local_node: Node) -> str | None:
         """Return ``local_node.node_id`` iff it holds the fragment."""
-        if self._holds(local_node, content_hash):
+        if self.holds(local_node, content_hash):
             return local_node.node_id
         return None
 
-    def _pick_replica(
+    def pick_replica(
         self,
         content_hash: str,
         candidate_nodes: list[Node],
@@ -118,7 +118,7 @@ class Latency:
             Node | None: The lowest-latency node that actually
             holds the fragment, or ``None`` when none do.
         """
-        holding = [node for node in candidate_nodes if self._holds(node, content_hash)]
+        holding = [node for node in candidate_nodes if self.holds(node, content_hash)]
         if not holding:
             return None
 
@@ -128,7 +128,7 @@ class Latency:
 
         return min(holding, key=latency_key)
 
-    def _pick_fallback(
+    def pick_fallback(
         self,
         local_node: Node,
     ) -> str:
@@ -154,15 +154,15 @@ class Latency:
             ``node_id`` values from ``local_node`` or
             ``candidate_nodes``, or the configured origin id.
         """
-        local_target = self._pick_local(content_hash, local_node)
+        local_target = self.pick_local(content_hash, local_node)
         if local_target is not None:
             return local_target
 
-        replica = self._pick_replica(content_hash, candidate_nodes)
+        replica = self.pick_replica(content_hash, candidate_nodes)
         if replica is not None:
             return replica.node_id
 
-        fallback = self._pick_fallback(local_node)
+        fallback = self.pick_fallback(local_node)
         logger.debug("No replica for %s; falling back to %s", content_hash, fallback)
         return fallback
 
