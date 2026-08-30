@@ -305,7 +305,14 @@ class KVTransferEngine:
         k_handle: TensorHandle,
         v_handle: TensorHandle,
     ) -> TransferEnvelope:
-        """Bundle ``k_handle`` and ``v_handle`` into a :class:`TransferEnvelope`."""
+        """Bundle ``k_handle`` and ``v_handle`` into a :class:`TransferEnvelope`.
+
+        The transfer is wrapped in an OTel ``transfer.kv`` span
+        when the tracer is configured; absent the tracer the
+        function returns the envelope unchanged.
+        """
+        from membrane.otel_tracer import membrane_span
+
         raw_k = k_handle.tobytes()
         raw_v = v_handle.tobytes()
         if self.quantizer is not None:
@@ -324,7 +331,14 @@ class KVTransferEngine:
             + raw_k
             + raw_v
         )
-        compressed = self.transport.compress(payload)
+        with membrane_span(
+            "transfer.kv",
+            kv_bytes=str(len(payload)),
+            compression=self.transport.method,
+            shape="x".join(str(d) for d in k_handle.shape),
+            dtype=k_handle.dtype,
+        ):
+            compressed = self.transport.compress(payload)
         return TransferEnvelope(
             compressed=compressed,
             compression=self.transport.method,

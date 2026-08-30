@@ -137,24 +137,35 @@ class PrefillService:
             PrefillResponse: A response carrying a stable
             :class:`KVHandle` for the cached K/V.
         """
+        from membrane.otel_tracer import membrane_span
+
         clock = _WallClock()
         match = self.cache.lookup(request.model_id, request.token_ids)
         cached_prefix_len = match.token_len
-        with self._lock:
-            handle = self.cache.insert(
-                request.model_id,
-                request.token_ids,
-                layer_range=(0, 0),
-            )
-            prompt_len, backend_ms = self.backend.run_prefill(request, cached_prefix_len)
-        total_ms = clock.elapsed_ms() + max(backend_ms, 0.0)
-        return PrefillResponse(
+        with membrane_span(
+            "disagg.prefill",
+            model_id=request.model_id,
+            prompt_len=str(len(request.token_ids)),
+            cached_prefix_len=str(cached_prefix_len),
             request_id=request.request_id,
-            kv_handle=handle.handle,
-            prefill_ms=total_ms,
-            prompt_len=prompt_len,
-            cached_prefix_len=cached_prefix_len,
-        )
+        ):
+            with self._lock:
+                handle = self.cache.insert(
+                    request.model_id,
+                    request.token_ids,
+                    layer_range=(0, 0),
+                )
+                prompt_len, backend_ms = self.backend.run_prefill(
+                    request, cached_prefix_len
+                )
+            total_ms = clock.elapsed_ms() + max(backend_ms, 0.0)
+            return PrefillResponse(
+                request_id=request.request_id,
+                kv_handle=handle.handle,
+                prefill_ms=total_ms,
+                prompt_len=prompt_len,
+                cached_prefix_len=cached_prefix_len,
+            )
 
 
 # ---------------------------------------------------------------------------
