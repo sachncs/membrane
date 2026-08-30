@@ -49,6 +49,13 @@ class PeerInfo:
             Captured at join time so the membership table records
             which peer is which (and so a forged peer cannot
             impersonate an existing CN).
+        lease_until: Wall-clock deadline after which the lease
+            expires. Refreshed to ``now() + ClusterConfig.lease_timeout_sec``
+            on every successful heartbeat. ``0.0`` means no
+            explicit lease is held (single-node deployments).
+            Phase 4 uses this field as the canonical source of
+            truth for the membership table freshness, in tandem
+            with the heartbeat-miss counter.
     """
 
     node_id: str
@@ -60,6 +67,7 @@ class PeerInfo:
     missed_heartbeats: int = 0
     cluster_epoch: int = 0
     peer_cn: str = ""
+    lease_until: float = 0.0
 
     def to_json(self) -> dict[str, Any]:
         """Serialize this peer to a JSON-compatible dict."""
@@ -234,11 +242,61 @@ class Membership:
                 p.suspect = bool(entry.get("suspect", False))
                 p.missed_heartbeats = int(entry.get("missed_heartbeats", 0))
 
-    def record_heartbeat(self, node_id: str) -> None:
+    def record_heartbeat(
+        self,
+        node_id: str,
+        lease_until: float = 0.0,
+    ) -> None:
         """Reset heartbeat counters for ``node_id``.
 
-        No-op when the peer is unknown.
+        Optionally stamp the lease deadline returned by the
+        peer (Phase 4). ``lease_until <= 0`` is ignored so
+        peers that do not advertise leases keep ``lease_until = 0``
+        and rely on the missed-heartbeats counter only.
+
+        Args:
+            node_id: Peer identifier whose counters to reset.
+            lease_until: Optional Unix deadline.
         """
+        with self.lock:
+            peer = self.peers.get(node_id)
+            if peer is None:
+                return
+            peer.last_heartbeat = time.time()
+            peer.missed_heartbeats = 0
+            peer.suspect = False
+            peer.healthy = True
+            if lease_until > 0:
+                peer.lease_until = lease_until
+
+    def evict_expired_leases(self, now: float | None = None) -> list[str]:
+        """Mark peers whose lease deadline has elapsed as suspect.
+
+        Returns the list of peer ids that crossed into the
+        ``suspect`` state during this scan. The caller (typically
+        :class:`~membrane.network.cluster.Cluster`) can chain
+        the standard failure-removal pass to evict them.
+
+        Args:
+            now: Wall-clock now for deterministic testing;
+                ``None`` reads ``time.time()`` at call time.
+
+        Returns:
+            list[str]: Newly-suspect peer ids.
+        """
+        if now is None:
+            now = time.time()
+        flagged: list[str] = []
+        with self.lock:
+            for peer_id, peer in self.peers.items():
+                if (
+                    peer.lease_until > 0
+                    and peer.healthy
+                    and now > peer.lease_until
+                ):
+                    if self.mark_suspect(peer_id):
+                        flagged.append(peer_id)
+        return flagged
 
     def record_peer_cn(self, node_id: str, cn: str) -> None:
         """Stamp the verified peer cert CN onto a membership record.

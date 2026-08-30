@@ -80,6 +80,12 @@ class ClusterConfig:
             continuously converged without flooding the wire.
             Tests and single-node deployments disable this by
             setting the field to a very large value.
+        lease_timeout_sec: Seconds a peer is considered live
+            after its last successful heartbeat. Default
+            ``30`` keeps the heartbeat-miss counter redundant
+            for production clusters; the heartbeat loop
+            refreshes :attr:`~membrane.network.membership.PeerInfo.lease_until`
+            to ``now() + lease_timeout_sec`` on every ack.
     """
 
     node_id: str = "membrane-0"
@@ -104,3 +110,4 @@ class ClusterConfig:
     quorum_count: int = 2
     cluster_quorum_timeout_sec: float = 5.0
     repair_interval_sec: float = 60.0
+    lease_timeout_sec: float = 30.0
