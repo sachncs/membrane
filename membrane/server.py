@@ -371,7 +371,7 @@ class Server:
             error_count=self.error_count,
             connected_nodes=connected,
             backend_name=self.compute_backend.device_name(),
-            redis_connected=isinstance(self.persistence, Redis) and self.persistence.ping(),
+            redis_connected=self.persistence.ping(),
             load=self.node.heartbeat(),
         )
 

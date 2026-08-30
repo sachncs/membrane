@@ -35,7 +35,9 @@ class TestMembraneServer:
         assert diag.node_id == "s3"
         assert diag.uptime_seconds >= 0
         assert diag.backend_name == "cpu"
-        assert diag.redis_connected is False
+        # redis_connected reflects persistence-ping health, not the
+        # backend kind. In-memory persistence always reports True.
+        assert diag.redis_connected is True
 
     def test_log_event(self):
         node = Node("s4")
