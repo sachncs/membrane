@@ -4,26 +4,56 @@ package membrane;
 
 option go_package = "github.com/membrane/api";
 
+// Membrane v2 RPC service. v1 (the pre-PayloadIdentity messages) is
+// removed; clients must speak v2 or talk over HTTP/JSON instead.
+//
+// Field numbers are sparse on purpose: do not renumber fields once
+// clients have shipped. New optional fields may be added with the
+// next available number.
 service Membrane {
+  // Store a fragment on the remote node. When the store succeeds,
+  // it returns the canonical content hash for downstream indexing.
   rpc StoreFragment(StoreRequest) returns (StoreResponse);
+  // Retrieve a fragment by content hash. Returns ``found=false`` when
+  // the fragment is absent so callers can short-circuit cleanly.
   rpc RetrieveFragment(RetrieveRequest) returns (RetrieveResponse);
+  // Ask the remote node for its inventory digest (the
+  // ``content_hash -> version_id`` map).
   rpc SyncInventory(InventoryRequest) returns (InventoryResponse);
+  // Run prefill on the remote node and return the resulting
+  // fragments (with payload bytes inline when the producer
+  // populated them).
   rpc Prefill(PrefillRequest) returns (PrefillResponse);
+  // Heartbeat: report node health back to the caller.
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }
 
+// FragmentMessage is the v2 wire shape carrying the full
+// PayloadIdentity and the canonical payload bytes inline.
+//
+// Repeated ``int32``/``int64`` arrays of length 2 encode the
+// (start, end) ranges; arrays of arbitrary length encode ``shape``.
+//
+// The ``schema_version`` field is at the head so a v2 reader can
+// recognize and reject a v1 fragment (which lacked the field).
 message FragmentMessage {
-  string content_hash = 1;
-  repeated double embedding = 2;
+  int32 schema_version = 1;
+  bytes payload_hash = 2;            // 32 bytes (sha256 of canonical frame payload)
   string model_id = 3;
-  int32 layer_start = 4;
-  int32 layer_end = 5;
-  int32 token_start = 6;
-  int32 token_end = 7;
-  int32 size = 8;
-  double ttl = 9;
-  double reuse_score = 10;
-  int32 version_id = 11;
+  string model_revision = 4;
+  string tokenizer_name = 5;
+  string tokenizer_revision = 6;
+  repeated int32 layer_range = 7;     // [start, end], inclusive
+  repeated int32 head_range = 8;     // [start, end] OR [-1, -1] (all-heads sentinel)
+  repeated int32 token_span = 9;     // [start, end], inclusive
+  string dtype = 10;                 // "float16" | "bfloat16" | "float32" | "float64"
+  repeated int64 shape = 11;         // tensor shape
+  string payload_ref = 12;           // blob key in ContentStore; empty when metadata-only
+  int64 payload_size = 13;           // canonical frame byte size
+  bytes payload = 14;                // canonical frame bytes (empty when sent via separate stream)
+  double ttl = 15;
+  double reuse_score = 16;
+  int32 version_id = 17;
 }
 
 message StoreRequest {

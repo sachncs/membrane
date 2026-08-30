@@ -10,6 +10,25 @@ from membrane.node import Node
 from membrane.transport.grpc import GrpcServer
 
 
+def _identity_payload(payload_hash_hex: str, model_id: str = "m") -> dict:
+    """Build a wire-friendly identity dict for gRPC test fixtures."""
+    return {
+        "payload_hash": payload_hash_hex,
+        "model_id": model_id,
+        "model_revision": "",
+        "tokenizer_name": model_id,
+        "tokenizer_revision": "",
+        "layer_range": [0, 1],
+        "head_range": [-1, -1],
+        "token_span": [0, 10],
+        "dtype": "float16",
+        "shape": [1, 1, 11, 1, 64],
+    }
+
+
+_HASH_HEX = "ab" * 32  # 64 hex chars = 32 raw bytes, looks like a sha256 digest
+
+
 class TestGrpcServer:
     """Test suite for gRPC transport."""
 
@@ -44,15 +63,22 @@ class TestGrpcServer:
         channel = grpc.insecure_channel("127.0.0.1:50053")
         stub = membrane_pb2_grpc.MembraneStub(channel)
 
+        ident = _identity_payload(_HASH_HEX)
         frag = membrane_pb2.FragmentMessage(
-            content_hash="grpc-frag2",
-            embedding=[0.1, 0.2],
-            model_id="m",
-            layer_start=0,
-            layer_end=1,
-            token_start=0,
-            token_end=10,
-            size=100,
+            schema_version=2,
+            payload_hash=bytes.fromhex(_HASH_HEX),
+            model_id=ident["model_id"],
+            model_revision=ident["model_revision"],
+            tokenizer_name=ident["tokenizer_name"],
+            tokenizer_revision=ident["tokenizer_revision"],
+            layer_range=ident["layer_range"],
+            head_range=ident["head_range"],
+            token_span=ident["token_span"],
+            dtype=ident["dtype"],
+            shape=ident["shape"],
+            payload_ref=_HASH_HEX,
+            payload_size=100,
+            payload=b"",
             ttl=3600.0,
             reuse_score=0.5,
             version_id=1,
@@ -61,10 +87,10 @@ class TestGrpcServer:
         assert store_resp.success is True
 
         retrieve_resp = stub.RetrieveFragment(
-            membrane_pb2.RetrieveRequest(content_hash="grpc-frag2", node_id="grpc-test")
+            membrane_pb2.RetrieveRequest(content_hash=_HASH_HEX, node_id="grpc-test")
         )
         assert retrieve_resp.found is True
-        assert retrieve_resp.fragment.content_hash == "grpc-frag2"
+        assert retrieve_resp.fragment.payload_hash == bytes.fromhex(_HASH_HEX)
 
     def test_prefill_uses_injected_backend(self, server):
         import grpc

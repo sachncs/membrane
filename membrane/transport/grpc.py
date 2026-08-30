@@ -25,10 +25,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from membrane.errors import SchemaError
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 
 logger = logging.getLogger(__name__)
+
+
+SCHEMA_VERSION: int = 2
 
 
 class GrpcServer:
@@ -234,45 +238,53 @@ class Handler:
     # ------------------------------------------------------------------
 
     def pb_to_fragment(self, msg) -> Fragment:
-        """Convert a protobuf Fragment message to a Fragment dataclass.
+        """Convert a protobuf FragmentMessage (schema v2) to a Fragment.
 
-        The proto schema still carries the legacy
-        ``model_id`` / ``layer_start`` / ``layer_end`` /
-        ``token_start`` / ``token_end`` fields and a JSON
-        ``embedding``. We map those into the new
-        :class:`PayloadIdentity` schema, falling back to
-        ``""`` for revisions and ``-1, -1`` for ``head_range``
-        (the proto schema does not yet carry head information).
+        Reads the full :class:`~membrane.identity.PayloadIdentity`
+        sub-fields and the ``payload_ref`` / ``payload_size`` /
+        ``payload`` fields from the wire message. The v1
+        ``content_hash`` field is absent; the new
+        ``payload_hash`` is a ``bytes`` field carrying the raw
+        32-byte SHA-256 digest.
 
         Args:
             msg: ``FragmentMessage`` protobuf instance.
 
         Returns:
             Fragment: Reconstructed fragment.
+
+        Raises:
+            SchemaError: When ``schema_version`` is not 2.
         """
+        if msg.schema_version != SCHEMA_VERSION:
+            raise SchemaError(
+                f"incompatible gRPC schema_version={msg.schema_version}; expected {SCHEMA_VERSION}"
+            )
+        payload_hash_hex = msg.payload_hash.hex() if msg.payload_hash else ""
         identity = PayloadIdentity(
-            payload_hash=msg.content_hash,
+            payload_hash=payload_hash_hex,
             model_id=msg.model_id,
-            model_revision="",
-            tokenizer_name=msg.model_id,
-            tokenizer_revision="",
-            layer_range=(msg.layer_start, msg.layer_end),
-            head_range=(-1, -1),
-            token_span=(msg.token_start, msg.token_end),
-            dtype="float16",
-            shape=(1, 1, 1, max(1, msg.token_end - msg.token_start + 1), 64),
+            model_revision=msg.model_revision,
+            tokenizer_name=msg.tokenizer_name or msg.model_id,
+            tokenizer_revision=msg.tokenizer_revision,
+            layer_range=(msg.layer_range[0], msg.layer_range[1]),
+            head_range=(msg.head_range[0], msg.head_range[1]),
+            token_span=(msg.token_span[0], msg.token_span[1]),
+            dtype=msg.dtype or "float16",
+            shape=tuple(msg.shape),
         )
+        payload_ref = msg.payload_ref or None
         return Fragment(
             identity=identity,
-            payload_ref=msg.content_hash,
-            payload_size=msg.size,
+            payload_ref=payload_ref,
+            payload_size=msg.payload_size,
             ttl=msg.ttl,
             reuse_score=msg.reuse_score,
             version_id=msg.version_id,
         )
 
     def fragment_to_pb(self, frag: Fragment):
-        """Convert a Fragment dataclass to a protobuf FragmentMessage.
+        """Convert a Fragment dataclass to a protobuf FragmentMessage (schema v2).
 
         Args:
             frag: Fragment to serialize.
@@ -282,15 +294,22 @@ class Handler:
             transport over gRPC.
         """
         identity = frag.identity
+        payload_hash_bytes = bytes.fromhex(identity.payload_hash) if identity.payload_hash else b""
         return self.pb2_module.FragmentMessage(
-            content_hash=identity.payload_hash,
-            embedding=[],
+            schema_version=SCHEMA_VERSION,
+            payload_hash=payload_hash_bytes,
             model_id=identity.model_id,
-            layer_start=identity.layer_range[0],
-            layer_end=identity.layer_range[1],
-            token_start=identity.token_span[0],
-            token_end=identity.token_span[1],
-            size=frag.payload_size,
+            model_revision=identity.model_revision,
+            tokenizer_name=identity.tokenizer_name,
+            tokenizer_revision=identity.tokenizer_revision,
+            layer_range=list(identity.layer_range),
+            head_range=list(identity.head_range),
+            token_span=list(identity.token_span),
+            dtype=identity.dtype,
+            shape=list(identity.shape),
+            payload_ref=frag.payload_ref or "",
+            payload_size=frag.payload_size,
+            payload=b"",
             ttl=frag.ttl,
             reuse_score=frag.reuse_score,
             version_id=frag.version_id,
