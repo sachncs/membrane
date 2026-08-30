@@ -39,7 +39,7 @@ from rich.table import Table
 from rich.text import Text
 
 from membrane.cli.formatters import fmt_bytes, fmt_duration
-from membrane.server import Server
+from membrane.server import Server, ServerDiagnostics
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ def fetch_json(host: str, port: int, path: str, timeout: float = 2.0) -> dict[st
 # ---------------------------------------------------------------------------
 
 
-def _header_panel_inproc(diag: Any) -> Panel:
+def _header_panel_inproc(diag: ServerDiagnostics) -> Panel:
     """Render the in-process dashboard header."""
     status = "[green]HEALTHY[/green]" if diag.load < 0.9 else "[yellow]WARNING[/yellow]"
     text = Text.assemble(
@@ -102,7 +102,7 @@ def _header_panel_remote(data: dict[str, Any]) -> Panel:
     return Panel(Align.center(text), style="bold white on blue")
 
 
-def _metrics_panel(diag: Any) -> Panel:
+def _metrics_panel(diag: ServerDiagnostics) -> Panel:
     """Render the metrics table from a ``ServerDiagnostics`` snapshot."""
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column("Metric", style="cyan", no_wrap=True)
