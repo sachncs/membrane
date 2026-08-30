@@ -50,6 +50,7 @@ from http.server import HTTPServer as StdlibHTTPServer
 from typing import Any
 
 from membrane.compute.base import Backend
+from membrane.network.cluster import Cluster
 from membrane.node import Node
 from membrane.transfer import TransferService
 from membrane.transport.routes import MAX_BODY_BYTES, ROUTES
@@ -76,7 +77,7 @@ class StdlibServer(StdlibHTTPServer):
         node: Node,
         compute_backend: Backend | None,
         transfer_service: TransferService,
-        cluster_manager: Any | None,
+        cluster_manager: Cluster | None,
     ) -> None:
         """Initialize the underlying HTTP server with extra state."""
         super().__init__(server_address, handler_class)
@@ -177,7 +178,7 @@ class HTTPServer:
         port: int = 8080,
         compute_backend: Backend | None = None,
         transfer_service: TransferService | None = None,
-        cluster_manager: Any | None = None,
+        cluster_manager: Cluster | None = None,
     ) -> None:
         """Initialize the HTTP server wrapper."""
         self.node = node

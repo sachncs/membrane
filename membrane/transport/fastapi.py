@@ -40,12 +40,12 @@ Security:
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import FastAPI
 
 from membrane.compute.base import Backend
 from membrane.metrics import MetricsCollector
+from membrane.network.cluster import Cluster
 from membrane.node import Node
 from membrane.transfer import TransferService
 from membrane.transport.routes_fastapi import register_routes
@@ -57,7 +57,7 @@ def create_app(
     node: Node,
     compute_backend: Backend | None,
     transfer_service: TransferService,
-    cluster_manager: Any | None,
+    cluster_manager: Cluster | None,
     metrics_registry: MetricsCollector | None = None,
 ) -> FastAPI:
     """Build a configured FastAPI application for a Membrane node.
@@ -66,7 +66,7 @@ def create_app(
         node: Local :class:`Node`.
         compute_backend: Optional :class:`Backend`.
         transfer_service: :class:`TransferService`.
-        cluster_manager: Optional cluster manager.
+        cluster_manager: Optional :class:`Cluster`.
         metrics_registry: Optional :class:`MetricsCollector` for the
             ``/metrics`` Prometheus endpoint. When ``None``, ``/metrics``
             falls back to a JSON snapshot of the node's stats.
@@ -75,7 +75,7 @@ def create_app(
         FastAPI: Configured application ready to be served by
         uvicorn.
     """
-    app = FastAPI(title="Membrane", version="0.1.0")
+    app = FastAPI(title="Membrane", version="0.3.0")
     app.state.node = node
     app.state.compute_backend = compute_backend
     app.state.transfer_service = transfer_service
@@ -108,7 +108,7 @@ class FastAPIServer:
         port: int = 8080,
         compute_backend: Backend | None = None,
         transfer_service: TransferService | None = None,
-        cluster_manager: Any | None = None,
+        cluster_manager: Cluster | None = None,
         metrics_registry: MetricsCollector | None = None,
     ) -> None:
         """Initialize the FastAPI server wrapper."""
