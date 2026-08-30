@@ -23,8 +23,7 @@ Durable concepts (in import order, by domain):
   implementations.
 * Compute — :class:`Backend` ABC plus the concrete CPU, GPU,
   Transformers, OpenAI, Anthropic, and Ollama backends.
-* Transports — :class:`FastAPIServer`, :class:`GrpcServer`,
-  :class:`HTTPServer`.
+* Transports — :class:`FastAPIServer`, :class:`GrpcServer`.
 * Composition — :class:`Server` (the runnable entry point).
 * Auth — :class:`Authenticator` protocol.
 * Errors — :class:`Error` and its typed hierarchy.
@@ -106,7 +105,6 @@ from membrane.trace import Trace
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.grpc import GrpcServer
-from membrane.transport.http import HTTPServer
 
 __all__ = [
     "CPU",
@@ -129,7 +127,6 @@ __all__ = [
     "Fragment",
     "FragmentKind",
     "GrpcServer",
-    "HTTPServer",
     # Index
     "Index",
     "Memory",

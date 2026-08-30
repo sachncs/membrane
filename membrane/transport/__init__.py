@@ -3,12 +3,15 @@
 This package groups the wire-protocol implementations that
 expose a Membrane node's API over the network:
 
-* :class:`~membrane.transport.http.HTTPServer` — minimal
-  stdlib HTTP server.
-* :class:`~membrane.transport.fastapi.FastAPIServer` — FastAPI-
-  based HTTP server.
-* :class:`~membrane.transport.grpc.GrpcServer` — gRPC server based
-  on the generated ``membrane.proto``.
+* :class:`~membrane.transport.fastapi.FastAPIServer` — the
+  production HTTP transport, mTLS-aware.
+* :class:`~membrane.transport.grpc.GrpcServer` — production
+  gRPC server backed by ``membrane.proto``.
+
+The pre-2.0 stdlib ``HTTPServer`` was removed in 2.0: it was
+unmaintained, had no TLS story, and the FastAPI transport is the
+only HTTP path supported in production. Configure the cluster
+through ``Server(transport='http' | 'grpc')``.
 
 All transports speak the same logical surface (store, retrieve,
 inventory, heartbeat, gossip, replicate) so clients can be
@@ -18,9 +21,8 @@ swapped without changing application code.
 from typing import Protocol, runtime_checkable
 
 from membrane.transport.grpc import GrpcServer
-from membrane.transport.http import HTTPServer
 
-__all__ = ["GrpcServer", "HTTPServer", "Transport"]
+__all__ = ["GrpcServer", "Transport"]
 
 
 @runtime_checkable

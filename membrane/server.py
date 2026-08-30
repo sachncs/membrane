@@ -34,7 +34,6 @@ from membrane.registry import Registry
 from membrane.snapshot import SNAPSHOT_SCHEMA_VERSION, ClusterEpochGuard, Snapshot
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
-from membrane.transport.http import HTTPServer
 
 logger = logging.getLogger(__name__)
 
@@ -357,15 +356,6 @@ class Server:
                 transfer_service=self.transfer_service,
                 cluster_manager=self.cluster_manager,
                 metrics_registry=self.metrics_registry,
-            )
-        if transport == "stdlib":
-            return HTTPServer(
-                node=self.node,
-                host=host,
-                port=port,
-                compute_backend=self.compute_backend,
-                transfer_service=self.transfer_service,
-                cluster_manager=self.cluster_manager,
             )
         from membrane.transport.grpc import GrpcServer
 

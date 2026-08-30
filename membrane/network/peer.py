@@ -1,7 +1,7 @@
 """Peer: HTTP client for inter-node communication.
 
 Speaks the same REST surface as
-:class:`~membrane.transport.http.HTTPServer`, exposing methods for
+:class:`~membrane.transport.fastapi.FastAPIServer`, exposing methods for
 the cluster-management verbs (``join``, ``leave``, ``heartbeat``,
 ``gossip``) and the fragment-management verbs (``store``,
 ``retrieve``, ``replicate``).

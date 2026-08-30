@@ -6,7 +6,7 @@ construction time and :meth:`start` raises
 :class:`RuntimeError`).
 
 The gRPC service surface mirrors the HTTP endpoints defined in
-:class:`~membrane.transport.http.HTTPServer`:
+:class:`~membrane.transport.fastapi.FastAPIServer`:
 
 * ``StoreFragment`` — store a fragment (primary or replica).
 * ``RetrieveFragment`` — retrieve a fragment by hash.
