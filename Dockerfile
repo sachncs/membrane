@@ -1,7 +1,7 @@
 #!/usr/bin/env python3.12
 # Membrane runtime image.
 # Pinned to a specific slim digest for reproducibility; bump via Dependabot.
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 LABEL org.opencontainers.image.title="Membrane" \
       org.opencontainers.image.description="Global Contextual Memory Fabric for LLM inference" \
