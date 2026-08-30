@@ -7,6 +7,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-30
+
+Major release. New KV-cache engine integration arc replaces
+the hand-rolled canonical framing with LMCache + per-engine
+adapters + GPU memory + compression transport + prefill/decode
+disaggregation. Wire format break: the canonical frame magic
+moves to ``\xc0\xde\x01\x04`` (Phase 0.5); a v2 reader stays
+in place for backward compatibility.
+
+### Added
+
+- **LMCache storage backend** (`membrane.storage.lmcache`):
+  `LMCacheContentStore` wraps `LocalCPUBackend` (no GPU
+  required) so the v2.0+ canonical KV substrate is opt-in via
+  `pip install membrane[lmcache]`. `LMCacheDiskStore` extends
+  `FilesystemBlob` for tiered storage. `build_distributed_store`
+  factory in `membrane.storage.lmcache_connectors` raises
+  `LMCacheConnectorError` for v1 multi-node backends; the
+  connector implementation lands in Phase 5+.
+- **Compatibility fingerprint** (`membrane.compat`):
+  `ModelCompatibilityFingerprint` with 8 fields + `compat_hash`
+  factory + `compute_config_hash` for full-config digests.
+  `Fragment.fingerprint_compat` is a new field on the wire;
+  `MembraneValidator` rejects mismatched engines at import
+  time. Serialization schema bumped 3 -> 4.
+- **KVAdapter protocol** (`membrane.adapters`): the
+  engine-agnostic `KVAdapter` Protocol + `LayerKV` /
+  `KVTensor` dataclasses + `BaseAdapter` serializer + the
+  concrete `MembraneAdapter` for Hugging Face causal LMs.
+  Wire format: 4-byte `MVKV` magic + 16-byte fingerprint
+  tail. Same byte format across every engine.
+- **vLLM KVConnector** (`membrane.adapters.vllm`):
+  `MembraneVLLMAdapter` + `MembraneVLLMConnector` implement
+  the v0.10+ `KVConnector` v1 surface (six abstract methods)
+  with a `MembraneClusterClient` abstraction. Subclasses
+  vLLM's `KVConnectorBase` when vLLM is installed; falls
+  back to a duck-typed stub otherwise.
+- **SGLang adapter** (`membrane.adapters.sglang`):
+  `MembraneSGLangAdapter` reads / writes K/V rows from an
+  SGLang `TokenToKVPool`. Token-indexed layout; the
+  adapter slices the pool along the token axis.
+- **TensorRT-LLM adapter** (`membrane.adapters.trtllm`):
+  `MembraneTrtAdapter` reads / writes K/V blocks from a
+  TRT-LLM `KVCacheManager`. Block-indexed layout; the
+  adapter translates a `token_span` into the manager's
+  block table (`BLOCK_SIZE=64`).
+- **Quantization** (`membrane.quantization`): `Quantizer`
+  Protocol + `QuantizedFrame` wire format + 4 quantizers:
+  `Int8PerChannelQuantizer`, `FP8E4M3Quantizer`,
+  `FP8E5M2Quantizer` (int8 fallback on builds without
+  fp8 dtypes), `NF4Quantizer` (Dettmers 2023 codebook,
+  4 bits/element packed).
+- **GPU memory + transfer engine** (`membrane.transfer_engine`):
+  `MemoryPool` Protocol + `TensorHandle` + `CudaMemoryPool`
+  (numpy fallback when torch CUDA is unavailable) +
+  `RdmaMemoryPool` (delegates + `rdma_send` stub) +
+  `CompressionTransport` (1-byte method id + 4-byte
+  little-endian u32 length + body; methods: raw, deflate,
+  zstd, lz4) + `KVTransferEngine.transfer_kv` /
+  `receive_kv` (MKVR envelope: u32 k_len + u32 v_len +
+  k_bytes + v_bytes).
+- **Prefix cache** (`membrane.prefix_cache`): `KVHandle` is
+  a frozen SHA-256-of-(model_id, token_prefix) dataclass.
+  `PrefixCache` is a thread-safe OrderedDict-backed LRU
+  that finds the longest matching prefix and promotes it
+  to most-recently-used. `PrefixCache(capacity=0)` disables
+  the cache.
+- **Prefill / decode disaggregation** (`membrane.disagg`):
+  engine-agnostic `PrefillService` + `DecodeService` +
+  `PrefillBackend` Protocol + `NoopPrefillBackend` (test
+  backend) + `batch_prefill` helper. The prefill service
+  consults a `PrefixCache` before delegating to the
+  backend so repeat prompts skip the heavy lift. REST:
+  `create_router` returns a FastAPI `APIRouter` with
+  `/prefill`, `/prefill/batch`, `/decode`, `/healthz`
+  endpoints. gRPC: `transfer.proto` schema + generated
+  `transfer_pb2` / `transfer_pb2_grpc` stubs + `add_to_server`
+  / `make_channel` / `make_stub` factories. Both surfaces
+  share the same `PrefillRequest` / `PrefillResponse` /
+  `DecodeRequest` / `DecodeResponse` dataclasses.
+- **Canonical frame v4** (`membrane.canonical`): frame magic
+  `\xc0\xde\x01\x04`. v2 reader stays in place for
+  backward-compatible parsing.
+- **Per-fragment consistency** (`membrane.fragment`):
+  `Fragment.consistency` is a new field with a default of
+  `"strong"`. Strong-by-default writes enforce
+  `quorum_count` + `cluster_quorum_timeout_sec` and fail
+  closed with 503 + Retry-After.
+
+### Changed
+
+- **Canonical frame schema bumped to v4** (Phase 0.5). The
+  v2 reader stays in place; v2 writers are removed.
+- **HLC + compatibility fingerprint on every fragment**
+  (Phase 1). The 4-char hex `fingerprint_compat` rides on
+  the wire alongside the HLC.
+- **GossipState carries inventory_bloom + inventory_merkle_root**
+  (Phase 0.1). Bloom + Merkle replace the plain hash set
+  in the gossip state exchange.
+
+### Removed
+
+- `HTTPServer` (stdlib): replaced by the FastAPI router.
+- `membrane.auth.tls.TLSConfig`: replaced by
+  `membrane.transport.tls.MTLSConfig`.
+- `membrane/signature.py`: mTLS replaces the previous
+  detached signature path.
+- v2 canonical frame writer: read compatibility stays in
+  place; writers no longer emit v2 frames.
+
 ## [1.0.1] - 2026-08-30
 
 Patch release closing the items deferred at the end of 1.0.0.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "membrane"
-version = "1.0.1"
+version = "2.0.0"
 description = "Membrane: Global Contextual Memory Fabric for cross-datacenter LLM serving."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -62,6 +62,22 @@ local-llm = ["transformers>=5.16.1", "tokenizers>=0.23.1", "torch>=2.13.0", "sen
 # version conflict in 0.5.4 can be resolved in CI without
 # breaking the existing `[server]` extras.
 lmcache = ["lmcache>=0.5,<0.6"]
+# Engine integrations for v2.0+. The pins are loose on purpose:
+# the v2.0 release is the first one that targets the v0.10+
+# vLLM KVConnector v1 surface, the SGLang radix-cache pool,
+# and the TensorRT-LLM runtime; operators pin the exact
+# version in their deployment image.
+vllm = ["vllm>=0.10,<0.12"]
+sglang = ["sglang>=0.4,<0.6"]
+trtllm = ["tensorrt-llm>=0.20,<0.22"]
+# Prefill / decode disaggregation surface (Phase 8). The
+# REST surface is FastAPI-only; the gRPC surface additionally
+# pulls in grpcio. Operators that only need one of the two
+# surfaces can install the corresponding extra directly.
+disagg = ["fastapi>=0.141.1", "uvicorn[standard]>=0.52.4", "grpcio>=1.83.1", "grpcio-tools>=1.83.1"]
+# Convenience: every v2.0+ engine integration plus the
+# disagg surface. Use for local end-to-end demos.
+all = ["membrane[lmcache,vllm,sglang,trtllm,disagg]"]
 
 [project.scripts]
 membrane = "membrane.cli:main"
