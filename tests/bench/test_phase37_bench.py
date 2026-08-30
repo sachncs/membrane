@@ -19,7 +19,7 @@ from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 
 try:
-    import pytest_benchmark  # noqa: F401  -- presence probe
+    import pytest_benchmark
 
     _BENCHMARK_AVAILABLE = True
 except ImportError:  # pragma: no cover
