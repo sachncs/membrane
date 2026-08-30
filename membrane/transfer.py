@@ -153,13 +153,13 @@ class TransferService:
             client, missing fragment, refused replication).
         """
         if isinstance(source, Node) and isinstance(target, Node):
-            return self._transfer_local(source, target, content_hash)
+            return self.transfer_local(source, target, content_hash)
         if self.cluster_manager is None:
             return False
         if isinstance(source, str):
-            return self._pull_from_remote(source, target, content_hash)
+            return self.pull_from_remote(source, target, content_hash)
         if isinstance(target, str):
-            return self._push_to_remote(source, target, content_hash)
+            return self.push_to_remote(source, target, content_hash)
         return False
 
     def sync_nodes(
@@ -182,7 +182,7 @@ class TransferService:
             list[str]: Successfully transferred hashes.
         """
         if isinstance(source, Node) and isinstance(target, Node):
-            return self._sync_local(source, target)
+            return self.sync_local(source, target)
 
         source_digest = self.inventory_digest(source)
         target_digest = self.inventory_digest(target)
@@ -200,7 +200,7 @@ class TransferService:
     # Internal dispatch helpers
     # ------------------------------------------------------------------
 
-    def _transfer_local(
+    def transfer_local(
         self,
         source: Node,
         target: Node,
@@ -211,17 +211,17 @@ class TransferService:
             return False
         return target.store(fragment, is_primary=False)
 
-    def _sync_local(self, source: Node, target: Node) -> list[str]:
+    def sync_local(self, source: Node, target: Node) -> list[str]:
         local = self.inventory_digest(target) or {}
         remote = self.inventory_digest(source) or {}
         missing = self.compare_inventories(local, remote)
         transferred: list[str] = []
         for h in missing:
-            if self._transfer_local(source, target, h):
+            if self.transfer_local(source, target, h):
                 transferred.append(h)
         return transferred
 
-    def _pull_from_remote(
+    def pull_from_remote(
         self,
         source_id: str,
         target: Node | str,
@@ -246,7 +246,7 @@ class TransferService:
             return False
         return t_client.request_replicate(frag)
 
-    def _push_to_remote(
+    def push_to_remote(
         self,
         source: Node,
         target_id: str,
