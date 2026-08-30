@@ -92,6 +92,14 @@ class Cluster:
         self.config = config
         self.hash_ring = hash_ring or Ring()
         self.shard_manager = shard_manager or Shard(self.hash_ring)
+        # When the local node carries :class:`~membrane.node.NodeAttributes`,
+        # the Shard's locality_scored_assign can score replica
+        # candidates by region/bandwidth. We seed the map with the
+        # local attributes; remote peers are filled in by
+        # :meth:`Membership.add` as they appear in the heartbeat
+        # response.
+        if not shard_manager and node.attributes is not None:
+            self.shard_manager.node_attributes[node.node_id] = node.attributes
         self.directory = directory or Registry()
         # TransferService is injected by Server after the Cluster
         # is constructed; default to None so tests that don't

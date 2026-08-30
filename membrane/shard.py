@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 from collections.abc import Callable
 from typing import Any
 
-from membrane.node import Node
+from membrane.node import Node, NodeAttributes
 from membrane.ring import Ring
 
 
@@ -55,6 +55,7 @@ class Shard:
         self,
         hash_ring: Ring | None = None,
         replica_count: int = 2,
+        node_attributes: dict[str, "NodeAttributes"] | None = None,
     ) -> None:
         """Initialize the manager with an optional hash ring.
 
@@ -63,9 +64,15 @@ class Shard:
                 default empty ring is created when ``None``.
             replica_count: Number of replicas per shard (the
                 primary itself is excluded from this count).
+            node_attributes: Optional ``{node_id: NodeAttributes}``
+                map. When supplied, :meth:`locality_scored_assign`
+                prefers cross-region replicas (HA) and same-region
+                secondaries (latency). ``None`` falls back to the
+                pure ring walk.
         """
         self.hash_ring = hash_ring or Ring()
         self.replica_count = replica_count
+        self.node_attributes = node_attributes or {}
         self.primary_map: dict[str, str] = {}
         self.replica_map: dict[str, set[str]] = {}
 
@@ -165,6 +172,89 @@ class Shard:
             bool: True if the node is in the replica set.
         """
         return node_id in self.get_replicas(content_hash)
+
+    # ------------------------------------------------------------------
+    # Locality-aware placement
+    # ------------------------------------------------------------------
+
+    def locality_scored_assign(
+        self,
+        content_hash: str,
+        primary_region: str | None = None,
+    ) -> tuple[str, list[str]]:
+        """Pick a primary + replica set with locality preference.
+
+        Order of preference (when ``node_attributes`` is populated):
+
+        1. The primary lands on a node whose region matches
+           ``primary_region`` (when provided) or the lowest-cost
+           candidate (bandwidth_class == 0).
+        2. The first replica is a node in a *different* region
+           from the primary for HA.
+        3. The remaining replicas stay in the primary's region
+           for read latency.
+
+        When ``node_attributes`` is empty (the default for
+        single-node deployments and tests) the method
+        falls back to :meth:`get_all_nodes`'s deterministic ring
+        walk so behavior is unchanged.
+
+        Args:
+            content_hash: Hash to place.
+            primary_region: Optional region for the primary;
+                ``None`` picks the candidate with the lowest
+                ``bandwidth_class``.
+
+        Returns:
+            tuple[str, list[str]]: ``(primary_node_id,
+            replica_node_ids)``.
+        """
+        # Fall back to the existing ring walk when no locality
+        # data is configured. Tests rely on this default.
+        all_nodes = self.get_all_nodes(content_hash)
+        if not self.node_attributes or not all_nodes:
+            primary = self.assign_shard(content_hash)
+            return primary, [n for n in all_nodes if n != primary][: self.replica_count]
+
+        # The consistent-hash ring sets the partition; the
+        # region attribute only decides tie-breaks within the
+        # locality preferences.
+        attrs = self.node_attributes
+
+        def _bandwidth(nid: str) -> int:
+            return attrs.get(nid, NodeAttributes()).bandwidth_class
+
+        def _region(nid: str) -> str:
+            return attrs.get(nid, NodeAttributes()).region
+
+        # Pick the primary. Honor ``primary_region`` if specified
+        # and at least one node in that region is registered.
+        if primary_region is not None and any(
+            _region(n) == primary_region for n in all_nodes
+        ):
+            primary = min(
+                (n for n in all_nodes if _region(n) == primary_region),
+                key=_bandwidth,
+            )
+        else:
+            primary = min(all_nodes, key=_bandwidth)
+        primary_region_actual = _region(primary)
+
+        # Replica set: the first slot prefers a different region
+        # for HA; the rest stay close to the primary for read
+        # latency.
+        cross_region = [
+            n for n in all_nodes
+            if n != primary and _region(n) != primary_region_actual
+        ]
+        same_region = [
+            n for n in all_nodes
+            if n != primary and _region(n) == primary_region_actual
+        ]
+        ordered = sorted(cross_region, key=_bandwidth) + sorted(
+            same_region, key=_bandwidth
+        )
+        return primary, ordered[: self.replica_count]
 
     # ------------------------------------------------------------------
     # Rebalancing

@@ -98,6 +98,13 @@ class ClusterConfig:
             gossip Bloom filter. Default ``0.001`` (one in a
             thousand) keeps the precision cost negligible while
             bounding the false-divergence rate.
+        cross_region_penalty: Multiplier applied when
+            :class:`~membrane.shard.Shard`'s
+            :meth:`locality_scored_assign` ranks a cross-region
+            candidate above a same-region one. ``1.0`` disables
+            the preference (pure bandwidth ranking); higher
+            values tighten the cross-region preference. Default
+            ``1.5`` matches the design plan.
     """
 
     node_id: str = "membrane-0"
@@ -125,3 +132,4 @@ class ClusterConfig:
     lease_timeout_sec: float = 30.0
     gossip_payload_expected_items: int = 10_000
     gossip_payload_fpr: float = 0.001
+    cross_region_penalty: float = 1.5
