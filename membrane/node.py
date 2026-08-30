@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 from membrane.fragment import Fragment
 from membrane.graph import Graph
 from membrane.index import Index
+from membrane.metrics import NodeMetrics
 from membrane.security.tenant import (
     TenantAuthorizer,
 )
@@ -106,6 +107,7 @@ class Node:
         graph: Graph | None = None,
         content_store: ContentStore | None = None,
         attributes: NodeAttributes | None = None,
+        metrics: NodeMetrics | None = None,
     ) -> None:
         """Initialize the node.
 
@@ -125,12 +127,16 @@ class Node:
                 zone, bandwidth_class). ``None`` falls back to
                 the default ``("default", "default", 0)``
                 triple so single-node deployments are unaffected.
+            metrics: Optional :class:`NodeMetrics` instance. When
+                supplied, per-tenant fragment counts are recorded
+                on every successful store.
         """
         self.node_id = node_id
         self.max_memory_bytes = max_memory_bytes
         self.index_system = index_system or Index()
         self.graph = graph or Graph()
         self.attributes = attributes or NodeAttributes()
+        self.metrics: NodeMetrics | None = metrics
 
         if content_store is None:
             from membrane.content_store import InProcessBytes
@@ -245,6 +251,8 @@ class Node:
                         fragment.payload_ref,
                     )
                 logger.debug("Stored fragment %s on %s", content_hash, self.node_id)
+                if self.metrics is not None:
+                    self.metrics.tenant.bump_fragment(fragment.tenant_id, 1)
 
             self.access_times[content_hash] = now
 
@@ -331,6 +339,8 @@ class Node:
             # A None payload_ref is metadata-only; skip cleanly.
             if frag.payload_ref is not None:
                 self.content_store.delete(frag.payload_ref)
+            if self.metrics is not None:
+                self.metrics.tenant.bump_fragment(frag.tenant_id, -1)
             return frag
 
     def evict_expired(

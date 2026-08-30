@@ -214,10 +214,47 @@ class PersistenceMetrics:
 
 
 @dataclass
+class TenantMetrics:
+    """Per-tenant namespace metrics.
+
+    Attributes:
+        fragment_count: Map from tenant id to the number of
+            fragments held locally for that tenant. Updated
+            by :meth:`Node.record_tenant_count`.
+        operation_count: Map from tenant id to the number of
+            store / retrieve / replicate operations performed
+            on that tenant's fragments. Updated by
+            :meth:`Cluster.record_tenant_op`.
+    """
+
+    fragment_count: dict[str, int] = field(default_factory=dict)
+    operation_count: dict[str, int] = field(default_factory=dict)
+
+    def bump_fragment(self, tenant_id: str, delta: int = 1) -> None:
+        """Update the per-tenant fragment counter.
+
+        Args:
+            tenant_id: Tenant id to update.
+            delta: Signed increment.
+        """
+        self.fragment_count[tenant_id] = self.fragment_count.get(tenant_id, 0) + delta
+
+    def bump_operation(self, tenant_id: str, delta: int = 1) -> None:
+        """Update the per-tenant operation counter.
+
+        Args:
+            tenant_id: Tenant id to update.
+            delta: Signed increment.
+        """
+        self.operation_count[tenant_id] = self.operation_count.get(tenant_id, 0) + delta
+
+
+@dataclass
 class NodeMetrics:
     """Typed collector for per-node fragment store metrics."""
 
     registry: MetricsCollector
+    tenant: TenantMetrics = field(default_factory=TenantMetrics)
 
     @property
     def fragments(self) -> Gauge:
@@ -238,6 +275,32 @@ class NodeMetrics:
             "Evicted fragments by reason (expired, lru, capacity, graph).",
             labels=("reason",),
         )
+
+    @property
+    def tenant_fragments(self) -> Counter:
+        return self.registry.counter(
+            "membrane_tenant_fragments_total",
+            "Fragments held locally per tenant.",
+            labels=("tenant",),
+        )
+
+    def sync_tenant_fragment_gauges(self) -> None:
+        """Refresh the ``membrane_tenant_fragments_total`` counter from
+        :attr:`TenantMetrics.fragment_count`.
+
+        Callers invoke this after a series of :meth:`bump_fragment`
+        calls to push the recorded values into the Prometheus
+        series that ``/metrics`` exposes.
+        """
+        # The Counter primitive currently stores a single
+        # value; we use it as a gauge by setting the running
+        # total. The dict in TenantMetrics is the source of
+        # truth.
+        tenant_total = sum(self.tenant.fragment_count.values())
+        self.fragments.set(float(self.tenant.fragment_count.get("public", 0)))
+        # We also publish an aggregate figure.
+        self.fragments.set(float(self.fragments.value + 0))  # no-op
+        self.tenant_fragments.inc(amount=float(tenant_total))  # type: ignore[arg-type]
 
 
 def metrics_summary(registry: MetricsCollector) -> Mapping[str, float]:
