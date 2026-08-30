@@ -46,6 +46,17 @@ class SchemaError(BackendError):
     """Raised when serialized data cannot be deserialized because the version does not match."""
 
 
+class CorruptPayloadError(BackendError):
+    """Raised when payload bytes or a canonical frame fail integrity verification.
+
+    Distinguishes storage corruption (truncated SHA-256 mismatch, byte
+    flip, length past EOF) from config-level rejection
+    (:class:`SchemaError`). Callers typically do **not** retry on
+    corruption; the bytes are gone. Logged as a server-side error and
+    surfaced through :class:`membrane.metrics`.
+    """
+
+
 class NetworkError(Error):
     """Raised when a network operation (peer call, gossip, sync) fails."""
 

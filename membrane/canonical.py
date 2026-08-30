@@ -1,173 +1,128 @@
-"""Canonical: deduplicated shared KV pool across tenants.
+"""Canonical byte framing for fragment payloads.
 
-This module defines :class:`Canonical` and its supporting
-:class:`CanonicalRef` dataclass. The canonical store is the
-*cross-tenant* layer of the deduplication fabric: a single
-physical fragment is shared by every tenant that has produced or
-consumed it, regardless of which physical node stores it.
+A "canonical" frame is the immutable on-disk / on-the-wire representation
+of a single fragment payload. Frames are self-describing: the header
+carries the :class:`~membrane.identity.PayloadIdentity` and a payload
+length, and the trailer carries a truncated SHA-256 for cheap integrity
+checks on read without re-parsing the entire blob.
 
-The store maintains three pieces of state:
+Frame layout::
 
-* ``canonical_fragments`` — the actual deduplicated fragment
-  payloads, keyed by ``content_hash``.
-* ``tenant_refs`` — the set of tenants that currently reference
-  each canonical hash.
-* An :class:`LRUTracker` used to bound the store when
-  ``max_entries`` is configured.
+    +-------------------------------+
+    | MAGIC       4 B  = 0xC0DE0102 |
+    +-------------------------------+
+    | schema      2 B              |   (= 2 today; the on-disk version
+    +-------------------------------+    is the same as the wire schema)
+    | reserved    4 B  (= 0)        |
+    +-------------------------------+
+    | identity_len u32 (LE)         |
+    +-------------------------------+   offset = 14
+    | identity_json (identity_len B)|   (UTF-8 JSON of
+    +-------------------------------+    PayloadIdentity.to_dict())
+    | payload_len  u64 (LE)         |
+    +-------------------------------+
+    | payload      (payload_len B)  |
+    +-------------------------------+
+    | trailer      8 B              |   (first 8 bytes of SHA-256
+    +-------------------------------+    of payload; cheap verify)
 
-References returned by :meth:`store_canonical` carry the
-``canonical_hash`` and the snapshot of tenants at insert time, so
-callers can cheaply reason about sharing even after further
-insertions evict unrelated fragments.
+The trailer is verified in :func:`parse_canonical`. A mismatch raises
+:class:`membrane.errors.CorruptPayloadError` rather than retry, because a
+mismatch indicates storage corruption, not transient failure.
 
-Thread safety:
-    The class is **not thread-safe**. Provide external locking
-    when sharing across threads.
+Frames are immutable; the on-disk file should be written atomically
+(temp file + :func:`os.replace`) by the storage backend, not by this
+module.
 """
 
-import logging
+from __future__ import annotations
 
-logger = logging.getLogger(__name__)
+import hashlib
+import json
+import struct
+from typing import Final
 
-from dataclasses import dataclass
+from membrane.errors import CorruptPayloadError, SchemaError
+from membrane.identity import PayloadIdentity
 
-from membrane.fragment import Fragment
-from membrane.tracker import LRUTracker
+MAGIC: Final[bytes] = b"\xc0\xde\x01\x02"
+#: Fixed header length = MAGIC (4) + schema (2) + reserved (4) + identity_len (4)
+HEADER_LEN: Final[int] = 14
+TRAILER_LEN: Final[int] = 8
+CANONICAL_SCHEMA_VERSION: Final[int] = 2
 
 
-@dataclass(frozen=True)
-class CanonicalRef:
-    """Reference to a canonical deduplicated fragment.
+def canonicalize(identity: PayloadIdentity, raw: bytes) -> bytes:
+    """Wrap an identity + payload into the canonical frame.
 
-    Attributes:
-        canonical_hash: Hash of the canonical stored fragment.
-        tenant_ids: Snapshot of tenants sharing this fragment at
-            the time the reference was issued. Stored as a
-            ``frozenset`` so the reference is hashable.
+    Args:
+        identity: The fragment's :class:`PayloadIdentity`.
+        raw: The raw payload bytes (e.g. serialized tensor bytes).
+
+    Returns:
+        bytes: The complete frame, ready to write to any blob backend.
+
+    Raises:
+        ValueError: If ``raw`` exceeds the 64-bit length limit.
     """
+    if len(raw) > 0xFFFFFFFFFFFFFFFF:
+        raise ValueError(f"payload too large to frame: {len(raw)} bytes")
+    identity_bytes = json.dumps(identity.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+    header = MAGIC + struct.pack("<HI", CANONICAL_SCHEMA_VERSION, 0) + struct.pack("<I", len(identity_bytes))
+    body = identity_bytes + struct.pack("<Q", len(raw)) + raw
+    digest = hashlib.sha256(raw).digest()[:TRAILER_LEN]
+    return header + body + digest
 
-    canonical_hash: str
-    tenant_ids: frozenset[str]
 
+def parse_canonical(buf: bytes) -> tuple[PayloadIdentity, bytes]:
+    """Parse a canonical frame back into identity + payload.
 
-class Canonical:
-    """Shared deduplicated pool of fragments across multiple tenants.
+    Args:
+        buf: The full frame produced by :func:`canonicalize`.
 
-    Stores one physical copy per unique content hash and tracks
-    which tenants reference it. When ``max_entries`` is set, LRU
-    eviction removes the least-recently-accessed fragment on
-    insert overflow.
+    Returns:
+        tuple[PayloadIdentity, bytes]: The fingerprint and the raw
+        payload bytes.
 
-    Attributes:
-        canonical_fragments: Mapping from ``content_hash`` to the
-            canonical :class:`Fragment`.
-        tenant_refs: Mapping from ``content_hash`` to the set of
-            tenant IDs that reference it.
-        lru: :class:`LRUTracker` used to bound the store when
-            ``max_entries`` is set.
-        max_entries: Configured upper bound on canonical entries
-            (or ``None`` for unbounded).
+    Raises:
+        SchemaError: If the magic, header, or schema version does not
+            match.
+        CorruptPayloadError: If the trailer's truncated SHA-256 disagrees
+            with the payload bytes.
     """
-
-    def __init__(self, max_entries: int | None = None) -> None:
-        """Initialize an empty canonical store.
-
-        Args:
-            max_entries: Maximum number of unique fragments to
-                retain. ``None`` means unbounded (LRU tracking
-                remains active but no eviction is triggered).
-        """
-        self.canonical_fragments: dict[str, Fragment] = {}
-        self.tenant_refs: dict[str, set[str]] = {}
-        self.lru = LRUTracker(capacity=max_entries)
-        self.max_entries = max_entries
-
-    def store_canonical(
-        self,
-        fragment: Fragment,
-        tenant_id: str,
-    ) -> CanonicalRef:
-        """Store (or update) a fragment in the canonical pool.
-
-        If the fragment's ``content_hash`` is new, it is added to
-        ``canonical_fragments`` and a fresh empty tenant-ref set
-        is created. The calling tenant is then added to that set
-        unconditionally, and the LRU is touched. When the LRU
-        exceeds ``max_entries``, the oldest entries are evicted
-        (along with their tenant-ref sets).
-
-        Args:
-            fragment: Fragment to deduplicate.
-            tenant_id: Tenant contributing the fragment.
-
-        Returns:
-            CanonicalRef: Reference to the canonical (possibly
-            pre-existing) entry.
-        """
-        h = fragment.content_hash
-        if h not in self.canonical_fragments:
-            # First time we've seen this hash — install it as
-            # the canonical copy.
-            self.canonical_fragments[h] = fragment
-            self.tenant_refs[h] = set()
-        # Add the tenant regardless of whether the entry was new
-        # or existing; deduplication is per-hash, not per-tenant.
-        self.tenant_refs[h].add(tenant_id)
-        self.lru.touch(h)
-        # Evict any overflow entries *after* registering the
-        # current touch so the just-inserted fragment cannot be
-        # immediately evicted.
-        for evicted in self.lru.evict_if_over():
-            self.canonical_fragments.pop(evicted, None)
-            self.tenant_refs.pop(evicted, None)
-
-        return CanonicalRef(
-            canonical_hash=h,
-            # Snapshot of the post-insert tenant set.
-            tenant_ids=frozenset(self.tenant_refs[h]),
+    if len(buf) < HEADER_LEN + TRAILER_LEN:
+        raise CorruptPayloadError(f"frame too short: {len(buf)} bytes")
+    if buf[:4] != MAGIC:
+        raise SchemaError(f"bad magic in canonical frame: {buf[:4]!r}")
+    schema = struct.unpack_from("<H", buf, 4)[0]
+    if schema != CANONICAL_SCHEMA_VERSION:
+        raise SchemaError(
+            f"canonical schema version mismatch: {schema} vs {CANONICAL_SCHEMA_VERSION}"
         )
+    identity_len = struct.unpack_from("<I", buf, 10)[0]
+    identity_end = HEADER_LEN + identity_len
+    if identity_end + 8 > len(buf):
+        raise CorruptPayloadError("identity length extends past frame")
+    identity_obj = json.loads(buf[HEADER_LEN:identity_end].decode("utf-8"))
+    identity = PayloadIdentity.from_dict(identity_obj)
+    payload_len = struct.unpack_from("<Q", buf, identity_end)[0]
+    payload_start = identity_end + 8
+    payload_end = payload_start + payload_len
+    if payload_end + TRAILER_LEN > len(buf):
+        raise CorruptPayloadError("payload length extends past frame")
+    payload = bytes(buf[payload_start:payload_end])
+    expected = hashlib.sha256(payload).digest()[:TRAILER_LEN]
+    actual = bytes(buf[payload_end:payload_end + TRAILER_LEN])
+    if expected != actual:
+        raise CorruptPayloadError("canonical frame trailer mismatch")
+    return identity, payload
 
-    def retrieve_canonical(self, ref: CanonicalRef) -> Fragment | None:
-        """Retrieve a fragment from the canonical pool.
 
-        Touches the LRU on a successful hit so the entry stays
-        warm against future eviction.
-
-        Args:
-            ref: Canonical reference.
-
-        Returns:
-            Fragment | None: The fragment, or ``None`` if the
-            referenced hash has been evicted.
-        """
-        frag = self.canonical_fragments.get(ref.canonical_hash)
-        if frag is not None:
-            # Refresh LRU only on hit so misses don't pollute the
-            # tracker.
-            self.lru.touch(ref.canonical_hash)
-        return frag
-
-    def get_shared_fragments(self, tenant_id: str) -> list[Fragment]:
-        """Return all fragments shared with ``tenant_id``.
-
-        Iterates ``tenant_refs`` (rather than ``canonical_fragments``)
-        so that the iteration cost is proportional to the number of
-        references, not the number of distinct hashes.
-
-        Args:
-            tenant_id: Tenant to query.
-
-        Returns:
-            list[Fragment]: Fragments accessible to the tenant,
-            in iteration order. Each successful lookup touches
-            the LRU so frequently-shared fragments are protected
-            from eviction.
-        """
-        result: list[Fragment] = []
-        for h, tenants in self.tenant_refs.items():
-            if tenant_id in tenants:
-                frag = self.canonical_fragments.get(h)
-                if frag is not None:
-                    self.lru.touch(h)
-                    result.append(frag)
-        return result
+__all__ = [
+    "CANONICAL_SCHEMA_VERSION",
+    "HEADER_LEN",
+    "MAGIC",
+    "TRAILER_LEN",
+    "canonicalize",
+    "parse_canonical",
+]
