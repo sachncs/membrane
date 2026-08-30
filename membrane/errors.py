@@ -75,3 +75,15 @@ class TimeoutError(Error):
 
 class MigrationError(Error):
     """Raised when shard migration between nodes fails irrecoverably."""
+
+
+class TenantScopeError(AuthError):
+    """Raised when an op touches a fragment in another tenant.
+
+    The v3.0.0 release enforces per-tenant access on every
+    store / retrieve / replicate op: a non-admin caller cannot
+    write to or read from a fragment whose ``tenant_id`` does
+    not match the caller's tenant. This is the typed
+    authorization failure the :func:`op_store` /
+    :func:`op_retrieve` paths raise on a cross-tenant access.
+    """

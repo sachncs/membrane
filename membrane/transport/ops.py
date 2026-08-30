@@ -27,6 +27,7 @@ from urllib.request import Request, urlopen
 from membrane.auth import AuthContext
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
+from membrane.errors import TenantScopeError
 from membrane.gc import TombstoneTable
 from membrane.metrics import MetricsCollector
 from membrane.network.cluster import Cluster
@@ -164,7 +165,13 @@ def op_retrieve(
     """``GET /retrieve?content_hash=...``."""
     if node is None:
         return _ok({"found": False, "fragment": None})
-    frag = node.retrieve(content_hash)
+    caller_tenant = auth_context.subject if auth_context is not None else ""
+    caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
+    frag = node.retrieve(
+        content_hash,
+        caller_tenant=caller_tenant,
+        caller_scopes=caller_scopes,
+    )
     if frag:
         return _ok({"found": True, "fragment": to_dict(frag)})
     return _ok({"found": False, "fragment": None})
@@ -237,7 +244,17 @@ def op_store(
     # Local write always happens first so the cluster keeps a
     # single, source-of-truth copy at the primary even if quorum
     # is later achieved asynchronously.
-    ok = node.store(frag, is_primary=is_primary)
+    caller_tenant = auth_context.subject if auth_context is not None else ""
+    caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
+    try:
+        ok = node.store(
+            frag,
+            is_primary=is_primary,
+            caller_tenant=caller_tenant,
+            caller_scopes=caller_scopes,
+        )
+    except TenantScopeError as exc:
+        return 403, {"error": "tenant scope", "detail": str(exc)}
     if not ok:
         return _ok({"success": False, "content_hash": frag.identity.payload_hash})
 
@@ -330,7 +347,17 @@ def op_replicate(
     if node is None:
         return _ok({"error": "no node"})
     frag = from_dict(fragment_payload)
-    ok = node.store(frag, is_primary=False)
+    caller_tenant = auth_context.subject if auth_context is not None else ""
+    caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
+    try:
+        ok = node.store(
+            frag,
+            is_primary=False,
+            caller_tenant=caller_tenant,
+            caller_scopes=caller_scopes,
+        )
+    except TenantScopeError as exc:
+        return 403, {"error": "tenant scope", "detail": str(exc)}
     return _ok({"success": ok, "content_hash": frag.identity.payload_hash})
 
 

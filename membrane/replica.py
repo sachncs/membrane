@@ -84,7 +84,13 @@ class Replica(Node):
                 warmed.append(h)
         return warmed
 
-    def store(self, fragment: Fragment, is_primary: bool = False) -> bool:
+    def store(
+        self,
+        fragment: Fragment,
+        is_primary: bool = False,
+        caller_tenant: str = "",
+        caller_scopes: frozenset[str] = frozenset(),
+    ) -> bool:  # type: ignore[override]
         """Store a fragment. Replicas never own primary shards.
 
         The ``is_primary`` argument is accepted for API symmetry
@@ -95,6 +101,9 @@ class Replica(Node):
         Args:
             fragment: Fragment to store.
             is_primary: Ignored.
+            caller_tenant: Forwarded to the underlying node
+                store; the per-tenant filter applies unchanged.
+            caller_scopes: Scopes forwarded to the filter.
 
         Returns:
             bool: True if the fragment is stored.

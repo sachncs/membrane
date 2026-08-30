@@ -28,6 +28,9 @@ from typing import TYPE_CHECKING
 from membrane.fragment import Fragment
 from membrane.graph import Graph
 from membrane.index import Index
+from membrane.security.tenant import (
+    TenantAuthorizer,
+)
 
 if TYPE_CHECKING:
     from membrane.content_store import ContentStore
@@ -144,24 +147,51 @@ class Node:
         self.lock = threading.RLock()
         logger.info("Initialized node %s with %s bytes", node_id, max_memory_bytes)
 
-    def store(self, fragment: Fragment, is_primary: bool = True) -> bool:
+    def store(
+        self,
+        fragment: Fragment,
+        is_primary: bool = True,
+        caller_tenant: str = "",
+        caller_scopes: frozenset[str] = frozenset(),
+    ) -> bool:
         """Store a fragment in this node.
 
         Performs capacity-driven eviction when needed, registers
         the fragment in the index and graph systems, and updates
         access/insertion timestamps.
 
+        The v3.0.0 release adds a tenant scope check: a caller
+        without the ``admin`` scope may only write fragments to
+        their own tenant (or to the system tenant when
+        ``public_writable=True``, an explicit ACL knob).
+        :class:`~membrane.errors.TenantScopeError` is raised on
+        a cross-tenant write.
+
         Args:
             fragment: Fragment to store.
             is_primary: Whether this node owns the primary shard
                 for the fragment.
+            caller_tenant: Tenant id of the caller; empty string
+                means "unauthenticated" and the check is bypassed.
+            caller_scopes: Scopes granted to the caller.
 
         Returns:
             bool: True if the fragment is stored (or was already
             present and refreshed), False if the fragment is
             larger than ``max_memory_bytes`` or eviction could not
             free enough space.
+
+        Raises:
+            TenantScopeError: When the caller's tenant does not
+                match the fragment's tenant and the caller is
+                not admin.
         """
+        if caller_tenant:
+            authorizer = TenantAuthorizer(
+                caller_tenant=caller_tenant,
+                scopes=caller_scopes,
+            )
+            authorizer.authorize_write(fragment.tenant_id)
         if fragment.payload_size > self.max_memory_bytes:
             logger.warning(
                 "Fragment %s size %s exceeds node %s limit %s",
@@ -223,24 +253,48 @@ class Node:
 
             return True
 
-    def retrieve(self, content_hash: str) -> Fragment | None:
+    def retrieve(
+        self,
+        content_hash: str,
+        caller_tenant: str = "",
+        caller_scopes: frozenset[str] = frozenset(),
+    ) -> Fragment | None:
         """Retrieve a fragment by content hash.
 
         Performs opportunistic TTL cleanup: if the fragment has
         expired, it is removed before returning ``None``.
 
+        The v3.0.0 release adds a tenant scope check: a caller
+        without the ``admin`` scope may only read fragments
+        from their own tenant (or from the system tenant when
+        ``public_readable=True``, the default). A cross-tenant
+        read returns ``None`` so the caller cannot tell a
+        forbidden read from an absent fragment.
+
         Args:
             content_hash: Hash to look up.
+            caller_tenant: Tenant id of the caller; empty string
+                means "unauthenticated" and the check is bypassed.
+            caller_scopes: Scopes granted to the caller.
 
         Returns:
-            Fragment | None: The fragment if present and not
-            expired, otherwise ``None``.
+            Fragment | None: The fragment if present and the
+            caller is authorized; ``None`` when the fragment is
+            absent, expired, or the caller is not authorized.
         """
         with self.lock:
             fragment = self.fragments.get(content_hash)
             if fragment is None:
                 return None
-
+            if caller_tenant:
+                authorizer = TenantAuthorizer(
+                    caller_tenant=caller_tenant,
+                    scopes=caller_scopes,
+                )
+                try:
+                    authorizer.authorize_read(fragment.tenant_id)
+                except Exception:
+                    return None
             now = time.time()
             age = now - self.insertion_times.get(content_hash, now)
             if age > fragment.ttl:
