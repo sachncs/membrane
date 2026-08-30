@@ -25,6 +25,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from membrane.constants import DEFAULT_MAX_BODY_BYTES
 from membrane.errors import SchemaError
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
@@ -90,7 +91,18 @@ class GrpcServer:
         from membrane.transport.proto import membrane_pb2_grpc
 
         servicer = Handler(self.node, self.compute_backend)
-        self.grpc_server = grpc_module.server(thread_pool=ThreadPoolExecutor(max_workers=10))
+        # The default gRPC receive/send limits are 4 MiB; bump them
+        # to match the wire-config MAX_BODY_BYTES so a real
+        # payload (~ a 1 GiB window per-layer fragment) can be
+        # carried inline as ``bytes payload = 14``.
+        server_options = [
+            ("grpc.max_receive_message_length", DEFAULT_MAX_BODY_BYTES),
+            ("grpc.max_send_message_length", DEFAULT_MAX_BODY_BYTES),
+        ]
+        self.grpc_server = grpc_module.server(
+            thread_pool=ThreadPoolExecutor(max_workers=10),
+            options=server_options,
+        )
         membrane_pb2_grpc.add_MembraneServicer_to_server(servicer, self.grpc_server)
         # Insecure port for local development. For production
         # use a TLS-enabled port via add_secure_port().
