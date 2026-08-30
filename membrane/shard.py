@@ -32,6 +32,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from typing import Any
+
 from membrane.node import Node
 from membrane.ring import Ring
 
@@ -254,3 +256,31 @@ class Shard:
             leaving_peer,
             local_node_id,
         )
+
+    # ------------------------------------------------------------------
+    # Snapshot / durability
+    # ------------------------------------------------------------------
+
+    def save_snapshot(self) -> dict[str, Any]:
+        """Return a durable snapshot of the shard tables.
+
+        Returns:
+            dict[str, Any]: ``{"primary_map": {...}, "replica_map":
+                {...}}``. Each ``replica_map`` value is a sorted
+                list so equality checks across snapshots are stable.
+        """
+        return {
+            "primary_map": dict(self.primary_map),
+            "replica_map": {h: sorted(nodes) for h, nodes in self.replica_map.items()},
+        }
+
+    def load_snapshot(self, payload: dict[str, Any]) -> None:
+        """Restore the shard tables from a previously persisted snapshot.
+
+        Args:
+            payload: Body produced by :meth:`save_snapshot`.
+        """
+        primary = payload.get("primary_map", {}) if isinstance(payload, dict) else {}
+        replica = payload.get("replica_map", {}) if isinstance(payload, dict) else {}
+        self.primary_map = {str(h): str(n) for h, n in primary.items()}
+        self.replica_map = {str(h): set(replica.get(h, [])) for h in replica}

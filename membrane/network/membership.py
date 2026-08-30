@@ -41,6 +41,9 @@ class PeerInfo:
         suspect: Whether the peer has crossed the suspect
             threshold but not yet the remove threshold.
         missed_heartbeats: Counter of consecutive failed heartbeats.
+        cluster_epoch: Last cluster epoch this peer advertised;
+            lets a recovering node refuse to merge a stale peer
+            view. ``0`` when the peer has never published an epoch.
     """
 
     node_id: str
@@ -50,6 +53,7 @@ class PeerInfo:
     healthy: bool = True
     suspect: bool = False
     missed_heartbeats: int = 0
+    cluster_epoch: int = 0
 
     def to_json(self) -> dict[str, Any]:
         """Serialize this peer to a JSON-compatible dict."""
@@ -60,6 +64,7 @@ class PeerInfo:
             "healthy": self.healthy,
             "suspect": self.suspect,
             "missed_heartbeats": self.missed_heartbeats,
+            "cluster_epoch": self.cluster_epoch,
         }
 
 
@@ -157,6 +162,45 @@ class Membership:
         """Return a JSON-serializable snapshot of membership."""
         with self.lock:
             return [p.to_json() for p in self.peers.values()]
+
+    def save_snapshot(self) -> list[dict[str, Any]]:
+        """Return a durable snapshot of the membership table.
+
+        The shape matches :meth:`to_json` so callers persist either
+        form interchangeably.
+
+        Returns:
+            list[dict[str, Any]]: List of ``PeerInfo.to_json()``
+            entries, in insertion order.
+        """
+        return self.to_json()
+
+    def load_snapshot(self, payload: list[dict[str, Any]]) -> None:
+        """Restore membership from a previously persisted snapshot.
+
+        Existing entries are dropped first so callers can safely
+        run this on a fresh ``Membership`` or on one that already
+        holds gossip-driven entries. The local ``node_id`` is
+        never included.
+
+        Args:
+            payload: Snapshot body as produced by
+                :meth:`save_snapshot`.
+        """
+        with self.lock:
+            for peer_id in list(self.peers.keys()):
+                self.remove(peer_id)
+            for entry in payload:
+                self.add(
+                    node_id=entry["node_id"],
+                    host=entry["host"],
+                    port=int(entry["port"]),
+                )
+                p = self.peers[entry["node_id"]]
+                p.cluster_epoch = int(entry.get("cluster_epoch", 0))
+                p.healthy = bool(entry.get("healthy", True))
+                p.suspect = bool(entry.get("suspect", False))
+                p.missed_heartbeats = int(entry.get("missed_heartbeats", 0))
 
     def record_heartbeat(self, node_id: str) -> None:
         """Reset heartbeat counters for ``node_id``.
