@@ -7,6 +7,240 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-30
+
+Major release. **Breaking changes** for every 2.0.x deployment:
+the v2.0 gRPC data plane is removed wholesale; the canonical
+frame magic bumps to ``\xc0\xde\x01\x05``; the serialization
+schema bumps to 5; the wire path is Protobuf+Arrow with
+chunked / resumable transfers; encryption at rest is
+mandatory on ``FilesystemBlob``. Operators upgrading from a
+2.0 deployment must run the one-shot migration script
+documented in ``tools/upgrade_v2_to_v5.py`` before booting a
+3.0.0 cluster.
+
+### Added
+
+- **Auth + transport scope wiring** (Phase 3.1.1,
+  ``membrane/transport/authz.py``): ``ROUTE_SCOPES`` table
+  with per-method+path required scope; ``enforce_route_scope``
+  helper runs ``Authenticator.authenticate`` then
+  ``require_scope`` and translates the result into HTTP 401 /
+  403. Every route in ``routes_fastapi.py`` calls it. The
+  unused ``BulkheadPolicy`` and the signal-based
+  ``ResiliencePolicy.guard`` are deleted; the standalone
+  ``RetryPolicy`` / ``CircuitBreakerPolicy`` /
+  ``TimeoutPolicy`` dataclasses are kept.
+- **SSRF allow-list** (3.1.2,
+  ``membrane/security/url_allowlist.py``): scheme allow-list
+  (``http`` / ``https``), private-IP blocklist (RFC 1918,
+  ``127/8``, ``169.254/16``, ``::1``), DNS-rebinding guard.
+  ``op_sync`` and ``Peer`` HTTPTransport route every URL
+  through the validator.
+- **Per-endpoint input-size limits** (3.1.3): Pydantic
+  ``Field(max_length=...)`` on every body model; ``prompt_tokens``
+  capped at 32 768; ``claimed_sha256_hex`` enforced to be
+  exactly 64 chars.
+- **Deny-by-default mTLS** (3.1.4): empty
+  ``MTLSConfig.allowed_cns`` denies every CN; explicit
+  ``MTLSConfig.allow_all_signed_by_ca()`` for local dev / CI.
+- **v5-only canonical frame + tenant-aware Fragment** (3.1.5):
+  ``Fragment.tenant_id: str = "public"``; canonical magic
+  bumped to ``0xC0DE0105``; ``serialization.SCHEMA_VERSION = 5``;
+  ``from_dict`` accepts only v5. v2 and v4 frames / dicts are
+  rejected with ``SchemaError``.
+- **Tenant filter on store / retrieve / replicate** (3.1.6):
+  new ``TenantAuthorizer``, ``can_read_tenant``,
+  ``can_write_tenant`` helpers in ``membrane/security/tenant.py``;
+  ``Node.store`` raises ``TenantScopeError`` on a cross-tenant
+  write; ``Node.retrieve`` returns ``None`` on a cross-tenant
+  read so a forbidden read looks identical to an absent one.
+  ``membrane/errors.TenantScopeError`` is the typed failure.
+- **Tenant-scoped metrics** (3.1.7): ``TenantMetrics`` dataclass
+  with ``bump_fragment`` / ``bump_operation``; ``NodeMetrics``
+  carries a tenant side-channel populated by
+  ``Node.store`` / ``Node.remove_fragment``.
+- **Consolidated security test suite** (3.1.8,
+  ``tests/membrane/security/test_auth_bypass_ssrf_mtls.py``):
+  26 cases across auth-bypass, SSRF, deny-by-default mTLS,
+  tenant isolation, schema strictness, malformed payloads,
+  resource exhaustion.
+- **Populated metrics** (3.2.1): new ``TransportMetrics`` /
+  ``ClusterMetrics`` / ``PersistenceMetrics`` /
+  ``NodeMetrics`` instrumentation in
+  ``membrane/transport/metrics.py``; the
+  ``membrane_server_*_total`` counters increment on the
+  real call path.
+- **Per-peer replication-lag gauge** (3.2.2,
+  ``membrane/network/lag.py``): ``snapshot_peer_lag`` +
+  ``record_replication_lag`` + Prometheus ``record``
+  per peer.
+- **Data-integrity gauges** (3.2.3,
+  ``membrane/integrity.py``): ``merkle_drift_size`` per peer
+  gauge; ``corrupt_payloads_total`` counter ticked by every
+  ``CorruptPayloadError`` raised by ``parse_canonical``.
+- **OpenTelemetry tracer + OTLP exporter** (3.2.4,
+  ``membrane/otel_tracer/``): ``TracerFactory`` reads
+  ``OTEL_EXPORTER_OTLP_ENDPOINT`` and installs the OTLP +
+  ``BatchSpanProcessor`` pipeline; ``membrane_span`` is the
+  synchronous context manager.
+- **client→router→prefill→transfer→decode spans** (3.2.5):
+  ``transfer.kv`` on ``KVTransferEngine.transfer_kv``;
+  ``disagg.prefill`` on ``PrefillService.prefill``.
+- **``/admin/*`` HTTP surface** (3.2.6,
+  ``membrane/transport/admin.py``): 8 endpoints
+  (``/admin/fragments/{hash}``, ``/admin/placement``,
+  ``/admin/evict``, ``/admin/repair``, ``/admin/policy``,
+  ``/admin/audit`` + ``GET`` variants), every route gated by
+  the ``admin`` scope.
+- **Admin CLI subcommands** (3.2.7,
+  ``membrane/cli/commands/admin.py``):
+  ``membrane admin inspect|placement|evict|repair|policy``
+  via the Typer CLI.
+- **Hash-chained audit log** (3.2.8,
+  ``membrane/audit.py``): ``AuditLog`` + ``AuditEntry`` +
+  ``AuditStorage`` Protocol + ``FileAuditStorage``;
+  ``verify_chain`` returns the index of the first tampered
+  entry or ``None``.
+- **wire_v3.proto + delete v2 data plane** (3.3.1):
+  ``membrane/wire/v3/wire_v3.proto`` with the chunked
+  envelope + bidi ``Open`` service; ``membrane.transport.proto``
+  and ``membrane.transport.grpc`` deleted wholesale; the
+  v2.0 build now refuses ``transport="grpc"``.
+- **wire_v3 generated stubs** (3.3.2): ``wire_v3_pb2`` +
+  ``wire_v3_pb2_grpc`` under ``membrane/wire/v3/``.
+- **ChunkManifest + per-chunk SHA-256** (3.3.3,
+  ``membrane/wire/v3/chunks.py``): ``from_payload`` /
+  ``split_payload`` / ``verify_chunk`` / ``sha256_hex``.
+- **ResumableTransfer** (3.3.4,
+  ``membrane/wire/v3/resumable.py``): client-side chunk
+  ingest + cursor + ``chunk_index`` verification on every
+  receive. ``ResumableReceiver`` + ``ResumableProducer``
+  round-trip helpers in the same module.
+- **Async httpx + grpc.aio client + WireBulkhead** (3.3.5,
+  ``membrane/wire/v3/aio_client.py``): ``AsyncWireClient``,
+  ``WireBulkhead``, ``CancellationToken``, ``CircuitBreakerPolicy``,
+  ``RetryPolicy`` (full-jitter exponential backoff),
+  ``with_deadline`` for structured deadline propagation.
+- **``os.sendfile`` fast path on ``FilesystemBlob``** (3.3.8):
+  new ``put_from_file(key, source_path)`` copies via
+  ``os.sendfile`` on Linux and falls back to
+  ``shutil.copyfile`` on macOS.
+- **PinnedTensorHandle + AdaptiveFragmenter** (3.3.9-3.3.10):
+  ``PinnedTensorHandle`` describes the GPUDirect staging
+  buffer; ``AdaptiveFragmenter`` sizes the window from
+  per-architecture baseline + memory pressure + reuse score
+  (gated by ``enabled=True``).
+- **SecretProvider Protocol + env / Vault / AWS / GCP**
+  (3.4.5, ``membrane/secrets/``): ``SecretProvider`` Protocol,
+  ``EnvSecretProvider``, ``VaultSecretProvider``,
+  ``AWSSecretsProvider``, ``GCPSecretsProvider`` with lazy
+  dependency imports + typed
+  ``SecretNotFoundError`` / ``SecretBackendError``.
+- **mTLS cert rotation + X.509 notAfter** (3.4.1 + 3.4.2,
+  ``membrane/transport/tls_rotation.py``):
+  ``CertRotationWatcher`` polls the cert + key files and
+  fires ``on_rotate`` on byte change; ``enforce_not_after``
+  raises when the cert is expired.
+- **ACME + SPIFFE skeleton** (3.4.3 + 3.4.4): class surface
+  + dependency guards; the HTTP-01 / DNS-01 challenge handlers
+  ship in 3.0.1.
+- **Native AES-256-GCM encryption at rest** (3.4.6,
+  ``membrane/security/encryption.py`` + ``FilesystemBlob``):
+  ``KeyProvider`` Protocol + ``StaticKeyProvider``;
+  HKDF-SHA256 per-(tenant, content_hash) key derivation;
+  AES-GCM nonce + ciphertext + tag persistence; the
+  plaintext ``FilesystemBlob`` branch is gone.
+- **AdmissionPolicy + TinyLFU + TenantQuota + HitObserver +
+  CoaccessSessionPrefetcher** (3.5.1-3.5.5,
+  ``membrane/decision.py``): cost/benefit gate, SLRU +
+  frequency-sketch eviction, per-tenant byte / entry caps,
+  closed-loop reuse-score EMA, co-access-driven warm
+  prefetcher, ``hit_probability`` predictor.
+- **Hot / warm / cold / archival tiers + Bandit** (3.5.6-3.5.8,
+  ``membrane/tiers.py``): ``TierPolicy`` + four tier classes;
+  ``Bandit`` ε-greedy learner over the
+  ``EconomicRouterConfig`` weights; ``select_tier`` returns
+  one of ``"hot"`` / ``"warm"`` / ``"cold"`` / ``"archival"``;
+  ``record_op_store`` / ``record_op_retrieve` glue the gates
+  into the real op paths.
+- **Typed MembraneClient (sync + async)** (3.6.1,
+  ``membrane/client.py``): ``MembraneClient`` +
+  ``AsyncMembraneClient`` + ``MembraneClientError`` /
+  ``MembraneNotFoundError`` /
+  ``MembraneUnauthorizedError`` / ``MembraneServerError``.
+- **OpenAPI spec generation** (3.6.2,
+  ``membrane/openapi.py``): ``generate_spec(app)``,
+  ``write_spec(app, path)``.
+- **RAG example** (3.6.3, ``examples/rag_pipeline.py``):
+  end-to-end RAG loop wired to ``MembraneClient``.
+- **``python -m membrane.demo``** (3.6.4,
+  ``membrane/demo.py``): single-file in-process demo.
+- **Pydantic ``ClusterConfig`` validation** (3.6.5,
+  ``membrane/network/config.py``):
+  ``validate_config(config) -> ClusterConfig``; surfaces a
+  multi-line error listing every offending field.
+- **Compatibility matrix** (3.6.6,
+  ``docs/compat-matrix.md``): supported Python versions,
+  optional-dep groups, engine pins, transport availability,
+  wire schema, GPU support.
+- **pytest-benchmark suite** (3.6.7,
+  ``tests/bench/test_phase37_bench.py`` + smoke fallback):
+  store + audit + chunk-manifest hot paths; skips cleanly
+  when ``pytest-benchmark`` is not installed.
+- **hypothesis property tests** (3.7.1,
+  ``tests/membrane/property/test_property_v5.py``):
+  arbitrary-payload canonical round-trip + tenant-aware
+  serialization round-trip + schema-version rejection, with
+  graceful skip when ``hypothesis`` is not installed.
+- **Toxiproxy-aware chaos suite** (3.7.2,
+  ``tests/membrane/chaos/test_chaos_suite.py``):
+  packet-loss, partition, latency, duplicate-dedup + a
+  toxiproxy-aware integration test that connects when
+  ``MEMBRANE_TOXIPROXY_HOST:PORT`` is configured.
+- **64-thread stress suite** (3.7.6,
+  ``tests/membrane/stress/test_concurrent_stress.py``):
+  32 * 50 stores + 8 * 64 mixed store / remove cycles; gated
+  by ``pytest -m stress``.
+- **Split CI workflows** (3.7.5,
+  ``.github/workflows/ci.yml``): ``lint``,
+  ``test`` (3.10-3.13), ``integration`` (Redis 7),
+  ``security`` (pip-audit + bandit + gitleaks + Trivy),
+  ``perf-smoke``, ``stress``, ``chaos``, ``docker``.
+- **Dependabot cap expansion** (3.7.7): github-actions
+  PR cap 5 → 10; docker PR cap 3 → 5.
+
+### Changed
+
+- The default encryption posture is **mandatory**: every
+  ``FilesystemBlob`` constructor now requires a ``tenant_id``
+  and an optional ``KeyProvider``. The plaintext branch is
+  removed.
+- The ``transport="grpc"`` option on ``Server`` raises
+  ``ValueError``; the v2.0 gRPC data plane is removed
+  wholesale. A v3 gRPC transport lands in 3.0.1.
+- ``Fragment.merge`` rejects cross-tenant merges with
+  ``ValueError``; in-tenant merges are unchanged.
+- ``parse_canonical`` accepts only v5; v4 + v2 magic bytes
+  raise ``SchemaError``.
+- ``from_dict`` accepts only ``schema_version == 5``;
+  older schemas raise ``SchemaError``.
+- The kythonic ``memray``, ``codspeed``, ``pytest-benchmark``
+  remain optional in 3.0.0 and ship in 3.0.1.
+
+### Removed
+
+- ``membrane/transport/proto/`` (v2 ``membrane.proto`` +
+  generated stubs + ``membrane_pb2.py``).
+- ``membrane/transport/grpc.py`` (the v2 ``GrpcServer``).
+- ``tests/membrane/transport/test_grpc_server.py``.
+- ``ResiliencePolicy`` composable and the signal-based
+  ``guard`` timeout. The plain ``RetryPolicy``,
+  ``CircuitBreakerPolicy``, ``TimeoutPolicy`` dataclasses
+  remain.
+- The backward-compat v4 / v2 readers in
+  ``membrane.canonical`` and ``membrane.serialization``.
+
 ## [2.0.0] - 2026-08-30
 
 Major release. New KV-cache engine integration arc replaces
