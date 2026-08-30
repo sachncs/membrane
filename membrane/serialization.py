@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from typing import Any, Union
+from typing import Any
 
 from membrane.errors import SchemaError
 from membrane.fragment import Fragment
@@ -27,17 +27,18 @@ from membrane.signature import Signature
 SCHEMA_VERSION: int = 1
 
 #: JSON-compatible value type used at every wire boundary.
-JsonValue = Union[
-    str,
-    int,
-    float,
-    bool,
-    None,
-    list["JsonValue"],
-    dict[str, "JsonValue"],
-]
+#:
+#: ``Any`` rather than a recursive union because the recursive
+#: form breaks mypy's invariance for dict value types (a
+#: ``dict[str, int]`` is not assignable to a
+#: ``dict[str, JsonValue]`` even though every int is JSON).
+#: Callers should re-validate the values they consume.
+JsonValue = Any
 
 #: A JSON object (used for every Membrane wire payload).
+#: Same rationale as :data:`JsonValue`; the runtime shape is
+#: ``dict[str, object]`` but the alias is named for
+#: documentation purposes only.
 JsonDict = dict[str, JsonValue]
 
 

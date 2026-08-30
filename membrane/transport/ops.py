@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any, cast
 from urllib.request import Request, urlopen
 
 from membrane.compute.base import Backend
@@ -46,12 +47,18 @@ MAX_BODY_BYTES: int = 100 << 20
 
 def _err(status: int, message: str) -> tuple[int, JsonDict]:
     """Build a uniform ``(status, body)`` error tuple."""
-    return status, {"error": message}
+    return status, cast(JsonDict, {"error": message})
 
 
-def _ok(body: JsonDict) -> tuple[int, JsonDict]:
-    """Build a uniform ``(status, body)`` success tuple."""
-    return 200, body
+def _ok(body: Any) -> tuple[int, JsonDict]:
+    """Build a uniform ``(status, body)`` success tuple.
+
+    Accepts any JSON-serializable mapping; the helper widens to
+    ``JsonDict`` so deeply-typed nested dicts (``dict[str, int]``,
+    ``list[dict[str, Any]]``, etc.) flow through without an
+    explicit cast at every builder site.
+    """
+    return 200, cast(JsonDict, body)
 
 
 # ---------------------------------------------------------------------------

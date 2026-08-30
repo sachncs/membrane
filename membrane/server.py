@@ -14,7 +14,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from membrane.compute.base import Backend
 from membrane.metrics import (
@@ -53,20 +53,32 @@ def _register_compute_backends() -> None:
 
     COMPUTE_BACKENDS["cpu"] = lambda _url, _model, _key: CPU()
     COMPUTE_BACKENDS["gpu"] = lambda _url, _model, _key: _try_import("GPU")()
-    COMPUTE_BACKENDS["ollama"] = lambda url, model, _key: _try_import("Ollama")(
-        base_url=url or "http://localhost:11434",
-        model=model or "llama3.2",
+    COMPUTE_BACKENDS["ollama"] = lambda url, model, _key: cast(
+        Backend,
+        _try_import("Ollama")(
+            base_url=url or "http://localhost:11434",
+            model=model or "llama3.2",
+        ),
     )
-    COMPUTE_BACKENDS["openai"] = lambda _url, model, key: _try_import("OpenAI")(
-        model=model or "gpt-4o-mini",
-        api_key=key,
+    COMPUTE_BACKENDS["openai"] = lambda _url, model, key: cast(
+        Backend,
+        _try_import("OpenAI")(
+            model=model or "gpt-4o-mini",
+            api_key=key,
+        ),
     )
-    COMPUTE_BACKENDS["anthropic"] = lambda _url, model, key: _try_import("Anthropic")(
-        model=model or "claude-3-sonnet-20240229",
-        api_key=key,
+    COMPUTE_BACKENDS["anthropic"] = lambda _url, model, key: cast(
+        Backend,
+        _try_import("Anthropic")(
+            model=model or "claude-3-sonnet-20240229",
+            api_key=key,
+        ),
     )
-    COMPUTE_BACKENDS["transformers"] = lambda _url, model, _key: _try_import("Transformers")(
-        model_id=model or "gpt2",
+    COMPUTE_BACKENDS["transformers"] = lambda _url, model, _key: cast(
+        Backend,
+        _try_import("Transformers")(
+            model_id=model or "gpt2",
+        ),
     )
 
 
