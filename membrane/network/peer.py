@@ -70,7 +70,15 @@ class Transport(Protocol):
 
 
 class HTTPTransport:
-    """Default :class:`Transport` backed by ``urllib.request``."""
+    """Default :class:`Transport` backed by ``urllib.request``.
+
+    Every outbound URL is validated against the SSRF allow-list
+    (:func:`membrane.security.validate_outbound_url`) before the
+    request fires. A URL that fails the check causes the call
+    to return ``None`` with a logged warning; the caller
+    surfaces the failure to the cluster rather than silently
+    contacting a private address.
+    """
 
     def request(
         self,
@@ -83,6 +91,15 @@ class HTTPTransport:
         """Issue an HTTP request via ``urllib`` and return the JSON body."""
         import urllib.error
         import urllib.request
+
+        from membrane.security import validate_outbound_url
+        from membrane.security.url_allowlist import SSRFError
+
+        try:
+            validate_outbound_url(url)
+        except SSRFError as exc:
+            logger.warning("HTTPTransport %s %s rejected by SSRF policy: %s", method, url, exc)
+            return None
 
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:

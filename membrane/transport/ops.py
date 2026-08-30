@@ -362,22 +362,43 @@ def op_sync(
     source_url: str,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /sync`` — pull missing fragments from a source URL."""
+    """``POST /sync`` — pull missing fragments from a source URL.
+
+    Validates ``source_url`` against the SSRF policy before
+    issuing any outbound HTTP request. A URL that fails the
+    allow-list returns 400 with the SSRF reason.
+    """
     if not source_url:
         return _ok({"error": "missing source_url"})
     if node is None:
         return _ok({"error": "no node"})
+    from membrane.security import validate_outbound_url
+    from membrane.security.url_allowlist import SSRFError
+
     try:
-        with urlopen(Request(f"{source_url}/inventory"), timeout=5) as resp:
+        inventory_url = validate_outbound_url(f"{source_url}/inventory")
+    except SSRFError as exc:
+        return 400, {"error": "ssrf rejected", "reason": str(exc), "url": "inventory"}
+    try:
+        with urlopen(Request(inventory_url), timeout=5) as resp:
             remote_data = json.loads(resp.read().decode())
         remote_digest = remote_data.get("digest", {})
         local_digest = transfer_service.inventory_digest(node) or {}
         missing = transfer_service.compare_inventories(local_digest, remote_digest)
         transferred: list[str] = []
         for h in missing:
-            with urlopen(
-                Request(f"{source_url}/retrieve?content_hash={h}"), timeout=5
-            ) as resp:
+            try:
+                retrieve_url = validate_outbound_url(
+                    f"{source_url}/retrieve?content_hash={h}"
+                )
+            except SSRFError as exc:
+                return 400, {
+                    "error": "ssrf rejected",
+                    "reason": str(exc),
+                    "url": "retrieve",
+                    "content_hash": h,
+                }
+            with urlopen(Request(retrieve_url), timeout=5) as resp:
                 remote_frag_data = json.loads(resp.read().decode())
             if remote_frag_data.get("found"):
                 frag = from_dict(remote_frag_data["fragment"])
