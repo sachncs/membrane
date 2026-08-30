@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from membrane.compute.base import Backend
+from membrane.gc import Sweeper, TombstoneTable
 from membrane.metrics import (
     ClusterMetrics,
     MetricsCollector,
@@ -29,6 +30,7 @@ from membrane.network.config import ClusterConfig
 from membrane.node import Node
 from membrane.persistence.memory import Memory
 from membrane.persistence.redis import Redis
+from membrane.registry import Registry
 from membrane.snapshot import SNAPSHOT_SCHEMA_VERSION, ClusterEpochGuard, Snapshot
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
@@ -220,6 +222,7 @@ class Server:
         state_dir: str | None = None,
         checkpoint_interval_sec: float = 30.0,
         cluster_epoch: int = 0,
+        sweep_interval_sec: float = 30.0,
     ) -> None:
         """Initialize the server with all configured subsystems.
 
@@ -282,6 +285,16 @@ class Server:
         self.persistence = self.build_persistence(redis_url)
 
         self.cluster_manager: Cluster | None = None
+        # GC plumbing: tombstones + periodic sweeper. Single
+        # TombstoneTable is shared with the transport's
+        # op_delete/op_tombstone so producers, peers, and the
+        # sweeper converge on the same set. The block must run
+        # before the Cluster constructor so the cluster can
+        # share the table.
+        self.tombstones = TombstoneTable()
+        self.sweep_interval_sec = float(sweep_interval_sec)
+        self.sweeper: Sweeper | None = Sweeper(interval_sec=self.sweep_interval_sec)
+        self.sweeper_thread: threading.Thread | None = None
         self.transfer_service = TransferService(
             cluster_manager=self.cluster_manager,
             local_node=self.node,
@@ -293,6 +306,7 @@ class Server:
                 port=port,
                 node=self.node,
                 config=cluster_config,
+                tombstones=self.tombstones,
             )
             self.transfer_service.cluster_manager = self.cluster_manager
             # Wire TransferService into the cluster so the migrator's
@@ -385,6 +399,24 @@ class Server:
                 name="membrane-checkpoint",
             )
             self.checkpoint_thread.start()
+        if self.sweeper is not None and self.sweep_interval_sec > 0:
+            # The Sweeper depends on the cluster's directory and
+            # tombstone table — only start it when those exist.
+            directory = self.cluster_manager.directory if self.cluster_manager else None
+            if directory is not None:
+                registry_for_dir: Registry = directory
+
+                def _forget(hashes: list[str]) -> None:
+                    for h in hashes:
+                        registry_for_dir.forget_fragment(h)
+
+                self.sweeper.on_post_sweep = _forget
+            self.sweeper_thread = threading.Thread(
+                target=self._sweeper_loop,
+                daemon=True,
+                name="membrane-sweeper",
+            )
+            self.sweeper_thread.start()
         self.log_event("info", f"Server started on {self.host}:{self.port}")
 
     def stop(self) -> None:
@@ -400,6 +432,9 @@ class Server:
         self.transport.stop()
         if self.cluster_manager:
             self.cluster_manager.stop()
+        if self.sweeper is not None:
+            self.sweeper.stop(timeout=2.0)
+            self.sweeper_thread = None
         self.log_event("info", "Server stopped")
 
     def _checkpoint_loop(self) -> None:
@@ -411,6 +446,35 @@ class Server:
                 self.checkpoint_state()
             except Exception as exc:  # pragma: no cover - background safety
                 logger.warning("Checkpoint failed: %s", exc)
+
+    def _sweeper_loop(self) -> None:
+        """Background loop sweeping TTL + tombstones every ``sweep_interval_sec``.
+
+        Uses :meth:`Node.evict` (TTL) for the eviction phase and
+        the shared :class:`~membrane.gc.TombstoneTable` for the
+        soft-delete sweep. The post-sweep observer forgets the
+        directory entries of every hash touched.
+        """
+        node = self.node
+
+        def _evict() -> list[str]:
+            evicted: list[str] = node.evict(target_bytes=len(node.fragments) * 16)
+            return evicted if evicted is not None else []
+
+        while self.running:
+            if not isinstance(self.sweeper, Sweeper):
+                return
+            try:
+                self.sweeper.run_once(
+                    evict_expired=_evict,
+                    tombstones=self.tombstones,
+                )
+            except Exception as exc:  # pragma: no cover - background safety
+                logger.warning("Sweep failed: %s", exc)
+            # Sleep until next interval via the sweepEvent, not a
+            # raw sleep, so stop() interrupts promptly.
+            if self.sweeper.stop_event.wait(self.sweep_interval_sec):
+                return
 
     def restore_state(self) -> None:
         """Re-hydrate membership / shard tables from the configured snapshot.
