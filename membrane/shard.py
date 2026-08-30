@@ -273,7 +273,11 @@ class Shard:
             verify + table flip), ``False`` on any failed step.
         """
         # Phase 3 verified-migration path: pull + verify + flip.
-        if pull_fn is not None and node is not None:
+        # When the caller supplies pull_fn at all, the migration
+        # is gated by both pull and verify -- not by the legacy
+        # in-memory push path. This makes the contract explicit
+        # for production deployments at 2.0+.
+        if pull_fn is not None:
             pulled = False
             try:
                 pulled = bool(pull_fn(content_hash))
