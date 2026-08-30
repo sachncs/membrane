@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import threading
 
+from membrane.gc import TombstoneTable
 from membrane.network.config import ClusterConfig
 from membrane.network.failure import Failure
 from membrane.network.gossip import Gossip
@@ -82,6 +83,7 @@ class Cluster:
         shard_manager: Shard | None = None,
         failure_detector: FailureDetector | None = None,
         migrator: Migrator | None = None,
+        tombstones: TombstoneTable | None = None,
     ) -> None:
         self.node_id = node_id
         self.host = host
@@ -91,6 +93,7 @@ class Cluster:
         self.hash_ring = hash_ring or Ring()
         self.shard_manager = shard_manager or Shard(self.hash_ring)
         self.directory = directory or Registry()
+        self.tombstones = tombstones or TombstoneTable()
 
         # Lifecycle state — must be initialized before subsystem
         # composition so subsystem constructors can reference them.
@@ -128,6 +131,7 @@ class Cluster:
             node,
             config,
             self.directory,
+            self.tombstones,
             self.stop_event,
             self.running,
         )

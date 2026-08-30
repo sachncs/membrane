@@ -5,13 +5,16 @@ This module owns:
 * :class:`PeerEndpoint` — a peer's network address and health.
 * :class:`GossipState` — the full payload exchanged between
   peers during a gossip round, including membership, fragment
-  location samples, and an inventory digest.
+  location samples, inventory digest, **and the active tombstone
+  set** so soft-deletes converge across replicas.
 * :class:`Gossip` — the background daemon that drives gossip
-  rounds and handles incoming gossip payloads.
+  rounds and handles incoming gossip payloads. Inbound
+  tombstones are recorded through the configured
+  :class:`~membrane.gc.TombstoneTable`.
 
 The state classes are pure values. The :class:`Gossip` daemon
-holds the local membership table, the directory, and a node
-reference for building snapshots.
+holds the local membership table, the directory, the node
+reference for building snapshots, and the shared tombstone table.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
+from membrane.gc import TombstoneTable
 from membrane.network.config import ClusterConfig
 from membrane.network.membership import Membership
 from membrane.node import Node
@@ -72,7 +76,7 @@ class PeerEndpoint:
 class GossipState:
     """Serializable state exchanged during gossip rounds.
 
-    A gossip state bundles four pieces of information:
+    A gossip state bundles five pieces of information:
 
     * ``peers`` — the sender's current membership view.
     * ``fragment_locations`` — a sampled subset of the
@@ -83,6 +87,11 @@ class GossipState:
       every fragment the sender holds locally. Used by
       :class:`~membrane.delta_sync.DeltaSync` to compute missing
       or outdated entries on the receiving side.
+    * ``fragment_tombstones`` — ``content_hash -> until`` for
+      every active soft-delete the sender has recorded. Receivers
+      stamp the same tombstone on their local
+      :class:`~membrane.gc.TombstoneTable` so the cluster
+      converges on a single expiry.
     * ``timestamp`` — sender's wall-clock time at emission;
       receivers can use it to discard stale states.
 
@@ -92,6 +101,7 @@ class GossipState:
         peers: List of known peer endpoints.
         fragment_locations: Sampled fragment-location map.
         inventory_digest: Full inventory digest.
+        fragment_tombstones: Soft-delete markers with deadlines.
     """
 
     node_id: str
@@ -99,15 +109,15 @@ class GossipState:
     peers: list[PeerEndpoint] = field(default_factory=list)
     fragment_locations: dict[str, list[str]] = field(default_factory=dict)
     inventory_digest: dict[str, int] = field(default_factory=dict)
+    fragment_tombstones: dict[str, float] = field(default_factory=dict)
 
     def to_json(self) -> JsonDict:
         """Serialize this state to a JSON-compatible dict.
 
         Returns:
-            JsonDict: ``node_id``, ``timestamp``,
-            ``peers`` (each serialized via
-            :meth:`PeerEndpoint.to_json`), ``fragment_locations``,
-            and ``inventory_digest``.
+            JsonDict: ``node_id``, ``timestamp``, ``peers``,
+            ``fragment_locations``, ``inventory_digest``, and
+            ``fragment_tombstones``.
         """
         return {
             "node_id": self.node_id,
@@ -115,6 +125,7 @@ class GossipState:
             "peers": [p.to_json() for p in self.peers],
             "fragment_locations": self.fragment_locations,
             "inventory_digest": self.inventory_digest,
+            "fragment_tombstones": self.fragment_tombstones,
         }
 
     @classmethod
@@ -134,6 +145,7 @@ class GossipState:
             peers=[PeerEndpoint.from_json(p) for p in data.get("peers", [])],
             fragment_locations=dict(data.get("fragment_locations", {})),
             inventory_digest=dict(data.get("inventory_digest", {})),
+            fragment_tombstones=dict(data.get("fragment_tombstones", {})),
         )
 
     def merge(self, other: GossipState) -> GossipState:
@@ -142,9 +154,11 @@ class GossipState:
         Peer entries are de-duplicated by ``node_id`` with a
         small heuristic that prefers the healthier endpoint when
         both are present. Fragment-location lists are unioned.
-        Inventory digest entries from ``other`` overwrite
-        entries from ``self`` (each fragment is owned by exactly
-        one node, so the latest observation wins).
+        Inventory digest entries use ``max(version_id)`` per
+        fragment so a stale gossip message cannot roll a
+        fresher local state backward. Tombstone entries use
+        ``max(until)`` per fragment so the longer-lived
+        deadline wins.
 
         Args:
             other: State received from another peer.
@@ -181,12 +195,22 @@ class GossipState:
             if merged_digest.get(h, 0) < version:
                 merged_digest[h] = version
 
+        # Tombstone merge uses max(until) so the latest expiry
+        # always wins. A node that observed the delete later
+        # typically has a tighter deadline.
+        merged_tombstones: dict[str, float] = dict(self.fragment_tombstones)
+        for h, until in other.fragment_tombstones.items():
+            existing_until = merged_tombstones.get(h, 0.0)
+            if until > existing_until:
+                merged_tombstones[h] = until
+
         return GossipState(
             node_id=self.node_id,
             timestamp=max(self.timestamp, other.timestamp),
             peers=list(merged_peers.values()),
             fragment_locations=merged_locations,
             inventory_digest=merged_digest,
+            fragment_tombstones=merged_tombstones,
         )
 
 
@@ -198,6 +222,9 @@ class Gossip:
         node: Local node (source of fragments in the digest).
         config: Cluster configuration.
         directory: Fragment-location directory.
+        tombstones: Shared tombstone table; incoming records are
+            stamped with ``node_id`` of the sender so a peer's
+            announcement can be attributed.
         stop_event: Stop signal shared across all cluster loops.
         running: Mutable bool flag.
     """
@@ -208,6 +235,7 @@ class Gossip:
         node: Node,
         config: ClusterConfig,
         directory,
+        tombstones: TombstoneTable,
         stop_event: threading.Event,
         running: list[bool],
     ) -> None:
@@ -215,11 +243,19 @@ class Gossip:
         self.node = node
         self.config = config
         self.directory = directory
+        self.tombstones = tombstones
         self.stop_event = stop_event
         self.running = running
 
     def build_state(self) -> GossipState:
-        """Snapshot local state into a :class:`GossipState`."""
+        """Snapshot local state into a :class:`GossipState`.
+
+        The snapshot includes the active tombstone set so peers
+        can converge on a single expiry for each deleted
+        fragment. A purged tombstone (past ``until``) is skipped
+        here because the local :class:`~membrane.gc.TombstoneTable`
+        has already expired it.
+        """
         peers = [
             PeerEndpoint(node_id=p.node_id, host=p.host, port=p.port, healthy=p.healthy)
             for p in self.membership.snapshot()
@@ -231,12 +267,22 @@ class Gossip:
         for h in sample_hashes:
             locations[h] = list(self.directory.locate_fragment(h))
         digest = {h: frag.version_id for h, frag in self.node.fragments.items()}
+        # Surface every active tombstone to peers. There is no
+        # sampling here because tombstone purges depend on every
+        # node knowing the deadline.
+        now = time.time()
+        tombstone_map: dict[str, float] = {}
+        with self.tombstones.lock:
+            for h, record in self.tombstones._tombstones.items():  # type: ignore[attr-defined]
+                if record.until > now:
+                    tombstone_map[h] = record.until
         return GossipState(
             node_id=self.node.node_id,
             timestamp=time.time(),
             peers=peers,
             fragment_locations=locations,
             inventory_digest=digest,
+            fragment_tombstones=tombstone_map,
         )
 
     def loop(self) -> None:
@@ -284,6 +330,16 @@ class Gossip:
         for h, nodes in incoming.fragment_locations.items():
             for nid in nodes:
                 self.directory.record_fragment_location(h, nid)
+
+        # Tombstone convergence: stamp the sender-identified
+        # records into the local table. ``record`` uses the
+        # longer-lived of the two deadlines via its merge logic.
+        for h, until in incoming.fragment_tombstones.items():
+            self.tombstones.record(
+                content_hash=h,
+                until=until,
+                node_ids={incoming.node_id},
+            )
 
         return self.build_state().to_json()
 
