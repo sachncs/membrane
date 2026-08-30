@@ -19,7 +19,7 @@ from membrane.node import Node
 from membrane.offload import Offload
 from membrane.origin import Origin
 from membrane.policy import Promotion
-from membrane.prefiller import Prefiller as PrefillRemote
+from membrane.prefilling import Prefiller as PrefillRemote
 from membrane.replica import Replica
 from membrane.replicator import Replicator
 from membrane.ring import Ring

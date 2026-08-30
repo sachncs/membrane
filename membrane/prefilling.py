@@ -1,38 +1,161 @@
-"""Prefiller: concurrent + synchronous prefill dispatch.
+"""Prefilling pipeline: analytical adapter + dispatch.
 
-This module defines :class:`Prefiller`, the unified prefill
-dispatcher. Two modes are exposed:
+This module hosts the prefill pipeline that used to live
+across :mod:`membrane.adapter` and :mod:`membrane.prefiller`.
+The pipeline is shaped as three layers:
 
-* :meth:`Prefiller.dispatch` — async; races prefill requests across
-  multiple candidate nodes and returns the first successful
-  result. Falls back to local prefill (if a local node is
-  supplied) when every remote attempt fails or times out.
-* :meth:`Prefiller.dispatch_sync` — sync; runs prefill on a single
-  pre-chosen target node. This is the synchronous counterpart
-  used when the dispatcher has already chosen a specific node
-  (e.g., for deterministic tests and for the Membrane transport
-  prefill route).
+* :class:`Adapter` — wraps the analytical throughput model
+  from :mod:`membrane.model.profiler` so callers receive a
+  list of fragments plus an optional
+  :class:`~membrane.model.router.RoutingDecision`.
+* :class:`Prefiller` — schedules one or more prefill
+  requests. ``dispatch`` races a list of candidate nodes and
+  falls back to local on failure; ``dispatch_sync`` runs
+  prefill on a single pre-chosen target.
 
-The module also defines two exception types used by the
-dispatcher:
-
-* :class:`PrefillFallbackError` — raised when no remote
-  succeeds and no local fallback is available.
-* :class:`NodePrefillError` — raised internally when a single
-  node fails or returns an empty fragment.
-
-Network latency is simulated via a configurable
-``latency_provider`` dict; in a real system this would be the
-network RTT measurement layer.
+The pipeline is used by ``Reconstructor`` for prefill
+fallback when the index can't fully cover a request. The
+production serving plane (``membrane.transport.ops``) calls
+``Backend.prefill(...)`` directly without going through
+this pipeline.
 """
 
 import asyncio
 import logging
+from dataclasses import dataclass
 
-from membrane.adapter import Adapter, PrefillResult
+from membrane.fragment import Fragment
+from membrane.fragmenter import Fragmenter
+from membrane.model.profiler import kv_size, prefill_time
+from membrane.model.router import Router, RoutingDecision
 from membrane.node import Node
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PrefillResult:
+    """Outcome of a simulated prefill operation.
+
+    Attributes:
+        kv_size: Estimated KV cache size in MiB.
+        latency_seconds: Estimated prefill latency in seconds.
+        routing_decision: Optional routing decision from
+            :class:`Router`. ``None`` when no router is
+            configured.
+        fragments: Fragments produced from the KV output.
+    """
+
+    kv_size: float
+    latency_seconds: float
+    routing_decision: RoutingDecision | None
+    fragments: list[Fragment]
+
+
+class Adapter:
+    """Adapts the Membrane analytical model for integration.
+
+    Treats profiler functions as a model-based prefill service.
+    Returns synthetic KV metadata that is immediately converted
+    to fragments.
+
+    Attributes:
+        router: Optional :class:`Router` consulted for offload
+            decisions.
+        compute_scale: Hardware compute scale factor.
+            ``1.0`` represents the H200 reference hardware.
+        fragmentation_engine: Engine used to convert the
+            simulated KV output into fragments.
+    """
+
+    def __init__(
+        self,
+        router: Router | None = None,
+        compute_scale: float = 1.0,
+        fragmentation_engine: Fragmenter | None = None,
+    ) -> None:
+        """Initialize the adapter."""
+        self.router = router
+        self.compute_scale = compute_scale
+        self.fragmentation_engine = fragmentation_engine or Fragmenter()
+
+    def prefill(self, prompt_tokens: list[int], model_id: str) -> PrefillResult:
+        """Simulate prefill and return KV metadata plus fragments.
+
+        Args:
+            prompt_tokens: Input token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            PrefillResult: Estimated sizes, latency, optional
+            routing decision, and the corresponding fragment
+            chain.
+        """
+        length = len(prompt_tokens)
+        size = kv_size(length)
+        latency = prefill_time(length, self.compute_scale)
+
+        decision: RoutingDecision | None = None
+        if self.router is not None:
+            decision = self.router.route(length)
+
+        fragments = self.kv_fragments(prompt_tokens, model_id, size)
+
+        return PrefillResult(
+            kv_size=size,
+            latency_seconds=latency,
+            routing_decision=decision,
+            fragments=fragments,
+        )
+
+    def kv_fragments(
+        self,
+        prompt_tokens: list[int],
+        model_id: str,
+        kv_size: float,
+    ) -> list[Fragment]:
+        """Convert simulated KV output into content-addressed fragments.
+
+        Args:
+            prompt_tokens: Input token IDs.
+            model_id: Model identifier.
+            kv_size: Total KV size to distribute across
+                fragments.
+
+        Returns:
+            list[Fragment]: Fragments representing the KV tensor
+            windows. Empty when ``prompt_tokens`` is empty or
+            fragmentation yields no windows.
+        """
+        if not prompt_tokens:
+            return []
+
+        frags = self.fragmentation_engine.create_windows(prompt_tokens, model_id)
+        if not frags:
+            return []
+
+        total_prompt_tokens = len(prompt_tokens)
+        bytes_per_token = (kv_size * 1024.0 * 1024.0) / total_prompt_tokens
+
+        sized_frags: list[Fragment] = []
+        for frag in frags:
+            span = frag.structural_signature.token_span
+            num_tokens = span[1] - span[0] + 1
+            frag_size = int(num_tokens * bytes_per_token)
+
+            sized_frags.append(
+                Fragment(
+                    content_hash=frag.content_hash,
+                    embedding=frag.embedding,
+                    structural_signature=frag.structural_signature,
+                    size=max(1, frag_size),
+                    ttl=frag.ttl,
+                    reuse_score=frag.reuse_score,
+                    version_id=frag.version_id,
+                )
+            )
+
+        return sized_frags
 
 
 class PrefillFallbackError(RuntimeError):
@@ -53,17 +176,12 @@ class Prefiller:
     The sync :meth:`dispatch_sync` runs prefill on a single chosen
     target node and stores the resulting fragments there.
 
-    In a real system the latency would be network RTT; here it
-    is configurable via ``latency_provider`` for simulation.
-
     Attributes:
         prefill_adapter: Adapter that performs the actual
-            prefill computation (CPU/GPU/Transformers/etc.).
-        timeout_seconds: Per-node timeout for the async race. A
-            node that does not respond in this window is treated
-            as failed.
-        latency_provider: Optional ``node_id -> latency_seconds``
-            mapping used to simulate network latency in tests.
+            prefill computation.
+        timeout_seconds: Per-node timeout for the async race.
+        latency_provider: ``node_id -> latency_seconds`` mapping
+            used to simulate network latency in tests.
     """
 
     def __init__(
@@ -72,17 +190,7 @@ class Prefiller:
         timeout_seconds: float = 5.0,
         latency_provider: dict[str, float] | None = None,
     ) -> None:
-        """Initialize the dispatcher.
-
-        Args:
-            prefill_adapter: Adapter used for prefill simulation.
-                A default :class:`Adapter` is created
-                when ``None``.
-            timeout_seconds: Max seconds to wait for each
-                remote node.
-            latency_provider: Mapping
-                ``node_id -> latency_seconds``.
-        """
+        """Initialize the dispatcher."""
         self.prefill_adapter = prefill_adapter or Adapter()
         self.timeout_seconds = timeout_seconds
         self.latency_provider = latency_provider or {}
@@ -96,20 +204,10 @@ class Prefiller:
     ) -> PrefillResult:
         """Race remote nodes, fall back to local on failure.
 
-        Schedules one ``try_node`` task per candidate, each
+        Schedules one :meth:`try_node` task per candidate, each
         guarded by :func:`asyncio.wait_for`. As tasks complete
         the first successful result is returned and the
-        remaining tasks are cancelled. If every remote attempt
-        fails or times out, the dispatcher falls back to
-        :meth:`local_prefill` when a ``local_node`` is provided.
-
-        The dispatcher consults the
-        :class:`~membrane.adapter.Adapter` to produce a
-        :class:`~membrane.model.router.RoutingDecision` before
-        racing. A ``target="pd-p"`` decision skips the remote
-        race entirely and goes straight to the local node (if
-        provided); a ``target="membrane"`` decision races the
-        candidates as usual.
+        remaining tasks are cancelled.
 
         Args:
             prompt_tokens: Input token IDs.
@@ -125,13 +223,6 @@ class Prefiller:
             PrefillFallbackError: When no remote candidate
             succeeds and no local fallback is available.
         """
-        # Honor the analytical routing decision when the adapter
-        # has a router configured. A target="pd-p" decision means
-        # the analytical model judged local compute sufficient; we
-        # skip the remote race and serve locally. The check is
-        # gated on a configured router so adapters that only
-        # produce fragments (and don't return a routing decision)
-        # are not perturbed.
         if self.prefill_adapter.router is not None:
             try:
                 decision_result = self.prefill_adapter.prefill(prompt_tokens, model_id)
@@ -143,8 +234,6 @@ class Prefiller:
                     for frag in decision_result.fragments:
                         local_node.store(frag, is_primary=True)
                     return decision_result
-                # Decision absent, target != 'pd-p', or no local
-                # node: fall through to the race.
             except Exception as exc:
                 logger.debug("analytical prefill for routing decision failed: %s", exc)
 
@@ -153,7 +242,6 @@ class Prefiller:
                 raise PrefillFallbackError("No candidate nodes and no local fallback")
             return self.local_prefill(prompt_tokens, model_id, local_node)
 
-        # Schedule a guarded task per candidate.
         timeout_tasks = [
             asyncio.create_task(
                 asyncio.wait_for(
@@ -165,9 +253,6 @@ class Prefiller:
         ]
 
         try:
-            # Walk the results as they complete; return on the
-            # first success, swallow timeouts and per-node
-            # errors, and keep iterating.
             for coro in asyncio.as_completed(timeout_tasks):
                 try:
                     result = await coro
@@ -177,14 +262,11 @@ class Prefiller:
                 except (asyncio.TimeoutError, NodePrefillError):
                     continue
         finally:
-            # Ensure all tasks are cleaned up even if the
-            # caller cancels us mid-flight.
             for t in timeout_tasks:
                 if not t.done():
                     t.cancel()
             await asyncio.gather(*timeout_tasks, return_exceptions=True)
 
-        # All remotes failed or timed out.
         if local_node is not None:
             logger.info("All remote prefill attempts failed; falling back to local")
             return self.local_prefill(prompt_tokens, model_id, local_node)
@@ -198,24 +280,12 @@ class Prefiller:
     ) -> PrefillResult:
         """Attempt prefill on a single node, simulating network latency.
 
-        Args:
-            prompt_tokens: Input token IDs.
-            model_id: Model identifier.
-            node: Target node.
-
-        Returns:
-            PrefillResult: The prefill result, after storing
-            each fragment on the target node as a non-primary
-            replica.
-
         Raises:
             NodePrefillError: When the underlying adapter
-            raises, or when it returns no fragments.
+                raises, or when it returns no fragments.
         """
         latency = self.latency_provider.get(node.node_id, 0.0)
         if latency > 0:
-            # Simulate network latency in tests. In production
-            # this is replaced by real RPC awaiting.
             await asyncio.sleep(latency)
 
         try:
@@ -224,8 +294,6 @@ class Prefiller:
             raise NodePrefillError(f"Node {node.node_id} prefill failed: {exc}") from exc
         if not result.fragments:
             raise NodePrefillError(f"Node {node.node_id} returned empty fragments")
-        # Store every fragment on the target as a non-primary
-        # replica so subsequent reads can find it there.
         for frag in result.fragments:
             node.store(frag, is_primary=False)
         return result
@@ -236,18 +304,7 @@ class Prefiller:
         model_id: str,
         local_node: Node,
     ) -> PrefillResult:
-        """Run prefill locally and store fragments as primary.
-
-        Args:
-            prompt_tokens: Input token IDs.
-            model_id: Model identifier.
-            local_node: Local node to host the fragments.
-
-        Returns:
-            PrefillResult: The prefill result, after storing
-            each fragment on the local node as a primary
-            owner.
-        """
+        """Run prefill locally and store fragments as primary."""
         result = self.prefill_adapter.prefill(prompt_tokens, model_id)
         for frag in result.fragments:
             local_node.store(frag, is_primary=True)
@@ -266,16 +323,6 @@ class Prefiller:
         the resulting fragments are stored on the target as
         non-primary replicas.
 
-        Args:
-            prompt_tokens: Input token IDs.
-            model_id: Model identifier.
-            target_node: Node chosen for prefill.
-
-        Returns:
-            PrefillResult: Fragments and prefill metadata after
-            each fragment is stored on the target as a
-            non-primary replica.
-
         Raises:
             NodePrefillError: When the adapter raises or returns
                 no fragments.
@@ -291,4 +338,10 @@ class Prefiller:
         return result
 
 
-__all__ = ["NodePrefillError", "PrefillFallbackError", "Prefiller"]
+__all__ = [
+    "Adapter",
+    "NodePrefillError",
+    "PrefillFallbackError",
+    "PrefillResult",
+    "Prefiller",
+]

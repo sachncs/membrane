@@ -5,12 +5,12 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from membrane.adapter import Adapter, PrefillResult
 from membrane.fragment import Fragment
 from membrane.fragmenter import compute_content_hash
 from membrane.model.router import Router, RoutingDecision
 from membrane.node import Node
-from membrane.prefiller import Prefiller as PrefillAsync
+from membrane.prefilling import Adapter, PrefillResult
+from membrane.prefilling import Prefiller as PrefillAsync
 from membrane.signature import Signature
 
 

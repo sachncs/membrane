@@ -2,11 +2,11 @@
 
 import logging
 
-from membrane.fragmenter import FragmenterConfig, Fragmenter
-from membrane.registry import Registry
+from membrane.fragmenter import Fragmenter, FragmenterConfig
 from membrane.node import Node
-from membrane.adapter import Adapter
+from membrane.prefilling import Adapter
 from membrane.reconstructor import Reconstructor
+from membrane.registry import Registry
 from membrane.transfer import TransferService
 
 logger = logging.getLogger(__name__)

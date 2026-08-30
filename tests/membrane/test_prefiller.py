@@ -2,10 +2,10 @@
 
 import pytest
 
-from membrane.adapter import Adapter, PrefillResult
 from membrane.fragment import Fragment
 from membrane.node import Node
-from membrane.prefiller import Prefiller as PrefillRemote
+from membrane.prefilling import Adapter, PrefillResult
+from membrane.prefilling import Prefiller as PrefillRemote
 from membrane.signature import Signature
 
 
@@ -27,7 +27,7 @@ class TestPrefillerSync:
         surfaces the empty result via NodePrefillError so callers
         can distinguish 'nothing to ship' from 'succeeded with
         fragments' (consistent with the async try_node path)."""
-        from membrane.prefiller import NodePrefillError
+        from membrane.prefilling import NodePrefillError
 
         dispatcher = PrefillRemote()
         target = Node("target")

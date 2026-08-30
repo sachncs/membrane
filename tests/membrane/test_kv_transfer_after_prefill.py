@@ -10,9 +10,9 @@ exercises the same behavior with no extra wrapper.
 
 import pytest
 
-from membrane.adapter import Adapter
 from membrane.fragment import Fragment
 from membrane.node import Node
+from membrane.prefilling import Adapter
 from membrane.signature import Signature
 from membrane.transfer import TransferService
 from tests.conftest import make_fragment

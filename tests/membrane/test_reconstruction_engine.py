@@ -2,10 +2,10 @@ from tests.conftest import make_fragment
 
 """Tests for Reconstructor."""
 
-from membrane.adapter import Adapter
 from membrane.fragment import Fragment
 from membrane.fragmenter import Fragmenter, compute_content_hash, generate_embedding
 from membrane.index import Index
+from membrane.prefilling import Adapter
 from membrane.reconstructor import Reconstructor, ReconstructorConfig
 from membrane.signature import Signature
 
