@@ -26,6 +26,7 @@ import time
 from typing import Protocol, runtime_checkable
 
 from membrane.fragment import Fragment
+from membrane.serialization import JsonDict
 from membrane.serialization import from_dict as deserialize_fragment
 from membrane.serialization import to_dict as serialize_fragment
 
@@ -49,7 +50,7 @@ class Transport(Protocol):
         body: bytes | None,
         headers: dict[str, str],
         timeout_sec: float,
-    ) -> dict | None:
+    ) -> JsonDict | None:
         """Issue one HTTP request and return the parsed JSON body.
 
         Args:
@@ -60,8 +61,8 @@ class Transport(Protocol):
             timeout_sec: Per-request timeout in seconds.
 
         Returns:
-            dict | None: Parsed JSON body on success, ``None`` on
-            non-retryable failure.
+            JsonDict | None: Parsed JSON body on success,
+            ``None`` on non-retryable failure.
         """
         ...
 
@@ -76,7 +77,7 @@ class HTTPTransport:
         body: bytes | None,
         headers: dict[str, str],
         timeout_sec: float,
-    ) -> dict | None:
+    ) -> JsonDict | None:
         """Issue an HTTP request via ``urllib`` and return the JSON body."""
         import urllib.error
         import urllib.request
@@ -135,16 +136,16 @@ class Peer:
     # Public API
     # ------------------------------------------------------------------
 
-    def heartbeat(self) -> dict | None:
+    def heartbeat(self) -> JsonDict | None:
         """Send ``GET /heartbeat`` to the peer.
 
         Returns:
-            dict | None: Parsed JSON response, or ``None`` on
+            JsonDict | None: Parsed JSON response, or ``None`` on
             failure.
         """
         return self.request_with_retry("GET", "/heartbeat")
 
-    def get_inventory(self) -> dict | None:
+    def get_inventory(self) -> JsonDict | None:
         """Send ``GET /inventory`` to the peer."""
         return self.request_with_retry("GET", "/inventory")
 
@@ -161,7 +162,7 @@ class Peer:
             return deserialize_fragment(resp["fragment"])
         return None
 
-    def join_cluster(self, node_id: str, host: str, port: int) -> dict | None:
+    def join_cluster(self, node_id: str, host: str, port: int) -> JsonDict | None:
         """Send ``POST /join`` to bootstrap into the cluster."""
         return self.request_with_retry("POST", "/join", {"node_id": node_id, "host": host, "port": port})
 
@@ -170,7 +171,7 @@ class Peer:
         resp = self.request_with_retry("POST", "/leave", {"node_id": node_id})
         return resp is not None and resp.get("success", False)
 
-    def gossip(self, state: dict) -> dict | None:
+    def gossip(self, state: JsonDict) -> JsonDict | None:
         """Send ``POST /gossip`` with the supplied state payload."""
         return self.request_with_retry("POST", "/gossip", state)
 
@@ -180,7 +181,7 @@ class Peer:
         resp = self.request_with_retry("POST", "/replicate", payload)
         return resp is not None and resp.get("success", False)
 
-    def get_peers(self) -> dict | None:
+    def get_peers(self) -> JsonDict | None:
         """Send ``GET /peers``."""
         return self.request_with_retry("GET", "/peers")
 
@@ -192,8 +193,8 @@ class Peer:
         self,
         method: str,
         path: str,
-        payload: dict | None = None,
-    ) -> dict | None:
+        payload: JsonDict | None = None,
+    ) -> JsonDict | None:
         """Issue an HTTP request with retries and exponential backoff.
 
         A ``None`` response from the transport is retried up to
@@ -208,7 +209,7 @@ class Peer:
             payload: Optional JSON-serializable body.
 
         Returns:
-            dict | None: Parsed JSON response or ``None`` on
+            JsonDict | None: Parsed JSON response or ``None`` on
             terminal failure.
         """
         url = f"{self.base_url}{path}"
