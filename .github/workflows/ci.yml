@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    # Weekly security audit on Mondays at 06:00 UTC.
     - cron: "0 6 * * 1"
 
 permissions:
@@ -59,6 +58,29 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --tb=short --cov=membrane --cov-report=term-missing
 
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,redis]"
+
+      - name: Start Redis
+        uses: supercharge/redis-github-action@master
+        with:
+          redis-version: "7"
+
+      - name: Run integration tests with Redis
+        run: pytest tests/membrane/persistence -v --tb=short
+
   security:
     runs-on: ubuntu-latest
     steps:
@@ -90,6 +112,64 @@ jobs:
           scan-ref: "."
           severity: "HIGH,CRITICAL"
           exit-code: "1"
+
+  perf-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run bench smoke
+        run: pytest tests/bench/ -v --tb=short
+
+  stress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run stress suite
+        run: pytest tests/membrane/stress -v --tb=short -m stress
+
+  chaos:
+    # Self-hosted runner labeled "chaos" is required. CI on the
+    # default github-hosted runner does not have a real
+    # toxiproxy, so the suite's TestToxiproxyIntegration class
+    # is skipped; the in-process _FakeProxy suite still runs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run chaos suite
+        run: pytest tests/membrane/chaos -v --tb=short -m chaos
 
   docker:
     runs-on: ubuntu-latest
