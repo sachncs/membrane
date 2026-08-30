@@ -1,12 +1,9 @@
-from tests.conftest import make_fragment
-
-"""Tests for semantic_cluster module."""
+"""Tests for SemanticCluster."""
 
 import pytest
 
-from membrane.clusters import SemanticCluster
-from membrane.fragment import Fragment
-from membrane.signature import Signature
+from membrane.semantics import SemanticCluster, cosine_similarity
+from tests.conftest import make_fragment
 
 
 class TestSemanticCluster:
@@ -48,10 +45,10 @@ class TestSemanticCluster:
         assert len(clusters_tight) == 2
 
     def test_cosine_similarity_orthogonal(self):
-        assert SemanticCluster.cosine_similarity((1.0, 0.0), (0.0, 1.0)) == 0.0
+        assert cosine_similarity((1.0, 0.0), (0.0, 1.0)) == 0.0
 
     def test_cosine_similarity_identical(self):
-        assert SemanticCluster.cosine_similarity((1.0, 2.0), (1.0, 2.0)) == pytest.approx(1.0)
+        assert cosine_similarity((1.0, 2.0), (1.0, 2.0)) == pytest.approx(1.0)
 
     def test_cosine_similarity_zero_vector(self):
-        assert SemanticCluster.cosine_similarity((0.0, 0.0), (1.0, 0.0)) == 0.0
+        assert cosine_similarity((0.0, 0.0), (1.0, 1.0)) == 0.0

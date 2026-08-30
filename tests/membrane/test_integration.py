@@ -6,7 +6,6 @@ import pytest
 
 from membrane.canonical import Canonical
 from membrane.chunks import Chunks
-from membrane.clusters import SemanticCluster
 from membrane.delta import DeltaEncoder
 from membrane.density import density
 from membrane.economic import Economic
@@ -25,6 +24,7 @@ from membrane.replica import Replica
 from membrane.replicator import Replicator
 from membrane.ring import Ring
 from membrane.roles import NodeRole, Roles, SystemState
+from membrane.semantics import SemanticCluster
 from membrane.sessions import Sessions
 from membrane.signature import Signature
 from membrane.telemetry import Telemetry

@@ -150,3 +150,94 @@ class Semantics:
         scored = [(cosine_similarity(frag), frag) for frag in self.fragments]
         scored.sort(key=lambda pair: pair[0], reverse=True)
         return [frag for _, frag in scored[:k]]
+
+
+class SemanticCluster:
+    """Greedy clustering of fragments by embedding similarity.
+
+    The clusterer is a thin layer over :class:`Semantics`: it
+    inserts every fragment into the index, then walks the
+    fragment list picking the lowest-index unassigned fragment
+    as a seed, and greedily assigns every other unassigned
+    fragment whose cosine similarity to the seed exceeds
+    ``similarity_threshold``. Continues until every fragment is
+    assigned.
+
+    Complexity:
+        O(n^2 · d) for ``n`` fragments of dimensionality ``d``
+        — acceptable for low-cardinality workloads.
+
+    Attributes:
+        semantic_index: The :class:`Semantics` index used for
+            fast similarity lookups.
+    """
+
+    def __init__(self, semantic_index: Semantics | None = None) -> None:
+        """Initialize the clusterer with an optional semantic index."""
+        self.semantic_index = semantic_index or Semantics()
+
+    def cluster(
+        self,
+        fragments: list[Fragment],
+        similarity_threshold: float = 0.95,
+    ) -> list[list[Fragment]]:
+        """Group fragments by embedding similarity.
+
+        Args:
+            fragments: Fragments to cluster.
+            similarity_threshold: Minimum cosine similarity
+                within a cluster.
+
+        Returns:
+            list[list[Fragment]]: One cluster list per group.
+        """
+        if not fragments:
+            return []
+
+        for frag in fragments:
+            self.semantic_index.insert(frag)
+
+        unassigned = set(range(len(fragments)))
+        clusters: list[list[Fragment]] = []
+
+        while unassigned:
+            seed_idx = min(unassigned)
+            seed = fragments[seed_idx]
+            cluster = [seed]
+            unassigned.remove(seed_idx)
+
+            to_remove: list[int] = []
+            for idx in list(unassigned):
+                candidate = fragments[idx]
+                neighbors = self.semantic_index.nearest_neighbors(list(candidate.embedding), k=1)
+                if neighbors and neighbors[0].content_hash == seed.content_hash:
+                    cluster.append(candidate)
+                    to_remove.append(idx)
+                else:
+                    sim = cosine_similarity(seed.embedding, candidate.embedding)
+                    if sim >= similarity_threshold:
+                        cluster.append(candidate)
+                        to_remove.append(idx)
+
+            for idx in to_remove:
+                unassigned.discard(idx)
+
+            clusters.append(cluster)
+
+        return clusters
+
+
+def cosine_similarity(a: tuple[float, ...], b: tuple[float, ...]) -> float:
+    """Cosine similarity between two embedding tuples.
+
+    Returns 0.0 when either vector has zero norm.
+    """
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(x * x for x in b) ** 0.5
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+__all__ = ["Semantics", "SemanticCluster", "cosine_similarity"]
