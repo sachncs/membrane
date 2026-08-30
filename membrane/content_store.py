@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import contextlib
 import os
+import platform
+import shutil
 import tempfile
 import threading
 from pathlib import Path
@@ -265,6 +267,47 @@ class FilesystemBlob:
             os.replace(tmp_path, target)
             # fsync the directory so the rename is durable across
             # process exit on POSIX.
+            dir_fd = os.open(str(target.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+            self._used_bytes = self._walk_size()
+
+    def put_from_file(self, key: str, source_path: str) -> None:
+        """Copy ``source_path`` to ``key`` using ``os.sendfile`` when available.
+
+        Args:
+            key: Opaque key.
+            source_path: Filesystem path of the source file.
+
+        Raises:
+            OSError: When the underlying filesystem rejects the
+                copy or the atomic rename.
+        """
+        target = self._path_for(key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            with tempfile.NamedTemporaryFile(
+                delete=False,
+                dir=str(target.parent),
+                prefix=f".{key}.",
+                suffix=".tmp",
+            ) as tmp:
+                tmp_path = tmp.name
+            src_size = os.path.getsize(source_path)
+            if (
+                platform.system() == "Linux"
+                and hasattr(os, "sendfile")
+                and src_size > 0
+            ):
+                with open(tmp_path, "wb") as dst, open(
+                    source_path, "rb"
+                ) as src:
+                    os.sendfile(dst.fileno(), src.fileno(), 0, src_size)
+            else:
+                shutil.copyfile(source_path, tmp_path)
+            os.replace(tmp_path, target)
             dir_fd = os.open(str(target.parent), os.O_RDONLY)
             try:
                 os.fsync(dir_fd)
