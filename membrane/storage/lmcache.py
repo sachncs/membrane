@@ -88,7 +88,7 @@ class LMCacheContentStore:
                 "LMCache is required for LMCacheContentStore; install "
                 "with `pip install membrane[lmcache]`."
             ) from exc
-        from lmcache.v1.memory_management import TensorMemoryObj  # noqa: E402  -- used in _make_object
+        from lmcache.v1.memory_management import TensorMemoryObj
 
         self.config = config or {}
         self._lock = threading.RLock()

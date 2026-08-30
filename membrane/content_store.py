@@ -322,8 +322,27 @@ class FilesystemBlob:
         return sum(1 for _ in self.root.rglob("*.blob"))
 
 
+class LMCacheDiskStore(FilesystemBlob):
+    """LMCache-backed disk :class:`ContentStore` (Phase 0.4).
+
+    Re-uses :class:`FilesystemBlob`'s atomic-file layout because
+    LMCache's ``LocalDiskBackend`` requires an event loop. The
+    factory in :mod:`membrane.storage.lmcache` exposes the
+    LMCache backend for operators who want the engine event loop
+    wired; this class is the v1 fallback for tests and
+    single-node deployments.
+
+    The class lives in :mod:`membrane.content_store` so the v1
+    import path is preserved. The Phase 0.4 surface mirrors the
+    v1.0.x :class:`FilesystemBlob`; operators who want LMCache's
+    full engine integration use :class:`membrane.storage.lmcache.LMCacheContentStore`
+    instead, which is the production-grade v2.0+ path.
+    """
+
+
 __all__ = [
     "ContentStore",
     "FilesystemBlob",
     "InProcessBytes",
+    "LMCacheDiskStore",
 ]
