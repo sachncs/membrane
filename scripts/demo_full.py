@@ -26,7 +26,7 @@ from membrane.clusters import SemanticCluster
 from membrane.sessions import Sessions
 from membrane.signature import Signature
 from membrane.graph import SubgraphRetrieval
-from membrane.isolation import Isolation, Tenant
+from membrane.analytical import Isolation, Tenant
 from membrane.density import density
 from membrane.weighted import Weighted
 from membrane.workload import Workload

@@ -4,8 +4,8 @@ from tests.conftest import make_fragment
 
 import pytest
 
+from membrane.analytical import Isolation, Tenant
 from membrane.fragment import Fragment
-from membrane.isolation import Isolation, Tenant
 from membrane.signature import Signature
 
 

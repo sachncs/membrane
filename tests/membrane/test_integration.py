@@ -4,6 +4,7 @@ from tests.conftest import make_fragment
 
 import pytest
 
+from membrane.analytical import Isolation, Tenant
 from membrane.canonical import Canonical
 from membrane.chunks import Chunks
 from membrane.delta import DeltaEncoder
@@ -11,7 +12,6 @@ from membrane.density import density
 from membrane.economic import Economic
 from membrane.fragment import Fragment
 from membrane.graph import SubgraphRetrieval
-from membrane.isolation import Isolation, Tenant
 from membrane.joint import Joint
 from membrane.kv import KVCache
 from membrane.latency import Latency

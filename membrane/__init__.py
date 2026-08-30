@@ -40,9 +40,9 @@ moved to deep imports:
   ``Transfer`` legacy alias, ``GossipState``) — import from
   ``membrane.network.cluster`` etc.
 * Decision / policy classes (``Economic``, ``Latency``, ``Joint``,
-  ``Promotion``, ``Offload``, ``Isolation``, ``Selector``, ``Roles``,
-  ``Predict``, ``Workload``) — import from
-  ``membrane.analytical``.
+  ``Promotion``, ``Offload``, ``Isolation``, ``Tenant``,
+  ``Selector``, ``Roles``, ``Predict``, ``Workload``) — import
+  from ``membrane.analytical``.
 
 v0.3.0 removed the following previously-exported research-only
 names; deep-import paths continue to work but the names are
