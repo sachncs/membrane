@@ -115,6 +115,7 @@ class Peer:
         timeout_sec: float = 5.0,
         max_retries: int = 3,
         retry_delay_sec: float = 1.0,
+        local_peer_cn: str = "",
     ) -> None:
         """Initialize the client.
 
@@ -127,12 +128,35 @@ class Peer:
                 giving up.
             retry_delay_sec: Base delay used as ``base *
                 2 ** attempt`` for exponential backoff.
+            local_peer_cn: Common Name this client presents as
+                the verified peer on the wire. When non-empty,
+                every outbound request carries an
+                ``X-Local-Peer-CN`` header so the receiving
+                :class:`~membrane.network.membership.Membership`
+                records and validates the caller's identity at
+                the membership layer.
         """
         self.base_url = base_url.rstrip("/")
         self.transport = transport or HTTPTransport()
         self.timeout_sec = timeout_sec
         self.max_retries = max_retries
         self.retry_delay_sec = retry_delay_sec
+        self.local_peer_cn = local_peer_cn
+
+    @property
+    def base_headers(self) -> dict[str, str]:
+        """Headers attached to every outbound request.
+
+        Returns:
+            dict[str, str]: ``User-Agent`` plus the optional
+            ``X-Local-Peer-CN`` header. The receiving
+            :class:`~membrane.transport.ops.op_heartbeat` reads
+            the latter to update the membership's per-peer CN.
+        """
+        headers = {"User-Agent": "membrane-peer/2.0"}
+        if self.local_peer_cn:
+            headers["X-Local-Peer-CN"] = self.local_peer_cn
+        return headers
 
     # ------------------------------------------------------------------
     # Public API
@@ -145,7 +169,9 @@ class Peer:
             JsonDict | None: Parsed JSON response, or ``None`` on
             failure.
         """
-        return self.request_with_retry("GET", "/heartbeat")
+        return self.request_with_retry(
+            "GET", "/heartbeat", extra_headers=self.base_headers
+        )
 
     def get_inventory(self) -> JsonDict | None:
         """Send ``GET /inventory`` to the peer."""
@@ -243,6 +269,7 @@ class Peer:
         method: str,
         path: str,
         payload: JsonDict | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> JsonDict | None:
         """Issue an HTTP request with retries and exponential backoff.
 
@@ -256,6 +283,10 @@ class Peer:
             method: HTTP method.
             path: URL path appended to ``self.base_url``.
             payload: Optional JSON-serializable body.
+            extra_headers: Optional additional headers merged
+                with the per-request content-type. Used by
+                :meth:`heartbeat` to attach the local
+                ``X-Local-Peer-CN``.
 
         Returns:
             JsonDict | None: Parsed JSON response or ``None`` on
@@ -264,6 +295,8 @@ class Peer:
         url = f"{self.base_url}{path}"
         data = json.dumps(payload).encode() if payload else None
         headers = {"Content-Type": "application/json"} if payload else {}
+        if extra_headers:
+            headers.update(extra_headers)
         last_error: Exception | None = None
 
         for attempt in range(self.max_retries):

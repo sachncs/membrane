@@ -347,6 +347,7 @@ class Server:
         return CachingPersistence(backend)
 
     def build_transport(self, transport: str, host: str, port: int) -> Any:
+        mtls = self.cluster_config.mtls if self.cluster_config is not None else None
         if transport == "http":
             return FastAPIServer(
                 node=self.node,
@@ -356,6 +357,7 @@ class Server:
                 transfer_service=self.transfer_service,
                 cluster_manager=self.cluster_manager,
                 metrics_registry=self.metrics_registry,
+                tls=mtls,
             )
         from membrane.transport.grpc import GrpcServer
 
@@ -364,6 +366,7 @@ class Server:
             host=host,
             port=port,
             compute_backend=self.compute_backend,
+            tls=mtls,
         )
 
     # ------------------------------------------------------------------

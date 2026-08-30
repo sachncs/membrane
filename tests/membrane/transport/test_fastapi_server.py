@@ -124,7 +124,9 @@ class TestFastAPIServer:
         resp = client.post("/join", json={"node_id": "n2", "host": "127.0.0.1", "port": 8081})
         assert resp.status_code == 200
         assert resp.json()["success"] is True
-        cluster.membership.add.assert_called_once_with("n2", "127.0.0.1", 8081)
+        cluster.membership.add.assert_called_once_with(
+            "n2", "127.0.0.1", 8081, peer_cn=""
+        )
 
     def test_server_start_stop(self):
         node = Node("n1", max_memory_bytes=10000)

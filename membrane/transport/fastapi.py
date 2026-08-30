@@ -1,40 +1,40 @@
 """FastAPIServer: production HTTP/REST server using FastAPI + uvicorn.
 
-Mirrors the stdlib HTTP transport in :mod:`membrane.transport.http`
-with identical request/response shapes but native async handlers
-and Pydantic request bodies. The shared business logic lives in
+The shared business logic lives in
 :mod:`membrane.transport.routes`; this module is purely the
 async transport binding.
 
-Endpoints (identical contract to the stdlib transport):
+Endpoints:
 
-* ``POST /store`` — store a fragment.
-* ``GET /retrieve`` — retrieve a fragment by ``content_hash``.
-* ``GET /inventory`` — return the node's inventory digest.
-* ``POST /sync`` — sync missing fragments from a source URL.
-* ``GET /heartbeat`` — node health and load snapshot.
-* ``POST /prefill`` — run prefill and return fragments.
-* ``POST /join`` — join the cluster.
-* ``POST /leave`` — leave the cluster.
-* ``POST /gossip`` — exchange gossip state.
-* ``GET /peers`` — list known peers.
-* ``POST /replicate`` — store a fragment as a replica.
-* ``GET /metrics`` — Prometheus text exposition.
-* ``GET /metrics.json`` — legacy JSON for the TUI.
-* ``GET /livez`` — process liveness probe.
-* ``GET /readyz`` — deep readiness probe.
+* ``POST /store`` -- store a fragment.
+* ``GET /retrieve`` -- retrieve a fragment by ``content_hash``.
+* ``GET /inventory`` -- return the node's inventory digest.
+* ``POST /sync`` -- sync missing fragments from a source URL.
+* ``GET /heartbeat`` -- node health and load snapshot.
+* ``POST /prefill`` -- run prefill and return fragments.
+* ``POST /join`` -- join the cluster.
+* ``POST /leave`` -- leave the cluster.
+* ``POST /gossip`` -- exchange gossip state.
+* ``GET /peers`` -- list known peers.
+* ``POST /replicate`` -- store a fragment as a replica.
+* ``GET /metrics`` -- Prometheus text exposition.
+* ``GET /metrics.json`` -- legacy JSON for the TUI.
+* ``GET /livez`` -- process liveness probe.
+* ``GET /readyz`` -- deep readiness probe.
 
 Observability:
-    * ``/livez`` — process liveness probe.
-    * ``/readyz`` — deep readiness probe.
-    * ``/metrics`` — Prometheus text exposition.
-    * ``/metrics.json`` — legacy JSON snapshot for the TUI.
+    * ``/livez`` -- process liveness probe.
+    * ``/readyz`` -- deep readiness probe.
+    * ``/metrics`` -- Prometheus text exposition.
 
 Security:
-    * The server is unauthenticated by default. Place it behind an
-      authenticating reverse proxy in production, or wire an
-      :class:`Authenticator` into the request pipeline (see
-      :mod:`membrane.auth`).
+    * Production deployments at 2.0+ must run with
+      :class:`membrane.transport.tls.MTLSConfig` attached. The
+      :class:`MTLSAuthenticator` is the authoritative gate on
+      membership-sensitive endpoints (``/join``, ``/leave``,
+      ``/gossip``). All other endpoints also require a verified
+      peer cert so the cluster cannot impersonate internal-only
+      RPC on a non-mTLS port.
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ from membrane.network.cluster import Cluster
 from membrane.node import Node
 from membrane.transfer import TransferService
 from membrane.transport.routes_fastapi import register_routes
+from membrane.transport.tls import MTLSConfig, build_server_context
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ def create_app(
         FastAPI: Configured application ready to be served by
         uvicorn.
     """
-    app = FastAPI(title="Membrane", version="0.3.0")
+    app = FastAPI(title="Membrane", version="2.0.0")
     app.state.node = node
     app.state.compute_backend = compute_backend
     app.state.transfer_service = transfer_service
@@ -100,6 +101,15 @@ class FastAPIServer:
             management.
         metrics_registry: Optional :class:`MetricsCollector` for the
             ``/metrics`` Prometheus endpoint.
+        tls: Optional :class:`MTLSConfig`. When supplied,
+            :meth:`start` builds a server-side SSLContext via
+            :func:`membrane.transport.tls.build_server_context`
+            and feeds it to ``uvicorn.Config(ssl_context=...)``.
+            uvicorn terminates the handshake and writes the
+            verified peer cert's CN into ``X-SSL-Client-CN`` on
+            every inbound request; the
+            :class:`MTLSAuthenticator` reads that header at the
+            route level.
     """
 
     def __init__(
@@ -111,6 +121,7 @@ class FastAPIServer:
         transfer_service: TransferService | None = None,
         cluster_manager: Cluster | None = None,
         metrics_registry: MetricsCollector | None = None,
+        tls: MTLSConfig | None = None,
     ) -> None:
         """Initialize the FastAPI server wrapper."""
         self.node = node
@@ -120,7 +131,9 @@ class FastAPIServer:
         self.transfer_service = transfer_service or TransferService()
         self.cluster_manager = cluster_manager
         self.metrics_registry = metrics_registry
+        self.tls = tls
         self.server: Any | None = None
+        self._tls_tmpdir: Any | None = None
         self.app = create_app(
             node=node,
             compute_backend=compute_backend,
@@ -134,18 +147,59 @@ class FastAPIServer:
 
         Blocks until :meth:`stop` is called.
         """
+        import tempfile
+
         import uvicorn
 
+        ssl_kwargs: dict[str, Any] = {}
+        if self.tls is not None:
+            # Build a real SSLContext first to validate the chain
+            # eagerly — uvicorn surfaces later, opaque errors.
+            build_server_context(self.tls)
+            # uvicorn.Config takes file paths for the cert chain
+            # and CA bundle. We write the configured PEMs to a
+            # short-lived tmpdir; cleanup happens in ``stop`` so
+            # the lifetime matches the running server.
+            self._tls_tmpdir = tempfile.TemporaryDirectory(prefix="membrane-tls-")
+            cert_path = f"{self._tls_tmpdir.name}/server.crt.pem"
+            key_path = f"{self._tls_tmpdir.name}/server.key.pem"
+            ca_path = f"{self._tls_tmpdir.name}/ca-bundle.pem"
+            with open(cert_path, "w") as f:
+                f.write(self.tls.server_cert_pem)
+            with open(key_path, "w") as f:
+                f.write(self.tls.server_key_pem)
+            with open(ca_path, "w") as f:
+                f.write(self.tls.ca_bundle_pem)
+            ssl_kwargs = {
+                "ssl_certfile": cert_path,
+                "ssl_keyfile": key_path,
+                "ssl_ca_certs": ca_path,
+                "ssl_cert_reqs": 2 if self.tls.require_client_cert else 0,
+            }
+            logger.info(
+                "FastAPI mTLS enabled: require_client_cert=%s",
+                self.tls.require_client_cert,
+            )
         config = uvicorn.Config(
             self.app,
             host=self.host,
             port=self.port,
             log_level="info",
             access_log=False,
+            **ssl_kwargs,
         )
         self.server = uvicorn.Server(config)
-        logger.info("FastAPI server listening on http://%s:%s", self.host, self.port)
-        self.server.run()
+        scheme = "https" if ssl_kwargs else "http"
+        logger.info(
+            "FastAPI server listening on %s://%s:%s", scheme, self.host, self.port
+        )
+        try:
+            self.server.run()
+        finally:
+            tmp = getattr(self, "_tls_tmpdir", None)
+            if tmp is not None:
+                tmp.cleanup()
+                self._tls_tmpdir = None
 
     def stop(self) -> None:
         """Stop the uvicorn server.

@@ -239,6 +239,26 @@ class Membership:
 
         No-op when the peer is unknown.
         """
+
+    def record_peer_cn(self, node_id: str, cn: str) -> None:
+        """Stamp the verified peer cert CN onto a membership record.
+
+        Called from :func:`op_heartbeat` and :func:`op_join` every
+        time a peer proves its identity. ``""`` clears the
+        recorded value when the cluster is not enforcing mTLS
+        for that particular peer.
+
+        Args:
+            node_id: Identifier of the peer whose entry is
+                updated.
+            cn: The verified Common Name from the peer cert, or
+                ``""`` to clear the recorded identity.
+        """
+        with self.lock:
+            peer = self.peers.get(node_id)
+            if peer is None:
+                return
+            peer.peer_cn = cn
         with self.lock:
             p = self.peers.get(node_id)
             if p is None:

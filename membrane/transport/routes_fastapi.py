@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
@@ -39,6 +39,29 @@ from membrane.transport.ops import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _authenticator_for(app: FastAPI) -> object | None:
+    """Return the cluster's authenticator from app.state, if any.
+
+    When ``app.state.authenticator`` was populated by the Server at
+    startup with an
+    :class:`~membrane.auth.mtls.MTLSAuthenticator`, ``op_join``
+    and ``op_heartbeat`` consume it. Absent the cluster is treated
+    as non-mTLS (single-node deployments).
+    """
+    return getattr(app.state, "authenticator", None)
+
+
+def _peer_headers(request: Request) -> dict[str, str]:
+    """Capture inbound headers as a plain dict for op_join / op_heartbeat.
+
+    FastAPI's :class:`Request.headers` is case-insensitive; we
+    downcase keys here so
+    :meth:`membrane.transport.tls.parse_peer_cn_header` reads them
+    with the ``x-ssl-client-cn`` spelling it expects.
+    """
+    return {k.lower(): v for k, v in request.headers.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +194,10 @@ def register_routes(app: FastAPI) -> None:
         app: The FastAPI app to configure.
     """
     # GET endpoints that have no body.
-    app.add_api_route("/heartbeat", lambda: _heartbeat(app), methods=["GET"])
+    def heartbeat_handler(request: Request):
+        return _heartbeat(app, request)
+
+    app.add_api_route("/heartbeat", heartbeat_handler, methods=["GET"])
     app.add_api_route("/livez", lambda: livez(app), methods=["GET"])
     app.add_api_route("/readyz", lambda: readyz(app), methods=["GET"])
     app.add_api_route("/metrics", lambda: _metrics(app), methods=["GET"])
@@ -197,8 +223,8 @@ def register_routes(app: FastAPI) -> None:
     def prefill_handler(req: PrefillRequest):
         return _prefill(app, req)
 
-    def join_handler(req: JoinRequest):
-        return _join(app, req)
+    def join_handler(req: JoinRequest, request: Request):
+        return _join(app, req, request)
 
     def leave_handler(req: LeaveRequest):
         return _leave(app, req)
@@ -215,8 +241,12 @@ def register_routes(app: FastAPI) -> None:
     app.add_api_route("/gossip", gossip_handler, methods=["POST"], response_model=None)
 
 
-def _heartbeat(app: FastAPI):
-    status, body = op_heartbeat(app.state.node)
+def _heartbeat(app: FastAPI, request: Request):
+    status, body = op_heartbeat(
+        app.state.node,
+        cluster=getattr(app.state, "cluster_manager", None),
+        headers=_peer_headers(request),
+    )
     return _respond(status, body)
 
 
@@ -275,8 +305,15 @@ def _prefill(app: FastAPI, req: PrefillRequest):
     return _respond(status, body)
 
 
-def _join(app: FastAPI, req: JoinRequest):
-    status, body = op_join(app.state.cluster_manager, req.node_id, req.host, req.port)
+def _join(app: FastAPI, req: JoinRequest, request: Request):
+    status, body = op_join(
+        app.state.cluster_manager,
+        req.node_id,
+        req.host,
+        req.port,
+        headers=_peer_headers(request),
+        authenticator=_authenticator_for(app),
+    )
     return _respond(status, body)
 
 

@@ -67,17 +67,33 @@ def _ok(body: Any) -> tuple[int, JsonDict]:
 # ---------------------------------------------------------------------------
 
 
-def op_heartbeat(node: Node | None) -> tuple[int, JsonDict]:
+def op_heartbeat(
+    node: Node | None,
+    cluster: Cluster | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, JsonDict]:
     """``GET /heartbeat`` — node health and load snapshot.
 
     Always returns 200 with the body indicating status, mirroring
     the existing contract that the heartbeat is informational, not a
     strict liveness check (``/livez`` is the dedicated liveness
     probe).
+
+    When ``cluster`` is supplied, an inbound ``X-Local-Peer-CN``
+    header (sent by the peer's :class:`~membrane.network.peer.Peer`
+    heartbeat client) is captured into the
+    :class:`~membrane.network.membership.PeerInfo` record so the
+    cluster has a verified identity for every live peer. Missing
+    headers on an mTLS-required cluster result in 401 (the
+    FastAPI route is expected to have already enforced that).
     """
     if node is None:
         return _ok({"error": "no node"})
     stats = node.get_stats()
+    if cluster is not None and headers is not None:
+        cn = headers.get("x-local-peer-cn") or headers.get("X-Local-Peer-CN")
+        if cn:
+            cluster.membership.record_peer_cn(node.node_id, cn)
     return _ok(
         {
             "node_id": node.node_id,
@@ -230,13 +246,71 @@ def op_join(
     node_id: str,
     host: str,
     port: int,
+    headers: dict[str, str] | None = None,
+    authenticator: object | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /join``."""
+    """``POST /join`` — add a peer to the cluster.
+
+    At 2.0+, when the cluster's :class:`~membrane.transport.tls.MTLSConfig`
+    is set, ``op_join`` requires a verified peer cert. The
+    ``authenticator`` (typically an
+    :class:`~membrane.auth.mtls.MTLSAuthenticator`) is invoked
+    against ``headers``; an authentication failure raises
+    :class:`~membrane.auth.AuthBackendError` which the calling
+    transport translates into a 401 response.
+
+    Args:
+        cluster: Local cluster manager.
+        node_id: Identifier of the joining peer.
+        host: Bind host reported by the peer.
+        port: Bind port reported by the peer.
+        headers: Inbound request headers (used to extract the
+            verified mTLS peer CN).
+        authenticator: Optional
+            :class:`~membrane.auth.Authenticator` implementation
+            that gates the join. ``None`` is supported for
+            single-node deployments.
+
+    Returns:
+        tuple[int, JsonDict]: ``(200, {"success": True, "peers":
+            [...]})`` on success, ``(401, ...)`` on auth failure,
+            ``(200, {"error": ...})`` on user input failure.
+    """
     if not node_id or not host or not port:
         return _ok({"error": "missing node_id, host, or port"})
     if cluster is None:
         return _ok({"error": "cluster manager not enabled"})
-    cluster.membership.add(node_id, host, port)
+    peer_cn = ""
+    if authenticator is not None and headers is not None:
+        # Defer the import to avoid a top-level cycle between
+        # transport.ops and auth.mtls.
+        from membrane.auth import AuthBackendError, AuthRequest
+
+        request = AuthRequest(
+            method="POST",
+            path="/join",
+            headers={k.lower(): v for k, v in (headers or {}).items()},
+            client="",
+        )
+        try:
+            context = authenticator.authenticate(request)  # type: ignore[attr-defined]
+        except AuthBackendError as exc:
+            logger.warning("op_join rejected: %s", exc)
+            return 401, {"error": str(exc)}
+        peer_cn = context.subject
+        # The CN prefix already grants the right scope; an
+        # additional node_id-vs-CN check defends against
+        # impersonation when a peer's CN is "admin-1" but its
+        # node_id is "n2".
+        expected_prefix = peer_cn.split("-", 1)[0]
+        if not node_id.startswith(f"{expected_prefix}-") and peer_cn != node_id:
+            logger.warning(
+                "op_join rejected: cn=%s does not match node_id=%s",
+                peer_cn,
+                node_id,
+            )
+            return 401, {"error": "CN does not match node_id"}
+    cluster.membership.add(node_id, host, port, peer_cn=peer_cn)
     return _ok({"success": True, "peers": cluster.membership.to_json()})
 
 

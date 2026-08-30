@@ -29,6 +29,7 @@ from membrane.constants import DEFAULT_MAX_BODY_BYTES
 from membrane.errors import SchemaError
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
+from membrane.transport.tls import MTLSConfig
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,14 @@ class GrpcServer:
         node: Node to serve.
         host: Bind address.
         port: Listen port.
+        compute_backend: Optional :class:`Backend` for the
+            ``Prefill`` RPC.
+        tls: Optional :class:`MTLSConfig`. When supplied, the
+            server binds on the secure port with mTLS via
+            ``grpc.ssl_server_credentials(root_certificates=...,
+            certificate_chain=..., private_key=...)``. Callers
+            must also configure ``Peer`` clients (Phase 1.5) with
+            the matching :func:`membrane.transport.tls.build_client_context`.
     """
 
     def __init__(
@@ -51,6 +60,7 @@ class GrpcServer:
         host: str = "0.0.0.0",
         port: int = 50051,
         compute_backend=None,
+        tls: MTLSConfig | None = None,
     ) -> None:
         """Initialize the gRPC server wrapper.
 
@@ -60,11 +70,14 @@ class GrpcServer:
             port: Listen port.
             compute_backend: Optional compute backend used by
                 the ``Prefill`` RPC.
+            tls: Optional :class:`MTLSConfig`. When supplied, the
+                server enables mutual TLS on the bind port.
         """
         self.node = node
         self.host = host
         self.port = port
         self.compute_backend = compute_backend
+        self.tls = tls
         self.grpc_server: Any | None = None
         self.grpc_module: Any | None = None
         try:
@@ -104,12 +117,76 @@ class GrpcServer:
             options=server_options,
         )
         membrane_pb2_grpc.add_MembraneServicer_to_server(servicer, self.grpc_server)
-        # Insecure port for local development. For production
-        # use a TLS-enabled port via add_secure_port().
-        self.grpc_server.add_insecure_port(f"{self.host}:{self.port}")
+        if self.tls is not None:
+            self._bind_secure_port()
+        else:
+            # Insecure port for local development only; production
+            # callers must supply tls.
+            self.grpc_server.add_insecure_port(f"{self.host}:{self.port}")
+            logger.warning(
+                "gRPC server bound on insecure port %s:%s; pass tls=MTLSConfig for mTLS",
+                self.host,
+                self.port,
+            )
         self.grpc_server.start()
         logger.info("gRPC server started on %s:%s", self.host, self.port)
         self.grpc_server.wait_for_termination()
+
+    def _bind_secure_port(self) -> None:
+        """Bind the secure port when ``tls`` is configured.
+
+        Reads the configured :class:`MTLSConfig` and turns each
+        PEM block into a temporary on-disk file because
+        ``ssl_server_credentials`` in this grpcio version reads
+        certs from disk rather than from PEM bytes.
+        """
+        import contextlib
+        import os
+        import tempfile
+
+        from membrane.transport.tls import build_server_context
+
+        assert self.tls is not None
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".pem"
+        ) as cert_file, tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".pem"
+        ) as key_file, tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".pem"
+        ) as ca_file:
+            cert_file.write(self.tls.server_cert_pem)
+            cert_file.flush()
+            key_file.write(self.tls.server_key_pem)
+            key_file.flush()
+            ca_file.write(self.tls.ca_bundle_pem)
+            ca_file.flush()
+            cert_path = cert_file.name
+            key_path = key_file.name
+            ca_path = ca_file.name
+        # Verify the SSL context was buildable before invoking
+        # grpc.ssl_server_credentials (which does not surface
+        # clear error messages for malformed chains).
+        build_server_context(self.tls)
+        try:
+            with open(cert_path, "rb") as f:
+                cert_bytes = f.read()
+            with open(key_path, "rb") as f:
+                key_bytes = f.read()
+            with open(ca_path, "rb") as f:
+                ca_bytes = f.read()
+            credentials = self.grpc_module.ssl_server_credentials(  # type: ignore[union-attr]
+                root_certificates=ca_bytes,
+                certificate_chain=cert_bytes,
+                private_key=key_bytes,
+                require_client_auth=self.tls.require_client_cert,
+            )
+            self.grpc_server.add_secure_port(  # type: ignore[union-attr]
+                f"{self.host}:{self.port}", credentials
+            )
+        finally:
+            for path in (cert_path, key_path, ca_path):
+                with contextlib.suppress(OSError):
+                    os.unlink(path)
 
     def stop(self) -> None:
         """Stop the gRPC server.
