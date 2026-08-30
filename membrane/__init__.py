@@ -41,7 +41,8 @@ moved to deep imports:
   ``membrane.network.cluster`` etc.
 * Decision / policy classes (``Economic``, ``Latency``, ``Joint``,
   ``Promotion``, ``Offload``, ``Isolation``, ``Selector``, ``Roles``,
-  ``Predict``, ``Workload``) — import from their own modules.
+  ``Predict``, ``Workload``) — import from
+  ``membrane.analytical``.
 * Resilience policies, metrics primitives, observability helpers,
   model analytical code, and CLI commands — import from their own
   modules.
