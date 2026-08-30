@@ -1,7 +1,7 @@
 """stdlib HTTP route handlers.
 
 This module is a thin transport binding for the operations in
-:mod:`membrane.transport._ops`. Each handler here adapts a
+:mod:`membrane.transport.ops`. Each handler here adapts a
 :class:`Handler` instance (which carries the server state and the
 ``send_json`` / ``read_json`` helpers) onto the underlying business
 operations.
@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 
 from membrane.compute.cpu import CPU
 from membrane.node import Node
-from membrane.transport._ops import (
+from membrane.transport.ops import (
     MAX_BODY_BYTES,
     op_gossip,
     op_heartbeat,
@@ -74,7 +74,7 @@ def get_handler_cluster(handler: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Handlers — all delegate to membrane.transport._ops
+# Handlers — all delegate to membrane.transport.ops
 # ---------------------------------------------------------------------------
 
 

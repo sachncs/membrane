@@ -1,6 +1,6 @@
 """FastAPI route bindings.
 
-This module binds the operations in :mod:`membrane.transport._ops`
+This module binds the operations in :mod:`membrane.transport.ops`
 to FastAPI endpoints. The Pydantic models at the top describe the
 request bodies; the handlers are thin shims that pass the validated
 request into the corresponding operation.
@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from membrane.compute.cpu import CPU
-from membrane.transport._ops import (
+from membrane.transport.ops import (
     MAX_BODY_BYTES,
     op_gossip,
     op_heartbeat,
@@ -168,7 +168,7 @@ def register_routes(app: FastAPI) -> None:
     """Register every Membrane HTTP route on ``app``.
 
     Each route delegates to the corresponding operation in
-    :mod:`membrane.transport._ops`. The Pydantic models at the top
+    :mod:`membrane.transport.ops`. The Pydantic models at the top
     of this module validate request bodies; the inline lambdas
     capture ``app`` so the registered functions take only the
     request body.
