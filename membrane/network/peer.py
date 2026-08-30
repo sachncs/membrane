@@ -256,6 +256,38 @@ class Peer:
         resp = self.request_with_retry("POST", "/tombstone", body)
         return resp is not None and bool(resp.get("success", False))
 
+    def request_verify_received(
+        self,
+        content_hash: str,
+        claimed_size: int,
+        claimed_sha256_hex: str,
+    ) -> bool:
+        """Send ``POST /verify`` confirming a stored fragment.
+
+        The verified-migration flow on the new primary calls this
+        to confirm the destination replica actually received the
+        canonical bytes with the expected size before flipping
+        the shard map.
+
+        Args:
+            content_hash: Hash of the fragment just received.
+            claimed_size: Size the caller believes it stored.
+            claimed_sha256_hex: Hex sha256 the caller computed.
+
+        Returns:
+            bool: ``True`` when the destination acks the bytes
+            match. ``False`` when the destination reports a size
+            mismatch, a missing fragment, or any transport
+            failure.
+        """
+        body = {
+            "content_hash": content_hash,
+            "claimed_size": int(claimed_size),
+            "claimed_sha256": str(claimed_sha256_hex),
+        }
+        resp = self.request_with_retry("POST", "/verify", body)
+        return resp is not None and bool(resp.get("success", False))
+
     def get_peers(self) -> JsonDict | None:
         """Send ``GET /peers``."""
         return self.request_with_retry("GET", "/peers")

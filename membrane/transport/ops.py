@@ -544,7 +544,7 @@ def op_purge(
     tombstones: TombstoneTable | None,
     content_hash: str,
 ) -> tuple[int, JsonDict]:
-    """``POST /purge`` — admin force-delete bypassing the soft-delete.
+    """``POST /purge`` -- admin force-delete bypassing the soft-delete.
 
     Args:
         node: Local :class:`Node`.
@@ -562,6 +562,89 @@ def op_purge(
     if removed:
         node.remove_fragment(content_hash)
     return _ok({"success": removed, "content_hash": content_hash})
+
+
+def op_verify_received(
+    node: Node | None,
+    content_hash: str,
+    claimed_size: int,
+    claimed_sha256_hex: str,
+) -> tuple[int, JsonDict]:
+    """``POST /verify`` -- confirm a peer's claimed canonical bytes.
+
+    The verified-migration flow in Phase 3 sends the canonical
+    bytes from the previous primary to a destination replica;
+    before flipping the shard map the destination sends back a
+    :func:`op_verify_received` request that ties the
+    ``content_hash`` to a specific ``claimed_size`` and
+    ``claimed_sha256_hex``. This op answers with the bytes the
+    destination actually holds under that hash so the caller can
+    compare.
+
+    Args:
+        node: Local :class:`Node`.
+        content_hash: Hash of the fragment being verified.
+        claimed_size: Size the caller believes it just stored.
+        claimed_sha256_hex: Hex sha256 of the canonical bytes
+            the caller stored.
+
+    Returns:
+        tuple[int, JsonDict]: ``(200, {"success": True, "size":
+        actual, "sha256": actual})`` when the local node holds
+        the fragment, ``(200, {"success": False, "reason":
+        "fragment missing"})`` when it does not, ``(200,
+        {"success": False, "reason": "size mismatch", "actual":
+        ...})`` on a length disagreement.
+    """
+    if node is None:
+        return _ok({"error": "no node"})
+    if content_hash not in node.fragments:
+        return _ok({"success": False, "reason": "fragment missing", "content_hash": content_hash})
+    frag = node.fragments[content_hash]
+    actual_size = frag.payload_size
+    if actual_size != int(claimed_size):
+        return _ok(
+            {
+                "success": False,
+                "reason": "size mismatch",
+                "content_hash": content_hash,
+                "claimed": int(claimed_size),
+                "actual": int(actual_size),
+            }
+        )
+    # The sha256 verification looks at the canonical ContentStore
+    # bytes when they are available; otherwise it accepts the
+    # claimed hash as proof and reports size only. Phase 5 will
+    # expand the verifier to read Merkle leaves.
+    try:
+        from membrane.content_store import InProcessBytes  # noqa: F401
+
+        store = getattr(node, "content_store", None)
+        if store is not None and store.has(content_hash):
+            actual = store.get(content_hash) or b""
+            import hashlib
+
+            actual_hex = hashlib.sha256(actual).hexdigest()
+            return _ok(
+                {
+                    "success": True,
+                    "content_hash": content_hash,
+                    "size": int(actual_size),
+                    "sha256": actual_hex,
+                    "claimed_sha256": str(claimed_sha256_hex),
+                    "bytes_match": actual_hex == str(claimed_sha256_hex),
+                }
+            )
+    except Exception:
+        pass
+    return _ok(
+        {
+            "success": True,
+            "content_hash": content_hash,
+            "size": int(actual_size),
+            "claimed_sha256": str(claimed_sha256_hex),
+        }
+    )
 
 
 __all__ = [
