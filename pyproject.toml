@@ -69,7 +69,7 @@ lmcache = ["lmcache>=0.5,<0.6"]
 # version in their deployment image.
 vllm = ["vllm>=0.10,<0.12"]
 sglang = ["sglang>=0.4,<0.6"]
-trtllm = ["tensorrt-llm>=0.20,<0.22"]
+trtllm = ["tensorrt-llm>=1.2.1,<1.3"]
 # Prefill / decode disaggregation surface (Phase 8). The
 # REST surface is FastAPI-only; the gRPC surface additionally
 # pulls in grpcio. Operators that only need one of the two
