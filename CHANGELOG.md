@@ -7,6 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-30
+
+### Highlights
+
+This is a major-version release that addresses all seven
+directives the project spec calls out for "real KV-cache
+fabric". Every dependency now stores the actual canonical bytes
+(via the new `ContentStore` interface), every fragment carries a
+ten-field `PayloadIdentity` fingerprint, every transport and
+storage path is on a single schema (v2), and the cluster has a
+durable recovery path plus safe-GC primitives.
+
+### Added
+
+- **`PayloadIdentity`** (replaces the three-field `Signature`):
+  full ten-field fragment fingerprint covering `payload_hash`,
+  `model_id`, `model_revision`, `tokenizer_name`,
+  `tokenizer_revision`, `layer_range`, `head_range`, `token_span`,
+  `dtype`, and `shape`. Frozen dataclass with `to_dict`,
+  `from_dict`, and stable `fingerprint() = sha256(canonical_json)`.
+- **`Fragment` v2 schema** (replaces the prior seven-field dataclass):
+  `identity`, `payload_ref`, `payload_size`, `ttl`, `reuse_score`,
+  `version_id`. The synthetic `embedding` field is gone; the
+  `size` placeholder is replaced by the real `payload_size` carried
+  by the canonical byte frame.
+- **`ContentStore` Protocol** with two implementations:
+  - `InProcessBytes` — thread-safe dict-based blob store, the
+    default for tests and single-process deployments.
+  - `FilesystemBlob` — atomic two-level sharded layout
+    (`{root}/{xx}/{yy}/{key}.blob`) that survives process exit.
+    Writes use `NamedTemporaryFile + fsync + os.replace + fsync on
+    the parent directory` so a crash mid-write leaves no half-file.
+- **Canonical byte framing** in `membrane.canonical`:
+  `canonicalize(identity, raw) -> bytes` and
+  `parse_canonical(buf) -> (identity, raw)`. Magic `0xC0DE0102`,
+  14-byte fixed header, JSON identity sub-frame, u64 payload
+  length, payload, 8-byte truncated-SHA256 trailer. New
+  `CorruptPayloadError` distinguishes storage corruption from
+  schema-version rejection (`SchemaError`).
+- **`KVBackend`** (`membrane.compute.kv`): real K/V tensor
+  producer from a HuggingFace causal LM with `attn_implementation=eager`
+  and `use_cache=True`. Each `window_size`-token window extracts
+  the per-layer K/V tensors, serializes them as a header-prefixed
+  raw float16 frame, SHA-256 hashes the bytes, and writes them
+  through `ContentStore.put`. Returns Fragments whose
+  `PayloadIdentity` carries model+tokenizer revision, dtype, and
+  shape. Falls back to `Backend.simulate_prefill_fragment` when
+  `torch`/`transformers` is missing or the model fails to load.
+  Optional `[kv]` install extra.
+- **`IdentityIndex`** for collision-safe lookup keyed on the full
+  fingerprint (two fragments with the same `payload_hash` but
+  different layer / head / dtype / shape stay distinguishable).
+- **`Snapshot` + `ClusterEpochGuard`**: durable cluster metadata
+  in `{state_dir}/{node_id}.json` with atomic writes. A persisted
+  `cluster_epoch` more than one step behind the live value is
+  rejected on restore; the file is then deleted.
+- **`Membership.save_snapshot` / `load_snapshot`** and
+  **`Shard.save_snapshot` / `load_snapshot`**: the primitives
+  that round-trip the cluster membership and shard tables.
+- **`Server.restore_state` + `Server.checkpoint_state`** +
+  **`CheckpointThread`**: `Server.start` re-hydrates the cluster
+  from the most recent snapshot before launching daemon threads;
+  `Server.stop` and the `CheckpointThread` daemon (default 30 s,
+  configurable via `checkpoint_interval_sec`) write a fresh
+  snapshot.
+- **`RefCount` + `TombstoneTable` + `Sweeper`** (`membrane.gc`):
+  the safe-GC primitives. `RefCount` decrements on every replica
+  leave; `Tombstone` is the soft-delete marker that gossip
+  propagates so a peer advertising "I deleted X" cannot be raced
+  by an active consumer rebuilding from stale state. `Sweeper` is
+  the daemon that periodically expires tombstones and TTL-stale
+  fragments; this subsumes the previously-dangling
+  `DEFAULT_TTL_SWEEP_INTERVAL` constant.
+- **Wire ops**: `op_delete`, `op_tombstone`, `op_purge`. The
+  `op_delete` path writes a tombstone first (default 60 s) and
+  then removes the fragment locally; `op_tombstone` records only,
+  so gossip-driven peer convergence can seed entries without
+  forcing each replica to delete; `op_purge` is the admin
+  force-delete bypassing soft-delete.
+- **Peer forwarders**: `Peer.request_delete` and
+  `Peer.request_tombstone`.
+
+### Changed
+
+- **Wire format bumped to schema version 2**: the FragmentMessage
+  on the wire carries `schema_version`, a nested `identity`
+  sub-dict, `payload_ref`, and `payload_size`. The previous flat
+  `model_id` / `layer_start` / `layer_end` / `token_start` /
+  `token_end` keys plus the JSON-encoded `embedding` string are
+  gone. **No v1 reader is kept**; v0.x fragments are rejected on
+  every v1 wire entry point. The wire-format break is documented
+  at length in `docs/wire-format.md`.
+- **gRPC proto rebuilt** (`membrane.proto` schema v2):
+  FragmentMessage adds `schema_version`, the full PayloadIdentity
+  fields, `payload_ref`, `payload_size`, and the optional inline
+  `bytes payload = 14`. gRPC server sets both
+  `grpc.max_receive_message_length` and
+  `grpc.max_send_message_length` to `DEFAULT_MAX_BODY_BYTES`
+  (100 MiB) so large frames flow without truncation.
+- **`membrane.signature.Signature`** deleted.
+  `membrane.network.peer.serialize_fragment` /
+  `deserialize_fragment` deleted (their work now flows through
+  `membrane.serialization.to_dict` / `from_dict` only).
+- **`Node.content_store`**: every `Node` carries a
+  `ContentStore` and routes fragment lifecycles through it.
+  `Node.store` warns when a fragment's `payload_ref` is missing
+  from the configured store; `Node.remove_fragment` is the
+  single funnel that drops the canonical bytes on hard delete,
+  TTL expiry, LRU eviction, and graph-neighbor eviction.
+- **Compute backends** (`CPU`, `GPU`, `OpenAI`, `Ollama`,
+  `Anthropic`, `Transformers`): all construct the new
+  `Fragment(identity=..., payload_ref=..., payload_size=..., ttl,
+  reuse_score, version_id)` shape. Code paths that read the old
+  `frag.content_hash`, `frag.size`, or `frag.structural_signature`
+  fields were migrated to the new `frag.identity.payload_hash`,
+  `frag.payload_size`, and `frag.identity.{model_id,layer_range,
+  token_span}` accessor paths.
+
 ### Fixed
 
 - **CI security job**: The `aquasecurity/trivy-action` step was
@@ -21,6 +139,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still cross-checked by `pip-audit`, code-level issues by
   `bandit`, secrets by `gitleaks`.
 
+### External contracts — breaking
+
+* Wire format version 1 → 2 (hard break).
+* `membrane.serialisation.SCHEMA_VERSION` returns 2; readers
+  refuse anything else.
+* `gRPC.FragmentMessage` proto field numbering changed (the
+  generated `_pb2.py` is incompatible with v0.x).
+* `membrane.fragment.Fragment` field set rewritten; downstream
+  code that referenced `fragment.content_hash`, `fragment.size`,
+  `fragment.structural_signature`, or `fragment.embedding` will
+  fail to import.
+* `membrane.signature.Signature` no longer exists.
+* `membrane.network.peer.serialize_fragment` /
+  `deserialize_fragment` no longer exist; use
+  `membrane.serialization.to_dict` / `from_dict` directly.
+* Persisted `FilesystemBlob` canonical frames are not v0.x
+  format-compatible; a v1.0 reader refuses them via
+  `CorruptPayloadError`.
+* `max_receive_message_length` / `max_send_message_length` of
+  the gRPC server are now 100 MiB instead of 4 MiB default.
+
+### Migration notes
+
+1. Drain the v0.x fleet; v1 readers refuse v0 wire payloads.
+2. Replace any v0 RServe / etcd / glue that depended on
+   `Fragment.content_hash` with `Fragment.identity.payload_hash`.
+3. Restart the fleet with the v1.0 image.
 ## [0.8.0] - 2026-08-30
 
 Three additional commits continuing the 0.7.0 cleanup
