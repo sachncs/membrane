@@ -57,6 +57,23 @@ class ClusterConfig:
             keep this in lock-step with the ``MTLSConfig.allowed_cns``
             allow-list on peers — a peer whose CN is not in the
             list rejects the inbound call.
+        default_consistency: Write level applied by
+            :func:`op_store` when the incoming fragment's
+            ``consistency`` field is missing or matches the
+            cluster default. Production clusters leave this at
+            ``"strong"`` so every op_store blocks on quorum.
+            Tests may override to ``"quorum"`` or ``"eventual"``
+            to skip the blocking path.
+        quorum_count: Number of replica acks op_store waits for
+            under ``strong`` or ``"quorum"`` consistency. Default
+            ``2`` matches :attr:`replica_count`; production
+            clusters typically set this to
+            ``floor(replica_count / 2) + 1``.
+        cluster_quorum_timeout_sec: Wall-clock budget for the
+            op_store quorum wait. On timeout the write fails
+            closed (HTTP 503 + ``Retry-After``); the
+            :func:`~membrane.transport.ops.op_store` route
+            never silently degrades to a weaker consistency.
     """
 
     node_id: str = "membrane-0"
@@ -77,3 +94,6 @@ class ClusterConfig:
     gossip_max_fragment_entries: int = 50
     mtls: "MTLSConfig | None" = None
     local_peer_cn: str = ""
+    default_consistency: str = "strong"
+    quorum_count: int = 2
+    cluster_quorum_timeout_sec: float = 5.0
