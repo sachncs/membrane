@@ -21,6 +21,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still cross-checked by `pip-audit`, code-level issues by
   `bandit`, secrets by `gitleaks`.
 
+## [0.8.0] - 2026-08-30
+
+Three additional commits continuing the 0.7.0 cleanup
+of stale references and standalone helpers.
+
+### Changed
+
+- ``Membership.join_seeds`` folds the standalone
+  ``bootstrap()`` function into the membership class.
+  ``membrane.network.bootstrap`` module deleted (was
+  49 lines, single free function). Cluster's
+  bootstrap_loop now calls ``self.membership.join_seeds``
+  directly. Three docstring references that pointed
+  at the deleted module are updated.
+- Stale Sphinx references in transport/grpc,
+  transport/chunks, network/config, transfer module
+  table-of-contents fixed to point at current module
+  paths.
+- Final round of `_underscore` application method
+  renames: ``build_persistence``/``build_transport``
+  (Server); ``client_for`` (TransferService); the four
+  Latency tier helpers; the three Roles/Latency/Offload
+  refine helpers. Zero application-side
+  ``_underscore`` remains in membrane/.
+
+### External contracts preserved
+
+CLI flags, gRPC method names, HTTP wire JSON format,
+``Server.__init__`` signature, ``ClusterConfig`` fields,
+persistence wire format.
+
 ## [0.7.0] - 2026-08-30
 
 Eight additional commits continuing the 0.6.0
