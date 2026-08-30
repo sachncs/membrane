@@ -55,7 +55,6 @@ class TestTransformersBackend:
 
         backend.model = mock_model
         backend.tokenizer = mock_tokenizer
-        backend.actual_device = "cpu"
 
         result = backend.generate([1, 2], "m")
         assert result["text"] == "hello world"
