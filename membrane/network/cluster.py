@@ -117,7 +117,7 @@ class Cluster:
         # updates the shard table and the local Node's primary set
         # in a single critical section so the cluster state stays
         # consistent.
-        self.migrator.transfer_fn = self._migrate_primary
+        self.migrator.transfer_fn = self._migrator_callback
         self.heartbeat = Heartbeat(self.membership, config, self.stop_event, self.running)
         self.failure = Failure(
             self.membership,
@@ -263,30 +263,13 @@ class Cluster:
                     exc,
                 )
 
-    def _migrate_primary(self, content_hash: str, leaving_peer: str) -> None:
-        """Re-home ``content_hash`` from ``leaving_peer`` to the local node.
-
-        Used as the default ``Migrator.transfer_fn``. Promotes the
-        local node to primary owner of the hash; updates the shard
-        table to drop the leaving peer from the replica set.
-        """
-        shard = self.shard_manager
-        # Drop the leaving peer from the replica set and add the
-        # local node if it isn't already there.
-        replicas = shard.replica_map.get(content_hash, set())
-        if leaving_peer in replicas:
-            replicas.discard(leaving_peer)
-        if self.node_id not in replicas and self.node_id != leaving_peer:
-            replicas.add(self.node_id)
-        # Promote the local node to primary for this hash.
-        shard.primary_map[content_hash] = self.node_id
-        if content_hash in self.node.fragments:
-            self.node.primary_hashes.add(content_hash)
-        logger.debug(
-            "migrated %s from %s to local (%s)",
+    def _migrator_callback(self, content_hash: str, leaving_peer: str) -> None:
+        """Default ``Migrator.transfer_fn`` that delegates to :meth:`Shard.migrate_primary`."""
+        self.shard_manager.migrate_primary(
             content_hash,
             leaving_peer,
-            self.node_id,
+            local_node_id=self.node_id,
+            node=self.node,
         )
 
     def on_heartbeat(self, node_id: str) -> dict[str, Any]:

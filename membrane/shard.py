@@ -32,6 +32,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from membrane.node import Node
 from membrane.ring import Ring
 
 
@@ -213,3 +214,43 @@ class Shard:
             in the replica set.
         """
         return {h for h, replicas in self.replica_map.items() if node_id in replicas}
+
+    # ------------------------------------------------------------------
+    # Migration
+    # ------------------------------------------------------------------
+
+    def migrate_primary(
+        self,
+        content_hash: str,
+        leaving_peer: str,
+        local_node_id: str,
+        node: Node | None = None,
+    ) -> None:
+        """Re-home ``content_hash`` from ``leaving_peer`` onto ``local_node_id``.
+
+        Used as the default ``Migrator.transfer_fn``. Promotes the
+        local node to primary owner of the hash and updates the
+        replica set to drop the leaving peer.
+
+        Args:
+            content_hash: Content hash whose primary is leaving.
+            leaving_peer: Identifier of the peer being removed.
+            local_node_id: Identifier of the node that should take
+                ownership.
+            node: Optional local :class:`~membrane.node.Node` whose
+                ``primary_hashes`` set should be kept in sync.
+        """
+        replicas = self.replica_map.get(content_hash, set())
+        if leaving_peer in replicas:
+            replicas.discard(leaving_peer)
+        if local_node_id not in replicas and local_node_id != leaving_peer:
+            replicas.add(local_node_id)
+        self.primary_map[content_hash] = local_node_id
+        if node is not None and content_hash in node.fragments:
+            node.primary_hashes.add(content_hash)
+        logger.debug(
+            "migrated %s from %s to local (%s)",
+            content_hash,
+            leaving_peer,
+            local_node_id,
+        )
