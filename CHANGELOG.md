@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-30
+
+Patch release closing the items deferred at the end of 1.0.0.
+No schema break; wire format, persistence layout, snapshot,
+and gRPC proto are unchanged.
+
+### Added
+
+- **Tombstone propagation in gossip** (`membrane.network.gossip`):
+  `GossipState` gains a `fragment_tombstones: dict[str, float]`
+  field carried in every state exchange. The merge rule picks
+  ``max(until)`` so the longer-lived deadline always wins.
+  `Gossip.handle()` stamps incoming records into the local
+  `TombstoneTable` with the sender's `node_id` attribution.
+  `Cluster` owns a single `TombstoneTable` shared with the
+  Gossip daemon.
+- **`Registry.forget_fragment_location`** and
+  **`Registry.forget_fragment`**: directory hooks the
+  `Sweeper` post-sweep observer uses to actually prune stale
+  entries after a tombstone expires. Previously the
+  `Registry.fragment_locations` map could grow unboundedly
+  because every replication step added entries and nothing
+  removed them.
+- **`Shard.migrate_primary` pushes bytes**: the helper accepts
+  an optional `transfer_service` argument and, when supplied
+  and the local node holds the hash, calls
+  `transfer_service.transfer_fragment(node, content_hash)` so
+  the canonical payload rides alongside the bookkeeping
+  update. `Cluster.on_peer_leave_rehome` threads the shared
+  `TransferService` through to `Shard.migrate_primary`.
+  `Server` wires the same `TransferService` into the cluster
+  when both are constructed together.
+- **`Server` sweeper daemon**: `Server.__init__` constructs a
+  `TombstoneTable` and a `Sweeper(interval_sec=...)`. The
+  sweeper runs while the server is up; its post-sweep observer
+  calls `Registry.forget_fragment` on every touched hash so
+  tombstones really do prune the directory. The daemon
+  subsumes the previously dangling `DEFAULT_TTL_SWEEP_INTERVAL`
+  constant on `membrane.constants`.
+
+### Changed
+
+- **`Sweeper.run_once`** now also fires an `on_post_sweep`
+  observer with the de-duplicated set of hashes evicted during
+  the TTL or tombstone phases. This is the hook the Server
+  wires to its `Registry` post-start.
+
 ## [1.0.0] - 2026-08-30
 
 ### Highlights
