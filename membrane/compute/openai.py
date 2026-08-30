@@ -27,19 +27,19 @@ Security:
 
 import json
 import logging
-from typing import Any
 
 import httpx
 
 from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
+from membrane.compute.remote import RemoteLLMBackend
 from membrane.fragment import Fragment
 from membrane.signature import Signature
 
 logger = logging.getLogger(__name__)
 
 
-class OpenAI(Backend):
+class OpenAI(RemoteLLMBackend):
     """Compute backend using OpenAI API for embeddings and generation.
 
     Args:
@@ -58,29 +58,16 @@ class OpenAI(Backend):
         model: str = "gpt-4o-mini",
         embedding_model: str = "text-embedding-3-small",
     ) -> None:
-        """Initialize the backend.
-
-        Args:
-            api_key: OpenAI API key. Stored on the instance
-                but never logged.
-            base_url: API base URL.
-            model: Chat model identifier.
-            embedding_model: Embedding model identifier.
-        """
+        """Initialize the backend."""
+        super().__init__()
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.embedding_model = embedding_model
-        self.client: Any | None = None
-        try:
-            import httpx
-
-            self.client = httpx.Client(
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=60.0,
-            )
-        except ImportError:
-            logger.warning("OpenAI: httpx not installed")
+        self.client = self.build_client(
+            timeout=60.0,
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Fetch embeddings from OpenAI and convert to fragments.
@@ -184,22 +171,8 @@ class OpenAI(Backend):
             return {"text": "", "tokens": []}
 
     def available(self) -> bool:
-        """Return whether the API is reachable.
-
-        Sends a lightweight ``GET /models`` request and reports
-        success based on the HTTP status.
-
-        Returns:
-            bool: True when the client is configured and the
-            API responds with status 200.
-        """
-        if self.client is None:
-            return False
-        try:
-            resp = self.client.get(f"{self.base_url}/models", timeout=5.0)
-            return resp.status_code == 200
-        except httpx.HTTPError:
-            return False
+        """Return whether the API is reachable."""
+        return self.probe("models", timeout=5.0)
 
     def device_name(self) -> str:
         """Return the backend's device descriptor.

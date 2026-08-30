@@ -21,19 +21,19 @@ warning.
 
 import json
 import logging
-from typing import Any
 
 import httpx
 
 from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
+from membrane.compute.remote import RemoteLLMBackend
 from membrane.fragment import Fragment
 from membrane.signature import Signature
 
 logger = logging.getLogger(__name__)
 
 
-class Ollama(Backend):
+class Ollama(RemoteLLMBackend):
     """Compute backend using Ollama API for embeddings and generation.
 
     Args:
@@ -43,21 +43,11 @@ class Ollama(Backend):
     """
 
     def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.2") -> None:
-        """Initialize the backend.
-
-        Args:
-            base_url: Ollama server URL.
-            model: Model identifier.
-        """
+        """Initialize the backend."""
+        super().__init__()
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.client: Any | None = None
-        try:
-            import httpx
-
-            self.client = httpx.Client(timeout=30.0)
-        except ImportError:
-            logger.warning("Ollama: httpx not installed")
+        self.client = self.build_client(timeout=30.0)
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Fetch embeddings from Ollama and convert to fragments.
@@ -161,19 +151,8 @@ class Ollama(Backend):
             return {"text": "", "tokens": []}
 
     def available(self) -> bool:
-        """Return whether Ollama is reachable.
-
-        Returns:
-            bool: True when the client is configured and the
-            server responds with status 200 to ``GET /api/tags``.
-        """
-        if self.client is None:
-            return False
-        try:
-            resp = self.client.get(f"{self.base_url}/api/tags", timeout=2.0)
-            return resp.status_code == 200
-        except httpx.HTTPError:
-            return False
+        """Return whether Ollama is reachable."""
+        return self.probe("api/tags")
 
     def device_name(self) -> str:
         """Return the backend's device descriptor.
