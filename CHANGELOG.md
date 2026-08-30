@@ -21,6 +21,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still cross-checked by `pip-audit`, code-level issues by
   `bandit`, secrets by `gitleaks`.
 
+## [0.7.0] - 2026-08-30
+
+Eight additional commits continuing the 0.6.0
+cleanup pass. Focus on the final `_underscore`
+convention sweep and module consolidation.
+
+### Changed
+
+- **Module consolidation**:
+  - ``membrane.adapter`` + ``membrane.prefiller`` fold
+    into a single ``membrane.prefilling`` module (the
+    prefill pipeline).
+  - ``membrane.predict`` + ``membrane.workload`` fold
+    into ``membrane.analytical``.
+- **Final fake-private cleanup**: every remaining
+  leading-underscore application method has been
+  promoted (``build_persistence``, ``build_transport``,
+  ``_resolve_endpoint``, ``on_peer_leave_rehome`,
+  ``_classify_state``, ``local_choice``,
+  ``score_candidates``). Only legitimate ``__dunder__`
+  protocols remain (`__post_init__`, etc.).
+- **Fixed CLI imports**: ``commands/__init__.py``
+  re-exports ``dashboard`` so deep imports work.
+- **Removed all ``self._foo`` private attribute names
+  on instance methods** — slots / private state on
+  classes (``_RemoteEndpoint._cluster``,
+  ``__slots__`` named tuples) are kept.
+
+### External contracts preserved
+
+CLI flags, gRPC method names, HTTP wire JSON format,
+``Server.__init__`` signature, ``ClusterConfig`` fields,
+persistence wire format.
+
 ## [0.6.0] - 2026-08-30
 
 Eight additional atomic commits continuing the 0.5.0
