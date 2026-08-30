@@ -18,10 +18,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
 from membrane.fragment import Fragment
-from membrane.signature import Signature
 
 
 class CPU(Backend):
@@ -33,21 +31,15 @@ class CPU(Backend):
     """
 
     def __init__(self) -> None:
-        """Initialize the backend.
-
-        The flag ``_initialized`` is kept for symmetry with
-        backends that lazy-load heavy resources; here it is
-        always ``True``.
-        """
+        """Initialize the backend."""
         self.initialized = True
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Simulate prefill on CPU.
 
         Splits the prompt into fixed-size windows and returns one
-        fragment per window. The embedding is a simple
-        ``(start_offset, chunk_length)`` tuple that uniquely
-        identifies the chunk's position in the prompt.
+        fragment per window. Each fragment is built by the shared
+        :meth:`Backend.simulate_prefill_fragment` helper.
 
         Args:
             prompt_tokens: Input token IDs.
@@ -57,27 +49,19 @@ class CPU(Backend):
             list[Fragment]: One fragment per window. Empty when
             ``prompt_tokens`` is empty.
         """
-        window_size = 128
+        window_size = Backend.SIMULATE_WINDOW_SIZE
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = token_hash(chunk)
-            frag = Fragment(
-                content_hash=h,
-                embedding=(float(i), float(len(chunk))),
-                structural_signature=Signature(
+            fragments.append(
+                Backend.simulate_prefill_fragment(
+                    chunk=chunk,
+                    chunk_index=i,
+                    total_prompt_tokens=len(prompt_tokens),
                     model_id=model_id,
-                    layer_range=(0, 1),
-                    token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
-                ),
-                # Rough bytes-per-token estimate used for capacity
-                # accounting rather than transport.
-                size=len(chunk) * 64,
-                ttl=3600.0,
-                reuse_score=0.5,
-                version_id=1,
+                    window_size=window_size,
+                )
             )
-            fragments.append(frag)
         logger.debug(
             "CPU: prefill %s tokens into %s fragments",
             len(prompt_tokens),

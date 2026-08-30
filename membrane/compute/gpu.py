@@ -28,11 +28,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
-from membrane.signature import Signature
 
 
 class GPU(Backend):
@@ -85,31 +83,21 @@ class GPU(Backend):
 
         # GPU simulation: create tensors and simulate KV generation.
         assert self.torch is not None
-        window_size = 128
+        window_size = Backend.SIMULATE_WINDOW_SIZE
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = token_hash(chunk)
-            # Allocate a small GPU tensor for the chunk. The
-            # sum() forces a synchronous kernel launch so the
-            # simulator actually exercises the GPU even when no
-            # real model is loaded.
             t = self.torch.tensor(chunk, device=self.gpu_device)
             _ = t.sum().item()
-            frag = Fragment(
-                content_hash=h,
-                embedding=(float(i), float(len(chunk))),
-                structural_signature=Signature(
+            fragments.append(
+                Backend.simulate_prefill_fragment(
+                    chunk=chunk,
+                    chunk_index=i,
+                    total_prompt_tokens=len(prompt_tokens),
                     model_id=model_id,
-                    layer_range=(0, 1),
-                    token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
-                ),
-                size=len(chunk) * 64,
-                ttl=3600.0,
-                reuse_score=0.5,
-                version_id=1,
+                    window_size=window_size,
+                )
             )
-            fragments.append(frag)
         logger.debug(
             "GPU: prefill %s tokens into %s fragments on %s",
             len(prompt_tokens),

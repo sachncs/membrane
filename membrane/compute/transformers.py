@@ -242,34 +242,18 @@ class Transformers(Backend):
         prompt_tokens: list[int],
         model_id: str,
     ) -> list[Fragment]:
-        """Produce a simulated prefill (used when no model is loaded).
-
-        Args:
-            prompt_tokens: Input token IDs.
-            model_id: Model identifier for the structural
-                signature.
-
-        Returns:
-            list[Fragment]: One fragment per 128-token window,
-            with a placeholder embedding.
-        """
-        window_size = 128
+        """Produce a simulated prefill (used when no model is loaded)."""
+        window_size = Backend.SIMULATE_WINDOW_SIZE
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
             chunk = prompt_tokens[i : i + window_size]
-            h = token_hash(chunk)
-            frag = Fragment(
-                content_hash=h,
-                embedding=(float(i), float(len(chunk))),
-                structural_signature=Signature(
+            fragments.append(
+                Backend.simulate_prefill_fragment(
+                    chunk=chunk,
+                    chunk_index=i,
+                    total_prompt_tokens=len(prompt_tokens),
                     model_id=model_id,
-                    layer_range=(0, 1),
-                    token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
-                ),
-                size=len(chunk) * 64,
-                ttl=3600.0,
-                reuse_score=0.5,
-                version_id=1,
+                    window_size=window_size,
+                )
             )
-            fragments.append(frag)
         return fragments

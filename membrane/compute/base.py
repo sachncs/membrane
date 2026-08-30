@@ -9,11 +9,22 @@ All methods are described as "asynchronous-friendly" — they
 should avoid long blocking operations when called from an event
 loop. Concrete backends that perform CPU- or GPU-bound work
 typically offload to a thread or process pool.
+
+The base class also provides a shared
+:func:`simulate_prefill_fragment` static helper used as the
+fallback path when a real backend (OpenAI / Ollama /
+Transformers) cannot reach its provider. Every backend used
+to inline the same boilerplate; consolidating it here removes
+three copies and ensures the field defaults (``ttl``,
+``reuse_score``, ``version_id``) stay consistent across
+backends.
 """
 
 from abc import ABC, abstractmethod
 
+from membrane.compute._hash import token_hash
 from membrane.fragment import Fragment
+from membrane.signature import Signature
 
 
 class Backend(ABC):
@@ -26,6 +37,9 @@ class Backend(ABC):
     at process start; expensive resources (e.g., model weights)
     should be loaded lazily on first use.
     """
+
+    #: Default window size used by :meth:`simulate_prefill`.
+    SIMULATE_WINDOW_SIZE: int = 128
 
     @abstractmethod
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
@@ -70,3 +84,50 @@ class Backend(ABC):
         Returns:
             str: Device name.
         """
+
+    @staticmethod
+    def simulate_prefill_fragment(
+        chunk: list[int],
+        chunk_index: int,
+        total_prompt_tokens: int,
+        model_id: str,
+        window_size: int = 128,
+    ) -> Fragment:
+        """Build a placeholder :class:`Fragment` for a single simulated window.
+
+        Shared helper for every backend's fallback path. The
+        returned fragment uses ``token_hash`` for content
+        addressing and stores ``(start_offset, chunk_length)``
+        as the embedding so the chunk is recoverable from the
+        fragment alone.
+
+        Args:
+            chunk: Token IDs for this window.
+            chunk_index: Offset of the chunk in the original
+                prompt (in tokens).
+            total_prompt_tokens: Total prompt size, used to
+                clip the final window's ``token_span``.
+            model_id: Model identifier stamped on the
+                fragment's structural signature.
+            window_size: Window size that produced this chunk.
+
+        Returns:
+            Fragment: Placeholder fragment with deterministic
+            content hash and synthetic embedding.
+        """
+        return Fragment(
+            content_hash=token_hash(chunk),
+            embedding=(float(chunk_index), float(len(chunk))),
+            structural_signature=Signature(
+                model_id=model_id,
+                layer_range=(0, 1),
+                token_span=(chunk_index, min(chunk_index + window_size, total_prompt_tokens) - 1),
+            ),
+            size=len(chunk) * 64,
+            ttl=3600.0,
+            reuse_score=0.5,
+            version_id=1,
+        )
+
+
+__all__ = ["Backend"]
