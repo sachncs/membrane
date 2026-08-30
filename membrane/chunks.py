@@ -12,9 +12,9 @@ Note:
     as a lightweight *transport sharding* mechanism used by the
     :class:`~membrane.transfer.TransferService` and tests,
     not as a byte-stream chunker for raw KV tensors. Real tensor
-    transport goes through :class:`~membrane.transport.http_server
-    .HTTPServer` / :class:`~membrane.transport.grpc_server.GrpcServer`
-    which stream the actual payload.
+    transport goes through :class:`~membrane.transport.http.HTTPServer`
+    / :class:`~membrane.transport.grpc.GrpcServer` which stream the
+    actual payload.
 """
 
 import logging

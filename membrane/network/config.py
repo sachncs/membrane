@@ -8,8 +8,7 @@ replication knobs.
 
 Callers typically construct a :class:`ClusterConfig` once at
 process start (often loading values from environment variables)
-and pass it to the :class:`~membrane.network.cluster
-.Cluster` constructor.
+and pass it to the :class:`~membrane.network.cluster.Cluster` constructor.
 """
 
 from dataclasses import dataclass, field
