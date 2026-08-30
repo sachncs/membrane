@@ -90,7 +90,7 @@ include = ["membrane*"]
 profile = "black"
 
 [tool.mypy]
-exclude = ["membrane/transport/proto/"]
+exclude = ["membrane/transport/proto/", "membrane/wire/v3/wire_v3_pb2*.py"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -100,7 +100,7 @@ pythonpath = ["."]
 [tool.ruff]
 target-version = "py310"
 line-length = 120
-extend-exclude = ["membrane/transport/proto/"]
+extend-exclude = ["membrane/transport/proto/", "membrane/wire/v3/wire_v3_pb2*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
