@@ -91,6 +91,11 @@ def create_app(
         app.state.transport_metrics = None
 
     register_routes(app)
+    try:
+        from membrane.transport.admin import create_admin_router
+        app.include_router(create_admin_router(), prefix="")
+    except ImportError:  # pragma: no cover - admin is a Phase 3.2.6 surface
+        pass
     return app
 
 

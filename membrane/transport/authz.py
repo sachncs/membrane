@@ -81,6 +81,9 @@ def required_scope(method: str, path: str) -> str:
     """Return the scope required for ``method path``.
 
     Falls back to :data:`DEFAULT_SCOPE` for unlisted routes.
+    Routes whose path starts with ``"/admin/"`` are
+    unconditionally admin-scoped (the v3 admin surface
+    always requires operator privilege).
 
     Args:
         method: HTTP method (uppercase).
@@ -89,7 +92,10 @@ def required_scope(method: str, path: str) -> str:
     Returns:
         str: The required scope name.
     """
-    key = (method.upper(), path if path.startswith("/") else f"/{path}")
+    normalized = path if path.startswith("/") else f"/{path}"
+    if normalized.startswith("/admin/"):
+        return "admin"
+    key = (method.upper(), normalized)
     return ROUTE_SCOPES.get(key, DEFAULT_SCOPE)
 
 
