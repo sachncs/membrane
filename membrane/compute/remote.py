@@ -35,6 +35,11 @@ class RemoteLLMBackend(Backend):
             dependency isn't installed / construction failed.
     """
 
+    #: Base URL the subclass must set (e.g.,
+    #: ``"https://api.openai.com/v1"`` or
+    #: ``"http://localhost:11434"``).
+    base_url: str = ""
+
     def __init__(self) -> None:
         self.client: Any | None = None
 

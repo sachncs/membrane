@@ -12,6 +12,7 @@ command and the TUI dashboard.
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -41,7 +42,9 @@ logger = logging.getLogger(__name__)
 # installed fall back to RuntimeError at construction time when
 # the CLI tries to instantiate them — same behavior as the
 # previous inline string-dispatch code.
-COMPUTE_BACKENDS: dict[str, Any] = {}
+ComputeBackendFactory = Callable[[str, str, str], Backend]
+
+COMPUTE_BACKENDS: dict[str, ComputeBackendFactory] = {}
 
 
 def _register_compute_backends() -> None:
