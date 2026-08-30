@@ -115,7 +115,7 @@ class Cluster:
         # updates the shard table and the local Node's primary set
         # in a single critical section so the cluster state stays
         # consistent.
-        self.migrator.transfer_fn = self._migrator_callback
+        self.migrator.transfer_fn = self.on_peer_leave_rehome
         self.heartbeat = Heartbeat(self.membership, config, self.stop_event, self.running)
         self.failure = Failure(
             self.membership,
@@ -199,7 +199,7 @@ class Cluster:
         """One-shot bootstrap wrapper for the daemon thread."""
         bootstrap(self.membership, self.config, self.node_id, self.host, self.port)
 
-    def _migrator_callback(self, content_hash: str, leaving_peer: str) -> None:
+    def on_peer_leave_rehome(self, content_hash: str, leaving_peer: str) -> None:
         """Default ``Migrator.transfer_fn`` that delegates to :meth:`Shard.migrate_primary`."""
         self.shard_manager.migrate_primary(
             content_hash,

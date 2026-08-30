@@ -181,7 +181,7 @@ class TransferService:
         self.cluster_manager = cluster_manager
         self.local_node = local_node
 
-    def _resolve_endpoint(self, node_or_id: Node | str) -> LocalEndpoint | RemoteEndpoint:
+    def resolve_endpoint(self, node_or_id: Node | str) -> LocalEndpoint | RemoteEndpoint:
         return _resolve(node_or_id, self.cluster_manager)
 
     # ------------------------------------------------------------------
@@ -247,7 +247,7 @@ class TransferService:
             version id, or ``None`` when the inventory cannot be
             obtained for a remote node.
         """
-        endpoint = self._resolve_endpoint(node)
+        endpoint = self.resolve_endpoint(node)
         result = endpoint.inventory()
         if isinstance(result, dict):
             return result
@@ -289,8 +289,8 @@ class TransferService:
             peer client, missing fragment, refused replication).
         """
         try:
-            src_endpoint = self._resolve_endpoint(source)
-            tgt_endpoint = self._resolve_endpoint(target)
+            src_endpoint = self.resolve_endpoint(source)
+            tgt_endpoint = self.resolve_endpoint(target)
         except ValueError:
             return False
 
@@ -320,8 +320,8 @@ class TransferService:
     ) -> list[str]:
         """Synchronize all missing fragments from ``source`` to ``target``."""
         try:
-            src_endpoint = self._resolve_endpoint(source)
-            tgt_endpoint = self._resolve_endpoint(target)
+            src_endpoint = self.resolve_endpoint(source)
+            tgt_endpoint = self.resolve_endpoint(target)
         except ValueError:
             return []
 
@@ -405,7 +405,7 @@ class TransferService:
             return False
         src_endpoint = _RemoteEndpoint(source_id, self.cluster_manager)
         try:
-            tgt_endpoint = self._resolve_endpoint(target)
+            tgt_endpoint = self.resolve_endpoint(target)
         except ValueError:
             return False
         if isinstance(tgt_endpoint, _LocalEndpoint):
