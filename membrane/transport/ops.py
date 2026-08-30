@@ -24,6 +24,7 @@ import time
 from typing import Any, cast
 from urllib.request import Request, urlopen
 
+from membrane.auth import AuthContext
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
 from membrane.gc import TombstoneTable
@@ -71,6 +72,7 @@ def op_heartbeat(
     node: Node | None,
     cluster: Cluster | None = None,
     headers: dict[str, str] | None = None,
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``GET /heartbeat`` — node health and load snapshot.
 
@@ -139,7 +141,7 @@ def op_metrics(
     )
 
 
-def op_inventory(node: Node | None) -> tuple[int, JsonDict]:
+def op_inventory(node: Node | None, auth_context: AuthContext | None = None) -> tuple[int, JsonDict]:
     """``GET /inventory`` — node's inventory digest."""
     if node is None:
         return _ok({"node_id": "", "digest": {}})
@@ -147,14 +149,18 @@ def op_inventory(node: Node | None) -> tuple[int, JsonDict]:
     return _ok({"node_id": node.node_id, "digest": digest})
 
 
-def op_peers(cluster: Cluster | None) -> tuple[int, JsonDict]:
+def op_peers(cluster: Cluster | None, auth_context: AuthContext | None = None) -> tuple[int, JsonDict]:
     """``GET /peers`` — cluster membership view."""
     if cluster is None:
         return _ok({"error": "cluster manager not enabled"})
     return _ok({"peers": cluster.membership.to_json()})
 
 
-def op_retrieve(node: Node | None, content_hash: str) -> tuple[int, JsonDict]:
+def op_retrieve(
+    node: Node | None,
+    content_hash: str,
+    auth_context: AuthContext | None = None,
+) -> tuple[int, JsonDict]:
     """``GET /retrieve?content_hash=...``."""
     if node is None:
         return _ok({"found": False, "fragment": None})
@@ -172,6 +178,7 @@ def op_store(
     cluster: Cluster | None = None,
     quorum_attempt: object | None = None,
     draining: bool = False,
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /store`` — store a fragment with a configured consistency level.
 
@@ -317,6 +324,7 @@ def _replica_peers(cluster: Cluster, content_hash: str, count: int) -> list[Peer
 def op_replicate(
     node: Node | None,
     fragment_payload: JsonDict,
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /replicate`` — store a fragment as a non-primary replica."""
     if node is None:
@@ -331,6 +339,7 @@ def op_prefill(
     backend: Backend | None,
     prompt_tokens: list[int],
     model_id: str = "default",
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /prefill`` — run prefill and store fragments as primary."""
     if node is None:
@@ -351,6 +360,7 @@ def op_sync(
     node: Node | None,
     transfer_service: TransferService,
     source_url: str,
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /sync`` — pull missing fragments from a source URL."""
     if not source_url:
@@ -386,6 +396,7 @@ def op_join(
     port: int,
     headers: dict[str, str] | None = None,
     authenticator: object | None = None,
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /join`` — add a peer to the cluster.
 
@@ -456,6 +467,7 @@ def op_leave(
     cluster: Cluster | None,
     node_id: str,
     graceful: bool = True,
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /leave``.
 
@@ -503,7 +515,11 @@ def op_leave(
     return _ok({"success": True, "graceful": False})
 
 
-def op_gossip(cluster: Cluster | None, data: JsonDict) -> tuple[int, JsonDict]:
+def op_gossip(
+    cluster: Cluster | None,
+    data: JsonDict,
+    auth_context: AuthContext | None = None,
+) -> tuple[int, JsonDict]:
     """``POST /gossip``."""
     if cluster is None:
         return _ok({"error": "cluster manager not enabled"})
@@ -516,6 +532,7 @@ def op_delete(
     content_hash: str,
     node_id: str,
     tombstone_until: float | None = None,
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /delete`` — soft-delete a fragment on the local node.
 
@@ -553,6 +570,7 @@ def op_tombstone(
     content_hash: str,
     until: float,
     node_id: str,
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /tombstone`` — record a soft-delete mark without removing.
 
@@ -580,6 +598,7 @@ def op_purge(
     node: Node | None,
     tombstones: TombstoneTable | None,
     content_hash: str,
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /purge`` -- admin force-delete bypassing the soft-delete.
 
@@ -606,6 +625,7 @@ def op_verify_received(
     content_hash: str,
     claimed_size: int,
     claimed_sha256_hex: str,
+    auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /verify`` -- confirm a peer's claimed canonical bytes.
 

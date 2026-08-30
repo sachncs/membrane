@@ -2,8 +2,9 @@
 
 This module binds the operations in :mod:`membrane.transport.ops`
 to FastAPI endpoints. The Pydantic models at the top describe the
-request bodies; the handlers are thin shims that pass the validated
-request into the corresponding operation.
+request bodies; the handlers delegate to the corresponding
+operation after running the per-route scope check from
+:mod:`membrane.transport.authz`.
 
 The stdlib HTTP version lives in :mod:`membrane.transport.routes`
 and shares the same URL contract. Both transports delegate to the
@@ -20,10 +21,13 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
+from membrane.auth import AuthContext
 from membrane.compute.cpu import CPU
 from membrane.serialization import JsonDict
+from membrane.transport.authz import enforce_route_scope
 from membrane.transport.ops import (
     MAX_BODY_BYTES,
+    op_delete,
     op_gossip,
     op_heartbeat,
     op_inventory,
@@ -32,10 +36,13 @@ from membrane.transport.ops import (
     op_metrics,
     op_peers,
     op_prefill,
+    op_purge,
     op_replicate,
     op_retrieve,
     op_store,
     op_sync,
+    op_tombstone,
+    op_verify_received,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,9 +53,10 @@ def _authenticator_for(app: FastAPI) -> object | None:
 
     When ``app.state.authenticator`` was populated by the Server at
     startup with an
-    :class:`~membrane.auth.mtls.MTLSAuthenticator`, ``op_join``
-    and ``op_heartbeat`` consume it. Absent the cluster is treated
-    as non-mTLS (single-node deployments).
+    :class:`~membrane.auth.mtls.MTLSAuthenticator`, the route
+    handler calls :func:`membrane.transport.authz.enforce_route_scope`
+    against it. Absent the cluster is treated as non-mTLS
+    (single-node deployments).
     """
     return getattr(app.state, "authenticator", None)
 
@@ -64,6 +72,25 @@ def _peer_headers(request: Request) -> dict[str, str]:
     return {k.lower(): v for k, v in request.headers.items()}
 
 
+def _scope(request: Request, method: str, path: str) -> AuthContext:
+    """Run the per-route scope check.
+
+    Args:
+        request: The inbound FastAPI request.
+        method: HTTP method.
+        path: URL path.
+
+    Returns:
+        AuthContext: The authenticated caller's context.
+    """
+    return enforce_route_scope(
+        authenticator=_authenticator_for(request.app),
+        method=method,
+        path=path,
+        headers=_peer_headers(request),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pydantic request models
 # ---------------------------------------------------------------------------
@@ -72,7 +99,7 @@ def _peer_headers(request: Request) -> dict[str, str]:
 class FragmentPayload(BaseModel):
     """Wire format for a serialized Fragment.
 
-    Mirrors the 2.0 canonical schema in
+    Mirrors the 3.0 canonical schema in
     :mod:`membrane.serialization`. The :class:`~membrane.identity.PayloadIdentity`
     is carried as a nested ``identity`` object; ranges are JSON
     arrays of two ints; ``shape`` is a list of ints; ``consistency``
@@ -80,7 +107,8 @@ class FragmentPayload(BaseModel):
     integer from :class:`~membrane.hlc.HLC`.
     """
 
-    schema_version: int = 4
+    schema_version: int = 5
+    tenant_id: str = "public"
     identity: dict[str, Any]
     payload_ref: str | None = None
     payload_size: int
@@ -96,6 +124,7 @@ class FragmentPayload(BaseModel):
         :func:`membrane.serialization.from_dict`."""
         return {
             "schema_version": self.schema_version,
+            "tenant_id": self.tenant_id,
             "identity": self.identity,
             "payload_ref": self.payload_ref,
             "payload_size": self.payload_size,
@@ -156,18 +185,48 @@ class GossipRequest(BaseModel):
     inventory_digest: dict[str, int] = {}
 
 
+class DeleteRequest(BaseModel):
+    """``POST /delete`` body."""
+
+    content_hash: str
+    node_id: str
+    tombstone_until: float | None = None
+
+
+class TombstoneRequest(BaseModel):
+    """``POST /tombstone`` body."""
+
+    content_hash: str
+    until: float
+    node_id: str
+
+
+class PurgeRequest(BaseModel):
+    """``POST /purge`` body."""
+
+    content_hash: str
+
+
+class VerifyRequest(BaseModel):
+    """``POST /verify`` body."""
+
+    content_hash: str
+    claimed_size: int
+    claimed_sha256_hex: str
+
+
 # ---------------------------------------------------------------------------
 # Endpoint handlers
 # ---------------------------------------------------------------------------
 
 
 def livez(_app: FastAPI) -> dict[str, str]:
-    """``GET /livez`` — liveness probe."""
+    """``GET /livez`` — liveness probe (public)."""
     return {"status": "alive"}
 
 
 def readyz(app: FastAPI):
-    """``GET /readyz`` — readiness probe (deep)."""
+    """``GET /readyz`` — readiness probe (public, deep)."""
     if not app.state.node:
         return JSONResponse({"status": "no node"}, status_code=503)
     stats = app.state.node.get_stats()
@@ -191,10 +250,11 @@ def register_routes(app: FastAPI) -> None:
     """Register every Membrane HTTP route on ``app``.
 
     Each route delegates to the corresponding operation in
-    :mod:`membrane.transport.ops`. The Pydantic models at the top
-    of this module validate request bodies; the inline lambdas
-    capture ``app`` so the registered functions take only the
-    request body.
+    :mod:`membrane.transport.ops` after running the per-route
+    scope check in :mod:`membrane.transport.authz`. The Pydantic
+    models at the top of this module validate request bodies; the
+    inline lambdas capture ``app`` so the registered functions
+    take only the request body.
 
     Args:
         app: The FastAPI app to configure.
@@ -217,26 +277,38 @@ def register_routes(app: FastAPI) -> None:
     app.add_api_route("/peers", lambda: _peers(app), methods=["GET"])
 
     # POST endpoints.
-    def store_handler(req: StoreRequest):
-        return _store(app, req)
+    def store_handler(req: StoreRequest, request: Request):
+        return _store(app, req, request)
 
-    def replicate_handler(req: ReplicateRequest):
-        return _replicate(app, req)
+    def replicate_handler(req: ReplicateRequest, request: Request):
+        return _replicate(app, req, request)
 
-    def sync_handler(req: SyncRequest):
-        return _sync(app, req)
+    def sync_handler(req: SyncRequest, request: Request):
+        return _sync(app, req, request)
 
-    def prefill_handler(req: PrefillRequest):
-        return _prefill(app, req)
+    def prefill_handler(req: PrefillRequest, request: Request):
+        return _prefill(app, req, request)
 
     def join_handler(req: JoinRequest, request: Request):
         return _join(app, req, request)
 
-    def leave_handler(req: LeaveRequest):
-        return _leave(app, req)
+    def leave_handler(req: LeaveRequest, request: Request):
+        return _leave(app, req, request)
 
-    def gossip_handler(req: GossipRequest):
-        return _gossip(app, req)
+    def gossip_handler(req: GossipRequest, request: Request):
+        return _gossip(app, req, request)
+
+    def delete_handler(req: DeleteRequest, request: Request):
+        return _delete(app, req, request)
+
+    def tombstone_handler(req: TombstoneRequest, request: Request):
+        return _tombstone(app, req, request)
+
+    def purge_handler(req: PurgeRequest, request: Request):
+        return _purge(app, req, request)
+
+    def verify_handler(req: VerifyRequest, request: Request):
+        return _verify(app, req, request)
 
     app.add_api_route("/store", store_handler, methods=["POST"], response_model=None)
     app.add_api_route("/replicate", replicate_handler, methods=["POST"], response_model=None)
@@ -245,13 +317,19 @@ def register_routes(app: FastAPI) -> None:
     app.add_api_route("/join", join_handler, methods=["POST"], response_model=None)
     app.add_api_route("/leave", leave_handler, methods=["POST"], response_model=None)
     app.add_api_route("/gossip", gossip_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/delete", delete_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/tombstone", tombstone_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/purge", purge_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/verify", verify_handler, methods=["POST"], response_model=None)
 
 
 def _heartbeat(app: FastAPI, request: Request):
+    context = _scope(request, "GET", "/heartbeat")
     status, body = op_heartbeat(
         app.state.node,
         cluster=getattr(app.state, "cluster_manager", None),
         headers=_peer_headers(request),
+        auth_context=context,
     )
     return _respond(status, body)
 
@@ -286,7 +364,8 @@ def _retrieve(app: FastAPI, content_hash: str):
     return _respond(status, body)
 
 
-def _store(app: FastAPI, req: StoreRequest):
+def _store(app: FastAPI, req: StoreRequest, request: Request):
+    context = _scope(request, "POST", "/store")
     status, body = op_store(
         app.state.node,
         req.fragment.to_wire_dict(),
@@ -296,6 +375,7 @@ def _store(app: FastAPI, req: StoreRequest):
         draining=bool(getattr(app.state.server, "is_draining", False))
         if hasattr(app.state, "server")
         else False,
+        auth_context=context,
     )
     return _respond(status, body)
 
@@ -308,30 +388,41 @@ def _respond_with_retry_after(status: int, body: JsonDict, retry_after: int) -> 
     )
 
 
-def _replicate(app: FastAPI, req: ReplicateRequest):
+def _replicate(app: FastAPI, req: ReplicateRequest, request: Request):
+    context = _scope(request, "POST", "/replicate")
     status, body = op_replicate(
         app.state.node,
         req.fragment.to_wire_dict(),
+        auth_context=context,
     )
     return _respond(status, body)
 
 
-def _sync(app: FastAPI, req: SyncRequest):
-    status, body = op_sync(app.state.node, app.state.transfer_service, req.source_url)
+def _sync(app: FastAPI, req: SyncRequest, request: Request):
+    context = _scope(request, "POST", "/sync")
+    status, body = op_sync(
+        app.state.node,
+        app.state.transfer_service,
+        req.source_url,
+        auth_context=context,
+    )
     return _respond(status, body)
 
 
-def _prefill(app: FastAPI, req: PrefillRequest):
+def _prefill(app: FastAPI, req: PrefillRequest, request: Request):
+    context = _scope(request, "POST", "/prefill")
     status, body = op_prefill(
         app.state.node,
         app.state.compute_backend or CPU(),
         req.prompt_tokens,
         req.model_id,
+        auth_context=context,
     )
     return _respond(status, body)
 
 
 def _join(app: FastAPI, req: JoinRequest, request: Request):
+    context = _scope(request, "POST", "/join")
     status, body = op_join(
         app.state.cluster_manager,
         req.node_id,
@@ -339,17 +430,76 @@ def _join(app: FastAPI, req: JoinRequest, request: Request):
         req.port,
         headers=_peer_headers(request),
         authenticator=_authenticator_for(app),
+        auth_context=context,
     )
     return _respond(status, body)
 
 
-def _leave(app: FastAPI, req: LeaveRequest):
-    status, body = op_leave(app.state.cluster_manager, req.node_id)
+def _leave(app: FastAPI, req: LeaveRequest, request: Request):
+    context = _scope(request, "POST", "/leave")
+    status, body = op_leave(
+        app.state.cluster_manager,
+        req.node_id,
+        auth_context=context,
+    )
     return _respond(status, body)
 
 
-def _gossip(app: FastAPI, req: GossipRequest):
-    status, body = op_gossip(app.state.cluster_manager, req.model_dump())
+def _gossip(app: FastAPI, req: GossipRequest, request: Request):
+    context = _scope(request, "POST", "/gossip")
+    status, body = op_gossip(
+        app.state.cluster_manager,
+        req.model_dump(),
+        auth_context=context,
+    )
+    return _respond(status, body)
+
+
+def _delete(app: FastAPI, req: DeleteRequest, request: Request):
+    context = _scope(request, "POST", "/delete")
+    status, body = op_delete(
+        app.state.node,
+        getattr(app.state, "tombstones", None),
+        req.content_hash,
+        req.node_id,
+        req.tombstone_until,
+        auth_context=context,
+    )
+    return _respond(status, body)
+
+
+def _tombstone(app: FastAPI, req: TombstoneRequest, request: Request):
+    context = _scope(request, "POST", "/tombstone")
+    status, body = op_tombstone(
+        getattr(app.state, "tombstones", None),
+        req.content_hash,
+        req.until,
+        req.node_id,
+        auth_context=context,
+    )
+    return _respond(status, body)
+
+
+def _purge(app: FastAPI, req: PurgeRequest, request: Request):
+    context = _scope(request, "POST", "/purge")
+    status, body = op_purge(
+        app.state.node,
+        getattr(app.state, "tombstones", None),
+        req.content_hash,
+        auth_context=context,
+    )
+    return _respond(status, body)
+
+
+def _verify(app: FastAPI, req: VerifyRequest, request: Request):
+    context = _scope(request, "POST", "/verify")
+    status, body = op_verify_received(
+        app.state.node,
+        req.content_hash,
+        req.claimed_size,
+        req.claimed_sha256_hex,
+        auth_context=context,
+    )
     return _respond(status, body)
 
 
