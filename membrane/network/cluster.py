@@ -82,7 +82,7 @@ class Cluster:
         hash_ring: Ring | None = None,
         shard_manager: Shard | None = None,
         failure_detector: FailureDetector | None = None,
-        migrator: Migrator | None = None,
+        migrator: Migrator | None = None, server: object | None = None,
         tombstones: TombstoneTable | None = None,
     ) -> None:
         self.node_id = node_id

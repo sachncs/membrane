@@ -293,10 +293,43 @@ class Membership:
                     peer.lease_until > 0
                     and peer.healthy
                     and now > peer.lease_until
+                    and self.mark_suspect(peer_id)
                 ):
-                    if self.mark_suspect(peer_id):
-                        flagged.append(peer_id)
+                    flagged.append(peer_id)
         return flagged
+
+    def leave_cluster(self, local_node_id: str | None = None) -> int:
+        """Best-effort graceful leave. Fires ``POST /leave`` to every healthy peer.
+
+        Returns the number of peers contacted; transport failures
+        are logged and skipped so a partial cluster can still
+        process the leave without blocking shutdown.
+
+        Args:
+            local_node_id: Identifier of the leaving node. When
+                ``None`` we read ``self.node_id``.
+
+        Returns:
+            int: Number of peers the leave was dispatched to.
+        """
+        leaving = local_node_id or self.node_id
+        dispatched = 0
+        with self.lock:
+            peers = list(self.peers.values())
+        for peer in peers:
+            client = self.get_client(peer.node_id)
+            if client is None:
+                continue
+            try:
+                if client.leave_cluster(leaving):
+                    dispatched += 1
+            except Exception as exc:
+                logger.debug(
+                    "leave_cluster delivery to %s failed: %s",
+                    peer.node_id,
+                    exc,
+                )
+        return dispatched
 
     def record_peer_cn(self, node_id: str, cn: str) -> None:
         """Stamp the verified peer cert CN onto a membership record.

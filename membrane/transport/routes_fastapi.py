@@ -291,6 +291,9 @@ def _store(app: FastAPI, req: StoreRequest):
         req.is_primary,
         cluster=getattr(app.state, "cluster_manager", None),
         quorum_attempt=getattr(app.state, "quorum_attempt", None),
+        draining=bool(getattr(app.state.server, "is_draining", False))
+        if hasattr(app.state, "server")
+        else False,
     )
     return _respond(status, body)
 
@@ -304,7 +307,10 @@ def _respond_with_retry_after(status: int, body: JsonDict, retry_after: int) -> 
 
 
 def _replicate(app: FastAPI, req: ReplicateRequest):
-    status, body = op_replicate(app.state.node, req.fragment.to_wire_dict())
+    status, body = op_replicate(
+        app.state.node,
+        req.fragment.to_wire_dict(),
+    )
     return _respond(status, body)
 
 

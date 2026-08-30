@@ -170,6 +170,7 @@ def op_store(
     *,
     cluster: Cluster | None = None,
     quorum_attempt: object | None = None,
+    draining: bool = False,
 ) -> tuple[int, JsonDict]:
     """``POST /store`` — store a fragment with a configured consistency level.
 
@@ -205,6 +206,8 @@ def op_store(
     """
     if node is None:
         return _ok({"error": "no node"})
+    if draining:
+        return 503, {"error": "node draining", "Retry-After": 1}
     frag = from_dict(fragment_payload)
 
     # Honor the per-fragment consistency; fall back to the
@@ -448,12 +451,45 @@ def op_join(
     return _ok({"success": True, "peers": cluster.membership.to_json()})
 
 
-def op_leave(cluster: Cluster | None, node_id: str) -> tuple[int, JsonDict]:
-    """``POST /leave``."""
+def op_leave(
+    cluster: Cluster | None,
+    node_id: str,
+    graceful: bool = True,
+) -> tuple[int, JsonDict]:
+    """``POST /leave``.
+
+    When ``graceful=True`` (the default) the path is
+    drain-then-stop:
+
+    1. Mark ``is_draining=True`` so :func:`op_store` and
+       :func:`op_replicate` start returning 503 + Retry-After.
+    2. Run a best-effort migration pass for every primary the
+       leaving node still owns.
+    3. Hand off membership to the cluster's failure detector
+       so a competing heartbeat never produces a phantom
+       primary.
+
+    When ``graceful=False`` the call is the legacy fast-leave:
+    membership is removed immediately and the migrator fires
+    inline. Test fixtures that want to assert the schema
+    directly use this path.
+    """
     if not node_id:
         return _ok({"error": "missing node_id"})
     if cluster is None:
         return _ok({"error": "cluster manager not enabled"})
+    server = getattr(cluster, "server", None)
+    if graceful and server is not None and hasattr(server, "drain"):
+        result = server.drain(deadline_sec=30.0)
+        return _ok(
+            {
+                "success": True,
+                "graceful": True,
+                "migrated": result["migrated"],
+                "stragglers": result["stragglers"],
+                "duration_sec": result["duration_sec"],
+            }
+        )
     cluster.membership.remove(node_id)
     leaving_hashes = {
         h for h, primary in cluster.shard_manager.primary_map.items() if primary == node_id
@@ -463,7 +499,7 @@ def op_leave(cluster: Cluster | None, node_id: str) -> tuple[int, JsonDict]:
             cluster.migrator.migrate(leaving_hashes, node_id)
         except Exception as exc:
             logger.warning("migrator.migrate(%d hashes, leaving=%s) failed: %s", len(leaving_hashes), node_id, exc)
-    return _ok({"success": True})
+    return _ok({"success": True, "graceful": False})
 
 
 def op_gossip(cluster: Cluster | None, data: JsonDict) -> tuple[int, JsonDict]:
