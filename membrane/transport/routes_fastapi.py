@@ -19,7 +19,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, conlist
 
 from membrane.auth import AuthContext
 from membrane.compute.cpu import CPU
@@ -108,16 +108,16 @@ class FragmentPayload(BaseModel):
     """
 
     schema_version: int = 5
-    tenant_id: str = "public"
-    identity: dict[str, Any]
-    payload_ref: str | None = None
-    payload_size: int
+    tenant_id: str = Field(default="public", max_length=128)
+    identity: dict[str, Any] = Field(max_length=64)
+    payload_ref: str | None = Field(default=None, max_length=512)
+    payload_size: int = Field(ge=0, le=MAX_BODY_BYTES)
     ttl: float
     reuse_score: float
     version_id: int
     consistency: str = "strong"
     hlc: int = 0
-    fingerprint_compat: str = ""
+    fingerprint_compat: str = Field(default="", max_length=128)
 
     def to_wire_dict(self) -> JsonDict:
         """Transform into the canonical wire dict accepted by
@@ -151,68 +151,81 @@ class ReplicateRequest(BaseModel):
 
 
 class PrefillRequest(BaseModel):
-    """``POST /prefill`` body."""
+    """``POST /prefill`` body.
 
-    prompt_tokens: list[int]
-    model_id: str = "default"
+    The ``prompt_tokens`` cap is generous (32768) so a long
+    agentic prompt still fits; the per-token range is restricted
+    to a valid int32 so a hostile payload cannot smuggle
+    float / NaN values into the wire.
+    """
+
+    prompt_tokens: conlist(int, max_length=32768)  # type: ignore[valid-type]
+    model_id: str = Field(default="default", max_length=256)
 
 
 class SyncRequest(BaseModel):
     """``POST /sync`` body."""
 
-    source_url: str
+    source_url: str = Field(max_length=2048)
 
 
 class JoinRequest(BaseModel):
     """``POST /join`` body."""
 
-    node_id: str
-    host: str
-    port: int
+    node_id: str = Field(min_length=1, max_length=128)
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(ge=1, le=65535)
 
 
 class LeaveRequest(BaseModel):
     """``POST /leave`` body."""
 
-    node_id: str
+    node_id: str = Field(min_length=1, max_length=128)
 
 
 class GossipRequest(BaseModel):
-    """``POST /gossip`` body."""
+    """``POST /gossip`` body.
 
-    peers: list[dict[str, Any]] = []
-    fragment_locations: dict[str, list[str]] = {}
-    inventory_digest: dict[str, int] = {}
+    The peers + fragment_locations lists are capped so a
+    malicious peer cannot blow out the gossip budget with a
+    million-element payload.
+    """
+
+    peers: list[dict[str, Any]] = Field(default_factory=list, max_length=4096)
+    fragment_locations: dict[str, list[str]] = Field(
+        default_factory=dict, max_length=131072
+    )
+    inventory_digest: dict[str, int] = Field(default_factory=dict, max_length=131072)
 
 
 class DeleteRequest(BaseModel):
     """``POST /delete`` body."""
 
-    content_hash: str
-    node_id: str
+    content_hash: str = Field(min_length=1, max_length=128)
+    node_id: str = Field(min_length=1, max_length=128)
     tombstone_until: float | None = None
 
 
 class TombstoneRequest(BaseModel):
     """``POST /tombstone`` body."""
 
-    content_hash: str
+    content_hash: str = Field(min_length=1, max_length=128)
     until: float
-    node_id: str
+    node_id: str = Field(min_length=1, max_length=128)
 
 
 class PurgeRequest(BaseModel):
     """``POST /purge`` body."""
 
-    content_hash: str
+    content_hash: str = Field(min_length=1, max_length=128)
 
 
 class VerifyRequest(BaseModel):
     """``POST /verify`` body."""
 
-    content_hash: str
-    claimed_size: int
-    claimed_sha256_hex: str
+    content_hash: str = Field(min_length=1, max_length=128)
+    claimed_size: int = Field(ge=0, le=MAX_BODY_BYTES)
+    claimed_sha256_hex: str = Field(min_length=64, max_length=64)
 
 
 # ---------------------------------------------------------------------------
