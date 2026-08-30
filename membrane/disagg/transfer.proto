@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package membrane.disagg;
+
+// PrefillRequest: client -> server.
+message PrefillRequest {
+  string request_id = 1;
+  string model_id = 2;
+  repeated int64 token_ids = 3;
+  repeated int64 token_type_ids = 4;
+  int32 max_decode_tokens = 5;
+  string fingerprint = 6;
+}
+
+// PrefillResponse: server -> client.
+message PrefillResponse {
+  string request_id = 1;
+  string kv_handle = 2;
+  double prefill_ms = 3;
+  int32 prompt_len = 4;
+  int32 cached_prefix_len = 5;
+}
+
+// BatchPrefillRequest: list of PrefillRequest.
+message BatchPrefillRequest {
+  repeated PrefillRequest requests = 1;
+}
+
+// BatchPrefillResponse: list of PrefillResponse + total elapsed.
+message BatchPrefillResponse {
+  repeated PrefillResponse responses = 1;
+  double elapsed_ms = 2;
+}
+
+// DecodeRequest: client -> server.
+message DecodeRequest {
+  string request_id = 1;
+  string kv_handle = 2;
+  string model_id = 3;
+  int32 max_tokens = 4;
+}
+
+// DecodeResponse: server -> client.
+message DecodeResponse {
+  string request_id = 1;
+  repeated int64 token_ids = 2;
+  bool finished = 3;
+}
+
+// Service definition.
+service Transfer {
+  rpc Prefill(PrefillRequest) returns (PrefillResponse);
+  rpc BatchPrefill(BatchPrefillRequest) returns (BatchPrefillResponse);
+  rpc Decode(DecodeRequest) returns (DecodeResponse);
+}
