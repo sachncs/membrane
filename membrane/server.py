@@ -250,7 +250,7 @@ class Server:
                 )
             self.compute_backend = factory(llm_url, llm_model, api_key)
 
-        self.persistence = self._build_persistence(redis_url)
+        self.persistence = self.build_persistence(redis_url)
 
         self.cluster_manager: Cluster | None = None
         self.transfer_service = TransferService(
@@ -267,11 +267,11 @@ class Server:
             )
             self.transfer_service.cluster_manager = self.cluster_manager
 
-        self.transport = self._build_transport(transport, host, port)
+        self.transport = self.build_transport(transport, host, port)
         self.running = False
         self.thread: threading.Thread | None = None
 
-    def _build_persistence(self, redis_url: str) -> Any:
+    def build_persistence(self, redis_url: str) -> Any:
         from membrane.persistence.cache import CachingPersistence
 
         backend: Any = Memory()
@@ -287,7 +287,7 @@ class Server:
                 logger.warning("Redis connection failed (%s); using in-memory persistence", exc)
         return CachingPersistence(backend)
 
-    def _build_transport(self, transport: str, host: str, port: int) -> Any:
+    def build_transport(self, transport: str, host: str, port: int) -> Any:
         if transport == "http":
             return FastAPIServer(
                 node=self.node,
