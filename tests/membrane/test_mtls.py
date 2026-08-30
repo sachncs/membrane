@@ -103,8 +103,14 @@ class TestScopesForCN:
 
 
 class TestPeerCNAllowed:
-    def test_when_allowed_cns_is_none_every_passes(self):
+    def test_default_allowed_cns_is_empty_set_means_deny_all(self):
+        """Empty frozenset = deny every CN. Operators must opt in."""
         cfg = MTLSConfig(server_cert_pem="X", server_key_pem="X", ca_bundle_pem="X")
+        assert peer_cn_allowed(cfg, "anyone") is False
+
+    def test_allow_all_signed_by_ca_helper_accepts_everyone(self):
+        """The dev-only helper bypasses the allowlist."""
+        cfg = MTLSConfig.allow_all_signed_by_ca(server_cert_pem="X", server_key_pem="X", ca_bundle_pem="X")
         assert peer_cn_allowed(cfg, "anyone") is True
 
     def test_when_listed_passes(self):
@@ -121,7 +127,6 @@ class TestPeerCNAllowed:
         assert parse_peer_cn_header({"x-ssl-client-cn": "   "}) is None
 
     def test_parse_case_insensitive(self):
-        # FastAPI normalizes header names; the helper accepts either.
         assert parse_peer_cn_header({"X-ssl-CLIENT-cn": "alpha"}) == "alpha"
 
 

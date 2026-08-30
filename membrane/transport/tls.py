@@ -60,11 +60,13 @@ class MTLSConfig:
             every inbound connection must present a client
             certificate signed by the CA bundle. ``False``
             permits opportunistic TLS without a client identity.
-        allowed_cns: Optional set of CN strings the cluster
-            accepts. The :class:`~membrane.auth.mtls.mTLSAuthenticator`
+        allowed_cns: Set of CN strings the cluster accepts. The
+            :class:`~membrane.auth.mtls.mTLSAuthenticator`
             rejects any peer cert whose CN is not in this set.
-            ``None`` (the default) accepts every CN signed by the
-            CA bundle.
+            The default is an **empty** frozenset (deny-all); an
+            explicit :meth:`allow_all_signed_by_ca` opt-in is
+            the only way to permit CA-signed peers in
+            development.
         client_cert_pem: PEM-encoded client certificate, used for
             outbound HTTPS calls (``Peer.request_with_retry``).
         client_key_pem: PEM-encoded client private key.
@@ -79,7 +81,7 @@ class MTLSConfig:
     server_key_pem: str
     ca_bundle_pem: str
     require_client_cert: bool = True
-    allowed_cns: frozenset[str] | None = None
+    allowed_cns: frozenset[str] = field(default_factory=frozenset)
     client_cert_pem: str | None = None
     client_key_pem: str | None = None
     min_tls_version: ssl.TLSVersion = ssl.TLSVersion.TLSv1_2
@@ -90,10 +92,70 @@ class MTLSConfig:
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"MTLSConfig.{field_name} must be a non-empty PEM string")
-        if self.require_client_cert and self.allowed_cns is not None and not self.allowed_cns:
-            raise ValueError(
-                "MTLSConfig.allowed_cns must be None or non-empty when client certs are required"
-            )
+
+    @classmethod
+    def allow_all_signed_by_ca(
+        cls,
+        server_cert_pem: str,
+        server_key_pem: str,
+        ca_bundle_pem: str,
+        require_client_cert: bool = True,
+        client_cert_pem: str | None = None,
+        client_key_pem: str | None = None,
+        min_tls_version: ssl.TLSVersion = ssl.TLSVersion.TLSv1_2,
+    ) -> MTLSConfig:
+        """Build an mTLS config that accepts every CA-signed CN.
+
+        Production deployments must set an explicit
+        :attr:`allowed_cns`. This helper exists for local
+        development, CI, and integration tests where the
+        CN-allowlist discipline does not add value.
+
+        Args:
+            server_cert_pem: PEM-encoded server certificate.
+            server_key_pem: PEM-encoded server private key.
+            ca_bundle_pem: PEM-encoded CA bundle.
+            require_client_cert: Whether to require client certs.
+            client_cert_pem: Optional outbound client cert PEM.
+            client_key_pem: Optional outbound client key PEM.
+            min_tls_version: Lowest TLS version to negotiate.
+
+        Returns:
+            MTLSConfig: A configuration that accepts every
+            CN signed by the CA bundle.
+        """
+        return cls(
+            server_cert_pem=server_cert_pem,
+            server_key_pem=server_key_pem,
+            ca_bundle_pem=ca_bundle_pem,
+            require_client_cert=require_client_cert,
+            allowed_cns=ALLOW_ALL_MARKER,  # type: ignore[arg-type]
+            client_cert_pem=client_cert_pem,
+            client_key_pem=client_key_pem,
+            min_tls_version=min_tls_version,
+        )
+
+
+class _AllowAll:
+    """Sentinel for the permissive allow-list mode.
+
+    Returns True from :func:`peer_cn_allowed` regardless of the
+    CN. Operators opt into this mode via
+    :meth:`MTLSConfig.allow_all_signed_by_ca` so dev / CI
+    clusters can talk to any CA-signed peer.
+    """
+
+    def __contains__(self, cn: object) -> bool:
+        return True
+
+    def __iter__(self):
+        return iter(())
+
+    def __bool__(self) -> bool:
+        return True
+
+
+ALLOW_ALL_MARKER: object = _AllowAll()
 
 
 def build_server_context(config: MTLSConfig) -> ssl.SSLContext:
@@ -176,9 +238,11 @@ def parse_peer_cn_header(headers: dict[str, str]) -> str | None:
 def peer_cn_allowed(config: MTLSConfig, cn: str) -> bool:
     """Return whether ``cn`` is permitted by the cluster's allow-list.
 
-    When :attr:`MTLSConfig.allowed_cns` is ``None`` every CN
-    signed by the CA bundle is permitted. Otherwise only listed
-    CNs pass.
+    The default :attr:`MTLSConfig.allowed_cns` is an empty
+    frozenset, which denies every peer until an operator
+    explicit opts in. To accept every CA-signed peer, build the
+    config with :meth:`MTLSConfig.allow_all_signed_by_ca` (the
+    CN-set then becomes the :data:`ALLOW_ALL_MARKER` sentinel).
 
     Args:
         config: TLS configuration.
@@ -187,7 +251,7 @@ def peer_cn_allowed(config: MTLSConfig, cn: str) -> bool:
     Returns:
         bool: ``True`` when the peer may join.
     """
-    if config.allowed_cns is None:
+    if config.allowed_cns is ALLOW_ALL_MARKER:
         return True
     return cn in config.allowed_cns
 
@@ -229,6 +293,7 @@ def _as_pem_path_or_bytes(value: str, kind: str) -> str:
 
 
 __all__ = [
+    "ALLOW_ALL_MARKER",
     "MTLSConfig",
     "build_client_context",
     "build_server_context",
