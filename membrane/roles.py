@@ -104,7 +104,7 @@ class Roles:
         pass
 
     @staticmethod
-    def _classify_state(memory_pressure: float, gpu_load: float) -> str:
+    def classify_state(memory_pressure: float, gpu_load: float) -> str:
         """Map (memory_pressure, gpu_load) to a role-table row label.
 
         Args:
@@ -137,7 +137,7 @@ class Roles:
         memory_pressure = node.heartbeat()
         gpu_load = system_state.average_gpu_load
 
-        row = self._classify_state(memory_pressure, gpu_load)
+        row = self.classify_state(memory_pressure, gpu_load)
         if row != "default":
             return self.ROLE_TABLE[row]
 

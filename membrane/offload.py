@@ -106,7 +106,7 @@ class Offload:
         local_load = local_node.heartbeat()
         local_cost = self.cost_model.prefill_cost(length)
 
-        local_result = self._local_choice(
+        local_result = self.local_choice(
             length=length,
             local_node=local_node,
             local_load=local_load,
@@ -118,7 +118,7 @@ class Offload:
         if local_result is not None:
             return local_result
 
-        best = min(candidate_nodes, key=self._score(length))
+        best = min(candidate_nodes, key=self.score_candidates(length))
         return OffloadResult(
             target_node_id=best.node_id,
             local_compute=False,
@@ -126,7 +126,7 @@ class Offload:
             reason="offloaded to lower-load node",
         )
 
-    def _local_choice(
+    def local_choice(
         self,
         length: int,
         local_node: Node,
@@ -169,20 +169,20 @@ class Offload:
             )
         return None
 
-    def _score(self, length: int):
+    def score_candidates(self, length: int):
         """Return a scoring function for selecting among candidates.
 
         Lower score is better. Combines remote compute cost and
         memory headroom penalty.
         """
 
-        def _score_node(node: Node) -> float:
+        def score_node(node: Node) -> float:
             load = node.heartbeat()
             memory_headroom = 1.0 - load
             remote_cost = self.cost_model.prefill_cost(length)
             return remote_cost * load + (1.0 / (memory_headroom + 0.01))
 
-        return _score_node
+        return score_node
 
 
 __all__ = ["Offload", "OffloadConfig", "OffloadResult"]
