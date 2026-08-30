@@ -180,11 +180,3 @@ class Prefix:
             token_count=count,
             reuse_score=fragment.reuse_score,
         )
-
-
-# Re-exported for convenience: callers can import Delta alongside Prefix
-# when implementing prefix deltas / chain updates. The noqa is scoped
-# narrowly to F401 (imported but unused) because Delta is intentionally
-# re-exported; the E402 (import not at top of file) is intentional so
-# the comment block above can describe the re-export.
-from membrane.delta import Delta  # noqa: F401, E402
