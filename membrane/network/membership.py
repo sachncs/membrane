@@ -80,6 +80,7 @@ class PeerInfo:
             "missed_heartbeats": self.missed_heartbeats,
             "cluster_epoch": self.cluster_epoch,
             "peer_cn": self.peer_cn,
+            "lease_until": self.lease_until,
         }
 
 
@@ -241,6 +242,7 @@ class Membership:
                 p.healthy = bool(entry.get("healthy", True))
                 p.suspect = bool(entry.get("suspect", False))
                 p.missed_heartbeats = int(entry.get("missed_heartbeats", 0))
+                p.lease_until = float(entry.get("lease_until", 0.0))
 
     def record_heartbeat(
         self,
