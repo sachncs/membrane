@@ -384,9 +384,6 @@ class Server:
             bytes_affected=bytes_affected,
         )
         self.events.append(event)
-        # Keep the last 10,000 events. When the buffer exceeds
-        # that size, trim to the most recent 5,000 to bound
-        # memory usage without losing recent context.
         if len(self.events) > 10_000:
             self.events = self.events[-5_000:]
 
@@ -405,9 +402,7 @@ class Server:
         now = time.time()
         connected = len(self.connected_nodes)
         if self.cluster_manager:
-            # Prefer the cluster manager's count when available;
-            # it's the authoritative source of membership.
-            connected = max(connected, len(self.cluster_manager.get_peers()))
+            connected = max(connected, len(self.cluster_manager.membership.to_json()))
         return ServerDiagnostics(
             node_id=self.node.node_id,
             uptime_seconds=now - self.start_time,
@@ -415,8 +410,6 @@ class Server:
             memory_limit_bytes=stats.memory_limit_bytes,
             fragment_count=stats.fragment_count,
             primary_count=stats.primary_count,
-            # Hit/miss rates are tracked externally by the cache
-            # manager; the server exposes zeros here.
             hit_rate=0.0,
             miss_rate=0.0,
             request_count=self.request_count,
@@ -441,39 +434,3 @@ class Server:
             buffer.
         """
         return self.events[-n:]
-
-    # ------------------------------------------------------------------
-    # Peer tracking
-    # ------------------------------------------------------------------
-
-    def register_peer(self, node_id: str) -> None:
-        """Register a connected peer node.
-
-        If a cluster manager is configured, the peer is also
-        added to its membership table (using the host/port
-        resolved from the cluster manager's view).
-
-        Args:
-            node_id: Identifier of the new peer.
-        """
-        self.connected_nodes.add(node_id)
-        if self.cluster_manager:
-            # Resolve peer info from cluster manager and
-            # forward to add_peer so host/port are known.
-            peers = self.cluster_manager.get_peers()
-            for p in peers:
-                if p.get("node_id") == node_id:
-                    self.cluster_manager.add_peer(node_id, p["host"], p["port"])
-                    break
-        self.log_event("info", f"Peer connected: {node_id}")
-
-    def unregister_peer(self, node_id: str) -> None:
-        """Unregister a disconnected peer node.
-
-        Args:
-            node_id: Identifier of the departing peer.
-        """
-        self.connected_nodes.discard(node_id)
-        if self.cluster_manager:
-            self.cluster_manager.remove_peer(node_id)
-        self.log_event("warn", f"Peer disconnected: {node_id}")

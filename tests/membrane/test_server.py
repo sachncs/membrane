@@ -46,19 +46,14 @@ class TestMembraneServer:
         assert events[0].message == "hello"
         assert events[0].level == "info"
 
-    def test_register_peer(self):
+    def test_peer_lifecycle(self):
         node = Node("s5")
         srv = Server(node=node, transport="http", compute="cpu")
-        srv.register_peer("peer-1")
+        srv.connected_nodes.add("peer-1")
         assert "peer-1" in srv.connected_nodes
         diag = srv.diagnostics()
         assert diag.connected_nodes == 1
-
-    def test_unregister_peer(self):
-        node = Node("s6")
-        srv = Server(node=node, transport="http", compute="cpu")
-        srv.register_peer("peer-1")
-        srv.unregister_peer("peer-1")
+        srv.connected_nodes.discard("peer-1")
         assert "peer-1" not in srv.connected_nodes
 
     def test_event_rolloff(self):
