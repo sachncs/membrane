@@ -29,16 +29,16 @@ class Memory:
     not running. All state is lost when the process exits.
 
     Attributes:
-        _fragments: Mapping from ``content_hash`` to the stored
+        fragments: Mapping from ``content_hash`` to the stored
             :class:`Fragment`.
-        _node_fragments: Per-node set of hashes that the node
+        node_fragments: Per-node set of hashes that the node
             is responsible for.
-        _primary: Mapping from ``content_hash`` to the primary
+        primary: Mapping from ``content_hash`` to the primary
             node ID (when one has been declared).
-        _locations: Mapping from ``content_hash`` to the set of
+        locations: Mapping from ``content_hash`` to the set of
             node IDs that have reported holding the fragment
             (used by directory lookups).
-        _lru: Per-fragment LRU timestamp, used to compute
+        lru: Per-fragment LRU timestamp, used to compute
             eviction candidates.
     """
 

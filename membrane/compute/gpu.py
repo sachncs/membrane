@@ -41,11 +41,11 @@ class GPU(Backend):
     installed or CUDA is unavailable.
 
     Attributes:
-        _torch: Imported ``torch`` module, or ``None`` when
+        torch: Imported ``torch`` module, or ``None`` when
             unavailable.
-        _device: Device string (``"cuda"``) or ``None`` when
+        gpu_device: Device string (``"cuda"``) or ``None`` when
             unavailable.
-        _fallback: :class:`CPU` used when GPU is
+        fallback: :class:`CPU` used when GPU is
             unavailable.
     """
 
