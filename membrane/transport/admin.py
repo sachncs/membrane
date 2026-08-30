@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from membrane.audit import AuditLog, verify_chain
 from membrane.transport.authz import enforce_route_scope
 
 logger = logging.getLogger(__name__)
@@ -92,7 +93,7 @@ def create_admin_router() -> APIRouter:
             dict: Fragment metadata or a 404 if the local node
             does not hold the fragment.
         """
-        _scope(request, "GET", "/admin/fragments/{content_hash}")
+        context = _scope(request, "GET", "/admin/fragments/{content_hash}")
         node = request.app.state.node
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
@@ -100,6 +101,11 @@ def create_admin_router() -> APIRouter:
             fragment = node.fragments.get(content_hash)
             if fragment is None:
                 raise HTTPException(status_code=404, detail="not_found")
+            _audit_log(request).record(
+                actor=context.subject,
+                action="admin.fragment.inspect",
+                payload={"content_hash": content_hash},
+            )
             return {
                 "content_hash": content_hash,
                 "tenant_id": fragment.tenant_id,
@@ -118,11 +124,19 @@ def create_admin_router() -> APIRouter:
         payload: PlacementOverride, request: Request
     ) -> dict[str, Any]:
         """Override the primary node for a fragment's shard."""
-        _scope(request, "POST", "/admin/placement")
+        context = _scope(request, "POST", "/admin/placement")
         cluster = getattr(request.app.state, "cluster_manager", None)
         if cluster is None:
             raise HTTPException(status_code=503, detail="cluster manager not enabled")
         cluster.shard_manager.primary_map[payload.content_hash] = payload.primary_node_id
+        _audit_log(request).record(
+            actor=context.subject,
+            action="admin.placement.override",
+            payload={
+                "content_hash": payload.content_hash,
+                "primary_node_id": payload.primary_node_id,
+            },
+        )
         return {
             "content_hash": payload.content_hash,
             "primary_node_id": payload.primary_node_id,
@@ -131,7 +145,7 @@ def create_admin_router() -> APIRouter:
     @router.post("/evict")
     async def admin_evict(payload: EvictRequest, request: Request) -> dict[str, Any]:
         """Manually evict a fragment from the local node."""
-        _scope(request, "POST", "/admin/evict")
+        context = _scope(request, "POST", "/admin/evict")
         node = request.app.state.node
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
@@ -139,18 +153,28 @@ def create_admin_router() -> APIRouter:
             if payload.content_hash not in node.fragments:
                 raise HTTPException(status_code=404, detail="not_found")
             node.remove_fragment(payload.content_hash)
+        _audit_log(request).record(
+            actor=context.subject,
+            action="admin.evict",
+            payload={"content_hash": payload.content_hash},
+        )
         return {"content_hash": payload.content_hash, "evicted": True}
 
     @router.post("/repair")
     async def admin_repair(payload: RepairRequest, request: Request) -> dict[str, Any]:
         """Trigger :meth:`Replicator.repair` for a peer."""
-        _scope(request, "POST", "/admin/repair")
+        context = _scope(request, "POST", "/admin/repair")
         cluster = getattr(request.app.state, "cluster_manager", None)
         if cluster is None:
             raise HTTPException(status_code=503, detail="cluster manager not enabled")
         if cluster.replicator is None:
             raise HTTPException(status_code=503, detail="replicator not configured")
         cluster.replicator.repair(payload.peer_node_id)
+        _audit_log(request).record(
+            actor=context.subject,
+            action="admin.repair.start",
+            payload={"peer_node_id": payload.peer_node_id},
+        )
         return {"peer_node_id": payload.peer_node_id, "repair_started": True}
 
     @router.get("/policy")
@@ -168,16 +192,74 @@ def create_admin_router() -> APIRouter:
         payload: PolicyUpdate, request: Request
     ) -> dict[str, Any]:
         """Set the :class:`Promotion` knobs."""
-        _scope(request, "POST", "/admin/policy")
+        context = _scope(request, "POST", "/admin/policy")
+        _audit_log(request).record(
+            actor=context.subject,
+            action="admin.policy.update",
+            payload={
+                "min_reuse_score": payload.min_reuse_score,
+                "demand_threshold": payload.demand_threshold,
+            },
+        )
         return {
             "min_reuse_score": payload.min_reuse_score,
             "demand_threshold": payload.demand_threshold,
         }
 
+    @router.get("/audit")
+    async def admin_audit(request: Request) -> dict[str, Any]:
+        """Query the in-memory audit log.
+
+        Args:
+            request: FastAPI request.
+
+        Returns:
+            dict: Entries + chain verification status. The
+            ``intact`` boolean is True when every entry's hash
+            lines up with the previous one.
+        """
+        _scope(request, "GET", "/admin/audit")
+        log = getattr(request.app.state, "audit_log", None)
+        if log is None:
+            raise HTTPException(status_code=503, detail="audit log not configured")
+        entries = log.all()
+        return {
+            "intact": verify_chain(entries) is None,
+            "entries": [
+                {
+                    "index": e.index,
+                    "actor": e.actor,
+                    "action": e.action,
+                    "payload": e.payload,
+                    "prev_hash": e.prev_hash,
+                    "entry_hash": e.entry_hash,
+                }
+                for e in entries
+            ],
+        }
+
     return router
 
 
-def _scope(request: Request, method: str, path: str) -> None:
+def _audit_log(request: Request) -> AuditLog:
+    """Return the cluster's :class:`AuditLog` from app.state, creating one if missing.
+
+    Args:
+        request: The FastAPI request whose app.state carries
+            the cluster's audit log.
+
+    Returns:
+        AuditLog: The cluster's audit log (or an in-memory one
+        created on demand so single-process tests still work).
+    """
+    log = getattr(request.app.state, "audit_log", None)
+    if log is None:
+        log = AuditLog()
+        request.app.state.audit_log = log
+    return log
+
+
+def _scope(request: Request, method: str, path: str) -> Any:
     """Run the per-route scope check on an admin route.
 
     Args:
@@ -186,15 +268,26 @@ def _scope(request: Request, method: str, path: str) -> None:
         path: Path relative to the admin router (e.g.,
             ``"/fragments/{content_hash}"``).
 
+    Returns:
+        AuthContext: The authenticated caller.
+
     Raises:
         HTTPException: 401 / 403 via the authz helper.
     """
-    enforce_route_scope(
+    from membrane.auth import AuthContext
+
+    auth = enforce_route_scope(
         authenticator=getattr(request.app.state, "authenticator", None),
         method=method,
         path=f"/admin{path}",
         headers={k.lower(): v for k, v in request.headers.items()},
     )
+    if auth.subject or auth.scopes:
+        return auth
+    return AuthContext(subject="", scopes=frozenset())
+
+
+__all__ = ["create_admin_router"]
 
 
 __all__ = ["create_admin_router"]
