@@ -4,7 +4,8 @@ This module defines :class:`CostModel`, a small but central
 helper used by the routing and decision layers (notably
 :class:`~membrane.offload_decision_engine.Offload`)
 to decide whether reusing a cached KV segment is cheaper than
-recomputing it on the local node.
+recomputing it on the local node (see
+:class:`~membrane.analytical.Offload`).
 
 The model has two inputs:
 
