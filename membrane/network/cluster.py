@@ -7,7 +7,7 @@ Owns the daemon threads and dispatches to focused subsystem classes:
 * :class:`~membrane.network.failure.Failure` — failure-detection loop
 * :class:`~membrane.network.gossip_loop.Gossip` — gossip loop + handler
 * :class:`~membrane.replicator.Replicator` — replication loop
-* :func:`~membrane.network.bootstrap.bootstrap` — one-shot seed join
+* :meth:`Membership.join_seeds` — one-shot seed join
 
 Public API is preserved for backward compatibility with the previous
 god-class :class:`Cluster`. New code should prefer injecting the
@@ -26,7 +26,6 @@ from __future__ import annotations
 import logging
 import threading
 
-from membrane.network.bootstrap import bootstrap
 from membrane.network.config import ClusterConfig
 from membrane.network.failure import Failure
 from membrane.network.gossip import Gossip
@@ -197,7 +196,12 @@ class Cluster:
 
     def bootstrap_loop(self) -> None:
         """One-shot bootstrap wrapper for the daemon thread."""
-        bootstrap(self.membership, self.config, self.node_id, self.host, self.port)
+        self.membership.join_seeds(
+            list(self.config.peers),
+            local_node_id=self.node_id,
+            host=self.host,
+            port=self.port,
+        )
 
     def on_peer_leave_rehome(self, content_hash: str, leaving_peer: str) -> None:
         """Default ``Migrator.transfer_fn`` that delegates to :meth:`Shard.migrate_primary`."""

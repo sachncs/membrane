@@ -188,5 +188,42 @@ class Membership:
             p.suspect = True
             return True
 
+    def join_seeds(
+        self,
+        seeds: list[str],
+        local_node_id: str,
+        host: str,
+        port: int,
+    ) -> bool:
+        """Contact each seed peer in order; stop at the first success.
+
+        On success, the response payload's peers are merged
+        into the local membership table (excluding the local
+        node id, which the seed may have echoed back).
+
+        Args:
+            seeds: Seed peer URLs as ``"host:port"`` strings.
+            local_node_id: Local node identifier.
+            host: Local host (echoed to the seed so it knows
+                how to reach us).
+            port: Local port.
+
+        Returns:
+            bool: ``True`` when at least one seed accepted the join.
+        """
+        for seed in seeds:
+            try:
+                client = Peer(f"http://{seed}")
+                result = client.join_cluster(local_node_id, host, port)
+            except Exception as exc:
+                logger.warning("Bootstrap failed for seed %s: %s", seed, exc)
+                continue
+            if result and result.get("success"):
+                for peer in result.get("peers", []):
+                    self.add(peer["node_id"], peer["host"], peer["port"])
+                logger.info("Bootstrap successful via %s", seed)
+                return True
+        return False
+
 
 __all__ = ["Membership", "PeerInfo"]
