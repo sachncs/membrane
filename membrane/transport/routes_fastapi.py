@@ -16,11 +16,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from membrane.compute.cpu import CPU
+from membrane.serialization import JsonDict
 from membrane.transport.ops import (
     MAX_BODY_BYTES,
     op_gossip,
@@ -67,7 +68,7 @@ class FragmentPayload(BaseModel):
     reuse_score: float
     version_id: int
 
-    def to_wire_dict(self) -> dict[str, Any]:
+    def to_wire_dict(self) -> JsonDict:
         """Transform into the canonical wire dict for ``from_dict``."""
         return {
             "schema_version": self.schema_version,
@@ -296,10 +297,10 @@ def _gossip(app: FastAPI, req: GossipRequest):
     return _respond(status, body)
 
 
-def _respond(status: int, body: Any) -> Any:
+def _respond(status: int, body: JsonDict) -> Response:
     """Translate an operation's ``(status, body)`` to a FastAPI response."""
     if status == 200:
-        return body
+        return JSONResponse(body)
     return JSONResponse(body, status_code=status)
 
 
