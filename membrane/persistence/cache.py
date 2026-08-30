@@ -97,12 +97,12 @@ class CachingPersistence:
             self.on_unavailable("retrieve_fragment", exc)
             return None
 
-    def delete_fragment(self, content_hash: str, node_id: str) -> bool:
+    def delete_fragment(self, content_hash: str) -> bool:
         """Invalidate the cache and forward to the inner backend."""
         with self.lock:
             self.cache.pop(content_hash, None)
         try:
-            return self.inner.delete_fragment(content_hash, node_id)
+            return self.inner.delete_fragment(content_hash)
         except Exception as exc:
             self.on_unavailable("delete_fragment", exc)
             return False
