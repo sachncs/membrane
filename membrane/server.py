@@ -29,6 +29,7 @@ from membrane.network.config import ClusterConfig
 from membrane.node import Node
 from membrane.persistence.memory import Memory
 from membrane.persistence.redis import Redis
+from membrane.snapshot import SNAPSHOT_SCHEMA_VERSION, ClusterEpochGuard, Snapshot
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.http import HTTPServer
@@ -216,8 +217,36 @@ class Server:
         llm_url: str = "",
         llm_model: str = "",
         api_key: str = "",
+        state_dir: str | None = None,
+        checkpoint_interval_sec: float = 30.0,
+        cluster_epoch: int = 0,
     ) -> None:
-        """Initialize the server with all configured subsystems."""
+        """Initialize the server with all configured subsystems.
+
+        Args:
+            node: Local :class:`Node` instance.
+            transport: ``"http"`` / ``"stdlib"`` / ``"grpc"``.
+            compute: Backend name or pre-built instance.
+            redis_url: Redis URL for the persistence layer.
+            host: Bind address.
+            port: Listen port.
+            cluster_config: Optional cluster configuration.
+            llm_url: LLM base URL.
+            llm_model: LLM model identifier.
+            api_key: LLM API key.
+            state_dir: Optional directory under which
+                ``{node_id}.json`` snapshots are persisted. When
+                ``None``, no on-disk recovery is attempted and
+                the server boots with empty membership / shard
+                tables.
+            checkpoint_interval_sec: How often the
+                CheckpointThread writes a snapshot while the
+                server is running. ``30`` matches the design
+                plan.
+            cluster_epoch: Live cluster epoch. Increment when
+                the cluster topology changes in ways that should
+                invalidate stale snapshots.
+        """
         self.node = node
         self.transport_type = transport
         self.redis_url = redis_url
@@ -271,6 +300,19 @@ class Server:
         self.running = False
         self.thread: threading.Thread | None = None
 
+        # Snapshotting and recovery plumbing. The Snapshot helper is
+        # created lazily against the configured state_dir; the
+        # epoch guard refuses to apply snapshots that fall more than
+        # one step behind the live cluster epoch, so a node that
+        # lost a long partition never rebuilds an obsolete map.
+        self.state_dir = state_dir
+        self.checkpoint_interval_sec = float(checkpoint_interval_sec)
+        self.cluster_epoch = cluster_epoch
+        self.snapshot: Snapshot | None = Snapshot(state_dir) if state_dir else None
+        self.epoch_guard = ClusterEpochGuard(current=cluster_epoch)
+        self.checkpoint_stop_event: threading.Event | None = None
+        self.checkpoint_thread: threading.Thread | None = None
+
     def build_persistence(self, redis_url: str) -> Any:
         from membrane.persistence.cache import CachingPersistence
 
@@ -322,20 +364,125 @@ class Server:
 
     def start(self) -> None:
         """Start the server in a background thread."""
+        # Re-hydrate durable state before any thread starts so the
+        # cluster manager, snapshot, and transfer service are
+        # populated atomically with respect to live traffic.
+        self.restore_state()
         self.running = True
         if self.cluster_manager:
             self.cluster_manager.start()
         self.thread = threading.Thread(target=self.transport.start, daemon=True)
         self.thread.start()
+        if self.cluster_manager is not None and self.checkpoint_interval_sec > 0:
+            self.checkpoint_stop_event = threading.Event()
+            self.checkpoint_thread = threading.Thread(
+                target=self._checkpoint_loop,
+                daemon=True,
+                name="membrane-checkpoint",
+            )
+            self.checkpoint_thread.start()
         self.log_event("info", f"Server started on {self.host}:{self.port}")
 
     def stop(self) -> None:
         """Stop the server gracefully."""
+        if self.checkpoint_stop_event is not None:
+            self.checkpoint_stop_event.set()
+            if self.checkpoint_thread is not None:
+                self.checkpoint_thread.join(timeout=2.0)
+        # Flush a final checkpoint before tearing down so the next
+        # process can rebuild from up-to-date state.
+        self.checkpoint_state()
         self.running = False
         self.transport.stop()
         if self.cluster_manager:
             self.cluster_manager.stop()
         self.log_event("info", "Server stopped")
+
+    def _checkpoint_loop(self) -> None:
+        """Background loop writing snapshots every ``checkpoint_interval_sec``."""
+        while self.running and self.checkpoint_stop_event is not None:
+            if self.checkpoint_stop_event.wait(self.checkpoint_interval_sec):
+                return
+            try:
+                self.checkpoint_state()
+            except Exception as exc:  # pragma: no cover - background safety
+                logger.warning("Checkpoint failed: %s", exc)
+
+    def restore_state(self) -> None:
+        """Re-hydrate membership / shard tables from the configured snapshot.
+
+        No-op when ``state_dir`` was not provided at construction
+        time. When the snapshot's cluster_epoch is more than one
+        step behind the live epoch the persisted payload is
+        discarded and the cluster starts fresh — a node coming
+        back after a long partition must not rebuild an obsolete
+        map. On a successful restore the persisted epoch is
+        adopted as the new live epoch so the next checkpoint
+        continues from there.
+        """
+        if self.snapshot is None:
+            return
+        payload = self.snapshot.load(self.node.node_id)
+        if payload is None:
+            return
+        persisted_epoch = payload.get("cluster_epoch")
+        if not self.epoch_guard.accept(persisted_epoch):
+            logger.warning(
+                "Snapshot for %s has epoch %s but live cluster is at %s; discarding",
+                self.node.node_id,
+                persisted_epoch,
+                self.cluster_epoch,
+            )
+            self.snapshot.remove(self.node.node_id)
+            return
+        if self.cluster_manager is not None:
+            self.cluster_manager.membership.load_snapshot(payload.get("membership", []))
+            self.cluster_manager.shard_manager.load_snapshot(payload.get("shards", {}))
+        server_section = payload.get("server", {})
+        if server_section:
+            self.request_count = int(server_section.get("request_count", 0))
+            self.error_count = int(server_section.get("error_count", 0))
+        # Adopt the persisted epoch as the live one so subsequent
+        # checkpoints continue from that value rather than
+        # resetting it back to the constructor's cluster_epoch.
+        if persisted_epoch is not None:
+            self.cluster_epoch = int(persisted_epoch)
+            self.epoch_guard.current = max(int(persisted_epoch), self.epoch_guard.current)
+        logger.info(
+            "Restored snapshot for %s at epoch %s",
+            self.node.node_id,
+            persisted_epoch,
+        )
+
+    def checkpoint_state(self) -> None:
+        """Persist the current membership / shard / counter state.
+
+        No-op when ``state_dir`` was not provided. Bumps the live
+        ``cluster_epoch`` so a subsequent restart writes a fresh
+        value back.
+        """
+        if self.snapshot is None:
+            return
+        new_epoch = self.epoch_guard.bump()
+        self.cluster_epoch = new_epoch
+        server_section: dict[str, int] = {
+            "request_count": self.request_count,
+            "error_count": self.error_count,
+        }
+        shards_section: dict[str, object] = {}
+        membership_section: list[dict[str, object]] = []
+        if self.cluster_manager is not None:
+            shards_section = self.cluster_manager.shard_manager.save_snapshot()
+            membership_section = self.cluster_manager.membership.save_snapshot()
+        payload = {
+            "schema_version": SNAPSHOT_SCHEMA_VERSION,
+            "cluster_epoch": new_epoch,
+            "captured_at": time.time(),
+            "membership": membership_section,
+            "shards": shards_section,
+            "server": server_section,
+        }
+        self.snapshot.save(self.node.node_id, payload)
 
     def join(self) -> None:
         """Block until the server thread exits."""

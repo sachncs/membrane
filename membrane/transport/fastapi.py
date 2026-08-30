@@ -40,6 +40,7 @@ Security:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import FastAPI
 
@@ -119,6 +120,7 @@ class FastAPIServer:
         self.transfer_service = transfer_service or TransferService()
         self.cluster_manager = cluster_manager
         self.metrics_registry = metrics_registry
+        self.server: Any | None = None
         self.app = create_app(
             node=node,
             compute_backend=compute_backend,

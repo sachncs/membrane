@@ -219,9 +219,12 @@ class ClusterEpochGuard:
     def accept(self, persisted: int | None) -> bool:
         """Return whether ``persisted`` is fresh enough to apply.
 
-        The guard accepts values in ``[current - 1, current + 1]``
-        so a one-step lag is tolerated but a stale partition is
-        rejected.
+        The guard accepts any persisted value within
+        ``[current - 1, +∞)`` so a single restart that already
+        bumped during its first start does not lose its last
+        snapshot. A value more than one step **behind** the
+        live epoch is rejected because that signals a partition
+        long enough that the persisted view is stale.
 
         Args:
             persisted: Value read from the snapshot, or
@@ -233,7 +236,7 @@ class ClusterEpochGuard:
         """
         if persisted is None:
             return False
-        return abs(int(persisted) - self.current) <= 1
+        return int(persisted) >= self.current - 1
 
     def bump(self) -> int:
         """Increment the live epoch and return the new value.
