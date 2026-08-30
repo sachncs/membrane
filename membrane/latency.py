@@ -68,6 +68,73 @@ class Latency:
         """
         self.latency_table[node_id] = latency_ms
 
+    def get_latency(self, node_id: str) -> float:
+        """Return recorded latency for a node.
+
+        Args:
+            node_id: Node identifier.
+
+        Returns:
+            float: Latency in milliseconds, or ``inf`` if the
+            node is not in the table.
+        """
+        return self.latency_table.get(node_id, float("inf"))
+
+    @staticmethod
+    def _holds(node: Node, content_hash: str) -> bool:
+        """Return ``True`` when ``node`` actually holds ``content_hash``.
+
+        This is an idempotent probe; the call has the side effect
+        of bumping the node's access timestamp.
+
+        Args:
+            node: Node to probe.
+            content_hash: Hash to look up.
+
+        Returns:
+            bool: True when ``node`` returns a non-``None``
+            fragment for the hash.
+        """
+        return node.retrieve(content_hash) is not None
+
+    def _pick_local(self, content_hash: str, local_node: Node) -> str | None:
+        """Return ``local_node.node_id`` iff it holds the fragment."""
+        if self._holds(local_node, content_hash):
+            return local_node.node_id
+        return None
+
+    def _pick_replica(
+        self,
+        content_hash: str,
+        candidate_nodes: list[Node],
+    ) -> Node | None:
+        """Return the candidate with the lowest recorded latency, if any.
+
+        Args:
+            content_hash: Hash to look up.
+            candidate_nodes: Candidate replicas.
+
+        Returns:
+            Node | None: The lowest-latency node that actually
+            holds the fragment, or ``None`` when none do.
+        """
+        holding = [node for node in candidate_nodes if self._holds(node, content_hash)]
+        if not holding:
+            return None
+
+        def latency_key(node: Node) -> float:
+            """Latency score (lower is better); infinity if unknown."""
+            return self.latency_table.get(node.node_id, float("inf"))
+
+        return min(holding, key=latency_key)
+
+    def _pick_fallback(
+        self,
+        local_node: Node,
+    ) -> str:
+        """Return the fallback node id used when no replica holds the fragment."""
+        return self.origin_node_id or local_node.node_id
+
     def pick_target(
         self,
         content_hash: str,
@@ -87,36 +154,17 @@ class Latency:
             ``node_id`` values from ``local_node`` or
             ``candidate_nodes``, or the configured origin id.
         """
-        # Fast path: local exact match.
-        if local_node.retrieve(content_hash) is not None:
-            return local_node.node_id
+        local_target = self._pick_local(content_hash, local_node)
+        if local_target is not None:
+            return local_target
 
-        # Replica path: filter to candidates that actually hold
-        # the fragment, then pick the one with the lowest
-        # recorded latency.
-        candidates_with_fragment = [node for node in candidate_nodes if node.retrieve(content_hash) is not None]
+        replica = self._pick_replica(content_hash, candidate_nodes)
+        if replica is not None:
+            return replica.node_id
 
-        if not candidates_with_fragment:
-            # Fallback: origin if configured, otherwise local.
-            fallback = self.origin_node_id or local_node.node_id
-            logger.debug("No replica for %s; falling back to %s", content_hash, fallback)
-            return fallback
+        fallback = self._pick_fallback(local_node)
+        logger.debug("No replica for %s; falling back to %s", content_hash, fallback)
+        return fallback
 
-        def latency_key(node: Node) -> float:
-            """Latency score (lower is better); infinity if unknown."""
-            return self.latency_table.get(node.node_id, float("inf"))
 
-        best = min(candidates_with_fragment, key=latency_key)
-        return best.node_id
-
-    def get_latency(self, node_id: str) -> float:
-        """Return recorded latency for a node.
-
-        Args:
-            node_id: Node identifier.
-
-        Returns:
-            float: Latency in milliseconds, or ``inf`` if the
-            node is not in the table.
-        """
-        return self.latency_table.get(node_id, float("inf"))
+__all__ = ["Latency"]
