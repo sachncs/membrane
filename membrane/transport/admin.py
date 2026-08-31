@@ -29,6 +29,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from membrane.audit import AuditLog, verify_chain
+from membrane.serialization import to_dict
 from membrane.transport.authz import enforce_route_scope
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,12 @@ class PlacementOverride(BaseModel):
 
     content_hash: str = Field(min_length=1, max_length=128)
     primary_node_id: str = Field(min_length=1, max_length=128)
+
+
+class BackupRequest(BaseModel):
+    """``POST /admin/backup`` body."""
+
+    destination: str = Field(min_length=1, max_length=512)
 
 
 class EvictRequest(BaseModel):
@@ -238,6 +245,107 @@ def create_admin_router() -> APIRouter:
             ],
         }
 
+    @router.post("/backup")
+    async def admin_backup(
+        payload: BackupRequest, request: Request
+    ) -> dict[str, Any]:
+        """Snapshot the current Node state to ``payload.destination``.
+
+        Args:
+            payload: Backup request carrying the destination
+                path.
+            request: FastAPI request.
+
+        Returns:
+            dict: Backup summary (path + fragment count).
+        """
+        from pathlib import Path
+
+        context = _scope(request, "POST", "/admin/backup")
+        node = request.app.state.node
+        if node is None:
+            raise HTTPException(status_code=503, detail="no node")
+        with node.lock:
+            data = {
+                "node_id": node.node_id,
+                "stats": {
+                    "fragment_count": node.get_stats().fragment_count,
+                    "memory_used_bytes": node.get_stats().memory_used_bytes,
+                    "memory_limit_bytes": node.get_stats().memory_limit_bytes,
+                },
+                "fragments": {
+                    h: to_dict(f) for h, f in node.fragments.items()
+                },
+            }
+        target = Path(payload.destination)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        import json as _json
+
+        target.write_text(
+            _json.dumps(data, sort_keys=True, indent=2), encoding="utf-8"
+        )
+        _audit_log(request).record(
+            actor=context.subject,
+            action="admin.backup",
+            payload={
+                "destination": payload.destination,
+                "fragments": len(data["fragments"]),
+            },
+        )
+        return {
+            "destination": payload.destination,
+            "fragments": len(data["fragments"]),
+        }
+
+    @router.post("/restore")
+    async def admin_restore(
+        payload: dict[str, Any], request: Request
+    ) -> dict[str, Any]:
+        """Restore a snapshot previously written by ``/admin/backup``.
+
+        Args:
+            payload: ``{"source": "..."}`` carrying the backup
+                path.
+            request: FastAPI request.
+
+        Returns:
+            dict: Restore summary (path + restored count).
+        """
+        from pathlib import Path
+
+        context = _scope(request, "POST", "/admin/restore")
+        node = request.app.state.node
+        if node is None:
+            raise HTTPException(status_code=503, detail="no node")
+        source_path = payload.get("source")
+        if not source_path:
+            raise HTTPException(status_code=400, detail="source required")
+        source = Path(source_path)
+        if not source.exists():
+            raise HTTPException(status_code=404, detail="source not found")
+        import json as _json
+
+        with node.lock:
+            try:
+                data = _json.loads(source.read_text(encoding="utf-8"))
+            except (OSError, _json.JSONDecodeError) as exc:
+                raise HTTPException(
+                    status_code=400, detail=f"invalid backup: {exc}"
+                ) from exc
+            restored = 0
+            for _hash, wire in data.get("fragments", {}).items():
+                from membrane.serialization import from_dict as _from_dict
+
+                frag = _from_dict(wire)
+                if node.store(frag, is_primary=False):
+                    restored += 1
+        _audit_log(request).record(
+            actor=context.subject,
+            action="admin.restore",
+            payload={"source": source_path, "restored": restored},
+        )
+        return {"source": source_path, "restored": restored}
+
     return router
 
 
@@ -285,9 +393,6 @@ def _scope(request: Request, method: str, path: str) -> Any:
     if auth.subject or auth.scopes:
         return auth
     return AuthContext(subject="", scopes=frozenset())
-
-
-__all__ = ["create_admin_router"]
 
 
 __all__ = ["create_admin_router"]
