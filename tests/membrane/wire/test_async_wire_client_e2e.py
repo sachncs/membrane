@@ -156,3 +156,32 @@ class TestAsyncWireClientE2E:
                 # No breaker failures recorded for a cancelled
                 # call.
                 assert client.breaker == {}
+
+    def test_with_deadline_wraps_request(self):
+        """``with_deadline(..., request())`` enforces a wall-clock cap."""
+
+        async def run() -> None:
+            from membrane.wire.v3.aio_client import with_deadline
+
+            async def slow_request() -> bytes:
+                # Block for 200ms via sleep.
+                await asyncio.sleep(0.2)
+                return b"too-late"
+
+            with pytest.raises(asyncio.TimeoutError):
+                # Deadline is 50ms; slow_request takes 200ms.
+                await with_deadline(0.05, slow_request())
+
+        asyncio.run(run())
+
+    def test_with_deadline_passes_fast_request(self):
+        async def run() -> None:
+            from membrane.wire.v3.aio_client import with_deadline
+
+            async def fast() -> int:
+                return 42
+
+            result = await with_deadline(0.5, fast())
+            assert result == 42
+
+        asyncio.run(run())
