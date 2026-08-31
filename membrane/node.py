@@ -174,6 +174,14 @@ class Node:
         else:
             self.content_store = content_store
 
+        # When the configured store is the encrypted variant
+        # (or any other tenant-aware store), the Node
+        # threads ``tenant_id`` into the put / get calls so the
+        # store can derive its per-tenant key.
+        self._store_uses_tenant = bool(
+            hasattr(content_store, "tenant_id") or content_store is None
+        )
+
         self.fragments: dict[str, Fragment] = {}
         self.primary_hashes: set[str] = set()
         self.access_times: dict[str, float] = {}

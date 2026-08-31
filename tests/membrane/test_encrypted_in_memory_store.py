@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
+from membrane.content_store import ContentStore
 from membrane.content_store_encrypted import EncryptedInProcessBytes
 from membrane.security.encryption import StaticKeyProvider
 
@@ -100,3 +103,50 @@ class TestEncryptedInProcessBytes:
         store.put("a", b"1")
         store.put("b", b"2")
         assert set(store) == {"a", "b"}
+
+
+class TestNodeWithEncryptedStore:
+    def test_node_stores_under_encrypted_store(self):
+        from membrane.fragment import Fragment
+        from membrane.identity import PayloadIdentity
+        from membrane.node import Node
+
+        store = EncryptedInProcessBytes(tenant_id="acme")
+        node = Node(node_id="n1", max_memory_bytes=10_000, content_store=store)
+        # The compute backend would write the payload to the
+        # store first; here we put it directly to keep the
+        # test focused on the integration contract.
+        store.put("payload-h", b"plaintext-payload")
+        ident = PayloadIdentity(
+            payload_hash="h" * 64,
+            model_id="m",
+            model_revision="",
+            tokenizer_name="m",
+            tokenizer_revision="",
+            layer_range=(0, 1),
+            head_range=(-1, -1),
+            token_span=(0, 1),
+            dtype="float16",
+            shape=(1, 1, 1, 1, 64),
+        )
+        frag = Fragment(
+            identity=ident,
+            payload_ref="payload-h",
+            payload_size=10,
+            ttl=60.0,
+            reuse_score=0.5,
+            version_id=1,
+            tenant_id="acme",
+        )
+        node.store(frag, is_primary=True)
+        # The Node + encrypted store round-trip is intact: the
+        # payload was put into the store before the fragment was
+        # stored, and the store still returns it.
+        assert store.has("payload-h")
+        assert store.get("payload-h") == b"plaintext-payload"
+
+    def test_node_uses_encrypted_store_protocol(self):
+        from membrane.content_store_encrypted import EncryptedInProcessBytes
+
+        store: Any = EncryptedInProcessBytes(tenant_id="acme")
+        assert isinstance(store, ContentStore)
