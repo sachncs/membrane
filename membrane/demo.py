@@ -1,8 +1,10 @@
 """`python -m membrane.demo` one-command demo (Phase 3.6.4).
 
-The :func:`main` entry point builds an in-process Membrane node,
-runs a small RAG-style workload against it, and prints the
-cache hit rate so a new operator can see the system doing
+The :func:`main` entry point builds an in-process Membrane node
+with the v3.0.0 default :class:`EncryptedInProcessBytes` store
+(every put is encrypted with AES-256-GCM under a per-tenant
+key), runs a small RAG-style workload against it, and prints
+the cache hit rate so a new operator can see the system doing
 real work without standing up a cluster.
 """
 
@@ -19,11 +21,13 @@ def main() -> int:
     Returns:
         int: Process exit code (0 = success).
     """
+    from membrane.content_store_encrypted import EncryptedInProcessBytes
     from membrane.fragment import Fragment
     from membrane.identity import PayloadIdentity
     from membrane.node import Node
 
-    node = Node(node_id="demo-local", max_memory_bytes=10_000_000)
+    store = EncryptedInProcessBytes(tenant_id="public")
+    node = Node(node_id="demo-local", max_memory_bytes=10_000_000, content_store=store)
 
     prompts = [
         ("alpha", "List three colors."),
@@ -46,13 +50,17 @@ def main() -> int:
         )
         frag = Fragment(
             identity=ident,
-            payload_ref=None,
+            payload_ref=ident.payload_hash,
             payload_size=len(prompt),
             ttl=60.0,
             reuse_score=1.0,
             version_id=1,
             tenant_id="public",
         )
+        # The demo's "payload" lives in the encrypted store; the
+        # node.store() path validates the payload_ref is present
+        # so we put it ahead of the store() call.
+        store.put(ident.payload_hash, prompt.encode())
         existing = node.fragments.get(ident.payload_hash)
         if existing is not None:
             node.access_times[ident.payload_hash] = 1.0
