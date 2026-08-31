@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-08-30
+
+Patch release. Follow-up work that deepens the 3.0.0 surface
+without breaking any wire / API contract. Wire / schema
+version is unchanged at v5; transport="http" only.
+
+### Added
+
+- **Encrypted in-memory content store** (`membrane.content_store_encrypted.EncryptedInProcessBytes`):
+  AES-256-GCM encrypted, thread-safe in-memory store that
+  mirrors the on-disk `FilesystemBlob` interface. Used by
+  the v3.0.0 `python -m membrane.demo` entry point and any
+  single-process deployment that needs at-rest encryption
+  without the file-system layout (CI, sidecar containers,
+  ephemeral workloads).
+- **Master-key rotation** (`membrane.security.key_rotation.RotatingKeyProvider`):
+  versioned master-key store. New encryptions use the active
+  key; decryptions transparently fall back to older versions
+  via `decrypt_payload_with_versions`. Operators can roll a
+  new master key without re-encrypting the existing store.
+- **Tier migration on eviction** (`membrane.tier_migration.TierMigration`):
+  `Node.add_eviction_callback(cb)` fires on every evicted
+  fragment; the `TierMigration.on_demote` callback routes
+  evicted fragments to their assigned tier (hot / warm /
+  cold / archival).
+- **`AsyncMembraneClient.prefill`** mirrors the sync
+  client's prefill surface; `AsyncMembraneClient` now covers
+  store / retrieve / prefill / inventory end-to-end.
+- **Migration tool** (`tools/upgrade_v2_to_v5.py`): one-shot
+  CLI that walks a `FilesystemBlob` root, detects v2 / v4
+  magic headers, and rewrites them to v5 in place. Default
+  mode is dry-run; `--write` applies the change.
+- **vLLM end-to-end example** (`examples/vllm_e2e.py`):
+  boots a real FastAPI app with an `EncryptedInProcessBytes`
+  store, runs a prompt twice through `MembraneClient.store`
+  to verify the dedup path.
+
+### Fixed
+
+- **DecryptError typed failure surface**: `membrane.security.encryption.DecryptError`
+  is raised on truncated blob, wrong key, or AES-GCM auth
+  failure. The storage layer's `get()` still swallows it and
+  returns `None` so a corrupted entry looks identical to a
+  missing one; callers that need the typed failure call
+  `decrypt_payload` directly.
+- **`AsyncWireClient.request`** honors a pre-cancelled
+  `CancellationToken` by short-circuiting the retry loop
+  with `asyncio.CancelledError` and not recording a breaker
+  failure.
+- **Tests under `@runtime_checkable` Protocol**: the
+  `RotatingKeyProvider` and `StaticKeyProvider` instances
+  are validated against the `KeyProvider` surface via a
+  structural `callable()` check rather than `isinstance` to
+  avoid the `TypeError` raised on plain (non-Protocol)
+  classes under `@runtime_checkable`.
+
 ## [3.0.0] - 2026-08-30
 
 Major release. **Breaking changes** for every 2.0.x deployment:
