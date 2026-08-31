@@ -125,6 +125,21 @@ class EncryptedInProcessBytes(ContentStore):
             blob = self._store.get(key)
         if blob is None:
             return None
+        # Try the active key first, then walk older version keys
+        # so a RotatingKeyProvider can roll without re-encrypting.
+        from membrane.security.encryption import (
+            decrypt_payload_with_versions,
+        )
+
+        version_keys = getattr(self._provider, "version_keys", None)
+        if version_keys is not None:
+            tenant_keys = tuple(
+                derive_tenant_key(k, self.tenant_id, key) for k in version_keys()
+            )
+            try:
+                return decrypt_payload_with_versions(blob, tenant_keys)
+            except RuntimeError:
+                return None
         per_key = derive_tenant_key(self._master_key, self.tenant_id, key)
         try:
             return decrypt_payload(blob, per_key)

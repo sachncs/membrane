@@ -145,6 +145,40 @@ def decrypt_payload(blob: bytes, key: bytes) -> bytes:
     return AESGCM(key).decrypt(nonce, payload, None)
 
 
+def decrypt_payload_with_versions(
+    blob: bytes,
+    version_keys: tuple[bytes, ...],
+) -> bytes:
+    """Decrypt ``blob`` with any of the version keys.
+
+    Tries each key in ``version_keys`` in order and returns the
+    first successful decryption. The last entry is the active
+    key (most likely to succeed), so iteration starts from the
+    end and walks backward through older keys.
+
+    Args:
+        blob: The encrypted blob.
+        version_keys: Tuple of candidate master keys in
+            chronological order; the last entry is the active
+            key.
+
+    Returns:
+        bytes: Decrypted plaintext.
+
+    Raises:
+        RuntimeError: When none of the candidate keys
+            successfully decrypt ``blob``.
+    """
+    if not version_keys:
+        raise RuntimeError("no candidate keys to try")
+    for key in reversed(version_keys):
+        try:
+            return decrypt_payload(blob, key)
+        except Exception:
+            continue
+    raise RuntimeError("decryption failed for every candidate key")
+
+
 def _hkdf_hmac_sha256(ikm: bytes, salt: bytes, info: bytes) -> bytes:
     """Minimal HKDF-SHA256 implementation that does not depend on cryptography.
 

@@ -373,6 +373,21 @@ class FilesystemBlob:
             return None
         with self._lock:
             blob = path.read_bytes()
+        # Walk the version keys in reverse order so the active
+        # key is tried first; older keys decrypt legacy blobs.
+        from membrane.security.encryption import (
+            decrypt_payload_with_versions,
+        )
+
+        version_keys = getattr(self._key_provider, "version_keys", None)
+        if version_keys is not None:
+            tenant_keys = tuple(
+                derive_tenant_key(k, self.tenant_id, key) for k in version_keys()
+            )
+            try:
+                return decrypt_payload_with_versions(blob, tenant_keys)
+            except RuntimeError:
+                return None
         per_key = derive_tenant_key(self._master_key, self.tenant_id, key)
         try:
             return decrypt_payload(blob, per_key)
