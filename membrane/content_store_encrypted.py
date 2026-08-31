@@ -15,6 +15,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterator
 
+from membrane.content_store import ContentStore
 from membrane.security.encryption import (
     KeyProvider,
     StaticKeyProvider,
@@ -24,16 +25,14 @@ from membrane.security.encryption import (
 )
 
 
-class EncryptedInProcessBytes:
-    """Thread-safe encrypted in-memory content store.
+class EncryptedInProcessBytes(ContentStore):
+    """Thread-safe encrypted in-memory :class:`ContentStore`.
 
-    Implements the same contract as
-    :class:`membrane.content_store.InProcessBytes` /
-    :class:`membrane.content_store.FilesystemBlob` (the parts
-    used by ``Node``) but encrypts every put / get with
-    AES-256-GCM. The class is not a :class:`ContentStore`
-    subclass (the v3.0.0 release removes the base class
-    inheritance) -- it mirrors the same methods.
+    Mirrors the on-disk :class:`membrane.content_store.FilesystemBlob`
+    interface but stores ciphertexts in a Python dict. Useful
+    for single-process deployments that need at-rest encryption
+    without the file-system layout (CI, sidecar containers,
+    ephemeral workloads).
     """
 
     def __init__(
