@@ -266,6 +266,18 @@ class AsyncMembraneClient:
             _raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
+    async def prefill(
+        self, prompt_tokens: list[int], model_id: str = "default"
+    ) -> dict[str, Any]:
+        resp = await self._client.post(
+            f"{self.base_url}/prefill",
+            json={"prompt_tokens": prompt_tokens, "model_id": model_id},
+            headers=self._headers,
+        )
+        if resp.status_code >= 400:
+            _raise_for_status(resp.status_code, resp.text)
+        return resp.json()
+
     async def inventory(self) -> dict[str, Any]:
         resp = await self._client.get(
             f"{self.base_url}/inventory", headers=self._headers
