@@ -25,6 +25,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from membrane.decision import AdmissionPolicy, TenantQuota, TinyLFU
 from membrane.fragment import Fragment
 from membrane.graph import Graph
 from membrane.index import Index
@@ -32,6 +33,8 @@ from membrane.metrics import NodeMetrics
 from membrane.security.tenant import (
     TenantAuthorizer,
 )
+from membrane.tiers import TierPolicy, select_tier
+from membrane.transfer_engine_ext import AdaptiveFragmenter
 
 if TYPE_CHECKING:
     from membrane.content_store import ContentStore
@@ -108,6 +111,11 @@ class Node:
         content_store: ContentStore | None = None,
         attributes: NodeAttributes | None = None,
         metrics: NodeMetrics | None = None,
+        admission_policy: AdmissionPolicy | None = None,
+        quotas: dict[str, TenantQuota] | None = None,
+        tier_policy: TierPolicy | None = None,
+        fragmenter: AdaptiveFragmenter | None = None,
+        eviction_strategy: TinyLFU | None = None,
     ) -> None:
         """Initialize the node.
 
@@ -130,6 +138,21 @@ class Node:
             metrics: Optional :class:`NodeMetrics` instance. When
                 supplied, per-tenant fragment counts are recorded
                 on every successful store.
+            admission_policy: Optional :class:`AdmissionPolicy`
+                (cost/benefit gate) from Phase 3.5.1.
+            quotas: Map of tenant_id -> :class:`TenantQuota`
+                from Phase 3.5.3. When ``None`` admission is
+                unbounded.
+            tier_policy: Optional :class:`TierPolicy` from Phase
+                3.5.6. ``select_tier`` is consulted when storing;
+                ``None`` skips tier bookkeeping.
+            fragmenter: Optional :class:`AdaptiveFragmenter`
+                from Phase 3.3.10. ``None`` uses a fixed
+                128-token window.
+            eviction_strategy: Optional :class:`TinyLFU` from
+                Phase 3.5.2. ``None`` falls back to the v2.0
+                weighted LRU; the
+                :meth:`evict_lru` path delegates when present.
         """
         self.node_id = node_id
         self.max_memory_bytes = max_memory_bytes
@@ -137,6 +160,12 @@ class Node:
         self.graph = graph or Graph()
         self.attributes = attributes or NodeAttributes()
         self.metrics: NodeMetrics | None = metrics
+        self.admission_policy = admission_policy
+        self.quotas: dict[str, TenantQuota] = quotas or {}
+        self.tier_policy = tier_policy
+        self.fragmenter = fragmenter
+        self.eviction_strategy = eviction_strategy
+        self._selected_tiers: dict[str, str] = {}
 
         if content_store is None:
             from membrane.content_store import InProcessBytes
@@ -198,6 +227,29 @@ class Node:
                 scopes=caller_scopes,
             )
             authorizer.authorize_write(fragment.tenant_id)
+        if self.admission_policy is not None and not self.admission_policy.should_admit(
+            fragment.reuse_score
+        ):
+            logger.debug(
+                "Node %s rejected %s: reuse_score=%.3f below threshold",
+                self.node_id,
+                fragment.identity.payload_hash,
+                fragment.reuse_score,
+            )
+            return False
+        quota = self.quotas.get(fragment.tenant_id)
+        if quota is not None and not quota.admit(fragment.payload_size):
+            logger.debug(
+                "Node %s rejected %s: tenant %s quota exhausted",
+                self.node_id,
+                fragment.identity.payload_hash,
+                fragment.tenant_id,
+            )
+            return False
+        if self.tier_policy is not None:
+            self._selected_tiers[fragment.identity.payload_hash] = select_tier(
+                self.tier_policy, fragment
+            )
         if fragment.payload_size > self.max_memory_bytes:
             logger.warning(
                 "Fragment %s size %s exceeds node %s limit %s",
@@ -342,6 +394,63 @@ class Node:
             if self.metrics is not None:
                 self.metrics.tenant.bump_fragment(frag.tenant_id, -1)
             return frag
+
+    def window_size(self) -> int:
+        """Return the active window size for new admissions.
+
+        The v3.0.0 release threads the :class:`AdaptiveFragmenter`
+        (Phase 3.3.10) through the Node so callers can ask the
+        node for the window it would use today. When no
+        fragmenter is configured the helper returns the v2.0
+        default 128.
+
+        Returns:
+            int: Positive window size in tokens.
+        """
+        if self.fragmenter is None:
+            return 128
+        return int(self.fragmenter.window_size())
+
+    def tier_of(self, content_hash: str) -> str | None:
+        """Return the tier name assigned to ``content_hash``.
+
+        Args:
+            content_hash: The fragment hash.
+
+        Returns:
+            str | None: ``"hot"`` / ``"warm"`` / ``"cold"`` /
+            ``"archival"`` when a tier policy is configured and
+            the fragment was admitted; ``None`` otherwise.
+        """
+        return self._selected_tiers.get(content_hash)
+
+    def record_hit(self, content_hash: str) -> None:
+        """Record a cache hit on ``content_hash``.
+
+        Args:
+            content_hash: The hash of the accessed fragment.
+
+        The v3.0.0 release runs the
+        :class:`~membrane.decision.HitObserver` EMA on every hit
+        so the cached fragment's ``reuse_score`` reflects the
+        live usage distribution. When the node has a
+        :class:`TinyLFU` eviction strategy the hash is also
+        recorded as a sketch hit, which biases the future
+        eviction decision toward keeping the key.
+        """
+        fragment = self.fragments.get(content_hash)
+        if fragment is None:
+            return
+        if self.eviction_strategy is not None:
+            self.eviction_strategy.touch(content_hash)
+        # HitObserver EMA on reuse_score; the helper lives
+        # at module level so we don't keep a long-lived
+        # observer instance per node.
+        from membrane.decision import HitObserver
+
+        if not hasattr(self, "_hit_observer"):
+            self._hit_observer = HitObserver()
+        self._hit_observer.record_hit(fragment)
 
     def evict_expired(
         self,
