@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -184,6 +185,7 @@ class Node:
 
         self.fragments: dict[str, Fragment] = {}
         self.primary_hashes: set[str] = set()
+        self._eviction_callbacks: list[Callable[[object], None]] = []
         self.access_times: dict[str, float] = {}
         self.insertion_times: dict[str, float] = {}
         self.memory_usage: int = 0
@@ -464,7 +466,7 @@ class Node:
         self,
         target_bytes: int,
         now: float,
-    ) -> tuple[list[str], int]:
+    ) -> tuple[list[str], list[Fragment], int]:
         """Phase 1: evict fragments whose TTL has expired.
 
         Args:
@@ -472,27 +474,34 @@ class Node:
             now: Current timestamp.
 
         Returns:
-            tuple[list[str], int]: ``(evicted_hashes, freed_bytes)``.
-            Stops as soon as ``freed_bytes >= target_bytes``.
+            tuple[list[str], list[Fragment], int]: ``(evicted_hashes,
+            evicted_fragments, freed_bytes)``. The fragments are
+            returned so the caller can fire eviction callbacks
+            before the fragments are released to the GC.
         """
         with self.lock:
             evicted: list[str] = []
+            evicted_fragments: list[Fragment] = []
             freed = 0
-            expired = [h for h, frag in self.fragments.items() if now - self.insertion_times.get(h, now) > frag.ttl]
+            expired = [
+                h for h, frag in self.fragments.items()
+                if now - self.insertion_times.get(h, now) > frag.ttl
+            ]
             for h in expired:
                 if freed >= target_bytes:
                     break
                 frag = self.remove_fragment(h)
                 freed += frag.payload_size
                 evicted.append(h)
-            return evicted, freed
+                evicted_fragments.append(frag)
+            return evicted, evicted_fragments, freed
 
     def evict_lru(
         self,
         target_bytes: int,
         now: float,
         already_evicted: set[str],
-    ) -> tuple[list[str], int]:
+    ) -> tuple[list[str], list[Fragment], int]:
         """Phase 2: evict fragments by LRU weighted by ``reuse_score``.
 
         Args:
@@ -502,10 +511,12 @@ class Node:
                 prior phases; these are skipped.
 
         Returns:
-            tuple[list[str], int]: ``(evicted_hashes, freed_bytes)``.
+            tuple[list[str], list[Fragment], int]: ``(evicted_hashes,
+            evicted_fragments, freed_bytes)``.
         """
         with self.lock:
             evicted: list[str] = []
+            evicted_fragments: list[Fragment] = []
             freed = 0
             candidates = [(h, frag) for h, frag in self.fragments.items() if h not in already_evicted]
 
@@ -526,13 +537,14 @@ class Node:
                 self.remove_fragment(h)
                 freed += frag.payload_size
                 evicted.append(h)
-            return evicted, freed
+                evicted_fragments.append(frag)
+            return evicted, evicted_fragments, freed
 
     def evict_graph_neighbors(
         self,
         target_bytes: int,
         seed_hashes: list[str],
-    ) -> tuple[list[str], int]:
+    ) -> tuple[list[str], list[Fragment], int]:
         """Phase 3: co-evict cold graph neighbors of already-evicted fragments.
 
         For every seed hash evicted in earlier phases, look up its
@@ -545,10 +557,12 @@ class Node:
             seed_hashes: Fragments evicted in earlier phases.
 
         Returns:
-            tuple[list[str], int]: ``(evicted_hashes, freed_bytes)``.
+            tuple[list[str], list[Fragment], int]: ``(evicted_hashes,
+            evicted_fragments, freed_bytes)``.
         """
         with self.lock:
             evicted: list[str] = []
+            evicted_fragments: list[Fragment] = []
             freed = 0
             for h in list(seed_hashes):
                 if freed >= target_bytes:
@@ -562,7 +576,8 @@ class Node:
                     neighbor_frag = self.remove_fragment(neighbor_hash)
                     freed += neighbor_frag.payload_size
                     evicted.append(neighbor_hash)
-            return evicted, freed
+                    evicted_fragments.append(neighbor_frag)
+            return evicted, evicted_fragments, freed
 
     def evict(
         self,
@@ -596,29 +611,70 @@ class Node:
         with self.lock:
             now = current_time if current_time is not None else time.time()
             evicted_hashes: list[str] = []
+            evicted_fragments: list[object] = []
             freed = 0
 
             # Phase 1: evict expired fragments.
-            expired_evicted, expired_freed = self.evict_expired(target_bytes, now)
+            expired_evicted, expired_fragments, expired_freed = self.evict_expired(target_bytes, now)
             evicted_hashes.extend(expired_evicted)
+            evicted_fragments.extend(expired_fragments)
             freed += expired_freed
             if freed >= target_bytes:
+                self._fire_eviction_callbacks(evicted_fragments)
                 return evicted_hashes
 
             # Phase 2: LRU weighted by reuse_score.
             already_evicted = set(evicted_hashes)
-            lru_evicted, lru_freed = self.evict_lru(target_bytes - freed, now, already_evicted)
+            lru_evicted, lru_fragments, lru_freed = self.evict_lru(
+                target_bytes - freed, now, already_evicted
+            )
             evicted_hashes.extend(lru_evicted)
+            evicted_fragments.extend(lru_fragments)
             freed += lru_freed
             if freed >= target_bytes:
+                self._fire_eviction_callbacks(evicted_fragments)
                 return evicted_hashes
 
             # Phase 3: graph-aware co-eviction.
-            graph_evicted, graph_freed = self.evict_graph_neighbors(target_bytes - freed, evicted_hashes)
+            graph_evicted, graph_fragments, graph_freed = self.evict_graph_neighbors(
+                target_bytes - freed, evicted_hashes
+            )
             evicted_hashes.extend(graph_evicted)
+            evicted_fragments.extend(graph_fragments)
             freed += graph_freed
 
+            self._fire_eviction_callbacks(evicted_fragments)
             return evicted_hashes
+
+    def add_eviction_callback(self, callback: Callable[[object], None]) -> None:
+        """Register a callback invoked on every evicted fragment.
+
+        Args:
+            callback: Callable that takes the
+                :class:`membrane.fragment.Fragment` being evicted
+                and returns nothing. The callback runs after the
+                fragment has been removed from the in-memory
+                state, so it is safe to inspect the fragment but
+                not the Node.
+        """
+        with self.lock:
+            self._eviction_callbacks.append(callback)
+
+    def _fire_eviction_callbacks(self, evicted_fragments: list[object]) -> None:
+        """Snapshot the fragments and run the registered callbacks.
+
+        Args:
+            evicted_fragments: Fragments just evicted.
+        """
+        if not self._eviction_callbacks or not evicted_fragments:
+            return
+        callbacks = list(self._eviction_callbacks)
+        for callback in callbacks:
+            for fragment in evicted_fragments:
+                try:
+                    callback(fragment)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning("eviction callback raised: %s", exc)
 
     def get_memory_usage(self) -> int:
         """Return current memory consumption in bytes.
