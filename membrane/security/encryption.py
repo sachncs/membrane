@@ -21,7 +21,7 @@ import os
 import secrets as _secrets
 import threading
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 NONCE_SIZE: int = 12
 TAG_SIZE: int = 16
@@ -29,7 +29,31 @@ KEY_SIZE: int = 32
 SALT_SIZE: int = 16
 
 
-@runtime_checkable
+class DecryptError(Exception):
+    """Raised when ciphertext decryption fails.
+
+    The v3.0.0 release keeps the typed failure surface narrow:
+    AES-256-GCM authentication failures, wrong key, or a
+    truncated blob all surface as :class:`DecryptError`. The
+    storage layer's :meth:`EncryptedInProcessBytes.get` and
+    :meth:`FilesystemBlob.get` swallow :class:`DecryptError`
+    and return ``None`` so a corrupted entry looks identical
+    to a missing one; callers that need the typed failure
+    surface call :func:`decrypt_payload` directly.
+    """
+    """Raised when ciphertext decryption fails.
+
+    The v3.0.0 release keeps the typed failure surface narrow:
+    AES-256-GCM authentication failures, wrong key, or a
+    truncated blob all surface as :class:`DecryptError`. The
+    storage layer's :meth:`EncryptedInProcessBytes.get` and
+    :meth:`FilesystemBlob.get` swallow :class:`DecryptError`
+    and return ``None`` so a corrupted entry looks identical
+    to a missing one; callers that need the typed failure
+    surface call :func:`decrypt_payload` directly.
+    """
+
+
 class KeyProvider(Protocol):
     """Pluggable master-key backend.
 
@@ -131,6 +155,10 @@ def decrypt_payload(blob: bytes, key: bytes) -> bytes:
 
     Returns:
         bytes: Decrypted plaintext.
+
+    Raises:
+        DecryptError: When the blob is truncated, the key is
+            wrong, or the AES-GCM authentication tag mismatches.
     """
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -139,10 +167,13 @@ def decrypt_payload(blob: bytes, key: bytes) -> bytes:
             "encryption at rest requires 'cryptography'; install membrane[secrets-aws|gcp|vault]"
         ) from exc
     if len(blob) < NONCE_SIZE + TAG_SIZE:
-        raise ValueError("encrypted blob too short")
+        raise DecryptError(f"encrypted blob too short ({len(blob)} bytes)")
     nonce = blob[:NONCE_SIZE]
     payload = blob[NONCE_SIZE:]
-    return AESGCM(key).decrypt(nonce, payload, None)
+    try:
+        return AESGCM(key).decrypt(nonce, payload, None)
+    except Exception as exc:
+        raise DecryptError(str(exc)) from exc
 
 
 def decrypt_payload_with_versions(
