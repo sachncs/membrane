@@ -85,3 +85,70 @@ class TestAsyncWireClientRetry:
         client = asyncio.run(run())
         # The breaker recorded 3 failures.
         assert client.breaker["http://x"].failures == 3
+
+    def test_retry_with_first_attempt_success_records_zero_failures(self):
+        """A 2xx on the first attempt does not touch the breaker."""
+        routes = {("GET", "/ok"): (200, b"hello")}
+        transport = _make_transport(routes)
+
+        async def run():
+            client = AsyncWireClient(
+                base_url="http://x",
+                timeout_sec=1.0,
+                retry=RetryPolicy(max_attempts=3, base_delay=0.0, max_delay=0.0),
+            )
+            original = httpx.AsyncClient
+
+            def factory(*args, **kwargs):
+                kwargs.pop("transport", None)
+                kwargs.pop("base_url", None)
+                return original(transport=transport, base_url="http://x", **kwargs)
+
+            try:
+                httpx.AsyncClient = factory  # type: ignore[assignment]
+                result = await client.request("GET", "/ok")
+            finally:
+                httpx.AsyncClient = original  # type: ignore[assignment]
+            assert result == b"hello"
+            return client
+
+        client = asyncio.run(run())
+        # No failures recorded.
+        assert client.breaker["http://x"].failures == 0
+
+    def test_retry_respects_max_attempts_cap(self):
+        """max_attempts caps the number of attempts at the configured value."""
+        attempts_made: list[int] = []
+
+        # Mock a transport that records every attempt.
+        def handler(request: httpx.Request) -> httpx.Response:
+            attempts_made.append(1)
+            return httpx.Response(500, content=b"err")
+
+        transport = httpx.MockTransport(handler)
+
+        async def run():
+            client = AsyncWireClient(
+                base_url="http://x",
+                timeout_sec=1.0,
+                retry=RetryPolicy(max_attempts=4, base_delay=0.0, max_delay=0.0),
+            )
+            original = httpx.AsyncClient
+
+            def factory(*args, **kwargs):
+                kwargs.pop("transport", None)
+                kwargs.pop("base_url", None)
+                return original(transport=transport, base_url="http://x", **kwargs)
+
+            try:
+                httpx.AsyncClient = factory  # type: ignore[assignment]
+                from contextlib import suppress
+                with suppress(RuntimeError):
+                    await client.request("GET", "/x")
+            finally:
+                httpx.AsyncClient = original  # type: ignore[assignment]
+            return client
+
+        asyncio.run(run())
+        # The cap is 4: 1 initial attempt + 3 retries.
+        assert len(attempts_made) == 4
