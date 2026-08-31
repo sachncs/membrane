@@ -84,11 +84,13 @@ def create_app(
     app.state.cluster_manager = cluster_manager
     app.state.metrics_registry = metrics_registry
     if metrics_registry is not None:
-        from membrane.metrics import TransportMetrics
+        from membrane.metrics import ClusterMetrics, TransportMetrics
 
         app.state.transport_metrics = TransportMetrics(metrics_registry)
+        app.state.cluster_metrics = ClusterMetrics(metrics_registry)
     else:
         app.state.transport_metrics = None
+        app.state.cluster_metrics = None
 
     register_routes(app)
     try:

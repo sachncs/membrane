@@ -161,11 +161,16 @@ class TransportMetrics:
         )
 
 
+def _default_tenant_metrics() -> TenantMetrics:
+    return TenantMetrics()
+
+
 @dataclass
 class ClusterMetrics:
     """Typed collector for cluster membership and replication."""
 
     registry: MetricsCollector
+    tenant: TenantMetrics = field(default_factory=lambda: _default_tenant_metrics())
 
     @property
     def peers_total(self) -> Gauge:

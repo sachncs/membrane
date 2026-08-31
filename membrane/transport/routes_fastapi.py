@@ -403,6 +403,7 @@ def _retrieve(app: FastAPI, content_hash: str):
 
 def _store(app: FastAPI, req: StoreRequest, request: Request):
     context = _scope(request, "POST", "/store")
+    cluster_metrics_obj = getattr(app.state, "cluster_metrics", None)
     status, body = record_transport(
         _transport_metrics(app), "store", "POST",
         lambda: op_store(
@@ -415,6 +416,7 @@ def _store(app: FastAPI, req: StoreRequest, request: Request):
             if hasattr(app.state, "server")
             else False,
             auth_context=context,
+            cluster_metrics=cluster_metrics_obj,
         ),
     )
     return _respond(status, body)

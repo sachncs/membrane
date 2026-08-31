@@ -29,7 +29,7 @@ from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
 from membrane.errors import TenantScopeError
 from membrane.gc import TombstoneTable
-from membrane.metrics import MetricsCollector
+from membrane.metrics import ClusterMetrics, MetricsCollector
 from membrane.network.cluster import Cluster
 from membrane.network.peer import JsonDict, Peer
 from membrane.node import Node
@@ -186,6 +186,7 @@ def op_store(
     quorum_attempt: object | None = None,
     draining: bool = False,
     auth_context: AuthContext | None = None,
+    cluster_metrics: ClusterMetrics | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /store`` — store a fragment with a configured consistency level.
 
@@ -212,6 +213,9 @@ def op_store(
             :func:`membrane.quorum.attempt_quorum_acks`.
             ``None`` falls back to local-only writes for
             single-node deployments and tests.
+        cluster_metrics: Optional :class:`ClusterMetrics` whose
+            per-tenant operation counter is bumped on every
+            successful store.
 
     Returns:
         tuple[int, JsonDict]: ``(200, {"success": True, ...})``
@@ -257,6 +261,8 @@ def op_store(
         return 403, {"error": "tenant scope", "detail": str(exc)}
     if not ok:
         return _ok({"success": False, "content_hash": frag.identity.payload_hash})
+    if cluster_metrics is not None and hasattr(cluster_metrics, "tenant"):
+        cluster_metrics.tenant.bump_operation(frag.tenant_id, 1)
 
     if consistency == "eventual":
         return _ok({"success": True, "content_hash": frag.identity.payload_hash})
