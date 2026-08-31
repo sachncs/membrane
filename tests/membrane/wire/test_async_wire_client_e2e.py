@@ -135,3 +135,24 @@ class TestAsyncWireClientE2E:
         # 4xx is a successful response; the breaker is untouched.
         result = _run(run())
         assert result == b"missing"
+
+    def test_cancellation_token_aborts_request(self):
+        """A cancelled token short-circuits the request with CancelledError."""
+
+        async def run() -> None:
+            transport = _make_async_transport(
+                {("GET", "/slow"): (200, b"hi")}
+            )
+            with self._patch_async_client(transport) as _:
+                client = AsyncWireClient(base_url="http://t", timeout_sec=5.0)
+                from membrane.wire.v3.aio_client import CancellationToken
+
+                token = CancellationToken()
+                # Pre-cancel the token; the first attempt's
+                # pre-loop check fires CancelledError.
+                token.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await client.request("GET", "/slow", token=token)
+                # No breaker failures recorded for a cancelled
+                # call.
+                assert client.breaker == {}
