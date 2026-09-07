@@ -1,0 +1,98 @@
+from tests.conftest import make_fragment
+
+"""Tests for delta_sync module."""
+
+import pytest
+
+from membrane.node import Node
+from membrane.sync import DeltaSync, SyncPlan
+
+
+class TestDeltaSync:
+    """Test suite for DeltaSync."""
+
+    def test_build_plan_no_differences(self):
+        source = Node("src")
+        target = Node("tgt")
+        f = make_fragment("h1")
+        source.store(f, is_primary=True)
+        target.store(f, is_primary=False)
+        ds = DeltaSync()
+        plan = ds.build_plan(source, target)
+        assert plan.missing_hashes == []
+        assert plan.outdated_hashes == []
+        assert plan.estimated_bytes == 0
+
+    def test_build_plan_detects_missing(self):
+        source = Node("src")
+        target = Node("tgt")
+        source.store(make_fragment("h1", size=20), is_primary=True)
+        ds = DeltaSync()
+        plan = ds.build_plan(source, target)
+        assert plan.missing_hashes == ["h1"]
+        assert plan.estimated_bytes == 20
+
+    def test_build_plan_detects_outdated(self):
+        source = Node("src")
+        target = Node("tgt")
+        source.store(make_fragment("h1", version_id=2), is_primary=True)
+        target.store(make_fragment("h1", version_id=1), is_primary=False)
+        ds = DeltaSync()
+        plan = ds.build_plan(source, target)
+        assert plan.outdated_hashes == ["h1"]
+
+    def test_execute_plan_transfers(self):
+        source = Node("src")
+        target = Node("tgt")
+        source.store(make_fragment("h1", size=20), is_primary=True)
+        ds = DeltaSync()
+        plan = ds.build_plan(source, target)
+        result = ds.execute_plan(plan, source, target)
+        assert "h1" in result.transferred_hashes
+        assert target.retrieve("h1") is not None
+        assert result.bytes_transferred == 20
+
+    def test_execute_plan_missing_on_source_fails(self):
+        source = Node("src")
+        target = Node("tgt")
+        ds = DeltaSync()
+        plan = SyncPlan(
+            source_id="src",
+            target_id="tgt",
+            missing_hashes=["ghost"],
+            outdated_hashes=[],
+            estimated_bytes=0,
+        )
+        result = ds.execute_plan(plan, source, target)
+        assert "ghost" in result.failed_hashes
+        assert result.bytes_transferred == 0
+
+    def test_sync_one_shot(self):
+        source = Node("src")
+        target = Node("tgt")
+        source.store(make_fragment("h1"), is_primary=True)
+        ds = DeltaSync()
+        result = ds.sync(source, target)
+        assert "h1" in result.transferred_hashes
+        assert target.retrieve("h1") is not None
+
+    def test_batch_sync(self):
+        source = Node("src")
+        t1 = Node("t1")
+        t2 = Node("t2")
+        source.store(make_fragment("h1"), is_primary=True)
+        ds = DeltaSync()
+        results = ds.batch_sync(source, [t1, t2])
+        assert results["t1"].transferred_hashes == ["h1"]
+        assert results["t2"].transferred_hashes == ["h1"]
+        assert t1.retrieve("h1") is not None
+        assert t2.retrieve("h1") is not None
+
+    def test_plan_estimated_bytes(self):
+        source = Node("src")
+        target = Node("tgt")
+        source.store(make_fragment("a", size=10), is_primary=True)
+        source.store(make_fragment("b", size=20), is_primary=True)
+        ds = DeltaSync()
+        plan = ds.build_plan(source, target)
+        assert plan.estimated_bytes == 30

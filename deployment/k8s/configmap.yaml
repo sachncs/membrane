@@ -1,0 +1,37 @@
+---
+# ConfigMap for non-secret runtime configuration.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: membrane-config
+data:
+  # `membrane serve` reads MEMBRANE_* env vars; this is the YAML form
+  # operators can patch.
+  MEMBRANE_LOG_LEVEL: "INFO"
+  MEMBRANE_TRANSPORT: "http"
+  MEMBRANE_COMPUTE: "cpu"
+  MEMBRANE_PORT: "8080"
+  MEMBRANE_REDIS_URL: "redis://membrane-redis:6379/0"
+---
+# Secret template for sensitive values. Replace placeholders and apply.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: membrane-secrets
+type: Opaque
+stringData:
+  # Bearer tokens accepted by the APIKeyAuthenticator.
+  # Format: "<api_key>:<subject>:<scope1>,<scope2>"
+  MEMBRANE_API_KEYS_FILE: |
+    # ak_live_admin:sre-bot:admin
+    # ak_live_writer:ingest-svc:write
+    # ak_live_reader:metrics-scraper:read
+  # TLS key + cert (PEM-encoded).
+  MEMBRANE_TLS_KEY: |
+    -----BEGIN PRIVATE KEY-----
+    REPLACE_ME
+    -----END PRIVATE KEY-----
+  MEMBRANE_TLS_CERT: |
+    -----BEGIN CERTIFICATE-----
+    REPLACE_ME
+    -----END CERTIFICATE-----

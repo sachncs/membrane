@@ -1,0 +1,13 @@
+---
+# PodDisruptionBudget: at most 1 pod may be unavailable at a time during
+# voluntary disruptions (drains, autoscaling, etc.). With 3 replicas this
+# preserves quorum for the cluster's gossip + replication loops.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: membrane
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: membrane

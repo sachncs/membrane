@@ -1,0 +1,102 @@
+---
+# Membrane server — StatefulSet for stable pod identity.
+# 3 replicas by default; each pod has a stable hostname (membrane-0,
+# membrane-1, membrane-2) that the cluster layer uses for gossip addressing.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: membrane
+  labels:
+    app: membrane
+spec:
+  replicas: 3
+  serviceName: membrane-headless
+  selector:
+    matchLabels:
+      app: membrane
+  template:
+    metadata:
+      labels:
+        app: membrane
+    spec:
+      # Don't run on the same node as Redis.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: membrane
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: membrane
+          image: ghcr.io/sachncs/membrane:v0.2.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 50051
+          env:
+            - name: MEMBRANE_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MEMBRANE_PORT
+              value: "8080"
+            - name: MEMBRANE_TRANSPORT
+              value: "http"
+            - name: MEMBRANE_LOG_LEVEL
+              value: "INFO"
+            - name: MEMBRANE_REDIS_URL
+              value: "redis://membrane-redis:6379/0"
+          resources:
+            requests:
+              cpu: "1"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          # Readiness: deep check via /readyz.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Liveness: shallow check via /livez.
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          # Startup probe gives the cluster 60s to converge before
+          # liveness kicks in.
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/membrane
+      volumes:
+        - name: logs
+          emptyDir: {}

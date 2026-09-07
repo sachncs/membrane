@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package membrane.wire.v3;
+
+// Envelope: the request envelope for the bidi ResumeTransfer stream.
+message Envelope {
+  // Stable id matched across request and response; "" means "anonymous".
+  string request_id = 1;
+  string tenant_id = 2;
+  string model_id = 3;
+  // 64-character lowercase hex digest of the
+  // membrane.compat.ModelCompatibilityFingerprint.
+  string fingerprint_compat = 4;
+  // 64-character lowercase hex sha256 of the canonical
+  // membrane.serialization payload bytes.
+  string content_hash = 5;
+  // Total byte length of the uncompressed payload.
+  int64 total_bytes = 6;
+  // Compression method id: 0 = none, 1 = zstd, 2 = lz4.
+  int32 compression = 7;
+  // Arrow "content type" tag — empty unless the payload is an Arrow
+  // RecordBatch; v3.0 ships raw bytes with the option to opt in to
+  // Arrow later.
+  string content_type = 8;
+}
+
+// TensorPayload: the chunked tensor body the bidi stream carries.
+message TensorPayload {
+  bytes data = 1;
+  // SHA-256 fingerprint of the deserialized tensor schema (dtype +
+  // shape + element count). Empty until 3.0.1.
+  string schema_fingerprint = 2;
+  repeated int64 shape = 3;
+  string dtype = 4;
+}
+
+// ChunkRequest: client → server, asks for one chunk.
+message ChunkRequest {
+  // Empty chunk_index = "give me the manifest first".
+  int32 chunk_index = 1;
+  // Offset inside the chunk (for resumable partial reads); 0 default.
+  int64 offset = 2;
+  // Length to fetch inside the chunk; 0 default = the whole chunk.
+  int64 length = 3;
+}
+
+// Chunk: server → client, one chunk's payload.
+message Chunk {
+  int32 chunk_index = 1;
+  int64 offset = 2;
+  bytes data = 3;
+  // Hex sha256 of `data`. Verified by the client.
+  string sha256_hex = 4;
+  // True when this is the last chunk; client closes the stream.
+  bool is_last = 5;
+}
+
+// Service: bidi stream for resumable + authenticated transfer.
+service Transfer {
+  rpc Open(stream ChunkRequest) returns (stream Chunk);
+}

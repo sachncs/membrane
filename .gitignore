@@ -1,0 +1,86 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Testing
+.coverage
+.coverage.*
+.coveragecov
+.coverage.xml
+.pytest_cache/
+.tox/
+.nox/
+htmlcov/
+
+# Type checking
+.mypy_cache/
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+.python-version
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+._*
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+*.whl
+*.tar.gz
+*.zip
+
+# Jupyter
+.ipynb_checkpoints/
+
+# pyenv
+.python-version
+
+# pytest
+.pytest_cache/
+
+# ruff
+.ruff_cache/

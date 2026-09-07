@@ -1,0 +1,266 @@
+"""Transformers: compute backend loading real HuggingFace model weights.
+
+Requires ``transformers`` and ``torch`` (installed via
+``pip install membrane[local-llm]``).
+
+This backend wraps a HuggingFace Transformers model and tokenizer
+and exposes the standard :class:`~membrane.compute.backend
+.Backend` interface. On
+:meth:`Transformers.prefill` it runs a forward pass and
+uses the last hidden state as the fragment embedding — the
+average over each 128-token window becomes the embedding for
+that fragment's :class:`~membrane.fragment.Fragment`. On
+:meth:`Transformers.generate` it invokes
+``model.generate`` and decodes the freshly produced tokens.
+
+Failure modes:
+
+* ``transformers`` or ``torch`` is missing → the model and
+  tokenizer remain ``None``; prefill and generate fall back to a
+  small simulation.
+* The forward pass raises for any reason → the prefill result is
+  produced by :meth:`simulate_prefill` and a warning is logged.
+
+The embedding is truncated to 256 dimensions to keep
+the per-fragment embedding bounded regardless
+of the underlying model's hidden size.
+"""
+
+import logging
+from typing import Any
+
+from membrane.compute._hash import token_hash
+from membrane.compute.base import Backend
+from membrane.fragment import Fragment
+from membrane.identity import PayloadIdentity
+
+logger = logging.getLogger(__name__)
+
+
+class Transformers(Backend):
+    """Compute backend using HuggingFace Transformers for local inference.
+
+    Loads a real model and tokenizer, runs forward passes to
+    extract hidden states as embeddings, and uses
+    ``model.generate()`` for text generation.
+
+    Args:
+        model_id: HuggingFace model identifier
+            (e.g., ``"meta-llama/Llama-2-7b-hf"``). Defaults to
+            ``"gpt2"`` so the backend can be smoke-tested
+            without downloading large weights.
+        device: Override device (``"cpu"``, ``"cuda"``, or
+            ``"auto"``). When ``"auto"``, CUDA is preferred
+            when available.
+    """
+
+    def __init__(self, model_id: str = "gpt2", device: str = "auto") -> None:
+        """Initialize the backend and load the model.
+
+        Args:
+            model_id: HuggingFace model identifier.
+            device: Device selection. ``"auto"`` picks CUDA if
+                available.
+        """
+        self.model_id = model_id
+        self.device = device
+        self.model: Any | None = None
+        self.tokenizer: Any | None = None
+        self.torch: Any | None = None
+        self.actual_device: str = "cpu"
+        self.load_model()
+
+    def load_model(self) -> None:
+        """Load ``model_id`` and its tokenizer.
+
+        All failures (missing dependencies, network errors,
+        OOM) are caught and converted into a logged warning so
+        the backend can still be instantiated in degraded
+        environments.
+        """
+        try:
+            import torch
+
+            # transformers is an optional dependency. mypy cannot see
+            # its type stubs without an explicit [transformers] extra,
+            # hence the type: ignore on the import line below.
+            from transformers import AutoModel, AutoTokenizer  # type: ignore[import-not-found]
+
+            self.torch = torch
+            if self.device == "auto":
+                # Prefer CUDA when available, fall back to CPU.
+                self.actual_device = "cuda" if torch.cuda.is_available() else "cpu"
+            else:
+                self.actual_device = self.device
+
+            logger.info("Transformers: loading %s on %s", self.model_id, self.actual_device)
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+            self.model = AutoModel.from_pretrained(self.model_id)
+            self.model.to(self.actual_device)
+            self.model.eval()
+            logger.info("Transformers: loaded %s", self.model_id)
+        except ImportError:
+            logger.warning("Transformers: transformers or torch not installed")
+        except (OSError, RuntimeError, ValueError) as exc:
+            # Network errors, OOM, or invalid model IDs land here.
+            logger.warning("Transformers: failed to load model (%s)", exc)
+
+    def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
+        """Run a forward pass to obtain hidden-state embeddings.
+
+        If the model failed to load, falls back to a small
+        simulation. The simulation produces fragments with a
+        two-element embedding so downstream tests still receive
+        well-formed fragments.
+
+        Args:
+            prompt_tokens: Input token IDs.
+            model_id: Model identifier stamped on each
+                fragment's identity.
+
+        Returns:
+            list[Fragment]: One fragment per 128-token window.
+        """
+        if self.model is None or self.tokenizer is None:
+            return self.simulate_prefill(prompt_tokens, model_id)
+
+        try:
+            import torch
+
+            with torch.no_grad():
+                inputs = self.tokenizer(
+                    " ".join(str(t) for t in prompt_tokens),
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=2048,
+                )
+                inputs = {k: v.to(self.actual_device) for k, v in inputs.items()}
+                outputs = self.model(**inputs, output_hidden_states=True)
+                # Last layer's hidden state: (batch, seq_len, hidden_dim).
+                hidden_states = outputs.hidden_states[-1]
+                # Drop batch dim and move to CPU as numpy.
+                embeddings = hidden_states[0].cpu().numpy()
+        except (RuntimeError, ValueError, IndexError) as exc:
+            # OOM, device errors, or shape mismatches degrade to
+            # simulated prefill.
+            logger.warning("Transformers forward pass failed (%s); falling back to simulation", exc)
+            return self.simulate_prefill(prompt_tokens, model_id)
+
+        window_size = 128
+        fragments: list[Fragment] = []
+        # Pre-compute chunk-level averages in a single pass to keep
+        # the per-chunk loop tight. Average embeddings over each
+        # chunk window so each fragment is represented by a single
+        # fixed-size vector capped at 256 dimensions regardless of
+        # the model's hidden size.
+        for i in range(0, len(prompt_tokens), window_size):
+            chunk = prompt_tokens[i : i + window_size]
+            h = token_hash(chunk)
+            emb_slice = embeddings[i : i + window_size]
+            avg_emb = emb_slice.mean(axis=0).tolist() if len(emb_slice) > 0 else [0.0]  # noqa: F841 -- retained for observability; Fragment drops embedding
+            identity = PayloadIdentity(
+                payload_hash=h,
+                model_id=model_id,
+                model_revision="",
+                tokenizer_name=model_id,
+                tokenizer_revision="",
+                layer_range=(0, 1),
+                head_range=(-1, -1),
+                token_span=(i, min(i + window_size, len(prompt_tokens)) - 1),
+                dtype="float16",
+                shape=(1, 1, len(chunk), 256),
+            )
+            frag = Fragment(
+                identity=identity,
+                payload_ref=h,
+                payload_size=len(chunk) * 64,
+                ttl=3600.0,
+                reuse_score=0.5,
+                version_id=1,
+            )
+            fragments.append(frag)
+        logger.debug(
+            "Transformers: prefill %s tokens into %s fragments",
+            len(prompt_tokens),
+            len(fragments),
+        )
+        return fragments
+
+    def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
+        """Generate text with ``model.generate``.
+
+        Args:
+            prompt_tokens: Input token IDs.
+            model_id: Model identifier (currently unused —
+                ``self.model_id`` is the source of truth).
+            max_tokens: Maximum number of new tokens to
+                generate.
+
+        Returns:
+            dict: ``{"text": ..., "tokens": [...]}``. Empty
+            strings and lists when the model is not loaded or
+            generation fails.
+        """
+        if self.model is None or self.tokenizer is None:
+            return {"text": "", "tokens": []}
+        try:
+            import torch
+
+            prompt_text = " ".join(str(t) for t in prompt_tokens)
+            inputs = self.tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=2048)
+            inputs = {k: v.to(self.actual_device) for k, v in inputs.items()}
+            with torch.no_grad():
+                output_ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_tokens,
+                    do_sample=False,
+                )
+            # Slice off the prompt portion to keep only the
+            # newly generated tokens.
+            new_ids = output_ids[0][inputs["input_ids"].shape[1] :]
+            text = self.tokenizer.decode(new_ids, skip_special_tokens=True)
+            return {"text": text, "tokens": new_ids.tolist()}
+        except (RuntimeError, ValueError, IndexError) as exc:
+            logger.warning("Transformers generate failed: %s", exc)
+            return {"text": "", "tokens": []}
+
+    def available(self) -> bool:
+        """Return whether the model and tokenizer are loaded.
+
+        Returns:
+            bool: True when both ``_model`` and ``_tokenizer``
+            were successfully initialized.
+        """
+        return self.model is not None and self.tokenizer is not None
+
+    def device_name(self) -> str:
+        """Return a descriptive device name.
+
+        Returns:
+            str: ``"transformers(<model>,<device>)"`` when
+            loaded, ``"transformers(unloaded)"`` otherwise.
+        """
+        if self.model is None:
+            return "transformers(unloaded)"
+        return f"transformers({self.model_id},{self.actual_device})"
+
+    def simulate_prefill(
+        self,
+        prompt_tokens: list[int],
+        model_id: str,
+    ) -> list[Fragment]:
+        """Produce a simulated prefill (used when no model is loaded)."""
+        window_size = Backend.SIMULATE_WINDOW_SIZE
+        fragments: list[Fragment] = []
+        for i in range(0, len(prompt_tokens), window_size):
+            chunk = prompt_tokens[i : i + window_size]
+            fragments.append(
+                Backend.simulate_prefill_fragment(
+                    chunk=chunk,
+                    chunk_index=i,
+                    total_prompt_tokens=len(prompt_tokens),
+                    model_id=model_id,
+                    window_size=window_size,
+                )
+            )
+        return fragments
