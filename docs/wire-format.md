@@ -1,15 +1,21 @@
-# Membrane wire & storage format (v1.0)
+# Membrane wire & storage format (v5)
 
 This document specifies the on-wire / on-disk formats that
-Membrane uses for fragment fragments, identity fingerprints,
-canonical payloads, and per-cluster metadata. Everything in this
-document is part of the v1.0 contract; breaking changes require a
-major version bump.
+Membrane uses for fragment payloads, identity fingerprints,
+canonical bytes, and per-cluster metadata. Everything in this
+document is part of the **v5** contract; breaking changes
+require a major version bump and a ``schema_version`` bump in
+:data:`membrane.serialization.SCHEMA_VERSION`.
 
-## 1. Fragment identity — `PayloadIdentity`
+The v5 contract was introduced in v3.0.0 and supersedes the
+v2 / v4 contracts. ``from_dict`` and ``parse_canonical``
+reject any other ``schema_version`` with
+:class:`membrane.errors.SchemaError`.
 
-Stable ten-field fingerprint that uniquely identifies a fragment in
-storage, on the wire, and in gossip digests:
+## 1. Fragment identity — ``PayloadIdentity``
+
+Stable ten-field fingerprint that uniquely identifies a
+fragment in storage, on the wire, and in gossip digests:
 
 ```python
 PayloadIdentity(
@@ -18,15 +24,15 @@ PayloadIdentity(
     model_revision: str,          # "" when unpinned
     tokenizer_name: str,
     tokenizer_revision: str,
-    layer_range: (int, int),      # [start, end), inclusive
+    layer_range: (int, int),      # [start, end], inclusive
     head_range: (int, int),       # (-1, -1) for "all heads"
     token_span: (int, int),       # [start, end], inclusive
-    dtype: str,                   # "float16" | "bfloat16" | "float32" | "float64"
+    dtype: str,                   # see ``docs/compat-matrix.md``
     shape: tuple[int, ...],       # (batch, layers, heads, seq, head_dim)
 )
 ```
 
-Serialized to JSON as a sub-dict:
+Serialised to JSON as a sub-dict:
 
 ```json
 {
@@ -43,108 +49,102 @@ Serialized to JSON as a sub-dict:
 }
 ```
 
-`PayloadIdentity.fingerprint()` returns the SHA-256 of the JSON-
-canonical form (sort_keys=True). Two fragments collide only when
-every field is identical; the ten fields combined are enough to
-disambiguate model / tokenizer revisions, layer / head spans,
-dtype, and tensor shape.
+``PayloadIdentity.fingerprint()`` returns the SHA-256 of the
+JSON-canonical form (``sort_keys=True``). Two fragments
+collide only when every field is identical; the ten fields
+combined disambiguate model / tokenizer revisions, layer /
+head spans, dtype, and tensor shape.
 
-## 2. Wire format — `FragmentMessage`
+## 2. Wire format — ``FragmentMessage``
 
-Schema version 2. Every request body that carries a fragment uses
-this shape:
+**Schema version 5.** Every request body that carries a
+fragment uses this shape:
 
 ```json
 {
-    "schema_version": 2,
+    "schema_version": 5,
+    "tenant_id": "public",
     "identity": { ... PayloadIdentity sub-dict ... },
     "payload_ref": "abc…",
     "payload_size": 8388608,
     "ttl": 3600.0,
     "reuse_score": 0.87,
-    "version_id": 1
+    "version_id": 1,
+    "consistency": "strong",
+    "hlc": 1735600000123456789,
+    "fingerprint_compat": "5b6e..."
 }
 ```
 
 The body never carries the canonical bytes inline over HTTP /
 FastAPI: clients and servers stream the bytes through the
-separate `ContentStore` API (`PUT /payload/{key}` style out of
-scope for the v1 wire). The bytes are addressable through
-`payload_ref` (the SHA-256 hex digest).
+separate ``ContentStore`` API (``PUT /payload/{key}`` style
+out of scope for the v5 wire). The bytes are addressable
+through ``payload_ref`` (the SHA-256 hex digest).
+
+The fields added at v2.0 (``consistency``, ``hlc``) and
+v3.0.0 (``tenant_id``, ``fingerprint_compat``) are required:
+``from_dict`` raises ``SchemaError`` if any are missing.
+
+### Consistency levels
+
+The ``consistency`` field is one of ``"strong"``, ``"quorum"``,
+or ``"eventual"``. See ``docs/consistency.md`` for the full
+contract; the v5 wire carries the literal string in the
+envelope and :func:`membrane.serialization.from_dict` does not
+constrain it (the typed enforcement lives on the cluster side
+in :class:`membrane.network.config.ClusterConfig`).
 
 ### gRPC variant
 
-`membrane.proto` `FragmentMessage` field set:
+The gRPC envelope is defined by ``membrane/wire/v3/wire_v3.proto``
+(``Envelope``, ``TensorPayload``, ``ChunkRequest``, ``Chunk``).
+The protobuf stub is generated into
+``membrane/wire/v3/wire_v3_pb2.py`` and the servicer is
+implemented at ``membrane.transport.grpc``. gRPC servers set
+``max_receive_message_length`` and ``max_send_message_length``
+to ``DEFAULT_MAX_BODY_BYTES`` (100 MiB) so inline payloads can
+carry large frames without truncation.
 
-```
-1    int32  schema_version         = 2
-2    bytes   payload_hash           = 64-byte SHA-256 (raw)
-3    string  model_id
-4    string  model_revision
-5    string  tokenizer_name
-6    string  tokenizer_revision
-7    repeated int32  layer_range    // [start, end]
-8    repeated int32  head_range
-9    repeated int32  token_span
-10   string  dtype
-11   repeated int64  shape
-12   string  payload_ref
-13   int64   payload_size
-14   bytes   payload               // optional inline payload
-15   double  ttl
-16   double  reuse_score
-17   int32   version_id
-```
-
-gRPC servers set `max_receive_message_length` and
-`max_send_message_length` to `DEFAULT_MAX_BODY_BYTES` (100 MiB) so
-inline `payload` can carry large frames without truncation.
-
-### Backward compatibility
-
-Schema version 1 is **not** retained. A v1 client receives a
-`SchemaError` on every v2 reader; a v2 client refuses every v1
-fragment. Operators rolling out v1.0 must drain their v0.8 fleet
-first or convert at the proxy layer.
-
-## 3. Canonical byte framing — `canonicalize` / `parse_canonical`
+## 3. Canonical byte framing — ``canonicalize`` / ``parse_canonical``
 
 Frames on disk:
 
 ```
-+-----------------+
-| MAGIC 4 B       |  = 0xC0DE0102
-+-----------------+
-| schema 2 B      |  = 2 today
-| reserved 4 B    |  = 0
-+-----------------+
-| identity_len 4 B (u32 LE)
-+-----------------+
-| identity_json   |  (PayloadIdentity.to_dict())
-+-----------------+
-| payload_len 8 B (u64 LE)
-+-----------------+
-| payload         |  (canonical K/V bytes)
-+-----------------+
-| trailer 8 B     |  = first 8 bytes of SHA-256(payload)
-+-----------------+
++-----------------------------------+
+| MAGIC       4 B  = 0xC0DE0105    |   (last byte = 0x05 for v5)
++-----------------------------------+
+| schema      2 B                   |   (= 5 for v5)
++-----------------------------------+
+| reserved    4 B   (= 0)           |
++-----------------------------------+
+| identity_len 4 B (u32 LE)         |
++-----------------------------------+   offset = 14
+| identity_json   (identity_len B)  |   UTF-8 JSON of
++-----------------------------------+   PayloadIdentity.to_dict()
+| payload_len  u64 (LE)             |
++-----------------------------------+
+| payload      (payload_len B)      |
++-----------------------------------+
+| trailer      8 B                  |   first 8 bytes of SHA-256
++-----------------------------------+   of payload; cheap verify
 ```
 
 Header = 14 bytes. Total size =
-`14 + identity_len + 8 + payload_len + 8`.
+``14 + identity_len + 8 + payload_len + 8``.
 
-`parse_canonical(buf)` reverses the round-trip and rejects any
-trailer / magic / header mismatch with:
+``parse_canonical(buf)`` reverses the round-trip and rejects
+any trailer / magic / header mismatch with:
 
-* `SchemaError` — magic, schema, or identity length is wrong.
-* `CorruptPayloadError` — magic + schema + length match but the
-  truncated trailer disagrees with the payload's hash.
+* ``SchemaError`` — magic, schema, or identity length is wrong.
+* ``CorruptPayloadError`` — magic + schema + length match but
+  the truncated trailer disagrees with the payload's hash.
 
 ## 4. Cluster metadata — Snapshot
 
-Durable cluster state is written by `Server.checkpoint_state()`
-and read by `Server.restore_state()` to a single JSON file per
-node:
+Durable cluster state is written by ``Server.checkpoint_state()``
+and read by ``Server.restore_state()`` to a single JSON file
+per node:
 
 ```
 {state_dir}/{node_id}.json
@@ -152,7 +152,7 @@ node:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 5,
   "cluster_epoch": 17,
   "captured_at": 1735600000.123,
   "membership": [
@@ -169,44 +169,66 @@ node:
 }
 ```
 
-The file is rewritten atomically (`tempfile.NamedTemporaryFile +
-os.fsync + os.replace + fsync on the parent dir`). A `cluster_epoch`
-more than one step behind the live value is rejected on restore
-(see `ClusterEpochGuard`); the stale file is then deleted.
+The file is rewritten atomically
+(``tempfile.NamedTemporaryFile + os.fsync + os.replace +
+fsync on the parent dir``). A ``cluster_epoch`` more than one
+step behind the live value is rejected on restore (see
+``ClusterEpochGuard``); the stale file is then deleted.
 
 ## 5. Tombstone propagation
 
-Every soft-delete writes a `Tombstone(content_hash, until,
-nodes)` to the local `TombstoneTable` *before* removing the
-fragment. Gossip piggybacks the active tombstone set on its next
-state delivery so peers can:
+Every soft-delete writes a ``Tombstone(content_hash, until,
+nodes)`` to the local ``TombstoneTable`` *before* removing the
+fragment. Gossip piggybacks the active tombstone set on its
+next state delivery so peers can:
 
 * refuse to re-add the hash via stale store requests,
 * converge on a single expiry across replicas (the larger
-  `until` wins),
-* sweep expired entries via the daemon `Sweeper`.
+  ``until`` wins),
+* sweep expired entries via the daemon ``Sweeper``.
 
-The default `tombstone_until` is **60 s** after the delete and
-the wire op `op_tombstone` carries the value explicitly so the
-deadline survives truncation on the producer side.
+The default ``tombstone_until`` is **60 s** after the delete
+and the wire op ``op_tombstone`` carries the value explicitly
+so the deadline survives truncation on the producer side.
 
 ## 6. Ref-count semantics
 
-In-process `RefCount` tracks the set of node identifiers holding
-each `payload_hash`. `release(hash, node_id)` returns `True` only
-when the last reference is gone; the caller decides what to do
-with that signal (typically a `ContentStore.delete`) so the wire
-contract stays free of hidden side effects.
+In-process ``RefCount`` tracks the set of node identifiers
+holding each ``payload_hash``. ``release(hash, node_id)``
+returns ``True`` only when the last reference is gone; the
+caller decides what to do with that signal (typically a
+``ContentStore.delete``) so the wire contract stays free of
+hidden side effects.
 
-Cross-process ref counts are out of scope for v1.0; the
-`InventoryDigest` returned by `op_inventory` plus tombstone
-gossip carry the equivalent information at the cluster level.
+Cross-process ref counts are out of scope for v5; the
+``InventoryDigest`` returned by ``op_inventory`` plus
+tombstone gossip carry the equivalent information at the
+cluster level.
 
 ## 7. Backward compatibility & migration
 
-There is none. v0.x → v1.0 is a wire-format break. Operators must
-restart the fleet with the same v1.0 image after every node is
-upgraded. Persisted on-disk state (Redis metadata, FilesystemBlob
-payloads, snapshot files) is laid out so that a v1.0 server can
-read v0.8's Redis keys and snapshot files, but it cannot read
-v0.8's wire payloads (the framing differs).
+The current contract is **v5** (magic ``0xC0DE0105``, schema
+``5``). Older wire breaks and their migration paths:
+
+| From | To | Migration | Tool |
+|------|----|-----------|------|
+| v0.x | v1.0 | Fleet restart with the v1.0 image. | none |
+| v1.x | v2.0 | Additive: ``consistency`` + ``hlc`` introduced; v2 readers accept v1 envelopes with the defaults applied at write time. | ``tools/upgrade_v1_to_v2.py`` |
+| v2.x | v5 (3.0.0) | Breaking: ``tenant_id`` and ``fingerprint_compat`` added; v5 readers reject v2 envelopes outright. Convert at the proxy or in a one-shot migration pass. | ``tools/upgrade_v2_to_v5.py`` |
+| v4    | v5 (3.0.0) | Breaking: same as v2 -> v5; v4 was an internal pre-release schema that the public never used. | ``tools/upgrade_v2_to_v5.py`` |
+| v3    | v5 (3.0.0) | Breaking: v3 was a transient schema that the public never used; conversion follows the v2 -> v5 path. | ``tools/upgrade_v2_to_v5.py`` |
+
+Operators upgrading from a 2.x or earlier deployment must run
+``tools/upgrade_v2_to_v5.py`` (and the equivalent JSON
+helper ``tools/upgrade_v2_to_v5_json.py`` for stored
+payloads) before booting a 3.0.0 cluster. The conversion
+tool reads v2 / v4 envelopes, fills in ``tenant_id`` (default
+``"public"``) and ``fingerprint_compat`` (recomputed from
+the identity), and writes v5 envelopes back to the same
+storage backend.
+
+See also:
+
+* ``docs/compat-matrix.md`` — runtime / engine compat
+* ``CHANGELOG.md`` — release history of every wire break
+* ``tools/upgrade_v2_to_v5.py`` — one-shot migration tool
