@@ -81,6 +81,8 @@ pip install -e ".[local-llm]"
 # Reproduce the paper's analytical evaluation.
 python scripts/demo.py
 python scripts/demo_full.py
+python scripts/demo_membrane.py
+python scripts/demo_quantization.py
 
 # Start a single-node server with the CPU backend.
 membrane serve --node-id n1 --port 8080 --transport http --compute cpu
@@ -93,7 +95,31 @@ membrane cluster-status
 
 # Show LLM-backend status.
 membrane llm-status
+
+# Inspect / export the static configuration and OpenAPI spec.
+membrane config
+membrane config --openapi > docs/openapi.json
+
+# Admin operations against a running node.
+membrane admin snapshot
+membrane admin rotate-keys
+
+# One-off interactions with a running Membrane server.
+membrane client store --content-hash abc...
+membrane client retrieve --content-hash abc...
 ```
+
+The full subcommand surface:
+
+| Command | Purpose |
+|---------|---------|
+| `membrane serve` | Start a Membrane production server. |
+| `membrane dashboard` | Live TUI dashboard against a remote server. |
+| `membrane cluster-status` | Show cluster membership and peer health. |
+| `membrane llm-status` | Show LLM backend status and model info. |
+| `membrane config` | Show static configuration; `--openapi` writes the v3 spec. |
+| `membrane admin` | Admin operations: `snapshot`, `restore`, `rotate-keys`. |
+| `membrane client` | One-off `store` / `retrieve` / `inventory` calls. |
 
 ### Python API
 
@@ -423,8 +449,57 @@ chore: update ruff config
 ## Testing
 
 ```bash
+# Full unit + integration suite.
 pytest tests/ -v
+
+# With coverage.
 pytest tests/ --cov=membrane --cov-report=term-missing
+
+# Benchmark smoke (3.0.0 baseline perf).
+pytest tests/bench/ -v
+
+# Stress suite (64-thread concurrency; gated by the dedicated
+# 'stress' CI job).
+pytest tests/membrane/stress -v -m stress
+
+# Chaos suite (toxiproxy-aware; the in-process _FakeProxy suite
+# runs without an external proxy).
+pytest tests/membrane/chaos -v -m chaos
+```
+
+---
+
+## Documentation
+
+The [`docs/`](docs/) directory is the project's documentation
+hub. The full surface:
+
+| Page | Purpose |
+|------|---------|
+| [`docs/getting-started.md`](docs/getting-started.md) | Five-minute onboarding walkthrough. |
+| [`docs/architecture.md`](docs/architecture.md) | Module breakdown and design rationale. |
+| [`docs/wire-format.md`](docs/wire-format.md) | On-wire / on-disk format (schema v5). |
+| [`docs/api-stability.md`](docs/api-stability.md) | Per-module stability classification. |
+| [`docs/compat-matrix.md`](docs/compat-matrix.md) | Runtime / engine / GPU compatibility. |
+| [`docs/consistency.md`](docs/consistency.md) | Strong / quorum / eventual semantics. |
+| [`docs/security.md`](docs/security.md) | Authn / authz / SSRF / encryption overview. |
+| [`docs/release.md`](docs/release.md) | Versioning + release process. |
+| [`docs/deployment.md`](docs/deployment.md) | docker-compose / k8s install paths. |
+| [`docs/operations/slo.md`](docs/operations/slo.md) | Latency / availability targets. |
+| [`docs/operations/upgrade.md`](docs/operations/upgrade.md) | Rolling upgrade + rollback. |
+| [`docs/operations/backup-restore.md`](docs/operations/backup-restore.md) | Dual-store backup + disaster recovery. |
+| [`docs/operations/incident-response.md`](docs/operations/incident-response.md) | On-call runbook. |
+| [`docs/operations/capacity.md`](docs/operations/capacity.md) | Capacity planning. |
+| [`docs/faq.md`](docs/faq.md) | Frequently asked questions. |
+
+Release history is in [`CHANGELOG.md`](CHANGELOG.md); the
+v3.0.0 breaking-change summary lives at the top of that file.
+
+The OpenAPI spec is generated at runtime — start a server with
+`membrane serve` and visit `/openapi.json`, or run:
+
+```bash
+membrane config --openapi > docs/openapi.json
 ```
 
 ---
@@ -439,9 +514,10 @@ python -m build
 
 ## Release
 
-See [docs/release.md](docs/release.md) — version is bumped in `pyproject.toml`,
-the changelog updated, a `vX.Y.Z` tag is cut, and the PyPI publishing workflow
-publishes the source and wheel distributions.
+See [`docs/release.md`](docs/release.md) — version is bumped
+in `pyproject.toml`, the changelog updated, a `vX.Y.Z` tag is
+cut, and the release workflow publishes the sdist / wheel to
+PyPI and the image to `ghcr.io/sachncs/membrane`.
 
 ---
 
@@ -452,19 +528,20 @@ distributed, content-addressed memory fabric:
 
 - **Fragment data model** — A KV cache is decomposed into
   content-addressable :class:`Fragment` objects keyed by hash with a
-  :class:`StructuralSignature` describing layer/token span.
+  :class:`PayloadIdentity` describing layer/token span, dtype,
+  and shape.
 - **Indices** — Four specialized in-memory indices (exact, semantic,
   positional, co-access) over the same fragment set, exposed through a
-  single :class:`IndexSystem` facade.
-- **Reconstruction** — The :class:`ReconstructionEngine` walks the
+  single :class:`Index` facade.
+- **Reconstruction** — The :class:`Reconstructor` walks the
   indices to assemble a context, falling back to prefill when coverage
   is incomplete.
-- **Routing** — Three coordinated routers (:class:`LatencyRouter`,
-  :class:`EconomicRouter`, :class:`JointOptimizer`) pick the best node
-  for each request based on access history and live telemetry.
-- **Cluster management** — :class:`ClusterManager` runs bootstrap,
+- **Routing** — Three coordinated routers (`Economic`, `Latency`,
+  `Joint` in `membrane.analytical`) pick the best node for each
+  request based on access history and live telemetry.
+- **Cluster management** — :class:`Server` runs bootstrap,
   heartbeat, failure-detection, gossip, and replication loops in
-  background threads, sharing state with :class:`MembraneServer`.
+  background threads (via `membrane.network.cluster.Cluster`).
 
 ### Mathematical Guarantees
 
@@ -506,10 +583,16 @@ rationale and extension points.
 
 ## Roadmap
 
-- **v0.1.x** — Current series: paper reproduction, content-addressed fabric, multi-transport serving
-- **v0.2.0** — TLS/mTLS for transport encryption, API key authentication
-- **v0.3.0** — Prometheus/Grafana metrics exporter, Kubernetes operator for autoscaling
-- **v1.0.0** — Stable API, gRPC streaming for real-time updates, multi-region replication policies
+- **v3.0.x** — Current series: encrypted blob store at rest,
+  deny-by-default mTLS, per-route scope checks, typed cluster
+  errors, the v5 wire format, and the Python 3.10-3.13 support
+  matrix.
+- **v3.1** — Authn/authz split: Vault-backed secret rotation
+  and OIDC federation.
+- **v4.0** — Stable cluster protocol freeze; multi-region
+  replication policies.
+- **v5.0** — Native speculative-decode integration; second
+  major wire break.
 
 ---
 
