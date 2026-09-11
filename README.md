@@ -100,13 +100,13 @@ membrane llm-status
 ```python
 import membrane
 from membrane.fragment import Fragment
-from membrane.fragment_store import FragmentStore
 from membrane.identity import PayloadIdentity
+from membrane.node import Node
 
 # Verify install and inspect the public surface.
 print(f"{len(membrane.__all__)} exports available")
 
-# Create a fragment store and store a fragment.
+# Build a fragment identity (the durable content-addressed fingerprint).
 identity = PayloadIdentity(
     payload_hash="placeholder",
     model_id="llama-3",
@@ -128,9 +128,9 @@ frag = Fragment(
     version_id=1,
 )
 
-store = FragmentStore()
-store.put(frag)
-retrieved = store.get(frag.identity.payload_hash)
+node = Node("n1", max_memory_bytes=1 << 30)
+node.store(frag, is_primary=True)
+retrieved = node.fragments.get(frag.identity.payload_hash)
 ```
 
 ### Docker
@@ -189,19 +189,34 @@ See [`.env.example`](.env.example) for the full list.
 
 ## API
 
+The exported names below map 1-to-1 to `membrane.__all__`. Each
+entry links to the actual class; the README does not introduce
+any non-exported names.
+
 | Symbol | Type | Description |
 |--------|------|-------------|
-| `Fragment` | class | Content-addressed KV segment with a `StructuralSignature` |
-| `FragmentStore` | class | Tiered-eviction content-addressed store |
-| `StructuralSignature` | dataclass | Token-span + layer metadata for fragments |
-| `IndexSystem` | class | Facade over exact, semantic, positional, and co-access indices |
-| `ReconstructionEngine` | class | Rebuilds a context from fragments, falls back to prefill |
-| `ClusterManager` | class | Bootstrap, heartbeat, gossip, replication, failure detection |
-| `ShardManager` | class | Consistent-hash shard assignment with rebalancing |
-| `EconomicRouter` | class | `argmax(value_density - cost)` routing policy |
-| `LatencyRouter` | class | Lowest-latency holder routing policy |
-| `JointOptimizer` | class | Joint compute + memory placement optimiser |
-| `MembraneServer` | class | Unified server (CLI + transports) |
+| `Fragment` | class | Content-addressed KV segment with a `PayloadIdentity` |
+| `PayloadIdentity` | dataclass | Stable ten-field fragment fingerprint |
+| `Prefix` / `Segment` / `Artifact` / `Trace` | classes | Memory objects layered on top of `Fragment` |
+| `FragmentKind` | enum | Discriminator across memory-object kinds |
+| `Node` / `Origin` / `Replica` | classes | Serving-plane roles |
+| `Index` | class | Facade over the four sub-indexes (import sub-indexes from `membrane.exacts` etc.) |
+| `Ring` / `Shard` | classes | Consistent-hashing placement |
+| `Reconstructor` | class | Rebuilds a context from fragments; falls back to prefill |
+| `TransferService` | class | Unified in-process + remote transfer plane |
+| `PersistenceBackend` / `Memory` / `Redis` / `CachingPersistence` | classes / protocol | Pluggable storage backends |
+| `Backend` / `CPU` / `GPU` / `Transformers` / `OpenAI` / `Anthropic` / `Ollama` | classes | Compute backends |
+| `FastAPIServer` | class | FastAPI HTTP transport |
+| `Server` | class | Unified runnable server (CLI + transports) |
+| `Authenticator` | protocol | Authentication contract |
+| `Error` + typed hierarchy | exceptions | `NetworkError`, `SchemaError`, etc. |
+| `configure_logging` | function | Shared logging setup |
+
+The decision / policy / analytical classes (`Economic`, `Latency`,
+`Joint`, `Promotion`, `Offload`, `Isolation`, `Tenant`,
+`Selector`, `Roles`, `Predict`, `Workload`) live under
+`membrane.analytical` and are imported from there; they are
+intentionally **not** re-exported at the package root.
 
 ---
 
