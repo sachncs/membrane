@@ -113,6 +113,22 @@ jobs:
           severity: "HIGH,CRITICAL"
           exit-code: "1"
 
+      - name: Trivy base image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "python:3.12-slim"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Trivy Docker image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "membrane:latest"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: true
+
   perf-smoke:
     runs-on: ubuntu-latest
     steps:
