@@ -20,10 +20,13 @@ work with the v3.0.0 series.
 |----------------------|-------------------------|---------------------------|
 | ``cryptography``      | (always required at 3.0+)| encryption at rest        |
 | ``lmcache>=0.5,<0.6``| ``membrane[lmcache]``    | LMCache backend storage    |
-| ``httpx>=0.28``      | ``membrane[secrets-aws]``| Vault / AWS / GCP clients   |
-| ``boto3``            | ``membrane[secrets-aws]``| AWS Secrets Manager        |
-| ``google-cloud-secret-manager`` | ``membrane[secrets-gcp]`` | GCP Secret Manager |
-| ``hvac``             | ``membrane[secrets-vault]`` | HashiCorp Vault        |
+| ``vllm>=0.10,<0.12`` | ``membrane[vllm]``       | vLLM KVConnector v1 backend |
+| ``sglang>=0.4,<0.6`` | ``membrane[sglang]``     | SGLang radix-cache backend |
+| ``tensorrt-llm>=0.20,<0.22`` | ``membrane[trtllm]`` | TensorRT-LLM backend |
+| ``fastapi`` / ``uvicorn`` / ``grpcio`` | ``membrane[server]`` | FastAPI + gRPC transport |
+| ``redis>=8.1.0``     | ``membrane[server]``     | Redis persistence backend  |
+| ``torch>=2.13.0``    | ``membrane[gpu]``        | GPU compute backend        |
+| ``transformers`` / ``tokenizers`` / ``sentencepiece`` / ``protobuf`` | ``membrane[local-llm]`` | HuggingFace local LLM backend |
 | ``opentelemetry-sdk``| (always available)      | OTel tracer                |
 | ``opentelemetry-exporter-otlp-proto-grpc`` | (always available) | OTel OTLP exporter |
 
@@ -31,6 +34,13 @@ work with the v3.0.0 series.
 > exact version that ships with the deployment image. The
 > CI matrix exercises a single canonical version of each
 > optional dep and reports drift in the smoke logs.
+
+The historical ``[secrets-aws]``, ``[secrets-gcp]``, and
+``[secrets-vault]`` extras have been folded into
+``[server]`` at 3.0.0; the ``membrane.secrets`` backend
+imports ``boto3`` / ``google-cloud-secret-manager`` /
+``hvac`` lazily so the runtime dep is only required when
+the corresponding backend is configured.
 
 ## Engines
 
