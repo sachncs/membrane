@@ -27,7 +27,22 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
-_DTYPE_VALUES: frozenset[str] = frozenset({"float16", "bfloat16", "float32", "float64"})
+_DTYPE_VALUES: frozenset[str] = frozenset(
+    {
+        "float16",
+        "bfloat16",
+        "float32",
+        "float64",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "fp8_e4m3",
+        "fp8_e5m2",
+        "nf4",
+    }
+)
 
 
 @dataclass(frozen=True)
