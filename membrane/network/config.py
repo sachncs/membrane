@@ -134,7 +134,15 @@ class ClusterConfig:
     local_peer_cn: str = ""
     default_consistency: str = "strong"
     quorum_count: int = 2
-    cluster_quorum_timeout_sec: float = 5.0
+    # Default ``9.0`` (was ``5.0``) so the cluster_quorum_timeout
+    # is **strictly greater** than
+    # ``failure_remove_threshold * heartbeat_interval_sec``
+    # (= 4 * 2 = 8 s at the documented defaults). A peer is
+    # therefore held around long enough for the quorum write
+    # to either succeed or fail-closed with a typed error,
+    # rather than being removed from the membership while the
+    # quorum write is still in flight.
+    cluster_quorum_timeout_sec: float = 9.0
     repair_interval_sec: float = 60.0
     lease_timeout_sec: float = 30.0
     gossip_payload_expected_items: int = 10_000
@@ -186,7 +194,7 @@ def validate_config(
         local_peer_cn: str = ""
         default_consistency: str = Field(default="strong")
         quorum_count: int = Field(default=2, ge=1)
-        cluster_quorum_timeout_sec: float = Field(default=5.0, gt=0.0)
+        cluster_quorum_timeout_sec: float = Field(default=9.0, gt=0.0)
         repair_interval_sec: float = Field(default=60.0, gt=0.0)
         lease_timeout_sec: float = Field(default=30.0, gt=0.0)
         gossip_payload_expected_items: int = Field(default=10_000, ge=1)
