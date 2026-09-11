@@ -29,12 +29,12 @@ from typing import Any, cast
 from urllib.request import Request, urlopen
 
 from membrane.auth import AuthContext
-from membrane.errors import NetworkError, TenantScopeError
+from membrane.errors import NetworkError
 from membrane.gc import TombstoneTable
 from membrane.network.cluster import Cluster
 from membrane.network.peer import JsonDict
 from membrane.node import Node
-from membrane.serialization import from_dict, to_dict
+from membrane.serialization import from_dict
 from membrane.transfer import TransferService
 
 logger = logging.getLogger(__name__)
