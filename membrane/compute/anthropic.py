@@ -54,7 +54,7 @@ class Anthropic(RemoteLLMBackend):
     ) -> None:
         """Initialize the backend."""
         super().__init__()
-        self.api_key = api_key
+        self._api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.client = self.build_client(
@@ -63,6 +63,16 @@ class Anthropic(RemoteLLMBackend):
                 "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
             },
+        )
+
+    @property
+    def api_key(self) -> str:
+        """Return the configured API key (redacted when logged)."""
+        return self._api_key
+
+    def __repr__(self) -> str:
+        return (
+            f"Anthropic(base_url={self.base_url!r}, model={self.model!r}, api_key=***)"
         )
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
