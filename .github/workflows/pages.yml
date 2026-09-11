@@ -1,0 +1,87 @@
+name: Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs-material mkdocs-minify-plugin
+
+      - name: Generate mkdocs.yml
+        run: |
+          cat > mkdocs.yml <<'YAML'
+          site_name: Membrane
+          site_description: Global Contextual Memory Fabric
+          docs_dir: docs
+          theme:
+            name: material
+            features:
+              - navigation.instant
+              - navigation.tracking
+              - toc.follow
+          nav:
+            - Home: README.md
+            - Getting started: getting-started.md
+            - Architecture: architecture.md
+            - Wire format: wire-format.md
+            - Consistency: consistency.md
+            - Security: security.md
+            - API stability: api-stability.md
+            - Compat matrix: compat-matrix.md
+            - Release process: release.md
+            - Deployment: deployment.md
+            - FAQ: faq.md
+            - Operations:
+              - SLO: operations/slo.md
+              - Upgrade: operations/upgrade.md
+              - Backup / Restore: operations/backup-restore.md
+              - Incident response: operations/incident-response.md
+              - Capacity: operations/capacity.md
+          markdown_extensions:
+            - admonition
+            - toc:
+                permalink: true
+          YAML
+          cp README.md docs/README.md
+
+      - name: Build site
+        run: mkdocs build --strict
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
