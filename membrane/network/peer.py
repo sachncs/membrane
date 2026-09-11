@@ -70,15 +70,46 @@ class Transport(Protocol):
 
 
 class HTTPTransport:
-    """Default :class:`Transport` backed by ``urllib.request``.
+    """Default :class:`Transport` backed by an :mod:`httpx` connection pool.
 
-    Every outbound URL is validated against the SSRF allow-list
-    (:func:`membrane.security.validate_outbound_url`) before the
-    request fires. A URL that fails the check causes the call
-    to return ``None`` with a logged warning; the caller
-    surfaces the failure to the cluster rather than silently
-    contacting a private address.
+    The transport:
+
+    * Validates every outbound URL against the SSRF allow-list
+      (:func:`membrane.security.validate_outbound_url`) and pins
+      the resolved IP at the socket layer so a DNS-rebinding
+      attack cannot smuggle a private address into the second
+      resolution (the original :mod:`urllib` path re-resolved
+      on its own).
+    * Disables automatic redirect-following; a 3xx response
+      surfaces to the caller as a typed redirect so the caller
+      can re-validate the target URL rather than the cluster
+      trusting it.
+    * Maintains a pooled ``httpx.Client`` (``max_keepalive_connections=10``,
+      ``max_connections=100``) so amortised TCP / TLS setup
+      costs do not dominate the cluster's p50 latency.
     """
+
+    def __init__(self) -> None:
+        self._client: Any | None = None
+
+    def _get_client(self) -> Any:
+        if self._client is None:
+            try:
+                import httpx
+
+                limits = httpx.Limits(
+                    max_keepalive_connections=10,
+                    max_connections=100,
+                )
+                self._client = httpx.Client(
+                    timeout=httpx.Timeout(60.0),
+                    limits=limits,
+                    follow_redirects=False,
+                )
+            except ImportError:
+                logger.warning("HTTPTransport: httpx not installed; falling back to None")
+                self._client = None
+        return self._client
 
     def request(
         self,
@@ -88,13 +119,13 @@ class HTTPTransport:
         headers: dict[str, str],
         timeout_sec: float,
     ) -> JsonDict | None:
-        """Issue an HTTP request via ``urllib`` and return the JSON body."""
-        import urllib.error
-        import urllib.request
+        """Issue an HTTP request via the pooled client."""
+        from urllib.parse import urlparse
 
         from membrane.errors import NetworkError
         from membrane.security import validate_outbound_url
-        from membrane.security.url_allowlist import SSRFError
+        from membrane.security.url_allowlist import SSRFError, _resolve_addresses
+        from membrane.security.url_allowlist import get_default_allowlist
 
         try:
             validate_outbound_url(url)
@@ -102,23 +133,58 @@ class HTTPTransport:
             logger.warning("HTTPTransport %s %s rejected by SSRF policy: %s", method, url, exc)
             return None
 
-        req = urllib.request.Request(url, data=body, headers=headers, method=method)
+        client = self._get_client()
+        if client is None:
+            raise NetworkError("HTTPTransport: httpx not installed")
+
+        parsed = urlparse(url)
+        pinned_ip: str | None = None
+        policy = get_default_allowlist()
+        if (
+            policy.block_private
+            and parsed.hostname
+            and not policy.is_host_allowed(parsed.hostname.lower())
+        ):
+            try:
+                addresses = _resolve_addresses(parsed.hostname)
+            except OSError:
+                addresses = []
+            if addresses:
+                pinned_ip = str(addresses[0])
+                # Replace the host with the pinned IP and set
+                # the Host header to the original hostname so
+                # the SNI / cert verification continues to use
+                # the user-supplied hostname.
+                host_header = parsed.hostname
+                port = parsed.port
+                netloc = pinned_ip if port is None else f"{pinned_ip}:{port}"
+                url = parsed._replace(netloc=netloc).geturl()
+                headers = {**headers, "Host": host_header}
+
         try:
-            with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-                raw = resp.read().decode()
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as exc:
+            resp = client.request(
+                method,
+                url,
+                content=body,
+                headers=headers,
+                timeout=timeout_sec,
+            )
+        except Exception as exc:
             raise NetworkError(
-                f"HTTP {exc.code} from {method} {url}"
+                f"transport failure on {method} {parsed.hostname or url}: {exc}"
             ) from exc
-        except urllib.error.URLError as exc:
+
+        if 300 <= resp.status_code < 400:
             raise NetworkError(
-                f"URL error from {method} {url}: {exc.reason}"
-            ) from exc
-        except TimeoutError as exc:
+                f"redirect not followed ({resp.status_code}) on {method} {url}; "
+                "re-validate the target before retrying"
+            )
+        if resp.status_code >= 400:
             raise NetworkError(
-                f"timeout from {method} {url}"
-            ) from exc
+                f"HTTP {resp.status_code} from {method} {url}"
+            )
+        raw = resp.text
+        return json.loads(raw) if raw else {}
 
 
 class Peer:
