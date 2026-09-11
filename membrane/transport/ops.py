@@ -276,7 +276,7 @@ def op_store(
         return _ok({"success": True, "content_hash": frag.identity.payload_hash})
 
     quorum_count = int(getattr(cluster.config, "quorum_count", 2))
-    timeout_sec = float(getattr(cluster.config, "cluster_quorum_timeout_sec", 5.0))
+    timeout_sec = float(getattr(cluster.config, "cluster_quorum_timeout_sec", 9.0))
     if quorum_count <= 1:
         return _ok({"success": True, "content_hash": frag.identity.payload_hash})
 
