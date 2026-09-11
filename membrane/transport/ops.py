@@ -162,7 +162,18 @@ def op_retrieve(
     content_hash: str,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``GET /retrieve?content_hash=...``."""
+    """``GET /retrieve?content_hash=...``.
+
+    Returns:
+
+    * ``{"found": True, "fragment": ...}`` on success;
+    * ``{"found": False, "fragment": None}`` on a benign miss;
+    * ``{"found": False, "fragment": None, "corrupt": True,
+      "payload_hash": ...}`` when the fragment metadata is
+      present but the on-disk bytes fail decryption (so a
+      client can distinguish tampering / key-rotation loss
+      from a simple miss).
+    """
     if node is None:
         return _ok({"found": False, "fragment": None})
     caller_tenant = auth_context.subject if auth_context is not None else ""
@@ -172,9 +183,39 @@ def op_retrieve(
         caller_tenant=caller_tenant,
         caller_scopes=caller_scopes,
     )
-    if frag:
-        return _ok({"found": True, "fragment": to_dict(frag)})
-    return _ok({"found": False, "fragment": None})
+    if not frag:
+        return _ok({"found": False, "fragment": None})
+
+    # Probe the bytes: if the fragment's payload_ref points
+    # at a blob that fails decryption, surface that as
+    # ``corrupt: True`` rather than a successful 200 with
+    # metadata that the client cannot use.
+    payload_ref = getattr(frag, "payload_ref", None)
+    if payload_ref:
+        try:
+            blob = node.content_store.get(payload_ref)
+        except Exception as exc:
+            from membrane.security.encryption import DecryptError
+
+            if isinstance(exc, DecryptError):
+                logger.warning(
+                    "op_retrieve: payload_ref=%s is corrupt: %s",
+                    payload_ref,
+                    exc,
+                )
+                return _ok(
+                    {
+                        "found": False,
+                        "fragment": None,
+                        "corrupt": True,
+                        "payload_hash": content_hash,
+                    }
+                )
+            raise
+        if blob is None:
+            return _ok({"found": False, "fragment": None})
+
+    return _ok({"found": True, "fragment": to_dict(frag)})
 
 
 def op_store(

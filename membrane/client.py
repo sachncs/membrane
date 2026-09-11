@@ -13,6 +13,9 @@ Exceptions:
 * :class:`MembraneNotFoundError` -- 404.
 * :class:`MembraneUnauthorizedError` -- 401 / 403.
 * :class:`MembraneServerError` -- 5xx.
+* :class:`MembraneCorruptPayloadError` -- server reported a
+  tampered / encrypted-but-undecryptable blob (added in 3.0.1
+  to distinguish from a benign miss).
 """
 
 from __future__ import annotations
@@ -39,6 +42,21 @@ class MembraneUnauthorizedError(MembraneClientError):
 
 class MembraneServerError(MembraneClientError):
     """Raised on a 5xx server-side failure."""
+
+
+class MembraneCorruptPayloadError(MembraneClientError):
+    """Raised when the server reports a tampered / undecryptable blob.
+
+    The :class:`~membrane.content_store.FilesystemBlob`
+    / :class:`~membrane.content_store.EncryptedInProcessBytes`
+    stores propagate
+    :class:`~membrane.security.encryption.DecryptError` as a
+    typed signal rather than a silent ``None`` return; the HTTP
+    ``/retrieve`` endpoint surfaces this as
+    ``{"found": False, "corrupt": True, "payload_hash": ...}``
+    so the client can distinguish a benign miss from a
+    storage-side corruption event.
+    """
 
 
 def _raise_for_status(status_code: int, body: Any) -> None:
@@ -135,8 +153,15 @@ class MembraneClient:
             content_hash: The hex digest of the content.
 
         Returns:
-            dict: Server response; ``"found": False`` returns
-            ``{"found": False, "fragment": None}``.
+            dict: Server response. ``{"found": False, "fragment": None}``
+            for a benign miss; a body carrying ``"corrupt": True``
+            raises :class:`MembraneCorruptPayloadError` so the
+            caller can distinguish a tampered blob from a missing
+            one without inspecting the Prometheus counter.
+
+        Raises:
+            MembraneCorruptPayloadError: When the server reports
+                ``"corrupt": True`` for the requested hash.
         """
         resp = self._client.get(
             f"{self.base_url}/retrieve",
@@ -145,7 +170,12 @@ class MembraneClient:
         )
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
-        return resp.json()
+        body = resp.json()
+        if isinstance(body, dict) and body.get("corrupt"):
+            raise MembraneCorruptPayloadError(
+                f"corrupt payload for content_hash={content_hash}"
+            )
+        return body
 
     def inventory(self) -> dict[str, Any]:
         """Call ``GET /inventory``.
@@ -264,7 +294,12 @@ class AsyncMembraneClient:
         )
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
-        return resp.json()
+        body = resp.json()
+        if isinstance(body, dict) and body.get("corrupt"):
+            raise MembraneCorruptPayloadError(
+                f"corrupt payload for content_hash={content_hash}"
+            )
+        return body
 
     async def prefill(
         self, prompt_tokens: list[int], model_id: str = "default"
@@ -295,6 +330,7 @@ __all__ = [
     "AsyncMembraneClient",
     "MembraneClient",
     "MembraneClientError",
+    "MembraneCorruptPayloadError",
     "MembraneNotFoundError",
     "MembraneServerError",
     "MembraneUnauthorizedError",
