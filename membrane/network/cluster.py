@@ -191,20 +191,37 @@ class Cluster:
 
         logger.info("Cluster started with %s background threads", len(loops))
 
-    def stop(self) -> None:
+    def stop(self, deadline_sec: float = 10.0) -> bool:
         """Signal all background threads to exit.
 
         Sets ``running`` to ``False`` and ``stop_event``, then
-        joins each background thread with a short timeout. Threads
-        that do not terminate within the timeout remain alive
+        joins each background thread with a deadline. Threads
+        that do not terminate within the deadline remain alive
         (they are daemon threads, so they will not block process
-        exit).
+        exit). The function returns ``False`` when at least one
+        thread is still alive after the budget so the caller can
+        decide whether to escalate.
+
+        Args:
+            deadline_sec: Per-thread wall-clock budget.
+
+        Returns:
+            bool: ``True`` when every background thread joined
+            within the budget; ``False`` when at least one is
+            still alive.
         """
         self.running[0] = False
         self.stop_event.set()
+        joined_cleanly = True
         for t in self.threads:
-            t.join(timeout=2.0)
-        logger.info("Cluster stopped")
+            t.join(timeout=deadline_sec)
+            if t.is_alive():
+                logger.warning(
+                    "cluster thread %s did not exit within %.1fs", t.name, deadline_sec
+                )
+                joined_cleanly = False
+        logger.info("Cluster stopped (cleanly=%s)", joined_cleanly)
+        return joined_cleanly
 
     def join(self) -> None:
         """Block until :meth:`stop` is called."""

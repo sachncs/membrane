@@ -413,23 +413,52 @@ class Server:
             self.sweeper_thread.start()
         self.log_event("info", f"Server started on {self.host}:{self.port}")
 
-    def stop(self) -> None:
-        """Stop the server gracefully."""
+    def stop(self, deadline_sec: float = 10.0) -> bool:
+        """Stop the server gracefully.
+
+        Args:
+            deadline_sec: Wall-clock budget for the shutdown
+                sequence. Each background thread is given up to
+                ``deadline_sec`` to exit; if any thread does not
+                honour the deadline the function logs a warning
+                and returns ``False`` so the caller can decide
+                whether to escalate (e.g. by killing the
+                process). Default ``10.0`` matches the operator
+                expectation that a graceful shutdown completes
+                within a SIGTERM grace period.
+
+        Returns:
+            bool: ``True`` when every background thread joined
+            within the budget; ``False`` when at least one
+            thread is still alive after ``deadline_sec``.
+        """
+        joined_cleanly = True
         if self.checkpoint_stop_event is not None:
             self.checkpoint_stop_event.set()
             if self.checkpoint_thread is not None:
-                self.checkpoint_thread.join(timeout=2.0)
+                self.checkpoint_thread.join(timeout=deadline_sec)
+                if self.checkpoint_thread.is_alive():
+                    logger.warning(
+                        "checkpoint thread did not exit within %.1fs", deadline_sec
+                    )
+                    joined_cleanly = False
         # Flush a final checkpoint before tearing down so the next
         # process can rebuild from up-to-date state.
         self.checkpoint_state()
         self.running = False
         self.transport.stop()
         if self.cluster_manager:
-            self.cluster_manager.stop()
+            self.cluster_manager.stop(deadline_sec=deadline_sec)
         if self.sweeper is not None:
-            self.sweeper.stop(timeout=2.0)
+            self.sweeper.stop(timeout=deadline_sec)
+            if self.sweeper_thread is not None and self.sweeper_thread.is_alive():
+                logger.warning(
+                    "sweeper thread did not exit within %.1fs", deadline_sec
+                )
+                joined_cleanly = False
             self.sweeper_thread = None
-        self.log_event("info", "Server stopped")
+        self.log_event("info", f"Server stopped (cleanly={joined_cleanly})")
+        return joined_cleanly
 
     def drain(self, deadline_sec: float = 30.0) -> dict[str, Any]:
         """Best-effort drain: stop accepting writes, migrate primaries, leave cluster.
@@ -667,10 +696,27 @@ class Server:
         }
         self.snapshot.save(self.node.node_id, payload)
 
-    def join(self) -> None:
-        """Block until the server thread exits."""
-        if self.thread:
-            self.thread.join()
+    def join(self, deadline_sec: float | None = None) -> bool:
+        """Block until the server thread exits.
+
+        Args:
+            deadline_sec: Optional wall-clock budget. When set,
+                :meth:`threading.Thread.join` is called with the
+                deadline; the caller can decide whether to
+                escalate. ``None`` (the default) blocks
+                indefinitely, matching the behaviour of the
+                underlying :meth:`threading.Thread.join`.
+
+        Returns:
+            bool: ``True`` when the thread exited within the
+            budget (or ``None`` was supplied and the thread has
+            exited); ``False`` when a deadline was supplied and
+            the thread is still alive at the end of the budget.
+        """
+        if self.thread is None:
+            return True
+        self.thread.join(timeout=deadline_sec)
+        return not self.thread.is_alive()
 
     # ------------------------------------------------------------------
     # Event logging
