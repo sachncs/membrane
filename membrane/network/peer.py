@@ -25,6 +25,7 @@ import logging
 import time
 from typing import Any, Protocol, runtime_checkable
 
+from membrane.errors import NetworkError
 from membrane.fragment import Fragment
 from membrane.serialization import from_dict, to_dict
 
@@ -124,8 +125,7 @@ class HTTPTransport:
 
         from membrane.errors import NetworkError
         from membrane.security import validate_outbound_url
-        from membrane.security.url_allowlist import SSRFError, _resolve_addresses
-        from membrane.security.url_allowlist import get_default_allowlist
+        from membrane.security.url_allowlist import SSRFError, _resolve_addresses, get_default_allowlist
 
         try:
             validate_outbound_url(url)

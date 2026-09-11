@@ -18,23 +18,18 @@ Thread safety:
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 from typing import Any, cast
-from urllib.request import Request, urlopen
 
 from membrane.auth import AuthContext
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
 from membrane.errors import TenantScopeError
-from membrane.gc import TombstoneTable
 from membrane.metrics import ClusterMetrics, MetricsCollector
 from membrane.network.cluster import Cluster
 from membrane.network.peer import JsonDict, Peer
 from membrane.node import Node
 from membrane.serialization import from_dict, to_dict
-from membrane.transfer import TransferService
 
 logger = logging.getLogger(__name__)
 
@@ -446,7 +441,7 @@ __all__ = [
 # The cluster lifecycle lives in :mod:`membrane.transport.ops_cluster`;
 # the original import paths (``from membrane.transport.ops import
 # op_join`` etc.) continue to resolve.
-from membrane.transport.ops_cluster import (  # noqa: E402, F401
+from membrane.transport.ops_cluster import (  # noqa: F401
     op_delete,
     op_gossip,
     op_join,
