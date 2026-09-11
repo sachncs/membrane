@@ -2,6 +2,7 @@
 
 import logging
 
+from membrane import Index
 from membrane.fragmenter import Fragmenter, FragmenterConfig
 from membrane.node import Node
 from membrane.prefilling import Adapter
@@ -55,7 +56,7 @@ def main():
     adapter = Adapter()
     from membrane.reconstructor import ReconstructorConfig
     recon = Reconstructor(
-        node2.index_system,
+        Index(),
         adapter,
         config=ReconstructorConfig(max_gap_tokens=50),
     )
