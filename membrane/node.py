@@ -99,6 +99,21 @@ class Node:
     and graph-aware co-eviction via an owned
     :class:`Graph`.
 
+    Attributes:
+        node_id: Unique identifier passed at construction time.
+        max_memory_bytes: Configured memory budget.
+        index_system: Public :class:`~membrane.index.Index` instance
+            (a fresh one is created if the caller does not supply
+            one). The :class:`~membrane.reconstructor.Reconstructor`
+            consumes this directly.
+        graph: Public :class:`~membrane.graph.Graph` instance; the
+            fragment co-access graph used by graph-aware eviction.
+        content_store: The :class:`~membrane.content_store.ContentStore`
+            backing the canonical payload frames; defaults to
+            :class:`~membrane.content_store.InProcessBytes`.
+        fragments: Public ``dict[content_hash, Fragment]``; the live
+            set of fragments stored on this node.
+
     All public methods are thread-safe via an internal
     :class:`threading.RLock`.
     """
