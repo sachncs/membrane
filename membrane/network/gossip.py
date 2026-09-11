@@ -35,6 +35,7 @@ import time
 from dataclasses import dataclass, field
 
 from membrane.bloom import BloomFilter
+from membrane.errors import AuthError, NetworkError, SchemaError
 from membrane.gc import TombstoneTable
 from membrane.merkle import MerkleTree
 from membrane.network.config import ClusterConfig
@@ -368,8 +369,18 @@ class Gossip:
                     resp = client.gossip(state.to_json())
                     if resp:
                         self.handle(resp)
-                except Exception as exc:
-                    logger.debug("Gossip to %s failed: %s", target.node_id, exc)
+                except NetworkError as exc:
+                    logger.warning(
+                        "gossip to %s failed (network): %s", target.node_id, exc
+                    )
+                except (SchemaError, AuthError) as exc:
+                    logger.warning(
+                        "gossip to %s rejected (typed): %s", target.node_id, exc
+                    )
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.exception(
+                        "gossip to %s failed (unexpected): %s", target.node_id, exc
+                    )
             self.stop_event.wait(timeout=self.config.gossip_interval_sec)
 
     def handle(self, data: JsonDict) -> JsonDict:
@@ -392,8 +403,11 @@ class Gossip:
         """
         try:
             incoming = GossipState.from_json(data)
+        except SchemaError as exc:
+            logger.warning("Failed to parse gossip state (schema): %s", exc)
+            return {}
         except Exception as exc:
-            logger.warning("Failed to parse gossip state: %s", exc)
+            logger.warning("Failed to parse gossip state (unexpected): %s", exc)
             return {}
 
         for ep in incoming.peers:
@@ -476,9 +490,16 @@ class Gossip:
             frag = self.node.retrieve(content_hash)
             if frag is not None:
                 client.request_replicate(frag)
+        except NetworkError as exc:
+            logger.debug(
+                "gossip pull of %s from %s failed (network): %s",
+                content_hash,
+                owner_node_id,
+                exc,
+            )
         except Exception as exc:  # pragma: no cover - background
             logger.debug(
-                "gossip pull of %s from %s failed: %s",
+                "gossip pull of %s from %s failed (unexpected): %s",
                 content_hash,
                 owner_node_id,
                 exc,

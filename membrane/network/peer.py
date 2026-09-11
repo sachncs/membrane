@@ -92,6 +92,7 @@ class HTTPTransport:
         import urllib.error
         import urllib.request
 
+        from membrane.errors import NetworkError
         from membrane.security import validate_outbound_url
         from membrane.security.url_allowlist import SSRFError
 
@@ -106,11 +107,18 @@ class HTTPTransport:
             with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
                 raw = resp.read().decode()
                 return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError:
-            return None
-        except Exception as exc:
-            logger.debug("HTTPTransport %s %s failed: %s", method, url, exc)
-            return None
+        except urllib.error.HTTPError as exc:
+            raise NetworkError(
+                f"HTTP {exc.code} from {method} {url}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise NetworkError(
+                f"URL error from {method} {url}: {exc.reason}"
+            ) from exc
+        except TimeoutError as exc:
+            raise NetworkError(
+                f"timeout from {method} {url}"
+            ) from exc
 
 
 class Peer:
@@ -359,7 +367,7 @@ class Peer:
                 )
                 if resp is not None:
                     return resp
-            except Exception as exc:
+            except NetworkError as exc:
                 last_error = exc
 
             # Exponential backoff: 1x, 2x, 4x, ...
