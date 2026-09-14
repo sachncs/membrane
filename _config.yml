@@ -1,8 +1,0 @@
-title: "membrane"
-description: "Global Contextual Memory Fabric"
-theme: minima
-logo: /assets/logo.svg
-show_downloads: false
-permalink: /:title/
-plugins:
-  - jekyll-feed
