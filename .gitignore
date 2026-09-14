@@ -85,3 +85,13 @@ logs/
 
 # ruff
 .ruff_cache/
+
+# Membrane marketing site (Astro)
+site/node_modules/
+site/dist/
+site/.astro/
+site/.cache/
+site/.env
+site/.env.production
+site/.env.local
+site/.env.*.local
