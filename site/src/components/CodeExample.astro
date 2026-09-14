@@ -1,0 +1,220 @@
+---
+const snippets = [
+  {
+    id: 'serve',
+    label: 'serve',
+    code: `from membrane.server import Server
+from membrane.compute import CPU
+
+server = Server(
+    node_id="n1",
+    host="0.0.0.0",
+    port=8080,
+    transport="http",
+    compute=CPU(),
+    peers=["n2:8081", "n3:8082"],
+    replica_count=2,
+)
+
+server.run()`,
+  },
+  {
+    id: 'fragment',
+    label: 'fragment',
+    code: `from membrane.fragment import Fragment
+from membrane.identity import PayloadIdentity
+
+identity = PayloadIdentity(
+    payload_hash="sha256:…",
+    model_id="llama-3",
+    layer_range=(0, 32),
+    token_span=(0, 4096),
+    dtype="float16",
+)
+
+frag = Fragment(
+    identity=identity,
+    payload_ref="blob-key",
+    payload_size=8 * 1024 * 1024,
+    ttl=3600.0,
+)`,
+  },
+  {
+    id: 'route',
+    label: 'route',
+    code: `from membrane.analytical import Joint
+from membrane.telemetry import live
+
+router = Joint()
+target = router.select(
+    payload_hash=identity.payload_hash,
+    candidates=cluster.peers(),
+    telemetry=live(),
+)
+
+target.retrieve(identity)`,
+  },
+  {
+    id: 'cli',
+    label: 'cli',
+    code: `$ membrane serve --node-id n1 \\
+        --port 8080 \\
+        --transport grpc \\
+        --compute gpu \\
+        --peer n2:8081 --peer n3:8082
+
+$ membrane dashboard --host n1 --port 8080
+$ membrane cluster-status
+$ membrane admin rotate-keys`,
+  },
+];
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function highlight(src: string, isShell: boolean): string {
+  if (isShell) {
+    return escapeHtml(src)
+      .replace(/(\$[^\s]+)/g, '<span class="text-accent-mint">$1</span>')
+      .replace(/(--[a-z-]+)/g, '<span class="text-accent-cyan">$1</span>')
+      .replace(/(membrane)/g, '<span class="text-accent-violet">$1</span>');
+  }
+  return escapeHtml(src)
+    .replace(/(#[^\n]*)/g, '<span class="text-ink-400">$1</span>')
+    .replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g, '<span class="text-accent-mint">$1</span>')
+    .replace(/\b(from|import|as|def|class|return|if|else|elif|for|while|with|try|except|raise|in|not|and|or|None|True|False|self)\b/g, '<span class="text-accent-violet">$1</span>')
+    .replace(/\b(Server|Fragment|PayloadIdentity|CPU|GPU|Joint|live|router|target|cluster)\b/g, '<span class="text-accent-cyan">$1</span>')
+    .replace(/(\b\d+\.?\d*\b)/g, '<span style="color:#fb7185">$1</span>');
+}
+---
+
+<section id="code" class="relative py-24 sm:py-32 lg:py-40">
+  <div class="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+    <div class="absolute left-1/2 top-0 h-[400px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-cyan/[0.06] blur-[120px]"></div>
+  </div>
+
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center">
+      <span data-reveal class="eyebrow">Developer experience</span>
+      <h2
+        data-reveal
+        data-reveal-delay="1"
+        class="mt-4 text-balance font-display text-display-lg font-semibold tracking-tighter text-white"
+      >
+        Five minutes from <span class="gradient-text-static">pip install</span> to a live cluster.
+      </h2>
+      <p
+        data-reveal
+        data-reveal-delay="2"
+        class="mx-auto mt-5 max-w-xl text-pretty text-[1.0625rem] leading-relaxed text-ink-200"
+      >
+        A real Python SDK with strict types, a CLI that respects your time,
+        and an OpenAPI surface you can drop into any client generator.
+      </p>
+    </div>
+
+    <div data-reveal data-reveal-delay="3" class="relative mx-auto mt-16 max-w-5xl">
+      <div class="absolute -inset-px rounded-[24px] bg-gradient-to-b from-white/[0.10] via-white/[0.03] to-white/[0.01] [mask:linear-gradient(#000,#000)_content-box,linear-gradient(#000,#000)] [-webkit-mask-composite:xor] [mask-composite:exclude] p-px"></div>
+      <div class="glass relative overflow-hidden rounded-[24px]">
+        <!-- Tabs -->
+        <div role="tablist" class="flex items-center gap-1 border-b border-white/[0.06] bg-ink-950/40 px-3 py-2" data-tabs>
+          {
+            snippets.map((s, i) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={i === 0 ? 'true' : 'false'}
+                data-tab={s.id}
+                class={`group inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition-all duration-200 ${
+                  i === 0
+                    ? 'bg-white/[0.06] text-white'
+                    : 'text-ink-300 hover:bg-white/[0.04] hover:text-ink-100'
+                }`}
+              >
+                <span class={`h-1.5 w-1.5 rounded-full ${i === 0 ? 'bg-accent-violet' : 'bg-ink-400 group-hover:bg-ink-200'}`}/>
+                <span class="code-block">{s.label}</span>
+              </button>
+            ))
+          }
+          <div class="ml-auto flex items-center gap-2 pr-2">
+            <button type="button" data-copy class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.72rem] font-medium text-ink-300 transition-colors hover:bg-white/[0.05] hover:text-white" aria-label="Copy code">
+              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="5" y="5" width="9" height="9" rx="1.5"/>
+                <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/>
+              </svg>
+              <span data-copy-label>copy</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Code panels -->
+        <div class="relative">
+          {
+            snippets.map((s, i) => (
+              <pre
+                role="tabpanel"
+                data-panel={s.id}
+                class={`code-block overflow-x-auto px-6 py-7 text-[0.85rem] leading-[1.7] ${i === 0 ? '' : 'hidden'}`}
+              ><code set:html={highlight(s.code, s.id === 'cli')} /></pre>
+            ))
+          }
+        </div>
+      </div>
+
+      <p class="mt-4 text-center text-[0.78rem] text-ink-400">
+        Strict types throughout · mypy strict · Google-style docstrings · zero semi-private names.
+      </p>
+    </div>
+  </div>
+</section>
+
+<script>
+  const root = document.querySelector<HTMLElement>('[data-tabs]');
+  if (root) {
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-tab]'));
+    const panels = Array.from(document.querySelectorAll<HTMLElement>('[data-panel]'));
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+        tabs.forEach((t) => {
+          const active = t === tab;
+          t.setAttribute('aria-selected', active ? 'true' : 'false');
+          t.classList.toggle('bg-white/[0.06]', active);
+          t.classList.toggle('text-white', active);
+          t.classList.toggle('text-ink-300', !active);
+          const dot = t.querySelector('span');
+          if (dot) {
+            dot.classList.toggle('bg-accent-violet', active);
+            dot.classList.toggle('bg-ink-400', !active);
+          }
+        });
+        panels.forEach((p) => {
+          p.classList.toggle('hidden', p.dataset.panel !== target);
+        });
+      });
+    });
+  }
+
+  const copyBtn = document.querySelector<HTMLButtonElement>('[data-copy]');
+  const copyLabel = document.querySelector<HTMLElement>('[data-copy-label]');
+  if (copyBtn && copyLabel) {
+    copyBtn.addEventListener('click', async () => {
+      const panel = document.querySelector<HTMLElement>('[data-panel]:not(.hidden)');
+      if (!panel) return;
+      try {
+        await navigator.clipboard.writeText(panel.innerText);
+        const prev = copyLabel.textContent;
+        copyLabel.textContent = 'copied';
+        setTimeout(() => (copyLabel.textContent = prev), 1400);
+      } catch {
+        copyLabel.textContent = 'select & copy';
+      }
+    });
+  }
+</script>

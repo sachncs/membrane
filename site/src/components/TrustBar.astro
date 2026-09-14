@@ -1,0 +1,31 @@
+---
+const items = [
+  { label: 'Paper-faithful', detail: 'Eqs. (1)–(6) verbatim' },
+  { label: 'Content-addressed', detail: 'SHA-256 fragment IDs' },
+  { label: 'Multi-tenant', detail: 'Per-tenant isolation' },
+  { label: 'Pluggable backends', detail: 'CPU · GPU · 4 LLM APIs' },
+  { label: 'Battle-tested', detail: '548+ tests · chaos suite' },
+];
+---
+
+<section class="relative border-y border-white/[0.06] bg-ink-900/40">
+  <div class="container-page py-10 lg:py-14">
+    <div data-reveal class="grid gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-5">
+      {
+        items.map((it, i) => (
+          <div class={`flex items-center gap-3 ${i > 0 ? 'lg:border-l lg:border-white/[0.06] lg:pl-8' : ''}`}>
+            <div class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-white/[0.06] to-white/[0.02] ring-1 ring-inset ring-white/[0.06]">
+              <svg viewBox="0 0 16 16" class="h-4 w-4 text-ink-100" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 8.5l3.5 3.5L13 5"/>
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <div class="text-[0.875rem] font-medium tracking-tight text-white">{it.label}</div>
+              <div class="truncate text-[0.78rem] text-ink-300">{it.detail}</div>
+            </div>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>

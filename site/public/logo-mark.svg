@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <title>Membrane</title>
+  <defs>
+    <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#e9d5ff"/>
+      <stop offset="1" stop-color="#67e8f9"/>
+    </linearGradient>
+    <linearGradient id="lg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#lg2)" stroke-width="2.4" stroke-linecap="round">
+    <circle cx="90" cy="90" r="60" opacity="0.18"/>
+    <circle cx="90" cy="90" r="44" opacity="0.28"/>
+    <circle cx="90" cy="90" r="28" opacity="0.45"/>
+  </g>
+  <g fill="url(#lg)">
+    <circle cx="90" cy="30" r="4"/>
+    <circle cx="148" cy="90" r="4"/>
+    <circle cx="90" cy="150" r="4"/>
+    <circle cx="32" cy="90" r="4"/>
+    <circle cx="128" cy="52" r="3"/>
+    <circle cx="52" cy="128" r="3"/>
+    <circle cx="128" cy="128" r="3"/>
+    <circle cx="52" cy="52" r="3"/>
+  </g>
+  <text x="90" y="100" text-anchor="middle"
+        font-family="ui-sans-serif, system-ui, -apple-system, Inter, sans-serif"
+        font-size="48" font-weight="700" fill="url(#lg2)" letter-spacing="-1.5">m</text>
+</svg>

@@ -1,0 +1,82 @@
+---
+const links = [
+  { label: 'Product', href: '#product' },
+  { label: 'Features', href: '#features' },
+  { label: 'Architecture', href: '#architecture' },
+  { label: 'Performance', href: '#performance' },
+];
+---
+
+<header
+  id="nav"
+  class="fixed inset-x-0 top-0 z-50 transition-[backdrop-filter,background-color,border-color] duration-300"
+  data-nav
+>
+  <div
+    class="absolute inset-x-0 top-0 h-full bg-ink-950/0 transition-colors duration-300 backdrop-blur-0"
+    data-nav-bg
+  >
+  </div>
+  <div class="relative mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-6 sm:px-8 lg:px-12">
+    <a href="#top" class="group flex items-center gap-2.5">
+      <span
+        class="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-accent-violet via-indigo-500 to-accent-cyan shadow-glow-sm transition-transform duration-300 group-hover:scale-105"
+        aria-hidden="true"
+      >
+        <svg viewBox="0 0 24 24" class="h-4 w-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="12" cy="12" rx="8" ry="3.5" />
+          <ellipse cx="12" cy="12" rx="8" ry="3.5" transform="rotate(60 12 12)" opacity="0.55" />
+          <ellipse cx="12" cy="12" rx="8" ry="3.5" transform="rotate(-60 12 12)" opacity="0.55" />
+        </svg>
+      </span>
+      <span class="text-[0.95rem] font-semibold tracking-tight text-white">Membrane</span>
+    </a>
+
+    <nav class="hidden items-center gap-1 md:flex" aria-label="Primary">
+      {
+        links.map((l) => (
+          <a href={l.href} class="nav-link rounded-full px-3 py-1.5">
+            {l.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="flex items-center gap-2">
+      <a
+        href="https://github.com/sachncs/membrane"
+        target="_blank"
+        rel="noreferrer noopener"
+        class="btn-ghost hidden sm:inline-flex"
+        aria-label="GitHub repository"
+      >
+        <svg viewBox="0 0 16 16" class="h-4 w-4" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+        </svg>
+        <span>GitHub</span>
+      </a>
+      <a href="https://github.com/sachncs/membrane#getting-started" target="_blank" rel="noreferrer noopener" class="btn-primary">
+        <span>Get started</span>
+        <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3.5 8h9M8.5 4l4 4-4 4"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+</header>
+
+<script>
+  const nav = document.getElementById('nav');
+  const bg = document.querySelector<HTMLElement>('[data-nav-bg]');
+  if (nav && bg) {
+    const onScroll = () => {
+      const scrolled = window.scrollY > 8;
+      nav.classList.toggle('border-b', scrolled);
+      nav.classList.toggle('border-white/[0.06]', scrolled);
+      bg.classList.toggle('bg-ink-950/70', scrolled);
+      bg.classList.toggle('backdrop-blur-xl', scrolled);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+  }
+</script>

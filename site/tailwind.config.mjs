@@ -1,0 +1,147 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ['./src/**/*.{astro,html,js,jsx,ts,tsx,vue,svelte}'],
+  safelist: [
+    'animate-fade-in',
+    'animate-fade-up',
+    'animate-scale-in',
+    'animate-gradient-pan',
+    'animate-float',
+    'animate-pulse-glow',
+    'animate-orbit',
+    'animate-shimmer',
+  ],
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        ink: {
+          950: '#050507',
+          900: '#0a0a0d',
+          850: '#0d0d12',
+          800: '#111116',
+          750: '#16161c',
+          700: '#1c1c24',
+          600: '#26262f',
+          500: '#3a3a47',
+          400: '#5c5c6e',
+          300: '#8a8a9c',
+          200: '#b6b6c4',
+          100: '#e5e5ed',
+          50: '#f7f7fa',
+        },
+        accent: {
+          violet: '#7c3aed',
+          indigo: '#5b6cff',
+          cyan: '#22d3ee',
+          mint: '#5eead4',
+          rose: '#fb7185',
+        },
+      },
+      fontFamily: {
+        sans: [
+          'Inter Variable',
+          'Inter',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'SF Pro Display',
+          'SF Pro Text',
+          'Helvetica Neue',
+          'Arial',
+          'sans-serif',
+        ],
+        display: [
+          'Inter Variable',
+          'Inter',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'SF Pro Display',
+          'Helvetica Neue',
+          'Arial',
+          'sans-serif',
+        ],
+        mono: [
+          'JetBrains Mono Variable',
+          'JetBrains Mono',
+          'SF Mono',
+          'Menlo',
+          'Monaco',
+          'Consolas',
+          'monospace',
+        ],
+      },
+      fontSize: {
+        '2xs': ['0.6875rem', { lineHeight: '1rem', letterSpacing: '0.02em' }],
+        'display-xl': ['clamp(3.25rem, 7.5vw, 6.5rem)', { lineHeight: '0.98', letterSpacing: '-0.04em' }],
+        'display-lg': ['clamp(2.75rem, 5.5vw, 4.75rem)', { lineHeight: '1.02', letterSpacing: '-0.035em' }],
+        'display-md': ['clamp(2rem, 4vw, 3.25rem)', { lineHeight: '1.06', letterSpacing: '-0.03em' }],
+        'display-sm': ['clamp(1.5rem, 2.5vw, 2.125rem)', { lineHeight: '1.15', letterSpacing: '-0.02em' }],
+      },
+      letterSpacing: {
+        tightest: '-0.04em',
+        tighter: '-0.025em',
+      },
+      borderRadius: {
+        '4xl': '2rem',
+        '5xl': '2.5rem',
+      },
+      backgroundImage: {
+        'gradient-radial': 'radial-gradient(circle at center, var(--tw-gradient-stops))',
+        'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
+        'mesh-1': 'radial-gradient(at 27% 37%, hsla(263, 70%, 50%, 0.35) 0px, transparent 50%), radial-gradient(at 97% 21%, hsla(195, 80%, 55%, 0.25) 0px, transparent 50%), radial-gradient(at 52% 99%, hsla(290, 70%, 55%, 0.30) 0px, transparent 50%), radial-gradient(at 10% 90%, hsla(220, 70%, 55%, 0.20) 0px, transparent 50%)',
+        'noise': "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E\")",
+      },
+      keyframes: {
+        'fade-in': {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'fade-up': {
+          '0%': { opacity: '0', transform: 'translateY(24px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'scale-in': {
+          '0%': { opacity: '0', transform: 'scale(0.96)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+        'gradient-pan': {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+        },
+        'float': {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-6px)' },
+        },
+        'pulse-glow': {
+          '0%, 100%': { opacity: '0.4' },
+          '50%': { opacity: '0.8' },
+        },
+        'orbit': {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
+        'shimmer': {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
+      },
+      animation: {
+        'fade-in': 'fade-in 0.6s ease-out forwards',
+        'fade-up': 'fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards',
+        'scale-in': 'scale-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards',
+        'gradient-pan': 'gradient-pan 12s ease infinite',
+        'float': 'float 6s ease-in-out infinite',
+        'pulse-glow': 'pulse-glow 4s ease-in-out infinite',
+        'orbit': 'orbit 30s linear infinite',
+        'shimmer': 'shimmer 2.5s ease-in-out infinite',
+      },
+      boxShadow: {
+        'glow-sm': '0 0 20px -5px rgba(124, 58, 237, 0.25)',
+        'glow': '0 0 40px -10px rgba(124, 58, 237, 0.35)',
+        'glow-lg': '0 0 80px -20px rgba(124, 58, 237, 0.5)',
+        'inner-glow': 'inset 0 1px 0 0 rgba(255, 255, 255, 0.06)',
+      },
+    },
+  },
+  plugins: [require('@tailwindcss/typography')],
+};

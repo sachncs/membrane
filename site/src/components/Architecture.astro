@@ -1,0 +1,197 @@
+---
+const layers = [
+  {
+    title: 'Client surface',
+    items: ['Python SDK', 'FastAPI · gRPC · stdlib HTTP', 'OpenAPI v3', 'CLI · TUI'],
+  },
+  {
+    title: 'Routing plane',
+    items: ['Economic router', 'Latency router', 'Joint optimizer', 'Workload analyzer'],
+  },
+  {
+    title: 'Index facade',
+    items: ['Exact · Semantic · Positional · Co-access', 'AVL-backed overlap', 'Bounded-depth BFS'],
+  },
+  {
+    title: 'Cluster fabric',
+    items: ['Consistent hash ring', 'Gossip membership', 'Background replication', 'Failure detection'],
+  },
+  {
+    title: 'Storage',
+    items: ['In-memory shards', 'Redis durability', 'LRU + TTL', 'Encrypted blobs'],
+  },
+];
+---
+
+<section id="architecture" class="relative py-24 sm:py-32 lg:py-40">
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center">
+      <span data-reveal class="eyebrow">Architecture</span>
+      <h2
+        data-reveal
+        data-reveal-delay="1"
+        class="mt-4 text-balance font-display text-display-lg font-semibold tracking-tighter text-white"
+      >
+        Five planes, <span class="gradient-text-static">one runtime.</span>
+      </h2>
+      <p
+        data-reveal
+        data-reveal-delay="2"
+        class="mx-auto mt-5 max-w-xl text-pretty text-[1.0625rem] leading-relaxed text-ink-200"
+      >
+        A coherent Python runtime that you can run as a single node or a
+        gossip-meshed fleet — same code, same semantics, same wire format.
+      </p>
+    </div>
+
+    <!-- Diagram -->
+    <div data-reveal data-reveal-delay="3" class="relative mx-auto mt-16 max-w-5xl lg:mt-20">
+      <div class="absolute -inset-px rounded-[28px] bg-gradient-to-b from-white/[0.10] via-white/[0.03] to-white/[0.01] [mask:linear-gradient(#000,#000)_content-box,linear-gradient(#000,#000)] [-webkit-mask-composite:xor] [mask-composite:exclude] p-px"></div>
+      <div class="glass relative overflow-hidden rounded-[28px] p-6 sm:p-10">
+        <svg
+          viewBox="0 0 800 460"
+          class="block h-auto w-full"
+          role="img"
+          aria-label="Membrane runtime topology"
+        >
+          <defs>
+            <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#a78bfa" stop-opacity="0.9"/>
+              <stop offset="0.5" stop-color="#7c3aed" stop-opacity="0.85"/>
+              <stop offset="1" stop-color="#22d3ee" stop-opacity="0.9"/>
+            </linearGradient>
+            <radialGradient id="core-glow" cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0" stop-color="#7c3aed" stop-opacity="0.55"/>
+              <stop offset="1" stop-color="#7c3aed" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="ring-grad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#22d3ee" stop-opacity="0"/>
+              <stop offset="0.5" stop-color="#22d3ee" stop-opacity="0.6"/>
+              <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+            </linearGradient>
+            <pattern id="grid-p" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M40 0H0V40" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+            </pattern>
+          </defs>
+
+          <!-- Background grid -->
+          <rect width="800" height="460" fill="url(#grid-p)"/>
+
+          <!-- Outer orbit ring -->
+          <g transform="translate(400 230)">
+            <circle r="180" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+            <circle r="140" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="2 6"/>
+            <circle r="100" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+
+            <!-- Rotating ring -->
+            <g style="transform-origin: 0 0; animation: orbit 60s linear infinite;">
+              <path d="M -180 0 A 180 180 0 0 1 180 0" fill="none" stroke="url(#ring-grad)" stroke-width="1.4"/>
+              <circle cx="180" cy="0" r="3" fill="#22d3ee" opacity="0.8"/>
+            </g>
+
+            <!-- Replicas around the ring -->
+            <g class="origin-pulse">
+              <circle r="62" fill="url(#core-glow)"/>
+              <circle r="34" fill="#0a0a0d" stroke="url(#bg-grad)" stroke-width="1.6"/>
+              <text y="6" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#fff">Origin</text>
+            </g>
+
+            <!-- Node 1 -->
+            <g transform="rotate(45) translate(180 0)">
+              <g transform="translate(-22 -22)">
+                <rect width="44" height="44" rx="10" fill="#0d0d12" stroke="rgba(255,255,255,0.14)"/>
+                <circle cx="14" cy="14" r="2.5" fill="#5eead4"/>
+                <circle cx="22" cy="14" r="2.5" fill="#7c3aed"/>
+                <circle cx="30" cy="14" r="2.5" fill="#22d3ee"/>
+                <text y="32" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="rgba(255,255,255,0.6)">n1</text>
+              </g>
+            </g>
+
+            <!-- Node 2 -->
+            <g transform="rotate(135) translate(180 0)">
+              <g transform="translate(-22 -22)">
+                <rect width="44" height="44" rx="10" fill="#0d0d12" stroke="rgba(255,255,255,0.14)"/>
+                <circle cx="14" cy="14" r="2.5" fill="#5eead4"/>
+                <circle cx="22" cy="14" r="2.5" fill="#7c3aed"/>
+                <circle cx="30" cy="14" r="2.5" fill="#22d3ee"/>
+                <text y="32" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="rgba(255,255,255,0.6)">n2</text>
+              </g>
+            </g>
+
+            <!-- Node 3 -->
+            <g transform="rotate(225) translate(180 0)">
+              <g transform="translate(-22 -22)">
+                <rect width="44" height="44" rx="10" fill="#0d0d12" stroke="rgba(255,255,255,0.14)"/>
+                <circle cx="14" cy="14" r="2.5" fill="#5eead4"/>
+                <circle cx="22" cy="14" r="2.5" fill="#7c3aed"/>
+                <circle cx="30" cy="14" r="2.5" fill="#22d3ee"/>
+                <text y="32" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="rgba(255,255,255,0.6)">n3</text>
+              </g>
+            </g>
+
+            <!-- Node 4 -->
+            <g transform="rotate(315) translate(180 0)">
+              <g transform="translate(-22 -22)">
+                <rect width="44" height="44" rx="10" fill="#0d0d12" stroke="rgba(255,255,255,0.14)"/>
+                <circle cx="14" cy="14" r="2.5" fill="#5eead4"/>
+                <circle cx="22" cy="14" r="2.5" fill="#7c3aed"/>
+                <circle cx="30" cy="14" r="2.5" fill="#22d3ee"/>
+                <text y="32" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="rgba(255,255,255,0.6)">n4</text>
+              </g>
+            </g>
+
+            <!-- Connection lines (from origin to each node) -->
+            <g stroke="url(#ring-grad)" stroke-width="1" fill="none" opacity="0.6">
+              <line x1="0" y1="0" x2="127" y2="-127"/>
+              <line x1="0" y1="0" x2="-127" y2="-127"/>
+              <line x1="0" y1="0" x2="-127" y2="127"/>
+              <line x1="0" y1="0" x2="127" y2="127"/>
+            </g>
+
+            <!-- Floating fragments (small dashes around the origin) -->
+            <g opacity="0.6">
+              <circle cx="60" cy="-30" r="2" fill="#22d3ee"/>
+              <circle cx="-45" cy="55" r="2" fill="#a78bfa"/>
+              <circle cx="-70" cy="-20" r="2" fill="#5eead4"/>
+              <circle cx="40" cy="65" r="2" fill="#fb7185"/>
+              <circle cx="80" cy="20" r="2" fill="#a78bfa"/>
+            </g>
+          </g>
+
+          <!-- Side labels -->
+          <g font-family="JetBrains Mono, monospace" font-size="10" fill="rgba(255,255,255,0.45)">
+            <text x="30" y="30">// membrane_runtime.svg</text>
+            <text x="30" y="440">region · us-west-2</text>
+            <text x="690" y="440" text-anchor="end">replicas · 2</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Layer cards -->
+    <div class="mx-auto mt-12 grid max-w-6xl gap-4 lg:grid-cols-5 lg:gap-3">
+      {
+        layers.map((l, i) => (
+          <div
+            data-reveal
+            data-reveal-delay={i + 1}
+            class="card card-hover p-5"
+          >
+            <div class="flex items-center gap-2 text-[0.7rem] font-medium uppercase tracking-[0.15em] text-ink-400">
+              <span class="font-mono text-accent-violet">0{i + 1}</span>
+              <span>{l.title}</span>
+            </div>
+            <ul class="mt-3 space-y-1.5 text-[0.85rem] text-ink-200">
+              {l.items.map((it) => (
+                <li class="flex items-start gap-2">
+                  <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent-violet" aria-hidden="true"/>
+                  <span>{it}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>

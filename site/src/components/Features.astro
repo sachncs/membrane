@@ -1,0 +1,137 @@
+---
+const features = [
+  {
+    icon: 'layers',
+    title: 'Content-addressed fragments',
+    body:
+      'KV segments keyed by a ten-field PayloadIdentity hash. Two fragments with the same hash are byte-identical — instantly deduplicated across tenants and regions.',
+    tag: 'memory',
+  },
+  {
+    icon: 'search',
+    title: 'Four indices, one facade',
+    body:
+      'Exact, semantic, positional, and co-access indices over the same fragment set. Sub-millisecond lookups, exposed through a single Index class.',
+    tag: 'retrieval',
+  },
+  {
+    icon: 'puzzle',
+    title: 'Reconstruction engine',
+    body:
+      'Walks the indices to rebuild a context. Falls back to a single prefill only when coverage is incomplete — never wasteful re-decoding.',
+    tag: 'engine',
+  },
+  {
+    icon: 'route',
+    title: 'Analytical routing',
+    body:
+      'Economic, latency, and joint routers pick the best node from access history and live telemetry. Backed by the paper\'s Eqs. (1)–(6).',
+    tag: 'routing',
+  },
+  {
+    icon: 'cluster',
+    title: 'Cluster as one',
+    body:
+      'Consistent-hash ring, gossip state exchange, heartbeat-driven failure detection, and background replication — all in-process.',
+    tag: 'cluster',
+  },
+  {
+    icon: 'shield',
+    title: 'Encrypted at rest, mTLS in flight',
+    body:
+      'Per-fragment payload encryption, deny-by-default mTLS, per-route scope checks, and a typed cluster error hierarchy.',
+    tag: 'security',
+  },
+  {
+    icon: 'chip',
+    title: 'Pluggable compute',
+    body:
+      'CPU reference, GPU (PyTorch CUDA with CPU fallback), HuggingFace Transformers, plus native OpenAI, Anthropic, and Ollama adapters.',
+    tag: 'compute',
+  },
+  {
+    icon: 'tui',
+    title: 'TUI dashboard & CLI',
+    body:
+      'A Rich-powered live dashboard, an interactive setup wizard, and a complete admin surface (snapshot, restore, rotate-keys).',
+    tag: 'ops',
+  },
+];
+
+const iconPaths: Record<string, string> = {
+  layers: '<ellipse cx="10" cy="10" rx="6" ry="2.4"/><ellipse cx="10" cy="10" rx="6" ry="2.4" transform="rotate(60 10 10)" opacity="0.55"/><ellipse cx="10" cy="10" rx="6" ry="2.4" transform="rotate(-60 10 10)" opacity="0.55"/>',
+  search: '<circle cx="9" cy="9" r="5"/><path d="m13 13 3 3"/>',
+  puzzle: '<path d="M3 6h3a1 1 0 0 0 1-1V3h4v2a1 1 0 0 0 1 1h3v4h-2a1 1 0 0 0-1 1v2H8v-2a1 1 0 0 0-1-1H5a1 1 0 0 1-1-1V6Z"/>',
+  route: '<circle cx="4" cy="4" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="16" cy="4" r="1.6"/><path d="M4 6v3a2 2 0 0 0 2 2h6a2 2 0 0 1 2 2v-1"/>',
+  cluster: '<circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="12" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="10" cy="16" r="1.6"/><path d="M10 5.6v8.8M4.7 11l4.6 2M15.3 11l-4.6 2"/>',
+  shield: '<path d="M10 2 4 4v5c0 4 3 7 6 8 3-1 6-4 6-8V4Z"/><path d="m7.5 10 2 2 3-4"/>',
+  chip: '<rect x="4" y="4" width="12" height="12" rx="2"/><rect x="7" y="7" width="6" height="6" rx="1"/><path d="M1.5 7h2M1.5 10h2M1.5 13h2M16.5 7h2M16.5 10h2M16.5 13h2M7 1.5v2M10 1.5v2M13 1.5v2M7 16.5v2M10 16.5v2M13 16.5v2"/>',
+  tui: '<rect x="2" y="3" width="16" height="11" rx="1.5"/><path d="M2 7h16M5 10h3M5 12h6"/>',
+};
+---
+
+<section id="features" class="relative py-24 sm:py-32 lg:py-40">
+  <!-- Background accent -->
+  <div class="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+    <div class="absolute left-1/2 top-1/2 h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-violet/[0.06] blur-[120px]"></div>
+  </div>
+
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center">
+      <span data-reveal class="eyebrow">Capabilities</span>
+      <h2
+        data-reveal
+        data-reveal-delay="1"
+        class="mt-4 text-balance font-display text-display-lg font-semibold tracking-tighter text-white"
+      >
+        Everything a memory fabric <br class="hidden sm:inline" />
+        <span class="gradient-text-static">needs to scale.</span>
+      </h2>
+      <p
+        data-reveal
+        data-reveal-delay="2"
+        class="mx-auto mt-5 max-w-xl text-pretty text-[1.0625rem] leading-relaxed text-ink-200"
+      >
+        Production-grade primitives, a coherent runtime, and the operational
+        surface to run them confidently at scale.
+      </p>
+    </div>
+
+    <div class="mx-auto mt-16 grid max-w-6xl gap-px overflow-hidden rounded-3xl border border-white/[0.07] bg-white/[0.04] sm:grid-cols-2 lg:mt-20 lg:grid-cols-4">
+      {
+        features.map((f, i) => (
+          <article
+            data-reveal
+            data-reveal-delay={Math.min((i % 4) + 1, 4)}
+            class="group relative bg-ink-900/70 p-7 transition-colors duration-500 hover:bg-ink-850/80"
+          >
+            <div class="flex items-start justify-between">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.05] ring-1 ring-inset ring-white/[0.08]">
+                <svg
+                  viewBox="0 0 20 20"
+                  class="h-4 w-4 text-ink-100 transition-colors duration-300 group-hover:text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  set:html={iconPaths[f.icon]}
+                />
+              </div>
+              <span class="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-ink-400">
+                {f.tag}
+              </span>
+            </div>
+            <h3 class="mt-6 text-[1.05rem] font-semibold tracking-tight text-white">
+              {f.title}
+            </h3>
+            <p class="mt-2 text-[0.875rem] leading-relaxed text-ink-300">
+              {f.body}
+            </p>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>

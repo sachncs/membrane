@@ -1,0 +1,283 @@
+---
+---
+
+<section id="top" class="relative isolate overflow-hidden pt-32 pb-20 sm:pt-40 sm:pb-28 lg:pt-48 lg:pb-32">
+  <!-- Background layers -->
+  <div class="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+    <!-- Mesh gradient -->
+    <div class="absolute inset-0 bg-mesh-1 opacity-90 mask-radial"></div>
+
+    <!-- Grid -->
+    <div class="absolute inset-0 grid-bg opacity-[0.18] mask-fade-b"></div>
+
+    <!-- Soft radial accents -->
+    <div class="absolute left-1/2 top-0 h-[600px] w-[1200px] -translate-x-1/2 -translate-y-1/3 rounded-full bg-accent-violet/20 blur-[120px]"></div>
+    <div class="absolute right-0 top-1/3 h-[400px] w-[600px] translate-x-1/3 rounded-full bg-accent-cyan/15 blur-[120px]"></div>
+
+    <!-- Vignette -->
+    <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-ink-950"></div>
+  </div>
+
+  <!-- Floating orbs -->
+  <div class="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
+    <div
+      class="absolute left-[8%] top-[28%] h-2 w-2 rounded-full bg-accent-cyan/80 shadow-[0_0_24px_6px_rgba(34,211,238,0.4)] animate-float"
+      style="animation-delay: -2s;"
+    ></div>
+    <div
+      class="absolute left-[14%] top-[60%] h-1.5 w-1.5 rounded-full bg-accent-violet/80 shadow-[0_0_18px_4px_rgba(124,58,237,0.4)] animate-float"
+      style="animation-delay: -4s;"
+    ></div>
+    <div
+      class="absolute right-[10%] top-[22%] h-1.5 w-1.5 rounded-full bg-accent-mint/70 shadow-[0_0_16px_4px_rgba(94,234,212,0.35)] animate-float"
+      style="animation-delay: -1s;"
+    ></div>
+    <div
+      class="absolute right-[20%] top-[58%] h-2 w-2 rounded-full bg-white/30 shadow-[0_0_14px_3px_rgba(255,255,255,0.25)] animate-float"
+      style="animation-delay: -3s;"
+    ></div>
+  </div>
+
+  <div class="container-page relative">
+    <div class="mx-auto max-w-4xl text-center">
+      <div data-reveal class="flex justify-center">
+        <a
+          href="https://pypi.org/project/membrane/"
+          target="_blank"
+          rel="noreferrer noopener"
+          class="chip group transition-colors duration-300 hover:border-white/20 hover:bg-white/[0.06]"
+        >
+          <span class="relative flex h-1.5 w-1.5">
+            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-mint opacity-75"></span>
+            <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent-mint"></span>
+          </span>
+          <span class="text-ink-100">v3.0.0 — Now shipping encrypted at-rest &amp; mTLS</span>
+          <svg viewBox="0 0 12 12" class="h-3 w-3 text-ink-300 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3.5 6h5M6.5 3.5l2 2.5-2 2.5"/>
+          </svg>
+        </a>
+      </div>
+
+      <h1
+        data-reveal
+        data-reveal-delay="1"
+        class="mt-8 text-balance font-display text-display-xl font-semibold tracking-tightest"
+      >
+        <span class="block">Global</span>
+        <span class="block">
+          <span class="gradient-text">contextual memory</span>
+        </span>
+        <span class="block">for LLM serving.</span>
+      </h1>
+
+      <p
+        data-reveal
+        data-reveal-delay="2"
+        class="mx-auto mt-7 max-w-2xl text-pretty text-[1.0625rem] leading-relaxed text-ink-200 sm:text-lg"
+      >
+        Membrane separates the KV-cache from GPU memory and turns it into a
+        distributed, content-addressed fabric — sharing prefill work across
+        clusters, slashing time-to-first-token, and reclaiming GPU capacity at scale.
+      </p>
+
+      <div
+        data-reveal
+        data-reveal-delay="3"
+        class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-3"
+      >
+        <a
+          href="https://github.com/sachncs/membrane#getting-started"
+          target="_blank"
+          rel="noreferrer noopener"
+          class="btn-primary w-full sm:w-auto"
+        >
+          <span>Start building</span>
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3.5 8h9M8.5 4l4 4-4 4"/>
+          </svg>
+        </a>
+        <a href="#architecture" class="btn-secondary w-full sm:w-auto">
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="8" cy="8" r="2"/>
+            <path d="M8 2v2M8 12v2M2 8h2M12 8h2M4 4l1.4 1.4M10.6 10.6L12 12M4 12l1.4-1.4M10.6 5.4L12 4"/>
+          </svg>
+          <span>See the architecture</span>
+        </a>
+      </div>
+
+      <div
+        data-reveal
+        data-reveal-delay="4"
+        class="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-[0.8rem] text-ink-300"
+      >
+        <span class="inline-flex items-center gap-2">
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-accent-mint" fill="currentColor" aria-hidden="true">
+            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm3.65 5.85L7 10.5 4.35 7.85l-1.1 1.1L7 12.7l5.75-5.75-1.1-1.1Z"/>
+          </svg>
+          MIT licensed
+        </span>
+        <span class="inline-flex items-center gap-2">
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-accent-cyan" fill="currentColor" aria-hidden="true">
+            <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"/>
+          </svg>
+          Python 3.10 – 3.13
+        </span>
+        <span class="inline-flex items-center gap-2">
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-accent-violet" fill="currentColor" aria-hidden="true">
+            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM6.78 5.22a.75.75 0 0 0-1.06 1.06L7.94 8.5l-2.22 2.22a.75.75 0 1 0 1.06 1.06L9 9.56l2.22 2.22a.75.75 0 1 0 1.06-1.06L10.06 8.5l2.22-2.22a.75.75 0 0 0-1.06-1.06L9 7.44 6.78 5.22Z"/>
+          </svg>
+          CPU · GPU · OpenAI · Anthropic · Ollama
+        </span>
+      </div>
+    </div>
+
+    <!-- Hero console mock -->
+    <div data-reveal data-reveal-delay="5" class="relative mx-auto mt-16 max-w-5xl sm:mt-20 lg:mt-24">
+      <div class="absolute -inset-px rounded-[28px] bg-gradient-to-b from-white/[0.14] via-white/[0.04] to-white/[0.02] [mask:linear-gradient(#000,#000)_content-box,linear-gradient(#000,#000)] [-webkit-mask-composite:xor] [mask-composite:exclude] p-px"></div>
+      <div class="glass-strong relative overflow-hidden rounded-[28px] shadow-2xl">
+        <!-- Window chrome -->
+        <div class="flex items-center justify-between border-b border-white/[0.06] px-5 py-3.5">
+          <div class="flex items-center gap-1.5">
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
+          </div>
+          <div class="flex items-center gap-2 rounded-full border border-white/[0.06] bg-white/[0.03] px-3 py-1 text-[0.7rem] text-ink-300">
+            <svg viewBox="0 0 16 16" class="h-3 w-3" fill="currentColor" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 12.5A5.5 5.5 0 1 1 8 2.5a5.5 5.5 0 0 1 0 11Zm-.75-8.25a.75.75 0 0 0-1.5 0v3.5c0 .2.08.39.22.53l2 2a.75.75 0 1 0 1.06-1.06L7.25 8.44Z"/></svg>
+            <span class="code-block">membrane · cluster n1 ↔ n2 ↔ n3</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-[0.7rem] text-ink-300">
+            <span class="relative flex h-1.5 w-1.5">
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-mint opacity-75"></span>
+              <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent-mint"></span>
+            </span>
+            live
+          </div>
+        </div>
+
+        <!-- Body -->
+        <div class="grid gap-px bg-white/[0.04] sm:grid-cols-2 lg:grid-cols-4">
+          <!-- Card 1: hit rate -->
+          <div class="bg-ink-900/60 p-5">
+            <div class="flex items-center justify-between">
+              <span class="text-[0.7rem] uppercase tracking-wider text-ink-400">Fragment hit-rate</span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-accent-mint/10 px-1.5 py-0.5 text-[0.65rem] font-medium text-accent-mint">
+                <svg viewBox="0 0 8 8" class="h-1.5 w-1.5" fill="currentColor" aria-hidden="true"><path d="M4 0 0 6h8z"/></svg>
+                +18%
+              </span>
+            </div>
+            <div class="mt-2 flex items-baseline gap-1.5">
+              <span class="font-display text-3xl font-semibold tracking-tight text-white">94.7</span>
+              <span class="text-sm text-ink-300">%</span>
+            </div>
+            <!-- Sparkline -->
+            <svg viewBox="0 0 100 28" class="mt-3 h-8 w-full" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="sp1" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0" stop-color="#5eead4" stop-opacity="0.45"/>
+                  <stop offset="1" stop-color="#5eead4" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0 22 L8 19 L16 20 L24 16 L32 17 L40 12 L48 13 L56 9 L64 10 L72 6 L80 7 L88 4 L100 3 L100 28 L0 28 Z" fill="url(#sp1)"/>
+              <path d="M0 22 L8 19 L16 20 L24 16 L32 17 L40 12 L48 13 L56 9 L64 10 L72 6 L80 7 L88 4 L100 3" fill="none" stroke="#5eead4" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+
+          <!-- Card 2: TTFT -->
+          <div class="bg-ink-900/60 p-5">
+            <div class="flex items-center justify-between">
+              <span class="text-[0.7rem] uppercase tracking-wider text-ink-400">P50 TTFT</span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-accent-violet/15 px-1.5 py-0.5 text-[0.65rem] font-medium text-accent-violet">
+                ↓ 41%
+              </span>
+            </div>
+            <div class="mt-2 flex items-baseline gap-1.5">
+              <span class="font-display text-3xl font-semibold tracking-tight text-white">82</span>
+              <span class="text-sm text-ink-300">ms</span>
+            </div>
+            <!-- Bars -->
+            <div class="mt-3 flex h-8 items-end gap-1">
+              <div class="w-full rounded-sm bg-white/10" style="height: 88%"></div>
+              <div class="w-full rounded-sm bg-white/10" style="height: 76%"></div>
+              <div class="w-full rounded-sm bg-white/10" style="height: 80%"></div>
+              <div class="w-full rounded-sm bg-accent-violet/40" style="height: 62%"></div>
+              <div class="w-full rounded-sm bg-accent-violet/40" style="height: 58%"></div>
+              <div class="w-full rounded-sm bg-accent-violet/40" style="height: 52%"></div>
+              <div class="w-full rounded-sm bg-accent-violet/70" style="height: 42%"></div>
+              <div class="w-full rounded-sm bg-accent-violet/70" style="height: 38%"></div>
+              <div class="w-full rounded-sm bg-accent-violet" style="height: 30%"></div>
+              <div class="w-full rounded-sm bg-accent-violet" style="height: 28%"></div>
+            </div>
+          </div>
+
+          <!-- Card 3: throughput -->
+          <div class="bg-ink-900/60 p-5">
+            <div class="flex items-center justify-between">
+              <span class="text-[0.7rem] uppercase tracking-wider text-ink-400">Throughput</span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-accent-cyan/15 px-1.5 py-0.5 text-[0.65rem] font-medium text-accent-cyan">
+                +2.3×
+              </span>
+            </div>
+            <div class="mt-2 flex items-baseline gap-1.5">
+              <span class="font-display text-3xl font-semibold tracking-tight text-white">3.4</span>
+              <span class="text-sm text-ink-300">k tok/s</span>
+            </div>
+            <!-- Dual line -->
+            <svg viewBox="0 0 100 28" class="mt-3 h-8 w-full" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M0 18 L12 16 L24 17 L36 12 L48 13 L60 8 L72 9 L84 4 L100 5" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.2" stroke-dasharray="2 2" stroke-linecap="round"/>
+              <path d="M0 22 L12 19 L24 20 L36 15 L48 14 L60 10 L72 9 L84 5 L100 4" fill="none" stroke="#22d3ee" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+
+          <!-- Card 4: replicas -->
+          <div class="bg-ink-900/60 p-5">
+            <div class="flex items-center justify-between">
+              <span class="text-[0.7rem] uppercase tracking-wider text-ink-400">Peers · alive</span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-accent-mint/10 px-1.5 py-0.5 text-[0.65rem] font-medium text-accent-mint">
+                healthy
+              </span>
+            </div>
+            <div class="mt-2 flex items-baseline gap-1.5">
+              <span class="font-display text-3xl font-semibold tracking-tight text-white">7</span>
+              <span class="text-sm text-ink-300">/ 7</span>
+            </div>
+            <!-- Peer dots -->
+            <div class="mt-3 flex flex-wrap gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-full bg-accent-mint shadow-[0_0_8px_rgba(94,234,212,0.6)]"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-accent-mint shadow-[0_0_8px_rgba(94,234,212,0.6)]"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-accent-mint shadow-[0_0_8px_rgba(94,234,212,0.6)]"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-accent-mint shadow-[0_0_8px_rgba(94,234,212,0.6)]"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-accent-mint shadow-[0_0_8px_rgba(94,234,212,0.6)]"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-accent-mint shadow-[0_0_8px_rgba(94,234,212,0.6)]"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-accent-mint shadow-[0_0_8px_rgba(94,234,212,0.6)]"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom: code strip -->
+        <div class="border-t border-white/[0.06] bg-ink-950/60 px-5 py-4">
+          <div class="flex items-start gap-3">
+            <span class="mt-0.5 select-none text-accent-mint">$</span>
+            <code class="code-block flex-1 text-[0.82rem] leading-relaxed text-ink-100">
+              <span class="text-ink-400">membrane</span> serve <span class="text-accent-cyan">--node-id</span> n1 <span class="text-accent-cyan">--port</span> 8080 <span class="text-accent-cyan">--transport</span> http <span class="text-accent-cyan">--peer</span> n2:8081 <span class="text-accent-cyan">--peer</span> n3:8082
+            </code>
+          </div>
+        </div>
+      </div>
+
+      <!-- Caption under mock -->
+      <p class="mt-4 text-center text-[0.78rem] text-ink-400">
+        Reference implementation of
+        <a
+          href="https://arxiv.org/abs/2604.15039"
+          target="_blank"
+          rel="noreferrer noopener"
+          class="text-ink-200 underline decoration-white/20 underline-offset-4 transition-colors hover:text-white hover:decoration-white/40"
+        >
+          Prefill-as-a-Service
+        </a>
+        · production-grade, paper-faithful.
+      </p>
+    </div>
+  </div>
+</section>

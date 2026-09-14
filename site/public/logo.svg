@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0a0a0d"/>
+      <stop offset="1" stop-color="#16161c"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="0.5" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="cap" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#e9d5ff" stop-opacity="0.85"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g opacity="0.7" filter="url(#glow)">
+    <circle cx="256" cy="256" r="150" fill="url(#ring)" opacity="0.4"/>
+  </g>
+  <path d="M256 88c-60.8 0-104 25.6-104 64 0 27.2 22.4 41.6 51.2 49.6-20.8 6.4-43.2 16-59.2 32-16 16-24 35.2-24 59.2 0 54.4 51.2 99.2 136 99.2s136-44.8 136-99.2c0-24-8-43.2-24-59.2-16-16-38.4-25.6-59.2-32 28.8-8 51.2-22.4 51.2-49.6 0-38.4-43.2-64-104-64Z" fill="url(#ring)"/>
+  <path d="M256 136c40 0 64 14.4 64 32 0 19.2-27.2 32-64 32s-64-12.8-64-32c0-17.6 24-32 64-32Z" fill="url(#cap)"/>
+  <path d="M256 256c52.8 0 88 19.2 88 43.2 0 25.6-38.4 44.8-88 44.8s-88-19.2-88-44.8c0-24 35.2-43.2 88-43.2Z" fill="url(#cap)" opacity="0.9"/>
+</svg>

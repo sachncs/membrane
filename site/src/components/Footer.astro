@@ -1,0 +1,145 @@
+---
+const sections = [
+  {
+    title: 'Product',
+    links: [
+      { label: 'Overview', href: '#product' },
+      { label: 'Features', href: '#features' },
+      { label: 'Architecture', href: '#architecture' },
+      { label: 'Performance', href: '#performance' },
+    ],
+  },
+  {
+    title: 'Resources',
+    links: [
+      { label: 'Documentation', href: 'https://github.com/sachncs/membrane/tree/master/docs' },
+      { label: 'Paper', href: 'https://arxiv.org/abs/2604.15039' },
+      { label: 'PyPI', href: 'https://pypi.org/project/membrane/' },
+      { label: 'Changelog', href: 'https://github.com/sachncs/membrane/blob/master/CHANGELOG.md' },
+    ],
+  },
+  {
+    title: 'Project',
+    links: [
+      { label: 'GitHub', href: 'https://github.com/sachncs/membrane' },
+      { label: 'Issues', href: 'https://github.com/sachncs/membrane/issues' },
+      { label: 'Security', href: 'https://github.com/sachncs/membrane/blob/master/SECURITY.md' },
+      { label: 'Contributing', href: 'https://github.com/sachncs/membrane/blob/master/CONTRIBUTING.md' },
+    ],
+  },
+];
+
+const year = new Date().getFullYear();
+---
+
+<footer class="relative border-t border-white/[0.06] bg-ink-950">
+  <div class="container-page py-16 sm:py-20">
+    <div class="grid gap-12 lg:grid-cols-12">
+      <!-- Brand -->
+      <div class="lg:col-span-5">
+        <a href="#top" class="inline-flex items-center gap-2.5">
+          <span
+            class="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-accent-violet via-indigo-500 to-accent-cyan shadow-glow-sm"
+            aria-hidden="true"
+          >
+            <svg viewBox="0 0 24 24" class="h-4 w-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <ellipse cx="12" cy="12" rx="8" ry="3.5"/>
+              <ellipse cx="12" cy="12" rx="8" ry="3.5" transform="rotate(60 12 12)" opacity="0.55"/>
+              <ellipse cx="12" cy="12" rx="8" ry="3.5" transform="rotate(-60 12 12)" opacity="0.55"/>
+            </svg>
+          </span>
+          <span class="text-[0.95rem] font-semibold tracking-tight text-white">Membrane</span>
+        </a>
+        <p class="mt-5 max-w-sm text-[0.92rem] leading-relaxed text-ink-300">
+          Global contextual memory fabric for distributed, content-addressed
+          KV-cache sharing across LLM serving clusters.
+        </p>
+        <div class="mt-6 flex items-center gap-2">
+          <a
+            href="https://github.com/sachncs/membrane"
+            target="_blank"
+            rel="noreferrer noopener"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-ink-200 transition-colors hover:bg-white/[0.08] hover:text-white"
+            aria-label="GitHub"
+          >
+            <svg viewBox="0 0 16 16" class="h-4 w-4" fill="currentColor" aria-hidden="true">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+            </svg>
+          </a>
+          <a
+            href="https://pypi.org/project/membrane/"
+            target="_blank"
+            rel="noreferrer noopener"
+            class="inline-flex h-9 items-center justify-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 text-[0.78rem] font-medium text-ink-200 transition-colors hover:bg-white/[0.08] hover:text-white"
+          >
+            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+              <path d="M7.18 11.39a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4Zm2.94 0a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4Z"/>
+              <path d="M14.91 9.34a3.85 3.85 0 0 0-3.84-3.85H8.86a.69.69 0 0 1-.69-.69V3.4a.85.85 0 0 1 1.7 0v.51h1.7V3.4a2.55 2.55 0 1 0-5.1 0v1.4a.69.69 0 0 1-.69.69H4.93A3.85 3.85 0 0 0 2.27 7.5a3.85 3.85 0 0 0-2.27 6.86 1.7 1.7 0 1 0 2.4 2.4h9.2a1.7 1.7 0 1 0 2.4-2.4 3.85 3.85 0 0 0 .91-5.02Z"/>
+            </svg>
+            pip install
+          </a>
+        </div>
+      </div>
+
+      <!-- Link columns -->
+      <div class="grid grid-cols-2 gap-10 sm:grid-cols-3 lg:col-span-7">
+        {
+          sections.map((s) => (
+            <div>
+              <h4 class="text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-ink-200">
+                {s.title}
+              </h4>
+              <ul class="mt-4 space-y-2.5">
+                {s.links.map((l) => (
+                  <li>
+                    <a
+                      href={l.href}
+                      class="text-[0.875rem] text-ink-300 transition-colors duration-200 hover:text-white"
+                    >
+                      {l.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+
+    <div class="mt-14 flex flex-col items-start justify-between gap-4 border-t border-white/[0.06] pt-8 text-[0.78rem] text-ink-400 sm:flex-row sm:items-center">
+      <div>
+        © {year} Sachin · MIT License ·
+        <span class="text-ink-300">Made for the Prefill-as-a-Service paper.</span>
+      </div>
+      <div class="flex items-center gap-4">
+        <a
+          href="https://github.com/sachncs/membrane/blob/master/LICENSE"
+          target="_blank"
+          rel="noreferrer noopener"
+          class="transition-colors hover:text-white"
+        >
+          License
+        </a>
+        <span class="h-3 w-px bg-white/10" aria-hidden="true"/>
+        <a
+          href="https://github.com/sachncs/membrane/blob/master/SECURITY.md"
+          target="_blank"
+          rel="noreferrer noopener"
+          class="transition-colors hover:text-white"
+        >
+          Security
+        </a>
+        <span class="h-3 w-px bg-white/10" aria-hidden="true"/>
+        <a
+          href="https://github.com/sachncs/membrane/blob/master/CODE_OF_CONDUCT.md"
+          target="_blank"
+          rel="noreferrer noopener"
+          class="transition-colors hover:text-white"
+        >
+          Code of Conduct
+        </a>
+      </div>
+    </div>
+  </div>
+</footer>

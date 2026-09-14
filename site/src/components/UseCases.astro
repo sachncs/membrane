@@ -1,0 +1,71 @@
+---
+const cases = [
+  {
+    audience: 'LLM serving teams',
+    title: 'Cut TTFT without re-architecting inference.',
+    body:
+      'Drop Membrane alongside vLLM, TGI, or any custom stack. Cache fragments at the cluster edge, reconstruct on the hot path, fall back to a single prefill when coverage is incomplete.',
+    accent: 'violet',
+  },
+  {
+    audience: 'Multi-tenant platforms',
+    title: 'Share prefill safely across customers.',
+    body:
+      'Content-addressed dedup plus per-tenant policies means one canonical store, with hard isolation. Tenants inherit the hit-rate without seeing each other\'s data.',
+    accent: 'cyan',
+  },
+  {
+    audience: 'Research & infra',
+    title: 'A faithful reference of the paper.',
+    body:
+      'Six analytical equations, a piecewise-linear Table-5 fit, and an end-to-end simulator. Reproduce, stress, and extend the Prefill-as-a-Service model.',
+    accent: 'mint',
+  },
+];
+const accentMap: Record<string, { grad: string; text: string }> = {
+  violet: { grad: 'from-accent-violet/30 via-accent-violet/5', text: 'text-accent-violet' },
+  cyan: { grad: 'from-accent-cyan/30 via-accent-cyan/5', text: 'text-accent-cyan' },
+  mint: { grad: 'from-accent-mint/30 via-accent-mint/5', text: 'text-accent-mint' },
+};
+---
+
+<section id="usecases" class="relative py-24 sm:py-32 lg:py-40">
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center">
+      <span data-reveal class="eyebrow">Built for</span>
+      <h2
+        data-reveal
+        data-reveal-delay="1"
+        class="mt-4 text-balance font-display text-display-lg font-semibold tracking-tighter text-white"
+      >
+        Wherever prefill is the bottleneck.
+      </h2>
+    </div>
+
+    <div class="mx-auto mt-16 grid max-w-6xl gap-5 lg:mt-20 lg:grid-cols-3">
+      {
+        cases.map((c, i) => (
+          <article
+            data-reveal
+            data-reveal-delay={i + 1}
+            class="group relative overflow-hidden rounded-3xl border border-white/[0.07] bg-gradient-to-b from-white/[0.04] to-white/[0.01] p-8 transition-all duration-500 hover:border-white/[0.14]"
+          >
+            <div class={`pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-gradient-to-br ${accentMap[c.accent].grad} to-transparent blur-3xl opacity-50 transition-opacity duration-700 group-hover:opacity-90`} aria-hidden="true"/>
+            <div class="relative">
+              <div class={`inline-flex items-center gap-2 text-[0.72rem] font-medium uppercase tracking-[0.16em] ${accentMap[c.accent].text}`}>
+                <span class="h-1 w-1 rounded-full bg-current"/>
+                {c.audience}
+              </div>
+              <h3 class="mt-5 text-balance font-display text-[1.375rem] font-semibold leading-snug tracking-tight text-white">
+                {c.title}
+              </h3>
+              <p class="mt-4 text-[0.925rem] leading-relaxed text-ink-200">
+                {c.body}
+              </p>
+            </div>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>

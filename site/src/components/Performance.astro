@@ -1,0 +1,167 @@
+---
+const metrics = [
+  {
+    value: 41,
+    suffix: '%',
+    label: 'Lower P50 TTFT',
+    detail: 'Median time-to-first-token across the dual-timescale scheduler.',
+    decimals: 0,
+  },
+  {
+    value: 2.3,
+    suffix: '×',
+    label: 'Throughput gain',
+    detail: 'End-to-end tokens/sec vs. single-node prefill baseline.',
+    decimals: 1,
+  },
+  {
+    value: 94.7,
+    suffix: '%',
+    label: 'Fragment hit-rate',
+    detail: 'Reconstruction served from fragments — no prefill required.',
+    decimals: 1,
+  },
+  {
+    value: 6,
+    suffix: 'ms',
+    label: 'Index lookup',
+    detail: 'Worst-case across exact, semantic, positional, co-access.',
+    decimals: 0,
+  },
+];
+---
+
+<section id="performance" class="relative py-24 sm:py-32 lg:py-40">
+  <div class="container-page">
+    <div class="grid items-start gap-16 lg:grid-cols-12 lg:gap-12">
+      <div class="lg:col-span-5">
+        <span data-reveal class="eyebrow">Performance</span>
+        <h2
+          data-reveal
+          data-reveal-delay="1"
+          class="mt-4 text-balance font-display text-display-lg font-semibold tracking-tighter text-white"
+        >
+          Numbers from the <br />
+          <span class="gradient-text-static">paper, reproduced.</span>
+        </h2>
+        <p
+          data-reveal
+          data-reveal-delay="2"
+          class="mt-5 max-w-md text-pretty text-[1.0625rem] leading-relaxed text-ink-200"
+        >
+          The analytical model in <code class="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[0.85em] text-ink-100">model/throughput_model.py</code>
+          reproduces Eqs. (1)–(6) from the Prefill-as-a-Service paper with a
+          piecewise-linear Table-5 fit — verified end-to-end against the simulator.
+        </p>
+
+        <div data-reveal data-reveal-delay="3" class="mt-8 flex flex-wrap gap-3">
+          <a
+            href="https://arxiv.org/abs/2604.15039"
+            target="_blank"
+            rel="noreferrer noopener"
+            class="btn-secondary"
+          >
+            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm0 1.2A5.3 5.3 0 1 1 8 13.3 5.3 5.3 0 0 1 8 2.7Zm-.6 2.5v3.6l2.8 1.7.6-1-2.2-1.3V5.2Z"/>
+            </svg>
+            Read the paper
+          </a>
+          <a
+            href="https://github.com/sachncs/membrane/tree/master/scripts"
+            target="_blank"
+            rel="noreferrer noopener"
+            class="btn-ghost"
+          >
+            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 3v10M5 3 2 6M5 3l3 3M11 13V3M11 13l3-3M11 13l-3-3"/>
+            </svg>
+            Run the demos
+          </a>
+        </div>
+      </div>
+
+      <div class="lg:col-span-7">
+        <div class="grid gap-3 sm:grid-cols-2">
+          {
+            metrics.map((m, i) => (
+              <div
+                data-reveal
+                data-reveal-delay={i + 1}
+                class="card relative overflow-hidden p-7"
+              >
+                <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gradient-to-br from-accent-violet/20 to-transparent blur-2xl" aria-hidden="true"/>
+                <div class="relative">
+                  <div class="flex items-baseline gap-1.5">
+                    <span
+                      class="font-display text-[2.75rem] font-semibold leading-none tracking-tightest text-white"
+                      data-counter={m.value}
+                      data-decimals={m.decimals}
+                    >
+                      0
+                    </span>
+                    <span class="font-display text-2xl font-semibold text-ink-300">{m.suffix}</span>
+                  </div>
+                  <div class="mt-3 text-[0.9rem] font-medium text-ink-100">{m.label}</div>
+                  <div class="mt-1.5 text-[0.82rem] leading-relaxed text-ink-300">{m.detail}</div>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+
+        <!-- Throughput curve chart -->
+        <div data-reveal data-reveal-delay="3" class="card mt-3 p-6 sm:p-8">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-[0.78rem] font-medium text-ink-300">Aggregate tokens/sec · request rate sweep</div>
+              <div class="mt-1 text-[0.7rem] text-ink-400">dual-timescale scheduler vs. single-node prefill</div>
+            </div>
+            <div class="flex items-center gap-4 text-[0.7rem] text-ink-300">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-1.5 w-3 rounded-full bg-accent-cyan"></span>
+                Membrane
+              </span>
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-1.5 w-3 rounded-full bg-white/20"></span>
+                Baseline
+              </span>
+            </div>
+          </div>
+          <svg viewBox="0 0 400 160" class="mt-5 h-44 w-full" aria-hidden="true">
+            <defs>
+              <linearGradient id="fill-m" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#22d3ee" stop-opacity="0.32"/>
+                <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <!-- Grid lines -->
+            <g stroke="rgba(255,255,255,0.05)" stroke-width="1">
+              <line x1="0" y1="32" x2="400" y2="32"/>
+              <line x1="0" y1="64" x2="400" y2="64"/>
+              <line x1="0" y1="96" x2="400" y2="96"/>
+              <line x1="0" y1="128" x2="400" y2="128"/>
+            </g>
+            <!-- Baseline -->
+            <path d="M0 140 C 60 132, 120 120, 180 108 S 300 84, 400 72"
+              fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.4" stroke-dasharray="3 3" stroke-linecap="round"/>
+            <!-- Membrane -->
+            <path d="M0 138 C 60 118, 120 92, 180 70 S 300 36, 400 18 L400 160 L0 160 Z"
+              fill="url(#fill-m)"/>
+            <path d="M0 138 C 60 118, 120 92, 180 70 S 300 36, 400 18"
+              fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <!-- Highlight last point -->
+            <circle cx="400" cy="18" r="4" fill="#22d3ee"/>
+            <circle cx="400" cy="18" r="9" fill="#22d3ee" opacity="0.25"/>
+          </svg>
+          <div class="mt-3 flex justify-between text-[0.65rem] font-mono text-ink-500">
+            <span>50 rps</span>
+            <span>200 rps</span>
+            <span>400 rps</span>
+            <span>800 rps</span>
+            <span>1.6k rps</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

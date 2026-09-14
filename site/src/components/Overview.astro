@@ -1,0 +1,99 @@
+---
+const pillars = [
+  {
+    title: 'Decouple cache from GPU',
+    body:
+      'Treat KV-cache as a first-class, distributed resource. Memory is content-addressed; compute is pluggable. GPUs become stateless workers, not pinned caches.',
+    accent: 'violet',
+  },
+  {
+    title: 'Share prefill work',
+    body:
+      'Reconstruct contexts from fragments held anywhere in the cluster. When coverage is incomplete, Membrane falls back to a single prefill — never a re-decode.',
+    accent: 'cyan',
+  },
+  {
+    title: 'Route with the math',
+    body:
+      'Built on the analytical throughput model from the paper. Economic, latency, and joint routers pick the best node from access history and live telemetry.',
+    accent: 'mint',
+  },
+];
+const accentMap: Record<string, string> = {
+  violet: 'from-accent-violet/30 to-accent-violet/0',
+  cyan: 'from-accent-cyan/30 to-accent-cyan/0',
+  mint: 'from-accent-mint/30 to-accent-mint/0',
+};
+---
+
+<section id="product" class="relative py-24 sm:py-32 lg:py-40">
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center">
+      <span data-reveal class="eyebrow">The product</span>
+      <h2
+        data-reveal
+        data-reveal-delay="1"
+        class="mt-4 text-balance font-display text-display-lg font-semibold tracking-tighter text-white"
+      >
+        One fabric. Every request. <br class="hidden sm:inline" />
+        <span class="text-ink-300">Zero wasted prefill.</span>
+      </h2>
+      <p
+        data-reveal
+        data-reveal-delay="2"
+        class="mx-auto mt-5 max-w-xl text-pretty text-[1.0625rem] leading-relaxed text-ink-200"
+      >
+        Membrane is the runtime that lets LLM serving fleets reuse prefill
+        work across nodes, regions, and tenants — without re-engineering your
+        inference stack.
+      </p>
+    </div>
+
+    <div class="mx-auto mt-16 grid max-w-6xl gap-5 lg:mt-20 lg:grid-cols-3">
+      {
+        pillars.map((p, i) => (
+          <article
+            data-reveal
+            data-reveal-delay={i + 1}
+            class="group relative overflow-hidden rounded-3xl border border-white/[0.07] bg-gradient-to-b from-white/[0.035] to-white/[0.01] p-7 transition-all duration-500 hover:border-white/[0.14] hover:from-white/[0.05]"
+          >
+            <div
+              class={`pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-gradient-to-br ${accentMap[p.accent]} opacity-60 blur-2xl transition-opacity duration-500 group-hover:opacity-100`}
+              aria-hidden="true"
+            />
+            <div class="relative">
+              <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.05] ring-1 ring-inset ring-white/[0.08]">
+                <svg viewBox="0 0 16 16" class="h-4 w-4 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  {p.accent === 'violet' && (
+                    <>
+                      <ellipse cx="8" cy="8" rx="5" ry="2" />
+                      <ellipse cx="8" cy="8" rx="5" ry="2" transform="rotate(60 8 8)" opacity="0.55" />
+                      <ellipse cx="8" cy="8" rx="5" ry="2" transform="rotate(-60 8 8)" opacity="0.55" />
+                    </>
+                  )}
+                  {p.accent === 'cyan' && (
+                    <>
+                      <path d="M2 8h3l2-4 3 8 2-4h2" />
+                    </>
+                  )}
+                  {p.accent === 'mint' && (
+                    <>
+                      <circle cx="8" cy="8" r="5" />
+                      <path d="M8 5v3l2 1" />
+                    </>
+                  )}
+                </svg>
+              </div>
+              <h3 class="mt-5 text-[1.125rem] font-semibold tracking-tight text-white">
+                {p.title}
+              </h3>
+              <p class="mt-2.5 text-[0.925rem] leading-relaxed text-ink-300">
+                {p.body}
+              </p>
+            </div>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
