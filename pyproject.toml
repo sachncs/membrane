@@ -62,7 +62,7 @@ dev = [
     "pytest-timeout>=2.3.0",
 ]
 # Everything `membrane serve` needs, including TLS / encryption at rest.
-server = ["grpcio>=1.83.1", "grpcio-tools>=1.83.1", "redis>=8.1.0", "fastapi>=0.141.1", "uvicorn[standard]>=0.52.4", "httpx>=0.28.1", "pydantic>=2.13.5", "cryptography>=44.0.0"]
+server = ["redis>=8.1.0", "fastapi>=0.141.1", "uvicorn[standard]>=0.52.4", "httpx>=0.28.1", "pydantic>=2.13.5", "cryptography>=44.0.0"]
 # KV transfer engine and quantization (membrane.transfer_engine, membrane.quantization).
 transfer = ["numpy>=1.26.0", "lz4>=4.3.0", "zstandard>=0.23.0"]
 # Secret backends (membrane.secrets.*). Each pulls cryptography for envelope encryption.

@@ -4,63 +4,77 @@ on:
   push:
     branches: [master]
   pull_request:
-    branches: [master]
   schedule:
+    # Weekly run catches breakage from new upstream dependency releases.
     - cron: "0 6 * * 1"
+  workflow_dispatch:
   workflow_call:
 
 permissions:
   contents: read
-  pull-requests: read
+
+concurrency:
+  # One run per ref; a new push to a PR cancels the outdated run.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FORCE_COLOR: "1"
+  PYTHONUNBUFFERED: "1"
 
 jobs:
   lint:
+    name: Lint & types
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.13"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Lint with ruff
-        run: ruff check membrane/ tests/
-
-      - name: Format check with ruff
-        run: ruff format --check membrane/ tests/
+          activate-environment: true
+          enable-cache: true
+      - run: uv pip install -e ".[dev]"
+      - name: ruff check
+        run: ruff check --output-format=github membrane/ tests/ scripts/ examples/
+      - name: ruff format
+        run: ruff format --check membrane/ tests/ scripts/ examples/
+      - name: mypy
+        run: mypy membrane/
 
   test:
+    name: Tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Type check
-        run: python -m mypy membrane/
-
-      - name: Run tests
-        run: pytest tests/ -v --tb=short --timeout=300 --cov=membrane --cov-report=term-missing
+          activate-environment: true
+          enable-cache: true
+      - run: uv pip install -e ".[dev]"
+      - name: pytest
+        run: >-
+          pytest tests/ -m "not stress and not chaos" --timeout=300 -q
+          --cov=membrane --cov-report=term-missing:skip-covered --cov-report=xml
+          --cov-fail-under=80
+      - name: Upload coverage report
+        if: matrix.python-version == '3.13'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 14
 
   integration:
+    name: Redis integration
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       redis:
         image: redis:7-alpine
@@ -73,166 +87,159 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.13"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      # The Redis tests skip when no server answers; fail loudly here
-      # instead so this job cannot pass vacuously.
+          activate-environment: true
+          enable-cache: true
+      - run: uv pip install -e ".[dev]"
+      # The Redis tests skip when no server answers; fail here instead
+      # so this job cannot pass vacuously.
       - name: Verify Redis is reachable
         run: python -c "from membrane.persistence.redis import Redis; assert Redis().ping(), 'redis unreachable'"
+      - run: pytest tests/membrane/persistence -q --timeout=300
 
-      - name: Run integration tests with Redis
-        run: pytest tests/membrane/persistence -v --tb=short --timeout=300
-
-  security:
+  extended:
+    name: Stress, chaos & bench smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.13"
+          activate-environment: true
+          enable-cache: true
+      - run: uv pip install -e ".[dev]"
+      - name: Stress (64-thread)
+        run: pytest tests/membrane/stress -m stress -q --timeout=600
+      - name: Chaos (in-process proxy; toxiproxy tests skip without a server)
+        run: pytest tests/membrane/chaos -m chaos -q --timeout=600
+      - name: Benchmark smoke
+        run: pytest tests/bench -q --timeout=600
 
-      # pip-audit inspects the active environment, so install what the
-      # server image ships before auditing it.
-      # membrane itself is removed again because a local build is not
-      # on PyPI, which --strict would treat as an audit failure.
-      - name: Install runtime dependencies and scanners
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # gitleaks scans history
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.13"
+          activate-environment: true
+          enable-cache: true
+      # Audit exactly what the server image ships. membrane itself is
+      # removed again: a local build is not on PyPI, which --strict
+      # would treat as an audit failure.
+      - name: Install runtime dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install ".[server]" pip-audit bandit
-          pip uninstall -y membrane
-
+          uv pip install ".[server]" pip-audit bandit
+          uv pip uninstall membrane
       - name: pip-audit
         run: pip-audit --strict --vulnerability-service osv
-
-      - name: bandit
-        run: bandit -r membrane/ -lll
-
+      - name: bandit (high severity)
+        run: bandit -q -r membrane/ -lll
       - name: gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Trivy filesystem scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          scan-type: "fs"
-          scan-ref: "."
-          severity: "HIGH,CRITICAL"
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
           exit-code: "1"
-
-  perf-smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Run bench smoke
-        run: pytest tests/bench/ -v --tb=short --timeout=600
-
-  stress:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Run stress suite
-        run: pytest tests/membrane/stress -v --tb=short --timeout=600 -m stress
-
-  chaos:
-    # A real toxiproxy is not available on github-hosted runners, so the
-    # suite's TestToxiproxyIntegration class is skipped; the in-process
-    # _FakeProxy suite still runs.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Run chaos suite
-        run: pytest tests/membrane/chaos -v --tb=short --timeout=600 -m chaos
+          skip-dirs: site/node_modules
 
   docker:
+    name: Container image
     runs-on: ubuntu-latest
-    needs: test
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build Docker image
+      - uses: docker/setup-buildx-action@v4
+      - name: Build
         uses: docker/build-push-action@v7
         with:
           context: .
           push: false
           load: true
           tags: membrane:ci
-
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       # Boot the image the way production does (read-only root, non-root,
       # API-key auth) and check probes, auth, and graceful shutdown.
-      - name: Smoke test container
+      - name: Smoke test
         run: |
           set -euo pipefail
           mkdir -p secrets
           printf 'ci-key:ci:read,write\n' > secrets/api-keys
           chmod 644 secrets/api-keys
           if docker run --rm membrane:ci; then
-            echo "server started without authentication" >&2; exit 1
+            echo "::error::server started without authentication"; exit 1
           fi
           docker run -d --name smoke --read-only --tmpfs /tmp -p 8080:8080 \
             -v "$PWD/secrets:/run/secrets:ro" -e MEMBRANE_API_KEY_FILE=/run/secrets/api-keys membrane:ci
           for _ in $(seq 1 30); do curl -fsS localhost:8080/livez && break; sleep 1; done
           curl -fsS localhost:8080/readyz
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/inventory)" = 401
-          curl -fsS -H 'Authorization: Bearer ci-key' localhost:8080/inventory
+          curl -fsS -H 'Authorization: Bearer ci-key' -H 'Content-Type: application/json' \
+            -d '{"prompt_tokens":[1,2,3,4],"model_id":"ci"}' localhost:8080/prefill
           docker stop -t 20 smoke
           test "$(docker inspect -f '{{.State.ExitCode}}' smoke)" = 0
-
+      - name: Container logs
+        if: always()
+        run: docker logs smoke 2>&1 || true
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: "membrane:ci"
-          severity: "HIGH,CRITICAL"
+          image-ref: membrane:ci
+          severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
 
-      - name: Smoke test logs
-        if: always()
-        run: docker logs smoke || true
+  site:
+    name: Site build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+  links:
+    name: Docs links
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # Offline mode checks relative links and anchors between files
+      # without hitting the network, so the job never flakes.
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --no-progress --include-fragments README.md CONTRIBUTING.md 'docs/**/*.md'
+          fail: true
+
+  ci-ok:
+    # Single required status check for branch protection.
+    name: CI passed
+    if: always()
+    needs: [lint, test, integration, extended, security, docker, site, links]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: re-actors/alls-green@v1.3.0
+        with:
+          jobs: ${{ toJSON(needs) }}
