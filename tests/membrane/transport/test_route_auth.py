@@ -11,8 +11,6 @@ Covers the gaps fixed for production readiness:
 * ``op_join`` let a CN register under another node's id.
 """
 
-from __future__ import annotations
-
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -20,7 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from membrane.auth.apikey import APIKeyAuthenticator, parse_keyfile
+from membrane.auth.apikey import APIKeyAuthenticator, generate_key, hash_key, parse_keyfile
 from membrane.auth.mtls import MTLSAuthenticator
 from membrane.compute.cpu import CPU
 from membrane.fragment import Fragment
@@ -112,7 +110,27 @@ def test_admin_routes_require_admin(client: TestClient) -> None:
 
 def test_keyfile_rejects_empty_subject() -> None:
     """An empty subject would read as "unauthenticated" and skip the tenant check."""
-    assert parse_keyfile("k1::read\nk2:svc:read\n").keys() == {"k2"}
+    assert parse_keyfile("k1::read\nk2:svc:read\n").keys() == {hash_key("k2")}
+
+
+def test_hashed_keyfile_lines_authenticate() -> None:
+    key, line = generate_key("ingest", ["read", "write"])
+    assert key not in line
+    auth = APIKeyAuthenticator(line + "\n")
+    record = auth.lookup(key)
+    assert record is not None
+    assert record.subject == "ingest"
+    assert record.scopes == {"read", "write"}
+    assert auth.lookup(key + "x") is None
+
+
+def test_malformed_hashed_lines_are_ignored() -> None:
+    assert parse_keyfile("sha256:nothex:svc:read\nsha256:" + "a" * 64 + ":svc:read:extra\n") == {}
+
+
+def test_plaintext_keyfile_warns(caplog) -> None:
+    parse_keyfile("k:svc:read\n")
+    assert "plaintext" in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -229,9 +247,21 @@ def test_serve_rejects_empty_keyfile(tmp_path) -> None:
 
     keyfile = tmp_path / "keys"
     keyfile.write_text("# no keys\n")
+    keyfile.chmod(0o600)
     result = CliRunner().invoke(app, ["serve", "--daemon", "--api-key-file", str(keyfile)])
     assert result.exit_code == 2
     assert "no valid keys" in result.output
+
+
+def test_serve_refuses_world_readable_keyfile(tmp_path) -> None:
+    from membrane.cli import app
+
+    keyfile = tmp_path / "keys"
+    keyfile.write_text("k:svc:read\n")
+    keyfile.chmod(0o644)
+    result = CliRunner().invoke(app, ["serve", "--daemon", "--api-key-file", str(keyfile)])
+    assert result.exit_code == 2
+    assert "chmod 600" in result.output
 
 
 def test_prefill_fragments_belong_to_caller_tenant(client: TestClient) -> None:

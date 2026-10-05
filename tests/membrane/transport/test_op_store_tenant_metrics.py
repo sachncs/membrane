@@ -1,7 +1,5 @@
 """Tests for the per-tenant cluster_metrics counter (Phase 3.1.7 follow-up)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.metrics import ClusterMetrics, MetricsCollector

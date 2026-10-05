@@ -20,14 +20,12 @@ fingerprint is hashable and comparable; equality on all ten fields is
 the operational definition of "these two payloads are interchangeable".
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
-_DTYPE_VALUES: frozenset[str] = frozenset(
+DTYPE_VALUES: frozenset[str] = frozenset(
     {
         "float16",
         "bfloat16",
@@ -45,7 +43,7 @@ _DTYPE_VALUES: frozenset[str] = frozenset(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PayloadIdentity:
     """Immutable fragment fingerprint.
 
@@ -103,8 +101,8 @@ class PayloadIdentity:
         """
         if not isinstance(self.payload_hash, str) or not self.payload_hash:
             raise ValueError(f"payload_hash must be a non-empty string, got {self.payload_hash!r}")
-        if self.dtype not in _DTYPE_VALUES:
-            raise ValueError(f"dtype must be one of {sorted(_DTYPE_VALUES)}, got {self.dtype!r}")
+        if self.dtype not in DTYPE_VALUES:
+            raise ValueError(f"dtype must be one of {sorted(DTYPE_VALUES)}, got {self.dtype!r}")
         for name, value in (
             ("layer_range", self.layer_range),
             ("token_span", self.token_span),

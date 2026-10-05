@@ -27,10 +27,10 @@ of the underlying model's hidden size.
 """
 
 import logging
-from typing import Any
+from typing import Any, override
 
-from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
+from membrane.compute.hashing import token_hash
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 
@@ -105,6 +105,7 @@ class Transformers(Backend):
             # Network errors, OOM, or invalid model IDs land here.
             logger.warning("Transformers: failed to load model (%s)", exc)
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Run a forward pass to obtain hidden-state embeddings.
 
@@ -186,6 +187,7 @@ class Transformers(Backend):
         )
         return fragments
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Generate text with ``model.generate``.
 
@@ -224,6 +226,7 @@ class Transformers(Backend):
             logger.warning("Transformers generate failed: %s", exc)
             return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
         """Return whether the model and tokenizer are loaded.
 
@@ -233,6 +236,7 @@ class Transformers(Backend):
         """
         return self.model is not None and self.tokenizer is not None
 
+    @override
     def device_name(self) -> str:
         """Return a descriptive device name.
 
@@ -249,7 +253,15 @@ class Transformers(Backend):
         prompt_tokens: list[int],
         model_id: str,
     ) -> list[Fragment]:
-        """Produce a simulated prefill (used when no model is loaded)."""
+        """Produce a simulated prefill (used when no model is loaded).
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            list[Fragment]: One simulated fragment per prompt window.
+        """
         window_size = Backend.SIMULATE_WINDOW_SIZE
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
@@ -264,3 +276,8 @@ class Transformers(Backend):
                 )
             )
         return fragments
+
+
+__all__ = [
+    "Transformers",
+]

@@ -9,8 +9,6 @@ action is recorded + chain-verified. The demo's "snapshot"
 is emulated by reading a snapshot of node state at the end.
 """
 
-from __future__ import annotations
-
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

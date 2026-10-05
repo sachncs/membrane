@@ -191,3 +191,8 @@ class Weighted:
             :meth:`add_weighted_edge`).
         """
         return self.graph.has_node(content_hash)
+
+
+__all__ = [
+    "Weighted",
+]

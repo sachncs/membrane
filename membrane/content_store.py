@@ -34,8 +34,6 @@ Key strings are opaque to the store. By convention
 characters is supported.
 """
 
-from __future__ import annotations
-
 import contextlib
 import os
 import platform
@@ -133,9 +131,9 @@ class InProcessBytes:
             capacity_bytes: Maximum bytes the store will retain
                 before refusing new writes. ``None`` for unlimited.
         """
-        self._store: dict[str, bytes] = {}
-        self._lock = threading.RLock()
-        self._used_bytes = 0
+        self.store: dict[str, bytes] = {}
+        self.lock = threading.RLock()
+        self.__used_bytes = 0
         self.capacity_bytes = capacity_bytes
 
     def put(self, key: str, data: bytes) -> None:
@@ -149,40 +147,69 @@ class InProcessBytes:
             ValueError: When ``data`` exceeds ``capacity_bytes``
                 (which records both cap and current usage).
         """
-        with self._lock:
+        with self.lock:
             if self.capacity_bytes is not None and len(data) > self.capacity_bytes:
                 raise ValueError(f"payload {len(data)} bytes exceeds capacity_bytes {self.capacity_bytes}")
-            self._store[key] = data
-            self._used_bytes = sum(len(b) for b in self._store.values())
+            self.store[key] = data
+            self.__used_bytes = sum(len(b) for b in self.store.values())
 
     def get(self, key: str) -> bytes | None:
-        """Return the bytes stored under ``key`` or ``None``."""
-        with self._lock:
-            return self._store.get(key)
+        """Return the bytes stored under ``key`` or ``None``.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bytes | None: The bytes stored under ``key`` or ``None``.
+        """
+        with self.lock:
+            return self.store.get(key)
 
     def has(self, key: str) -> bool:
-        """Return whether ``key`` is present."""
-        with self._lock:
-            return key in self._store
+        """Return whether ``key`` is present.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bool: Whether ``key`` is present.
+        """
+        with self.lock:
+            return key in self.store
 
     def delete(self, key: str) -> bool:
-        """Remove and return whether the removal actually happened."""
-        with self._lock:
-            if key in self._store:
-                del self._store[key]
-                self._used_bytes = sum(len(b) for b in self._store.values())
+        """Remove and return whether the removal actually happened.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bool: True when an entry was removed.
+        """
+        with self.lock:
+            if key in self.store:
+                del self.store[key]
+                self.__used_bytes = sum(len(b) for b in self.store.values())
                 return True
             return False
 
     def size(self) -> int:
-        """Return total bytes currently held."""
-        with self._lock:
-            return self._used_bytes
+        """Return total bytes currently held.
+
+        Returns:
+            int: Total bytes currently held.
+        """
+        with self.lock:
+            return self.__used_bytes
 
     def __len__(self) -> int:
-        """Return the number of distinct entries held."""
-        with self._lock:
-            return len(self._store)
+        """Return the number of distinct entries held.
+
+        Returns:
+            int: The number of distinct entries held.
+        """
+        with self.lock:
+            return len(self.store)
 
 
 class FilesystemBlob:
@@ -237,13 +264,13 @@ class FilesystemBlob:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.tenant_id = tenant_id
-        self._lock = threading.RLock()
-        self._used_bytes = 0
-        self._plaintext_bytes: dict[str, int] = {}
-        self._key_provider: KeyProvider = key_provider or StaticKeyProvider()
-        self._master_key = self._key_provider.master_key()
+        self.lock = threading.RLock()
+        self.__used_bytes = 0
+        self.__plaintext_bytes: dict[str, int] = {}
+        self.__key_provider: KeyProvider = key_provider or StaticKeyProvider()
+        self.__master_key = self.__key_provider.master_key()
 
-    def _path_for(self, key: str) -> Path:
+    def __path_for(self, key: str) -> Path:
         """Return the on-disk path for ``key``.
 
         Args:
@@ -280,11 +307,11 @@ class FilesystemBlob:
             encrypt_payload,
         )
 
-        target = self._path_for(key)
+        target = self.__path_for(key)
         target.parent.mkdir(parents=True, exist_ok=True)
-        per_key = derive_tenant_key(self._master_key, self.tenant_id, key)
+        per_key = derive_tenant_key(self.__master_key, self.tenant_id, key)
         blob = encrypt_payload(data, per_key)
-        with self._lock:
+        with self.lock:
             with tempfile.NamedTemporaryFile(
                 delete=False,
                 dir=str(target.parent),
@@ -301,8 +328,8 @@ class FilesystemBlob:
                 os.fsync(dir_fd)
             finally:
                 os.close(dir_fd)
-            self._plaintext_bytes[key] = len(data)
-            self._used_bytes = sum(self._plaintext_bytes.values())
+            self.__plaintext_bytes[key] = len(data)
+            self.__used_bytes = sum(self.__plaintext_bytes.values())
 
     def put_from_file(self, key: str, source_path: str) -> None:
         """Copy ``source_path`` to ``key`` using ``os.sendfile`` when available.
@@ -315,9 +342,9 @@ class FilesystemBlob:
             OSError: When the underlying filesystem rejects the
                 copy or the atomic rename.
         """
-        target = self._path_for(key)
+        target = self.__path_for(key)
         target.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock:
+        with self.lock:
             with tempfile.NamedTemporaryFile(
                 delete=False,
                 dir=str(target.parent),
@@ -337,8 +364,8 @@ class FilesystemBlob:
                 os.fsync(dir_fd)
             finally:
                 os.close(dir_fd)
-            self._plaintext_bytes[key] = os.path.getsize(source_path)
-            self._used_bytes = sum(self._plaintext_bytes.values())
+            self.__plaintext_bytes[key] = os.path.getsize(source_path)
+            self.__used_bytes = sum(self.__plaintext_bytes.values())
 
     def get(self, key: str) -> bytes | None:
         """Read and decrypt the bytes stored under ``key``.
@@ -360,10 +387,10 @@ class FilesystemBlob:
             derive_tenant_key,
         )
 
-        path = self._path_for(key)
+        path = self.__path_for(key)
         if not path.exists():
             return None
-        with self._lock:
+        with self.lock:
             blob = path.read_bytes()
         # Walk the version keys in reverse order so the active
         # key is tried first; older keys decrypt legacy blobs.
@@ -371,27 +398,41 @@ class FilesystemBlob:
             decrypt_payload_with_versions,
         )
 
-        version_keys = getattr(self._key_provider, "version_keys", None)
+        version_keys = getattr(self.__key_provider, "version_keys", None)
         if version_keys is not None:
             tenant_keys = tuple(derive_tenant_key(k, self.tenant_id, key) for k in version_keys())
             try:
                 return decrypt_payload_with_versions(blob, tenant_keys)
             except RuntimeError:
                 return None
-        per_key = derive_tenant_key(self._master_key, self.tenant_id, key)
+        per_key = derive_tenant_key(self.__master_key, self.tenant_id, key)
         try:
             return decrypt_payload(blob, per_key)
         except Exception:
             return None
 
     def has(self, key: str) -> bool:
-        """Return whether ``key`` is present on disk."""
-        return self._path_for(key).exists()
+        """Return whether ``key`` is present on disk.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bool: Whether ``key`` is present on disk.
+        """
+        return self.__path_for(key).exists()
 
     def delete(self, key: str) -> bool:
-        """Remove the blob at ``key``."""
-        path = self._path_for(key)
-        with self._lock:
+        """Remove the blob at ``key``.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bool: True when a blob file was removed.
+        """
+        path = self.__path_for(key)
+        with self.lock:
             try:
                 path.unlink()
                 # Try to remove empty parent dirs to keep the
@@ -401,19 +442,27 @@ class FilesystemBlob:
                     path.parent.rmdir()
                 with contextlib.suppress(OSError):
                     path.parent.parent.rmdir()
-                self._plaintext_bytes.pop(key, None)
-                self._used_bytes = sum(self._plaintext_bytes.values())
+                self.__plaintext_bytes.pop(key, None)
+                self.__used_bytes = sum(self.__plaintext_bytes.values())
                 return True
             except FileNotFoundError:
                 return False
 
     def size(self) -> int:
-        """Sum the byte size of every ``*.blob`` under :attr:`root`."""
-        with self._lock:
-            return self._used_bytes
+        """Sum the byte size of every ``*.blob`` under :attr:`root`.
 
-    def _walk_size(self) -> int:
-        """Walk the root and sum the size of every blob file."""
+        Returns:
+            int: Plaintext bytes written through this store.
+        """
+        with self.lock:
+            return self.__used_bytes
+
+    def __walk_size(self) -> int:
+        """Walk the root and sum the size of every blob file.
+
+        Returns:
+            int: Total size in bytes of the blob files on disk.
+        """
         total = 0
         for path in self.root.rglob("*.blob"):
             try:
@@ -423,31 +472,16 @@ class FilesystemBlob:
         return total
 
     def __len__(self) -> int:
-        """Return the number of blob files under :attr:`root`."""
+        """Return the number of blob files under :attr:`root`.
+
+        Returns:
+            int: The number of blob files under :attr:`root`.
+        """
         return sum(1 for _ in self.root.rglob("*.blob"))
-
-
-class LMCacheDiskStore(FilesystemBlob):
-    """LMCache-backed disk :class:`ContentStore` (Phase 0.4).
-
-    Re-uses :class:`FilesystemBlob`'s atomic-file layout because
-    LMCache's ``LocalDiskBackend`` requires an event loop. The
-    factory in :mod:`membrane.storage.lmcache` exposes the
-    LMCache backend for operators who want the engine event loop
-    wired; this class is the v1 fallback for tests and
-    single-node deployments.
-
-    The class lives in :mod:`membrane.content_store` so the v1
-    import path is preserved. The Phase 0.4 surface mirrors the
-    v1.0.x :class:`FilesystemBlob`; operators who want LMCache's
-    full engine integration use :class:`membrane.storage.lmcache.LMCacheContentStore`
-    instead, which is the production-grade v2.0+ path.
-    """
 
 
 __all__ = [
     "ContentStore",
     "FilesystemBlob",
     "InProcessBytes",
-    "LMCacheDiskStore",
 ]

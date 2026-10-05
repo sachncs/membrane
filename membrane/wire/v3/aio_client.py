@@ -8,8 +8,6 @@ HTTP client with an async client built on
 client rather than a separate resilience policy.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import time
@@ -146,13 +144,17 @@ class AsyncWireClient:
     retry: RetryPolicy = field(default_factory=RetryPolicy)
     timeout_sec: float = 5.0
     breaker: dict[str, CircuitBreakerPolicy] = field(default_factory=dict)
-    _semaphore: asyncio.Semaphore | None = None
+    semaphore: asyncio.Semaphore | None = None
 
-    async def _ensure_semaphore(self) -> asyncio.Semaphore:
-        """Lazily create the bulkhead semaphore on first call."""
-        if self._semaphore is None:
-            self._semaphore = asyncio.Semaphore(self.bulkhead.max_concurrent)
-        return self._semaphore
+    async def ensure_semaphore(self) -> asyncio.Semaphore:
+        """Lazily create the bulkhead semaphore on first call.
+
+        Returns:
+            asyncio.Semaphore: The bulkhead semaphore.
+        """
+        if self.semaphore is None:
+            self.semaphore = asyncio.Semaphore(self.bulkhead.max_concurrent)
+        return self.semaphore
 
     async def request(
         self,
@@ -181,7 +183,7 @@ class AsyncWireClient:
         except ImportError as exc:  # pragma: no cover - import guard
             raise RuntimeError("httpx is required for AsyncWireClient") from exc
 
-        sem = await self._ensure_semaphore()
+        sem = await self.ensure_semaphore()
         breaker = self.breaker.setdefault(self.base_url, CircuitBreakerPolicy())
         if breaker.is_open():
             raise RuntimeError(f"circuit breaker open for {self.base_url}")

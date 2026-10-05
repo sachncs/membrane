@@ -11,8 +11,6 @@ env var is unset, so the suite never blocks the v3.0.0
 CI on infra that has not yet deployed toxiproxy.
 """
 
-from __future__ import annotations
-
 import os
 import socket
 import time

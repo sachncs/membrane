@@ -98,7 +98,15 @@ class Latency:
         return node.retrieve(content_hash) is not None
 
     def pick_local(self, content_hash: str, local_node: Node) -> str | None:
-        """Return ``local_node.node_id`` iff it holds the fragment."""
+        """Return ``local_node.node_id`` iff it holds the fragment.
+
+        Args:
+            content_hash: Content hash of the fragment.
+            local_node: Node processing the request.
+
+        Returns:
+            str | None: ``local_node.node_id`` iff it holds the fragment.
+        """
         if self.holds(local_node, content_hash):
             return local_node.node_id
         return None
@@ -132,7 +140,14 @@ class Latency:
         self,
         local_node: Node,
     ) -> str:
-        """Return the fallback node id used when no replica holds the fragment."""
+        """Return the fallback node id used when no replica holds the fragment.
+
+        Args:
+            local_node: Node processing the request.
+
+        Returns:
+            str: The fallback node id used when no replica holds the fragment.
+        """
         return self.origin_node_id or local_node.node_id
 
     def pick_target(

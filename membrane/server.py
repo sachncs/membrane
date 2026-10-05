@@ -1,21 +1,20 @@
 """Server: unified production server orchestrating transport, compute, and persistence.
 
-Wraps the FastAPI HTTP transport, a compute
-backend (CPU/GPU/Transformers/OpenAI/Anthropic/Ollama), and an
-optional Redis persistence layer into a single runnable
-service.
+:class:`Server` wires the components built in :mod:`membrane.runtime`
+into one runnable service: the FastAPI HTTP transport, a compute
+backend chosen from the plugin registry, write-behind Redis
+persistence, the cluster manager, and the checkpoint / sweeper tasks.
 
-The server is also the entry point for the CLI's ``serve``
-command and the TUI dashboard.
+It is the entry point for the CLI's ``serve`` command and the TUI
+dashboard. The builders it uses, and the dashboard's event and
+diagnostics types, are re-exported here for compatibility.
 """
 
 import contextlib
 import logging
 import threading
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from membrane.auth import Authenticator
 from membrane.compute.base import Backend
@@ -30,225 +29,27 @@ from membrane.metrics import (
 from membrane.network.cluster import Cluster
 from membrane.network.config import ClusterConfig
 from membrane.node import Node
-from membrane.persistence.memory import Memory
-from membrane.persistence.redis import Redis
+from membrane.quorum import QuorumReplicator
 from membrane.registry import Registry
+from membrane.runtime.components import (
+    build_authenticator,
+    build_content_store,
+    build_persistence,
+    configure_peer_access,
+    is_durable,
+    resolves_to_loopback,
+)
+from membrane.runtime.lifecycle import PeriodicTask
+from membrane.runtime.observability import EventLog, ServerDiagnostics, ServerEvent
+from membrane.runtime.persistence_writer import PersistenceWriter
+from membrane.runtime.plugins import COMPUTE_BACKENDS
 from membrane.snapshot import SNAPSHOT_SCHEMA_VERSION, ClusterEpochGuard, Snapshot
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
+from membrane.transport.limits import TransportLimits
 from membrane.transport.tls import MTLSConfig
 
 logger = logging.getLogger(__name__)
-
-
-# Registry mapping CLI/backend name strings to backend factories.
-# Each factory receives (llm_url, llm_model, api_key) and returns
-# a Backend instance. Backends whose optional dependencies are not
-# installed fall back to RuntimeError at construction time when
-# the CLI tries to instantiate them — same behavior as the
-# previous inline string-dispatch code.
-ComputeBackendFactory = Callable[[str, str, str], Backend]
-
-COMPUTE_BACKENDS: dict[str, ComputeBackendFactory] = {}
-
-
-def _register_compute_backends() -> None:
-    """Populate the COMPUTE_BACKENDS registry from optional-backend imports."""
-    from membrane.compute.cpu import CPU
-
-    COMPUTE_BACKENDS["cpu"] = lambda _url, _model, _key: CPU()
-    COMPUTE_BACKENDS["gpu"] = lambda _url, _model, _key: _try_import("GPU")()
-    COMPUTE_BACKENDS["ollama"] = lambda url, model, _key: cast(
-        Backend,
-        _try_import("Ollama")(
-            base_url=url or "http://localhost:11434",
-            model=model or "llama3.2",
-        ),
-    )
-    COMPUTE_BACKENDS["openai"] = lambda _url, model, key: cast(
-        Backend,
-        _try_import("OpenAI")(
-            model=model or "gpt-4o-mini",
-            api_key=key,
-        ),
-    )
-    COMPUTE_BACKENDS["anthropic"] = lambda _url, model, key: cast(
-        Backend,
-        _try_import("Anthropic")(
-            model=model or "claude-3-sonnet-20240229",
-            api_key=key,
-        ),
-    )
-    COMPUTE_BACKENDS["transformers"] = lambda _url, model, _key: cast(
-        Backend,
-        _try_import("Transformers")(
-            model_id=model or "gpt2",
-        ),
-    )
-
-
-def _try_import(class_name: str) -> Any:
-    """Import an optional backend class by name.
-
-    Returns the class object so callers can construct an
-    instance with provider-specific kwargs (BaseURL, API
-    key, model, etc.). The class is typed as ``Any`` here
-    because each concrete provider's constructor accepts
-    different arguments and Backend's own signature is the
-    empty ``__init__(self)``.
-
-    Args:
-        class_name: Backend class to import (e.g., ``"Ollama"``).
-
-    Returns:
-        Any: The backend class (typed loosely so provider-
-        specific constructors are accepted).
-
-    Raises:
-        RuntimeError: If the optional backend dependency is
-            not installed.
-    """
-    from membrane.compute import anthropic as _anthropic
-    from membrane.compute import gpu as _gpu
-    from membrane.compute import ollama as _ollama
-    from membrane.compute import openai as _openai
-    from membrane.compute import transformers as _t
-
-    module_map = {
-        "Ollama": _ollama,
-        "OpenAI": _openai,
-        "Anthropic": _anthropic,
-        "GPU": _gpu,
-        "Transformers": _t,
-    }
-    module = module_map[class_name]
-    return getattr(module, class_name)
-
-
-_register_compute_backends()
-
-
-def build_content_store(data_dir: str, key_file: str = "") -> Any:
-    """Return an encrypted on-disk content store rooted at ``data_dir``.
-
-    KV bytes live in ``{data_dir}/blobs`` (AES-256-GCM,
-    :class:`~membrane.content_store.FilesystemBlob`), so they survive a
-    restart. The 32-byte master key comes from ``key_file`` when given
-    (mount it from a secret manager in production); otherwise it is
-    generated once into ``{data_dir}/master.key`` with mode 0600.
-
-    Args:
-        data_dir: Node data directory; created when missing.
-        key_file: Optional path to a file holding the raw 32-byte key
-            or its 64-character hex encoding.
-
-    Returns:
-        FilesystemBlob: The content store.
-
-    Raises:
-        ValueError: When the key file does not hold a 32-byte key.
-    """
-    import os
-    import secrets
-    from pathlib import Path
-
-    from membrane.content_store import FilesystemBlob
-    from membrane.security.encryption import StaticKeyProvider
-
-    root = Path(data_dir)
-    root.mkdir(parents=True, exist_ok=True)
-    key_path = Path(key_file) if key_file else root / "master.key"
-    if not key_path.exists():
-        if key_file:
-            raise ValueError(f"data key file {key_file!r} does not exist")
-        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(secrets.token_bytes(32))
-    raw = key_path.read_bytes()
-    if len(raw) == 32:
-        key = raw  # raw key bytes: never strip, they may look like whitespace
-    else:
-        try:
-            key = bytes.fromhex(raw.decode("ascii").strip())
-        except (UnicodeDecodeError, ValueError):
-            key = b""
-    if len(key) != 32:
-        raise ValueError(f"data key in {str(key_path)!r} must be 32 bytes (or 64 hex characters)")
-    return FilesystemBlob(root / "blobs", tenant_id="membrane", key_provider=StaticKeyProvider(key=key))
-
-
-def _resolves_to_loopback(host: str) -> bool:
-    """Return True when ``host`` resolves only to loopback addresses."""
-    import ipaddress
-    import socket
-
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except OSError:
-        return False
-    addresses = {ipaddress.ip_address(info[4][0]) for info in infos}
-    return bool(addresses) and all(addr.is_loopback for addr in addresses)
-
-
-@dataclass
-class ServerEvent:
-    """A single server event for dashboard logging.
-
-    Attributes:
-        timestamp: Unix time at which the event was recorded.
-        level: Log level (``"info"``, ``"warn"``, ``"error"``,
-            etc.).
-        message: Human-readable description.
-        node_id: Optional node identifier associated with the
-            event.
-        bytes_affected: Optional size in bytes (e.g., a
-            transfer size).
-    """
-
-    timestamp: float
-    level: str
-    message: str
-    node_id: str = ""
-    bytes_affected: int = 0
-
-
-@dataclass
-class ServerDiagnostics:
-    """Snapshot of server health and performance.
-
-    Attributes:
-        node_id: Identifier of the local node.
-        uptime_seconds: Seconds since :meth:`start`.
-        memory_used_bytes: Bytes currently held by the node.
-        memory_limit_bytes: Configured node memory cap.
-        fragment_count: Number of fragments stored locally.
-        primary_count: Number of fragments owned as primary.
-        hit_rate: External cache hit rate (currently always
-            ``0.0``; tracked outside the server).
-        miss_rate: External cache miss rate.
-        request_count: Cumulative request count.
-        error_count: Cumulative error count.
-        connected_nodes: Number of distinct peers seen.
-        backend_name: Compute backend descriptor.
-        redis_connected: True when the Redis backend is
-            reachable.
-        load: Local node load ratio.
-    """
-
-    node_id: str
-    uptime_seconds: float
-    memory_used_bytes: int
-    memory_limit_bytes: int
-    fragment_count: int
-    primary_count: int
-    hit_rate: float
-    miss_rate: float
-    request_count: int
-    error_count: int
-    connected_nodes: int
-    backend_name: str
-    redis_connected: bool
-    load: float
 
 
 class Server:
@@ -257,9 +58,10 @@ class Server:
     Args:
         node: Node instance.
         transport: ``"http"`` (FastAPI); the only supported value.
-        compute: ``"cpu"``, ``"gpu"``, ``"ollama"``,
-            ``"openai"``, ``"anthropic"``, or ``"transformers"``.
-            Alternatively an existing :class:`Backend` instance.
+        compute: A name from the compute plugin registry (built-ins:
+            ``cpu``, ``gpu``, ``ollama``, ``openai``, ``anthropic``,
+            ``transformers``; see :mod:`membrane.runtime.plugins`), or
+            an existing :class:`Backend` instance.
         redis_url: Redis URL, or ``""`` to disable persistence.
         host: Bind address.
         port: Listen port.
@@ -281,6 +83,8 @@ class Server:
             private-address blocklist.
         tls: mTLS configuration for the listener and for peer
             calls. Defaults to ``cluster_config.mtls``.
+        limits: HTTP capacity settings (concurrency bound, rate limit,
+            connections, API docs).
     """
 
     def __init__(
@@ -303,13 +107,14 @@ class Server:
         peer_api_key: str = "",
         peer_networks: tuple[str, ...] = (),
         tls: MTLSConfig | None = None,
+        limits: TransportLimits | None = None,
     ) -> None:
         """Initialize the server with all configured subsystems.
 
         Args:
             node: Local :class:`Node` instance.
             transport: ``"http"``.
-            compute: Backend name or pre-built instance.
+            compute: Compute plugin name or pre-built instance.
             redis_url: Redis URL for the persistence layer.
             host: Bind address.
             port: Listen port.
@@ -329,22 +134,34 @@ class Server:
             cluster_epoch: Live cluster epoch. Increment when
                 the cluster topology changes in ways that should
                 invalidate stale snapshots.
+            sweep_interval_sec: Seconds between TTL / tombstone sweeps.
+            authenticator: Optional :class:`~membrane.auth.Authenticator`. When
+                set, every route except ``/livez`` and ``/readyz`` authenticates
+                the caller and enforces its route scope.
+            peer_api_key: Bearer key this node presents to its peers (needs the
+                ``admin`` scope).
+            peer_networks: CIDR ranges of the peer network, exempt from the SSRF
+                private-address block.
+            tls: mTLS configuration; defaults to ``cluster_config.mtls``.
+            limits: HTTP capacity settings; defaults to
+                :class:`~membrane.transport.limits.TransportLimits`.
         """
         self.node = node
+        self.limits = limits or TransportLimits()
         self.transport_type = transport
         self.redis_url = redis_url
         self.host = host
         self.port = port
         self.cluster_config = cluster_config
         self.tls = tls or (cluster_config.mtls if cluster_config is not None else None)
-        self.authenticator = authenticator or self.build_authenticator(self.tls)
+        self.authenticator = authenticator or build_authenticator(self.tls)
         if cluster_config is not None:
-            self.configure_peer_access(cluster_config, self.tls, peer_api_key, peer_networks)
+            configure_peer_access(cluster_config, self.tls, peer_api_key, peer_networks)
 
         self.start_time = time.time()
         self.request_count = 0
         self.error_count = 0
-        self.events: list[ServerEvent] = []
+        self.events = EventLog()
         self.connected_nodes: set[str] = set()
 
         self.metrics_registry = MetricsCollector()
@@ -359,31 +176,24 @@ class Server:
             self.compute_type = compute.device_name()
         else:
             self.compute_type = compute
-            factory = COMPUTE_BACKENDS.get(compute)
-            if factory is None:
-                raise ValueError(f"Unknown compute backend '{compute}'. Available: {sorted(COMPUTE_BACKENDS)}")
-            self.compute_backend = factory(llm_url, llm_model, api_key)
+            self.compute_backend = COMPUTE_BACKENDS.get(compute)(llm_url, llm_model, api_key)
 
-        self.persistence = self.build_persistence(redis_url)
-        self.durable = self._persistence_is_durable()
+        # Redis writes happen on a background thread so the node's lock
+        # never waits on a network round trip.
+        self.persistence = build_persistence(redis_url)
+        self.durable = is_durable(self.persistence)
+        self.persistence_writer = PersistenceWriter(self.persistence, node.node_id, self.metrics_persistence)
         if self.durable:
-            self.node.set_persistence_hooks(self._persist_fragment, self._forget_fragment)
+            self.node.set_persistence_hooks(self.persistence_writer.store, self.persistence_writer.forget)
 
-        self.cluster_manager: Cluster | None = None
-        # GC plumbing: tombstones + periodic sweeper. Single
-        # TombstoneTable is shared with the transport's
-        # op_delete/op_tombstone so producers, peers, and the
-        # sweeper converge on the same set. The block must run
-        # before the Cluster constructor so the cluster can
-        # share the table.
+        # Tombstones are shared by the transport's delete path, the
+        # cluster, and the sweeper, so all three converge on one set.
         self.tombstones = TombstoneTable()
         self.sweep_interval_sec = float(sweep_interval_sec)
-        self.sweeper: Sweeper | None = Sweeper(interval_sec=self.sweep_interval_sec)
-        self.sweeper_thread: threading.Thread | None = None
-        self.transfer_service = TransferService(
-            cluster_manager=self.cluster_manager,
-            local_node=self.node,
-        )
+        self.sweeper = Sweeper(interval_sec=self.sweep_interval_sec)
+        self.cluster_manager: Cluster | None = None
+        self.replicator: QuorumReplicator | None = None
+        self.transfer_service = TransferService(cluster_manager=None, local_node=self.node)
         if cluster_config is not None:
             self.cluster_manager = Cluster(
                 node_id=self.node.node_id,
@@ -393,91 +203,30 @@ class Server:
                 config=cluster_config,
                 tombstones=self.tombstones,
             )
+            # The migrator pushes canonical bytes through the transfer
+            # service during shard migrations.
             self.transfer_service.cluster_manager = self.cluster_manager
-            # Wire TransferService into the cluster so the migrator's
-            # transfer_fn can push canonical bytes through the wire
-            # path during shard migrations.
             self.cluster_manager.transfer_service = self.transfer_service
+            self.replicator = QuorumReplicator()
 
         self.transport = self.build_transport(transport, host, port)
         self.running = False
         self.thread: threading.Thread | None = None
-        # Phase 4: drain sets ``is_draining = True``. ``op_store``
-        # and ``op_replicate`` return 503 + Retry-After when
-        # ``is_draining`` is set. ``drain(deadline_sec)`` flips
-        # the flag and runs the best-effort migration pass before
-        # stopping the server.
+        # While draining, ``/readyz`` and writes return 503 so load
+        # balancers and clients move to other nodes.
         self.is_draining = False
+        self.__stopped = False
 
-        # Snapshotting and recovery plumbing. The Snapshot helper is
-        # created lazily against the configured state_dir; the
-        # epoch guard refuses to apply snapshots that fall more than
-        # one step behind the live cluster epoch, so a node that
-        # lost a long partition never rebuilds an obsolete map.
+        # Snapshots: the epoch guard refuses snapshots more than one
+        # step behind the live cluster epoch, so a node back from a
+        # long partition never rebuilds an obsolete map.
         self.state_dir = state_dir
         self.checkpoint_interval_sec = float(checkpoint_interval_sec)
         self.cluster_epoch = cluster_epoch
         self.snapshot: Snapshot | None = Snapshot(state_dir) if state_dir else None
         self.epoch_guard = ClusterEpochGuard(current=cluster_epoch)
-        self.checkpoint_stop_event: threading.Event | None = None
-        self.checkpoint_thread: threading.Thread | None = None
-
-    def build_persistence(self, redis_url: str) -> Any:
-        from membrane.persistence.cache import CachingPersistence
-
-        backend: Any = Memory()
-        if redis_url:
-            try:
-                redis_backend = Redis(redis_url)
-                if redis_backend.ping():
-                    backend = redis_backend
-                    logger.info("Redis connected at %s", redis_url)
-                else:
-                    logger.warning("Redis at %s unreachable; using in-memory persistence", redis_url)
-            except Exception as exc:
-                logger.warning("Redis connection failed (%s); using in-memory persistence", exc)
-        return CachingPersistence(backend)
-
-    @staticmethod
-    def build_authenticator(mtls: MTLSConfig | None) -> Authenticator | None:
-        """Return an mTLS authenticator when client certs are required."""
-        if mtls is None or not mtls.require_client_cert:
-            return None
-        from membrane.auth.mtls import MTLSAuthenticator
-
-        return MTLSAuthenticator(mtls)
-
-    @staticmethod
-    def configure_peer_access(
-        cluster_config: ClusterConfig,
-        mtls: MTLSConfig | None,
-        peer_api_key: str,
-        peer_networks: tuple[str, ...],
-    ) -> None:
-        """Install process-wide peer credentials and the outbound URL policy.
-
-        Seed peer hosts are always allowed; ``peer_networks`` admits
-        peers learned later through join responses and gossip.
-        """
-        from membrane.network.peer import PeerCredentials, set_default_peer_credentials
-        from membrane.security.url_allowlist import configure as configure_allowlist
-        from membrane.transport.tls import build_client_context
-
-        set_default_peer_credentials(
-            PeerCredentials(
-                scheme="https" if mtls is not None else "http",
-                bearer_token=peer_api_key,
-                ssl_context=build_client_context(mtls) if mtls is not None else None,
-            )
-        )
-        seed_hosts = [seed.rsplit(":", 1)[0].strip("[]") for seed in cluster_config.peers]
-        networks = list(peer_networks)
-        # A local (loopback) cluster advertises 127.0.0.1 / ::1 rather
-        # than the seed hostnames, so admit loopback peers when the
-        # operator seeded the cluster with loopback addresses.
-        if any(_resolves_to_loopback(host) for host in seed_hosts):
-            networks += ["127.0.0.0/8", "::1/128"]
-        configure_allowlist(allowlist=seed_hosts, allowed_networks=networks)
+        self.checkpoint_task = PeriodicTask("membrane-checkpoint", self.checkpoint_interval_sec, self.checkpoint_state)
+        self.sweeper_task = PeriodicTask("membrane-sweeper", self.sweep_interval_sec, self.sweep_once)
 
     def refresh_metrics(self) -> None:
         """Update point-in-time gauges; called on every ``/metrics`` scrape."""
@@ -488,17 +237,6 @@ class Server:
             peers = self.cluster_manager.membership.snapshot()
             self.metrics_cluster.peers_total.set(float(len(peers)))
             self.metrics_cluster.peers_healthy.set(float(sum(1 for p in peers if p.healthy)))
-
-    def _persistence_is_durable(self) -> bool:
-        """True when fragments are written through to Redis."""
-        inner = getattr(self.persistence, "inner", None)
-        return isinstance(inner, Redis)
-
-    def _persist_fragment(self, fragment: Any, is_primary: bool) -> None:
-        self.persistence.store_fragment(fragment, self.node.node_id, is_primary)
-
-    def _forget_fragment(self, content_hash: str) -> None:
-        self.persistence.forget_on_node(content_hash, self.node.node_id)
 
     def restore_fragments(self) -> int:
         """Reload this node's fragments from Redis after a restart.
@@ -516,11 +254,10 @@ class Server:
         restored = 0
         for content_hash in sorted(self.persistence.list_node_fragments(node_id)):
             fragment = self.persistence.retrieve_fragment(content_hash)
-            usable = fragment is not None and (
-                fragment.payload_ref is None or self.node.content_store.has(fragment.payload_ref)
-            )
-            if not usable:
-                self._forget_fragment(content_hash)
+            if fragment is None or (
+                fragment.payload_ref is not None and not self.node.content_store.has(fragment.payload_ref)
+            ):
+                self.persistence_writer.forget(content_hash)
                 continue
             primary = self.persistence.get_primary(content_hash) == node_id
             if self.node.store(fragment, is_primary=primary):
@@ -530,6 +267,16 @@ class Server:
         return restored
 
     def build_transport(self, transport: str, host: str, port: int) -> Any:
+        """Build the HTTP transport with authentication, TLS, and quorum wiring.
+
+        Args:
+            transport: Transport name; only ``"http"`` is supported.
+            host: Bind address.
+            port: Listen port.
+
+        Returns:
+            Any: The HTTP transport with authentication, TLS, and quorum wiring.
+        """
         mtls = self.tls
         if transport != "http":
             raise ValueError(f"unsupported transport={transport!r}; v3.0.0 ships the http transport only")
@@ -543,6 +290,7 @@ class Server:
             metrics_registry=self.metrics_registry,
             tls=mtls,
             authenticator=self.authenticator,
+            limits=self.limits,
         )
         # op_store reads these: ``server.is_draining`` rejects writes
         # during drain, and ``quorum_attempt`` makes strong / quorum
@@ -550,10 +298,8 @@ class Server:
         # local-only.
         server.app.state.server = self
         server.app.state.refresh_metrics = self.refresh_metrics
-        if self.cluster_manager is not None:
-            from membrane.quorum import attempt_quorum_acks
-
-            server.app.state.quorum_attempt = attempt_quorum_acks
+        if self.replicator is not None:
+            server.app.state.quorum_attempt = self.replicator
         return server
 
     # ------------------------------------------------------------------
@@ -561,96 +307,74 @@ class Server:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Start the server in a background thread."""
-        # Re-hydrate durable state before any thread starts so the
-        # cluster manager, snapshot, and transfer service are
-        # populated atomically with respect to live traffic.
+        """Restore durable state, then start the transport and background tasks."""
+        # Re-hydrate before any thread starts so the cluster manager,
+        # snapshot, and node are populated before live traffic.
+        self.persistence_writer.start()
         self.restore_state()
         self.restore_fragments()
         self.running = True
         if self.cluster_manager:
             self.cluster_manager.start()
-        self.thread = threading.Thread(target=self.transport.start, daemon=True)
+        self.thread = threading.Thread(target=self.transport.start, daemon=True, name="membrane-http")
         self.thread.start()
         if self.cluster_manager is not None and self.checkpoint_interval_sec > 0:
-            self.checkpoint_stop_event = threading.Event()
-            self.checkpoint_thread = threading.Thread(
-                target=self._checkpoint_loop,
-                daemon=True,
-                name="membrane-checkpoint",
-            )
-            self.checkpoint_thread.start()
-        if self.sweeper is not None and self.sweep_interval_sec > 0:
-            # The Sweeper depends on the cluster's directory and
-            # tombstone table — only start it when those exist.
+            self.checkpoint_task.start()
+        if self.sweep_interval_sec > 0:
             directory = self.cluster_manager.directory if self.cluster_manager else None
             if directory is not None:
                 registry_for_dir: Registry = directory
 
-                def _forget(hashes: list[str]) -> None:
-                    for h in hashes:
-                        registry_for_dir.forget_fragment(h)
+                def forget_swept(hashes: list[str]) -> None:
+                    for content_hash in hashes:
+                        registry_for_dir.forget_fragment(content_hash)
 
-                self.sweeper.on_post_sweep = _forget
-            self.sweeper_thread = threading.Thread(
-                target=self._sweeper_loop,
-                daemon=True,
-                name="membrane-sweeper",
-            )
-            self.sweeper_thread.start()
+                self.sweeper.on_post_sweep = forget_swept
+            self.sweeper_task.start()
         self.log_event("info", f"Server started on {self.host}:{self.port}")
 
+    def sweep_once(self) -> None:
+        """Run one TTL and tombstone sweep (capacity eviction happens on store)."""
+        self.sweeper.run_once(evict_expired=self.node.sweep_expired, tombstones=self.tombstones)
+
     def stop(self, deadline_sec: float = 10.0) -> bool:
-        """Stop the server gracefully.
+        """Stop the server gracefully; later calls are no-ops.
+
+        Order: background tasks, a final checkpoint, the HTTP listener,
+        the cluster, outstanding quorum fan-outs, and finally the
+        persistence queue, which is flushed within the deadline.
 
         Args:
-            deadline_sec: Wall-clock budget for the shutdown
-                sequence. Each background thread is given up to
-                ``deadline_sec`` to exit; if any thread does not
-                honour the deadline the function logs a warning
-                and returns ``False`` so the caller can decide
-                whether to escalate (e.g. by killing the
-                process). Default ``10.0`` matches the operator
-                expectation that a graceful shutdown completes
-                within a SIGTERM grace period.
+            deadline_sec: Budget for each component to stop. Default
+                ``10.0`` fits inside a typical SIGTERM grace period.
 
         Returns:
-            bool: ``True`` when every background thread joined
-            within the budget; ``False`` when at least one
-            thread is still alive after ``deadline_sec``.
+            bool: True when every component stopped within the budget
+            and no persistence write was lost.
         """
-        joined_cleanly = True
-        if self.checkpoint_stop_event is not None:
-            self.checkpoint_stop_event.set()
-            if self.checkpoint_thread is not None:
-                self.checkpoint_thread.join(timeout=deadline_sec)
-                if self.checkpoint_thread.is_alive():
-                    logger.warning("checkpoint thread did not exit within %.1fs", deadline_sec)
-                    joined_cleanly = False
-        # Flush a final checkpoint before tearing down so the next
-        # process can rebuild from up-to-date state.
+        if self.__stopped:
+            return True
+        self.__stopped = True
+        joined_cleanly = self.checkpoint_task.stop(deadline_sec)
+        # A final checkpoint lets the next process rebuild from
+        # up-to-date state.
         self.checkpoint_state()
         self.running = False
         self.transport.stop()
         if self.cluster_manager:
             self.cluster_manager.stop(deadline_sec=deadline_sec)
-        if self.sweeper is not None:
-            self.sweeper.stop(timeout=deadline_sec)
-            if self.sweeper_thread is not None:
-                self.sweeper_thread.join(timeout=deadline_sec)
-            if self.sweeper_thread is not None and self.sweeper_thread.is_alive():
-                logger.warning("sweeper thread did not exit within %.1fs", deadline_sec)
-                joined_cleanly = False
-            self.sweeper_thread = None
+        joined_cleanly = self.sweeper_task.stop(deadline_sec) and joined_cleanly
+        if self.replicator is not None:
+            self.replicator.shutdown()
+        joined_cleanly = self.persistence_writer.stop(deadline_sec) and joined_cleanly
         self.log_event("info", f"Server stopped (cleanly={joined_cleanly})")
         return joined_cleanly
 
     def drain(self, deadline_sec: float = 30.0) -> dict[str, Any]:
         """Best-effort drain: stop accepting writes, migrate primaries, leave cluster.
 
-        1. Mark ``self.is_draining = True``. Subsequent
-           :func:`op_store` returns 503 with ``Retry-After`` set
-           to the remaining drain window.
+        1. Mark ``self.is_draining = True``. ``/readyz`` and
+           :func:`op_store` then return 503 with ``Retry-After``.
         2. Iterate every hash where this node is the primary and
            hand it off via :meth:`Shard.migrate_primary`'s
            verified flow (pull + verify + table-flip; Phase 3.2).
@@ -667,10 +391,6 @@ class Server:
             dict[str, int]: ``{"migrated": ..., "stragglers": ...,
             "duration_sec": ...}`` for operator logs / metrics.
         """
-        import time
-
-        from membrane.transport.ops import _replica_peers  # noqa: F401  -- re-use
-
         self.is_draining = True
         self.log_event("info", f"Drain started with deadline={deadline_sec}s")
         start = time.time()
@@ -683,7 +403,7 @@ class Server:
             membership = self.cluster_manager.membership
             transfer = self.transfer_service
 
-            def _pull(content_hash: str) -> bool:
+            def pull(content_hash: str) -> bool:
                 # The verified-migration flow needs the local node
                 # to already hold the bytes (Phase 3.2 contract).
                 # Leaves the byte-routing decision (TransferService
@@ -694,7 +414,7 @@ class Server:
                 # Shard.migrate_primary tests.
                 return content_hash in self.node.fragments
 
-            def _verify(content_hash: str) -> bool:
+            def verify(content_hash: str) -> bool:
                 return content_hash in self.node.fragments
 
             primaries = list(getattr(self.node, "primary_hashes", set()))
@@ -719,8 +439,8 @@ class Server:
                         leaving_peer=self.node.node_id,
                         local_node_id=target_peer.node_id,  # type: ignore[attr-defined]
                         node=None,
-                        pull_fn=_pull,
-                        verify_fn=_verify,
+                        pull_fn=pull,
+                        verify_fn=verify,
                     )
                 )
                 if ok and transfer is not None:
@@ -764,45 +484,6 @@ class Server:
             "stragglers": len(stragglers),
             "duration_sec": duration,
         }
-
-    def _checkpoint_loop(self) -> None:
-        """Background loop writing snapshots every ``checkpoint_interval_sec``."""
-        while self.running and self.checkpoint_stop_event is not None:
-            if self.checkpoint_stop_event.wait(self.checkpoint_interval_sec):
-                return
-            try:
-                self.checkpoint_state()
-            except Exception as exc:  # pragma: no cover - background safety
-                logger.warning("Checkpoint failed: %s", exc)
-
-    def _sweeper_loop(self) -> None:
-        """Background loop sweeping TTL + tombstones every ``sweep_interval_sec``.
-
-        Uses :meth:`Node.sweep_expired` (TTL only) for the eviction phase and
-        the shared :class:`~membrane.gc.TombstoneTable` for the
-        soft-delete sweep. The post-sweep observer forgets the
-        directory entries of every hash touched.
-        """
-        node = self.node
-
-        def _evict() -> list[str]:
-            # TTL only: capacity eviction happens on the store path.
-            return node.sweep_expired()
-
-        while self.running:
-            if not isinstance(self.sweeper, Sweeper):
-                return
-            try:
-                self.sweeper.run_once(
-                    evict_expired=_evict,
-                    tombstones=self.tombstones,
-                )
-            except Exception as exc:  # pragma: no cover - background safety
-                logger.warning("Sweep failed: %s", exc)
-            # Sleep until next interval via the sweepEvent, not a
-            # raw sleep, so stop() interrupts promptly.
-            if self.sweeper.stop_event.wait(self.sweep_interval_sec):
-                return
 
     def restore_state(self) -> None:
         """Re-hydrate membership / shard tables from the configured snapshot.
@@ -913,29 +594,26 @@ class Server:
         node_id: str = "",
         bytes_affected: int = 0,
     ) -> None:
-        """Record a server event.
+        """Record a server event for the dashboard (the newest 10,000 are kept).
 
-        Events are stored in a bounded buffer (the most recent
-        10,000 events are kept; older entries are trimmed to
-        the most recent 5,000).
+        Args:
+            level: Event level (``info``, ``warn``, ``error``).
+            message: Human-readable description.
+            node_id: Node identifier.
+            bytes_affected: Optional size in bytes associated with the event.
         """
-        event = ServerEvent(
-            timestamp=time.time(),
-            level=level,
-            message=message,
-            node_id=node_id,
-            bytes_affected=bytes_affected,
-        )
-        self.events.append(event)
-        if len(self.events) > 10_000:
-            self.events = self.events[-5_000:]
+        self.events.record(level, message, node_id, bytes_affected)
 
     # ------------------------------------------------------------------
     # Diagnostics
     # ------------------------------------------------------------------
 
     def diagnostics(self) -> ServerDiagnostics:
-        """Return a current snapshot of server health."""
+        """Return a current snapshot of server health.
+
+        Returns:
+            ServerDiagnostics: A current snapshot of server health.
+        """
         stats = self.node.get_stats()
         now = time.time()
         connected = len(self.connected_nodes)
@@ -959,5 +637,21 @@ class Server:
         )
 
     def recent_events(self, n: int = 20) -> list[ServerEvent]:
-        """Return the last ``n`` events."""
-        return self.events[-n:]
+        """Return the last ``n`` events.
+
+        Args:
+            n: Number of events to return.
+
+        Returns:
+            list[ServerEvent]: The last ``n`` events.
+        """
+        return self.events.recent(n)
+
+
+__all__ = [
+    "Server",
+    "ServerDiagnostics",
+    "ServerEvent",
+    "build_content_store",
+    "resolves_to_loopback",
+]

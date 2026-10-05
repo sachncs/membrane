@@ -41,8 +41,6 @@ Frames are immutable; the on-disk file should be written atomically
 module.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import struct
@@ -102,7 +100,7 @@ def parse_canonical(buf: bytes) -> tuple[PayloadIdentity, bytes]:
             disagrees with the payload bytes.
     """
     if len(buf) < HEADER_LEN + TRAILER_LEN:
-        _record_corrupt()
+        record_corrupt()
         raise CorruptPayloadError(f"frame too short: {len(buf)} bytes")
     if buf[:4] != MAGIC:
         raise SchemaError(f"bad magic in canonical frame: {buf[:4]!r}")
@@ -112,7 +110,7 @@ def parse_canonical(buf: bytes) -> tuple[PayloadIdentity, bytes]:
     identity_len = struct.unpack_from("<I", buf, 10)[0]
     identity_end = HEADER_LEN + identity_len
     if identity_end + 8 > len(buf):
-        _record_corrupt()
+        record_corrupt()
         raise CorruptPayloadError("identity length extends past frame")
     identity_obj = json.loads(buf[HEADER_LEN:identity_end].decode("utf-8"))
     identity = PayloadIdentity.from_dict(identity_obj)
@@ -120,18 +118,18 @@ def parse_canonical(buf: bytes) -> tuple[PayloadIdentity, bytes]:
     payload_start = identity_end + 8
     payload_end = payload_start + payload_len
     if payload_end + TRAILER_LEN > len(buf):
-        _record_corrupt()
+        record_corrupt()
         raise CorruptPayloadError("payload length extends past frame")
     payload = bytes(buf[payload_start:payload_end])
     expected = hashlib.sha256(payload).digest()[:TRAILER_LEN]
     actual = bytes(buf[payload_end : payload_end + TRAILER_LEN])
     if expected != actual:
-        _record_corrupt()
+        record_corrupt()
         raise CorruptPayloadError("canonical frame trailer mismatch")
     return identity, payload
 
 
-def _record_corrupt() -> None:
+def record_corrupt() -> None:
     """Increment the corrupt-payload counter if a registry is configured.
 
     The helper is module-local so :func:`parse_canonical` can
@@ -140,7 +138,7 @@ def _record_corrupt() -> None:
     """
     from membrane.integrity import record_corrupt_payload
 
-    record_corrupt_payload(_DEFAULT_METRICS_REGISTRY[0])
+    record_corrupt_payload(DEFAULT_METRICS_REGISTRY[0])
 
 
 def set_default_registry(registry: MetricsCollector | None) -> None:
@@ -150,10 +148,10 @@ def set_default_registry(registry: MetricsCollector | None) -> None:
         registry: A :class:`MetricsCollector` or ``None`` to
             skip the counter increment.
     """
-    _DEFAULT_METRICS_REGISTRY[0] = registry
+    DEFAULT_METRICS_REGISTRY[0] = registry
 
 
-_DEFAULT_METRICS_REGISTRY: list[MetricsCollector | None] = [None]
+DEFAULT_METRICS_REGISTRY: list[MetricsCollector | None] = [None]
 
 
 __all__ = [

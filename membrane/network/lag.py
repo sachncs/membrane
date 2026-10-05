@@ -12,8 +12,6 @@ the JSON fallback (the Prometheus convention uses positive
 numerics).
 """
 
-from __future__ import annotations
-
 import math
 import time
 from dataclasses import dataclass

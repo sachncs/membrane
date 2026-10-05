@@ -7,13 +7,9 @@ of configuration values; the caller is responsible for building
 :class:`~membrane.server.Server` from it.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
-from rich.console import Console
-
-console = Console()
+from membrane.cli import output
 
 
 def interactive_setup() -> dict[str, Any]:
@@ -30,8 +26,7 @@ def interactive_setup() -> dict[str, Any]:
         ``api_key``, ``redis_url``, ``peers``, ``max_memory``,
         ``log_level``.
     """
-    console.print("[bold cyan]Membrane Setup Wizard[/bold cyan]")
-    console.print("Press Enter to accept defaults (shown in brackets).\n")
+    output.info("[bold cyan]Membrane Setup Wizard[/bold cyan]\nPress Enter to accept defaults (shown in brackets).")
 
     def ask(prompt: str, default: str = "") -> str:
         full = f"{prompt} [{default}]: " if default else f"{prompt}: "
@@ -51,13 +46,13 @@ def interactive_setup() -> dict[str, Any]:
 
     transport = ask("Transport (http/grpc)", "http")
     while transport not in ("http", "grpc"):
-        console.print("[red]Invalid transport. Choose 'http' or 'grpc'.[/red]")
+        output.error("Invalid transport. Only 'http' is supported.")
         transport = ask("Transport (http/grpc)", "http")
 
     valid_backends = ("cpu", "gpu", "ollama", "openai", "anthropic", "transformers")
     compute = ask("Compute backend (cpu/gpu/ollama/openai/anthropic/transformers)", "cpu")
     while compute not in valid_backends:
-        console.print(f"[red]Invalid compute. Choose one of: {', '.join(valid_backends)}.[/red]")
+        output.error(f"Invalid compute. Choose one of: {', '.join(valid_backends)}.")
         compute = ask("Compute backend", "cpu")
 
     llm_url = ""
@@ -71,7 +66,7 @@ def interactive_setup() -> dict[str, Any]:
         llm_model = ask("OpenAI model", "gpt-4o-mini")
     elif compute == "anthropic":
         api_key = ask("Anthropic API key", "")
-        llm_model = ask("Anthropic model", "claude-3-sonnet-20240229")
+        llm_model = ask("Anthropic model", "claude-sonnet-5-5")
     elif compute == "transformers":
         llm_model = ask("HuggingFace model ID", "gpt2")
 

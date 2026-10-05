@@ -23,8 +23,6 @@ check so the same logic runs in the HTTP op layer, the gRPC
 layer, and the internal store path.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from membrane.errors import TenantScopeError
@@ -65,7 +63,11 @@ class TenantAuthorizer:
     public_writable: bool = False
 
     def is_admin(self) -> bool:
-        """Return True when the caller has admin scope."""
+        """Return True when the caller has admin scope.
+
+        Returns:
+            bool: True when the caller has admin scope.
+        """
         return has_admin_scope(self.scopes)
 
     def authorize_read(self, fragment_tenant: str) -> None:

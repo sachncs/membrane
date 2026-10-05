@@ -17,8 +17,6 @@ A single test that exercises the v3.0.0+ contract end-to-end:
   3.4.6 follow-up).
 """
 
-from __future__ import annotations
-
 import pytest
 
 
@@ -127,7 +125,7 @@ class TestV3Integration:
 
             # 5. The encrypted store's ciphertext does not contain
             # the plaintext marker.
-            blob = store._store[ident.payload_hash]  # type: ignore[attr-defined]
+            blob = store.store[ident.payload_hash]  # type: ignore[attr-defined]
             assert b"v3-payload" not in blob
 
             # 6. Master-key rotation preserves the legacy read.

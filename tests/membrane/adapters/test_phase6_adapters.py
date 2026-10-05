@@ -1,7 +1,5 @@
 """Tests for the SGLang and TensorRT-LLM adapters (Phase 6)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.adapters.sglang import (
@@ -96,9 +94,9 @@ class _FakeTrtModel:
 class TestMembraneTrtAdapter:
     def test_blocks_for_token_span(self):
         adapter = MembraneTrtAdapter(kv_backend=None)
-        assert adapter._blocks_for((0, 63)) == (0,)
-        assert adapter._blocks_for((0, 64)) == (0, 1)
-        assert adapter._blocks_for((64, 127)) == (1,)
+        assert adapter.blocks_for((0, 63)) == (0,)
+        assert adapter.blocks_for((0, 64)) == (0, 1)
+        assert adapter.blocks_for((64, 127)) == (1,)
 
     def test_extract_returns_empty_when_no_manager(self):
         adapter = MembraneTrtAdapter(kv_backend=None)

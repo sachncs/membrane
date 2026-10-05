@@ -18,8 +18,6 @@ of prefill / decode disaggregation. The package exposes:
   :func:`make_stub` factories.
 """
 
-from __future__ import annotations
-
 from membrane.disagg.protocol import (
     DecodeRequest,
     DecodeResponse,

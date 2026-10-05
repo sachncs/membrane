@@ -16,87 +16,51 @@ address without inbound authentication (``--api-key-file`` or mTLS)
 unless ``--allow-unauthenticated`` is passed explicitly.
 """
 
-from __future__ import annotations
-
-import ipaddress
 import logging
-import signal
 import sys
-from pathlib import Path
-from types import FrameType
 from typing import Annotated
 
 import typer
-from rich.console import Console
+from rich.markup import escape
 
+from membrane.cli import output
 from membrane.cli.dashboard import run_dashboard
 from membrane.cli.formatters import fmt_bytes
 from membrane.cli.wizard import interactive_setup
-from membrane.network.config import ClusterConfig
-from membrane.node import Node
-from membrane.server import Server
-from membrane.transport.tls import MTLSConfig
+from membrane.logging import configure_logging
+from membrane.runtime.lifecycle import run_until_signalled
+from membrane.runtime.settings import ServerSettings, SettingsError, build_server
+from membrane.transport.limits import TransportLimits
 
-console = Console()
 logger = logging.getLogger(__name__)
 
 
-def _is_loopback(host: str) -> bool:
-    """Return True when ``host`` only accepts local connections."""
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
+def split_list(values: list[str] | None) -> list[str]:
+    """Flatten repeatable options that may also carry comma-separated env values.
 
+    Args:
+        values: Option values; each may hold several comma-separated items.
 
-def _read_secret(path: str, what: str) -> str:
-    """Read a secret file, exiting with a clear message on failure."""
-    try:
-        return Path(path).read_text()
-    except OSError as exc:
-        console.print(f"[bold red]Cannot read {what} file {path!r}: {exc}[/bold red]")
-        raise typer.Exit(2) from exc
-
-
-def _split_list(values: list[str] | None) -> list[str]:
-    """Flatten repeatable options that may also carry comma-separated env values."""
+    Returns:
+        list[str]: The individual, stripped items.
+    """
     result: list[str] = []
     for value in values or []:
         result.extend(item.strip() for item in value.split(",") if item.strip())
     return result
 
 
-def _build_tls(cert: str, key: str, ca: str, allowed_cns: list[str], allow_any_cn: bool) -> MTLSConfig | None:
-    """Build the mTLS configuration from file paths, or ``None`` when unset."""
-    if not (cert or key or ca):
-        return None
-    if not (cert and key and ca):
-        console.print("[bold red]--tls-cert, --tls-key and --tls-ca must be given together.[/bold red]")
-        raise typer.Exit(2)
-    cert_pem = _read_secret(cert, "TLS certificate")
-    key_pem = _read_secret(key, "TLS key")
-    ca_pem = _read_secret(ca, "TLS CA bundle")
-    if allow_any_cn:
-        return MTLSConfig.allow_all_signed_by_ca(
-            server_cert_pem=cert_pem,
-            server_key_pem=key_pem,
-            ca_bundle_pem=ca_pem,
-            client_cert_pem=cert_pem,
-            client_key_pem=key_pem,
-        )
-    if not allowed_cns:
-        console.print("[bold red]mTLS needs --tls-allowed-cn (repeatable) or --tls-allow-any-cn.[/bold red]")
-        raise typer.Exit(2)
-    return MTLSConfig(
-        server_cert_pem=cert_pem,
-        server_key_pem=key_pem,
-        ca_bundle_pem=ca_pem,
-        allowed_cns=frozenset(allowed_cns),
-        client_cert_pem=cert_pem,
-        client_key_pem=key_pem,
-    )
+def fail(message: str) -> typer.Exit:
+    """Log a startup error and return the exit to raise.
+
+    Args:
+        message: Plain-text error message.
+
+    Returns:
+        typer.Exit: Exit with status 2 (configuration error).
+    """
+    output.error(f"[bold red]{escape(message)}[/bold red]")
+    return typer.Exit(2)
 
 
 def main(
@@ -113,7 +77,7 @@ def main(
         "--compute",
         "-c",
         envvar="MEMBRANE_COMPUTE",
-        help="Compute: cpu, gpu, ollama, openai, anthropic, transformers",
+        help="Compute plugin: cpu, gpu, ollama, openai, anthropic, transformers, or an installed plugin",
     ),
     redis_url: str = typer.Option(
         "", "--redis", "-r", envvar="MEMBRANE_REDIS_URL", help="Redis URL (e.g. redis://localhost:6379/0)"
@@ -130,10 +94,22 @@ def main(
         envvar="MEMBRANE_DATA_KEY_FILE",
         help="32-byte (or 64-hex) key for --data-dir; default: generated into <data-dir>/master.key",
     ),
+    content_store: str = typer.Option(
+        "filesystem",
+        "--content-store",
+        envvar="MEMBRANE_CONTENT_STORE",
+        help="Content-store plugin for --data-dir (filesystem, memory, or an installed plugin)",
+    ),
     max_memory: int = typer.Option(
         1 << 30, "--max-memory", "-m", envvar="MEMBRANE_MAX_MEMORY", help="Max memory bytes"
     ),
     log_level: str = typer.Option("INFO", "--log-level", "-l", envvar="MEMBRANE_LOG_LEVEL", help="Logging level"),
+    log_format: str = typer.Option(
+        "text",
+        "--log-format",
+        envvar="MEMBRANE_LOG_FORMAT",
+        help="Diagnostics format: text or json (one object per line)",
+    ),
     daemon: bool = typer.Option(
         False,
         "--daemon",
@@ -190,7 +166,16 @@ def main(
         "",
         "--api-key-file",
         envvar="MEMBRANE_API_KEY_FILE",
-        help="Inbound API keyfile; one '<key>:<subject>:<scope,...>' per line",
+        help="Inbound API keyfile; one 'sha256:<digest>:<subject>:<scope,...>' per line (membrane keys generate)",
+    ),
+    authenticator: str = typer.Option(
+        "apikey",
+        "--authenticator",
+        envvar="MEMBRANE_AUTHENTICATOR",
+        help="Authenticator plugin used with --auth-config",
+    ),
+    auth_config: str = typer.Option(
+        "", "--auth-config", envvar="MEMBRANE_AUTH_CONFIG", help="Configuration file for the authenticator plugin"
     ),
     peer_api_key_file: str = typer.Option(
         "",
@@ -217,6 +202,39 @@ def main(
         envvar="MEMBRANE_ALLOW_UNAUTHENTICATED",
         help="Serve without authentication on a non-loopback address (unsafe)",
     ),
+    drain_timeout: float = typer.Option(
+        30.0,
+        "--drain-timeout",
+        envvar="MEMBRANE_DRAIN_TIMEOUT",
+        help="Seconds SIGTERM may spend draining (503 readiness, hand off primaries) before exit",
+    ),
+    max_concurrency: int = typer.Option(
+        64,
+        "--max-concurrency",
+        envvar="MEMBRANE_MAX_CONCURRENCY",
+        help="Requests handled at once; excess requests get 503 + Retry-After (0: unbounded)",
+    ),
+    rate_limit: float = typer.Option(
+        0.0,
+        "--rate-limit",
+        envvar="MEMBRANE_RATE_LIMIT",
+        help="Requests per second per credential; excess requests get 429 (0: off)",
+    ),
+    rate_limit_burst: int = typer.Option(
+        0, "--rate-limit-burst", envvar="MEMBRANE_RATE_LIMIT_BURST", help="Rate-limit burst size (0: twice the rate)"
+    ),
+    max_connections: int = typer.Option(
+        0, "--max-connections", envvar="MEMBRANE_MAX_CONNECTIONS", help="Open connections accepted (0: unlimited)"
+    ),
+    keep_alive_timeout: float = typer.Option(
+        5.0, "--keep-alive-timeout", envvar="MEMBRANE_KEEP_ALIVE_TIMEOUT", help="Idle keep-alive timeout seconds"
+    ),
+    enable_api_docs: bool = typer.Option(
+        False,
+        "--enable-api-docs",
+        envvar="MEMBRANE_ENABLE_API_DOCS",
+        help="Serve /openapi.json (requires the read scope)",
+    ),
     llm_url: str = typer.Option(
         "", "--llm-url", envvar="MEMBRANE_LLM_URL", help="Base URL for Ollama or custom OpenAI endpoint"
     ),
@@ -233,6 +251,60 @@ def main(
     wizard is launched automatically. Pass ``--interactive`` explicitly
     to force the wizard; pass ``--daemon`` to run without the TUI
     dashboard.
+
+    Args:
+        node_id: Node identifier.
+        host: Bind address (0.0.0.0 for all interfaces).
+        port: Listen port.
+        transport: Transport (only 'http' is supported).
+        compute: Compute plugin name.
+        redis_url: Redis URL (e.g. redis://localhost:6379/0).
+        data_dir: Keep KV bytes on disk (encrypted) here so they survive
+            restarts.
+        data_key_file: 32-byte (or 64-hex) key for --data-dir; default:
+            generated into <data-dir>/master.key.
+        content_store: Content-store plugin for --data-dir.
+        max_memory: Max memory bytes.
+        log_level: Logging level.
+        log_format: Diagnostics format: text or json (one object per line).
+        daemon: Run without the dashboard (implied when stdout is not a
+            TTY).
+        interactive: Interactive setup wizard.
+        peer: Seed peer host:port (repeatable or comma-separated).
+        advertise_host: Host peers use to reach this node (default: bind
+            host, or FQDN for 0.0.0.0).
+        peer_network: CIDR the cluster's peers live in, exempt from the SSRF
+            private-IP block (repeatable).
+        heartbeat_interval: Heartbeat interval seconds.
+        gossip_interval: Gossip interval seconds.
+        replica_count: Replicas per fragment.
+        failure_remove_threshold: Missed heartbeats before removing peer.
+        consistency: Default write consistency: strong, quorum or eventual.
+        quorum_count: Peer acks a strong/quorum write waits for (cluster
+            needs quorum_count + 1 nodes).
+        api_key_file: Inbound API keyfile; one
+            'sha256:<digest>:<subject>:<scope,...>' per line.
+        authenticator: Authenticator plugin used with --auth-config.
+        auth_config: Configuration file for the authenticator plugin.
+        peer_api_key_file: File holding the bearer key this node presents to
+            its peers (needs admin scope).
+        tls_cert: mTLS certificate PEM file.
+        tls_key: mTLS private key PEM file.
+        tls_ca: mTLS CA bundle PEM file.
+        tls_allowed_cn: Peer certificate CN to accept (repeatable).
+        tls_allow_any_cn: Accept any CN signed by the CA (development only).
+        allow_unauthenticated: Serve without authentication on a
+            non-loopback address (unsafe).
+        drain_timeout: Seconds SIGTERM may spend draining.
+        max_concurrency: Requests handled at once (0: unbounded).
+        rate_limit: Requests per second per credential (0: off).
+        rate_limit_burst: Rate-limit burst size (0: twice the rate).
+        max_connections: Open connections accepted (0: unlimited).
+        keep_alive_timeout: Idle keep-alive timeout seconds.
+        enable_api_docs: Serve /openapi.json behind the read scope.
+        llm_url: Base URL for Ollama or custom OpenAI endpoint.
+        llm_model: Model name (e.g. llama3.2, gpt-4o-mini).
+        api_key: API key for the OpenAI / Anthropic compute backend.
     """
     # Decide whether to launch the interactive wizard.
     defaults_match = all(
@@ -269,134 +341,83 @@ def main(
         max_memory = cfg["max_memory"]
         log_level = cfg["log_level"]
 
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper(), logging.INFO),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    if log_format not in ("text", "json"):
+        raise fail("--log-format must be 'text' or 'json'.")
+    configure_logging(level=log_level, json_mode=log_format == "json", force=True)
 
-    peer_list = _split_list(peer)
-    tls = _build_tls(tls_cert, tls_key, tls_ca, _split_list(tls_allowed_cn), tls_allow_any_cn)
-
-    authenticator = None
-    if api_key_file:
-        from membrane.auth.apikey import APIKeyAuthenticator
-
-        authenticator = APIKeyAuthenticator(_read_secret(api_key_file, "API keyfile"))
-        if not authenticator.keys:
-            console.print(f"[bold red]API keyfile {api_key_file!r} contains no valid keys.[/bold red]")
-            raise typer.Exit(2)
-
-    if authenticator is None and tls is None and not _is_loopback(host):
-        if not allow_unauthenticated:
-            console.print(
-                f"[bold red]Refusing to serve unauthenticated on {host}.[/bold red] "
-                "Configure --api-key-file or mTLS (--tls-cert/--tls-key/--tls-ca), "
-                "bind to 127.0.0.1, or pass --allow-unauthenticated."
-            )
-            raise typer.Exit(2)
-        logger.warning("Serving WITHOUT authentication on %s:%s (--allow-unauthenticated)", host, port)
-
-    peer_api_key = _read_secret(peer_api_key_file, "peer API key").strip() if peer_api_key_file else ""
-    if peer_list and authenticator is not None and tls is None:
-        if not peer_api_key:
-            console.print(
-                "[bold red]A cluster using API keys needs --peer-api-key-file so peers can authenticate.[/bold red]"
-            )
-            raise typer.Exit(2)
-        # Peers replicate every tenant's fragments and propagate
-        # deletes, which the receiving node only allows for admin.
-        peer_record = authenticator.keys.get(peer_api_key)
-        if peer_record is None:
-            logger.warning("Peer API key is not in the local keyfile; peers must share a keyfile containing it")
-        elif "admin" not in peer_record.scopes:
-            console.print("[bold red]The peer API key must carry the 'admin' scope.[/bold red]")
-            raise typer.Exit(2)
-
-    # Only build cluster config when at least one seed peer is
-    # supplied — single-node mode skips cluster bootstrapping.
-    cluster_config = None
-    if peer_list:
-        cluster_config = ClusterConfig(
+    try:
+        settings = ServerSettings(
             node_id=node_id,
             host=host,
             port=port,
-            peers=peer_list,
-            heartbeat_interval_sec=heartbeat_interval,
-            gossip_interval_sec=gossip_interval,
+            transport=transport,
+            compute=compute,
+            llm_url=llm_url,
+            llm_model=llm_model,
+            llm_api_key=api_key,
+            redis_url=redis_url,
+            data_dir=data_dir,
+            data_key_file=data_key_file,
+            content_store=content_store,
+            max_memory=max_memory,
+            peers=tuple(split_list(peer)),
+            advertise_host=advertise_host,
+            peer_networks=tuple(split_list(peer_network)),
+            heartbeat_interval=heartbeat_interval,
+            gossip_interval=gossip_interval,
             replica_count=replica_count,
             failure_remove_threshold=failure_remove_threshold,
-            mtls=tls,
-            advertise_host=advertise_host,
-            default_consistency=consistency,
+            consistency=consistency,
             quorum_count=quorum_count,
+            api_key_file=api_key_file,
+            authenticator=authenticator,
+            auth_config=auth_config,
+            peer_api_key_file=peer_api_key_file,
+            tls_cert=tls_cert,
+            tls_key=tls_key,
+            tls_ca=tls_ca,
+            tls_allowed_cns=tuple(split_list(tls_allowed_cn)),
+            tls_allow_any_cn=tls_allow_any_cn,
+            allow_unauthenticated=allow_unauthenticated,
+            drain_timeout=drain_timeout,
+            limits=TransportLimits(
+                max_concurrency=max_concurrency,
+                rate_limit_per_sec=rate_limit,
+                rate_limit_burst=rate_limit_burst,
+                max_connections=max_connections or None,
+                keep_alive_timeout_sec=keep_alive_timeout,
+                enable_api_docs=enable_api_docs,
+            ),
         )
-
-    content_store = None
-    if data_dir:
-        from membrane.server import build_content_store
-
-        try:
-            content_store = build_content_store(data_dir, data_key_file)
-        except (OSError, ValueError) as exc:
-            console.print(f"[bold red]Cannot open data directory {data_dir!r}: {exc}[/bold red]")
-            raise typer.Exit(2) from exc
-    node = Node(node_id=node_id, max_memory_bytes=max_memory, content_store=content_store)
-    server = Server(
-        node=node,
-        transport=transport,
-        compute=compute,
-        redis_url=redis_url,
-        host=host,
-        port=port,
-        cluster_config=cluster_config,
-        llm_url=llm_url,
-        llm_model=llm_model,
-        api_key=api_key,
-        authenticator=authenticator,
-        peer_api_key=peer_api_key,
-        peer_networks=tuple(_split_list(peer_network)),
-        tls=tls,
-    )
-
-    if redis_url and not server.durable:
-        console.print(
-            f"[bold red]Redis at {redis_url} is unreachable; refusing to start without the requested durability.[/bold red]"
-        )
-        raise typer.Exit(2)
+        server, auth_mode = build_server(settings)
+    except SettingsError as exc:
+        raise fail(str(exc)) from exc
 
     server.start()
-    if tls is not None:
-        auth_mode = "mTLS"
-    elif authenticator is not None:
-        auth_mode = "API key"
-    else:
-        auth_mode = "none (loopback only)" if _is_loopback(host) else "NONE (--allow-unauthenticated)"
-    console.print(f"[bold green]Membrane server started[/bold green] on {host}:{port}")
-    console.print(f"  Node ID : {node_id}")
-    console.print(f"  Transport: {transport}")
-    console.print(f"  Auth     : {auth_mode}")
-    console.print(f"  Compute  : {compute}")
-    console.print(f"  LLM URL  : {llm_url or 'default'}")
-    console.print(f"  LLM Model: {llm_model or 'default'}")
-    console.print(f"  Redis    : {redis_url or 'disabled (in-memory)'}")
-    console.print(f"  Data dir : {data_dir or 'none (KV bytes in memory)'}")
-    console.print(f"  Peers    : {', '.join(peer_list) if peer_list else 'none'}")
-    console.print(f"  Max Mem  : {fmt_bytes(max_memory)}")
+    output.info(
+        "\n".join(
+            [
+                f"[bold green]Membrane server started[/bold green] on {host}:{port}",
+                f"  Node ID  : {node_id}",
+                f"  Auth     : {auth_mode}",
+                f"  Compute  : {compute}",
+                f"  LLM      : {llm_url or 'default'} / {llm_model or 'default'}",
+                f"  Redis    : {redis_url or 'disabled (in-memory)'}",
+                f"  Data dir : {data_dir or 'none (KV bytes in memory)'}",
+                f"  Peers    : {', '.join(settings.peers) or 'none'}",
+                f"  Max Mem  : {fmt_bytes(max_memory)}",
+                f"  Limits   : {max_concurrency or 'unbounded'} concurrent, "
+                f"{f'{rate_limit:g}/s per key' if rate_limit else 'no rate limit'}",
+            ]
+        )
+    )
 
     if daemon or not sys.stdout.isatty():
-        # Containers and service managers stop the process with
-        # SIGTERM; shut down gracefully instead of dying mid-write.
-        def _on_sigterm(_signum: int, _frame: FrameType | None) -> None:
-            logger.info("SIGTERM received; shutting down")
-            server.stop()
-
-        signal.signal(signal.SIGTERM, _on_sigterm)
-        console.print("[dim]Running in daemon mode. Press Ctrl+C to stop.[/dim]")
-        try:
-            server.join()
-        except KeyboardInterrupt:
-            server.stop()
-        console.print("[bold red]Server stopped.[/bold red]")
+        # Containers and service managers stop the process with SIGTERM:
+        # drain (readiness 503, hand off primaries, leave) before exiting.
+        output.info("[dim]Running in daemon mode. Send SIGTERM or press Ctrl+C to drain and stop.[/dim]")
+        run_until_signalled(server, settings.drain_timeout)
+        output.info("Server stopped.")
     else:
         # Launch the local TUI dashboard.
         run_dashboard(server)

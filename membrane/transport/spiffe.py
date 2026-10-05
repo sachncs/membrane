@@ -13,8 +13,6 @@ the absence of the SPIFFE SDK raises a clear error at
 construction time only.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 from typing import Any

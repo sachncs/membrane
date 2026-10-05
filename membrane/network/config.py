@@ -91,6 +91,9 @@ class ClusterConfig:
             continuously converged without flooding the wire.
             Tests and single-node deployments disable this by
             setting the field to a very large value.
+        inventory_summary_interval_sec: Seconds a large node reuses
+            its gossip inventory summary (Bloom filter and Merkle
+            root) before rebuilding it.
         lease_timeout_sec: Seconds a peer is considered live
             after its last successful heartbeat. Default
             ``30`` keeps the heartbeat-miss counter redundant
@@ -134,7 +137,7 @@ class ClusterConfig:
     enable_replication: bool = True
     gossip_fanout: int = 2
     gossip_max_fragment_entries: int = 50
-    mtls: "MTLSConfig | None" = None
+    mtls: MTLSConfig | None = None
     local_peer_cn: str = ""
     advertise_host: str = ""
     default_consistency: str = "strong"
@@ -149,6 +152,7 @@ class ClusterConfig:
     # quorum write is still in flight.
     cluster_quorum_timeout_sec: float = 9.0
     repair_interval_sec: float = 60.0
+    inventory_summary_interval_sec: float = 30.0
     lease_timeout_sec: float = 30.0
     gossip_payload_expected_items: int = 10_000
     gossip_payload_fpr: float = 0.001
@@ -156,8 +160,8 @@ class ClusterConfig:
 
 
 def validate_config(
-    config: "ClusterConfig | dict",
-) -> "ClusterConfig":
+    config: ClusterConfig | dict,
+) -> ClusterConfig:
     """Validate ``config`` and return a normalized :class:`ClusterConfig`.
 
     Args:
@@ -202,6 +206,7 @@ def validate_config(
         quorum_count: int = Field(default=2, ge=1)
         cluster_quorum_timeout_sec: float = Field(default=9.0, gt=0.0)
         repair_interval_sec: float = Field(default=60.0, gt=0.0)
+        inventory_summary_interval_sec: float = Field(default=30.0, gt=0.0)
         lease_timeout_sec: float = Field(default=30.0, gt=0.0)
         gossip_payload_expected_items: int = Field(default=10_000, ge=1)
         gossip_payload_fpr: float = Field(default=0.001, gt=0.0, lt=1.0)

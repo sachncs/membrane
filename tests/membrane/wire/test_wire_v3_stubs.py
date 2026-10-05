@@ -1,7 +1,5 @@
 """Tests for the wire_v3 generated stubs (Phase 3.3.2)."""
 
-from __future__ import annotations
-
 
 class TestWireV3Stubs:
     def test_envelope_message_class(self):

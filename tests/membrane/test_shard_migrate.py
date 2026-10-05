@@ -1,7 +1,5 @@
 """Tests for Shard.migrate_primary with the optional TransferService push."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock
 
 from membrane.node import Node

@@ -1,7 +1,5 @@
 """Tests for the tamper-evident audit log (Phase 3.2.8)."""
 
-from __future__ import annotations
-
 import json
 
 import pytest
@@ -113,3 +111,20 @@ class TestAuditEntryEquality:
         b = log.record("alice", "fragment.store", payload={"hash": "h1"})
         # Same content but different prev_hash / entry_hash.
         assert a != b
+
+
+def test_entries_carry_time_ordered_uuid7_ids_covered_by_the_hash():
+    import dataclasses
+    import uuid
+
+    from membrane.audit import AuditLog, verify_chain
+
+    log = AuditLog()
+    first = log.record("ops", "policy.update")
+    second = log.record("ops", "fragment.evict")
+    ids = [uuid.UUID(first.entry_id), uuid.UUID(second.entry_id)]
+    assert all(i.version == 7 for i in ids)
+    assert ids[0] < ids[1]
+    assert verify_chain(log.all()) is None
+    tampered = [dataclasses.replace(first, entry_id=str(uuid.uuid7())), second]
+    assert verify_chain(tampered) == 0

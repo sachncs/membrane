@@ -1,9 +1,15 @@
 # Single-node Membrane behind an nginx TLS edge, with Redis persistence.
 #
 # Before `docker compose up`:
-#   1. Create the API keyfile (one "<key>:<subject>:<scope,...>" per line):
+#   1. Create an API key. The first line printed is the key (keep it for
+#      clients); the second, hashed line goes in the keyfile:
+#        docker compose build membrane
+#        docker run --rm membrane:latest membrane keys generate --subject ops --scope admin
 #        mkdir -p deployment/secrets
-#        printf '%s:ops:admin\n' "$(openssl rand -hex 32)" > deployment/secrets/api-keys
+#        echo 'sha256:<digest>:ops:admin' > deployment/secrets/api-keys
+#        chmod 600 deployment/secrets/api-keys
+#      The server refuses a keyfile other users can read. On Linux the
+#      container's user (uid 1000) must own it: sudo chown 1000 <file>.
 #   2. Provide a TLS certificate for nginx:
 #        mkdir -p deployment/nginx/ssl
 #        openssl req -x509 -newkey rsa:2048 -nodes -days 365 -subj /CN=localhost \
@@ -49,11 +55,15 @@ services:
     environment:
       MEMBRANE_NODE_ID: ${MEMBRANE_NODE_ID:-membrane-0}
       MEMBRANE_LOG_LEVEL: ${MEMBRANE_LOG_LEVEL:-INFO}
+      MEMBRANE_LOG_FORMAT: json
       MEMBRANE_COMPUTE: ${MEMBRANE_COMPUTE:-cpu}
       MEMBRANE_REDIS_URL: redis://redis:6379/0
       MEMBRANE_API_KEY_FILE: /run/secrets/membrane_api_keys
       # KV bytes on disk + fragment metadata in Redis: survives restarts.
       MEMBRANE_DATA_DIR: /var/lib/membrane
+      # SIGTERM drains within this budget; stop_grace_period is longer.
+      MEMBRANE_DRAIN_TIMEOUT: "30"
+      MEMBRANE_MAX_CONCURRENCY: "64"
     volumes:
       - membrane-data:/var/lib/membrane
     secrets:
@@ -65,7 +75,7 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    stop_grace_period: 30s
+    stop_grace_period: 40s
     deploy:
       resources:
         limits:

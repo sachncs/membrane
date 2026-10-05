@@ -23,13 +23,18 @@ $ membrane client retrieve --hash <payload_hash from inventory>`,
     id: 'python',
     label: 'python',
     shell: false,
-    code: `from membrane.client import MembraneClient
+    code: `import logging
+
+from membrane.client import MembraneClient
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("quickstart")
 
 client = MembraneClient("http://localhost:8080")
 result = client.prefill(list(range(256)), model_id="llama-3")
 for frag in result["fragments"]:
     content_hash = frag["identity"]["payload_hash"]
-    print(content_hash, client.retrieve(content_hash)["found"])
+    log.info("%s found=%s", content_hash, client.retrieve(content_hash)["found"])
 client.close()`,
   },
   {
@@ -37,13 +42,15 @@ client.close()`,
     label: 'secure node',
     shell: true,
     code: `# Any non-loopback bind requires authentication.
-$ printf '%s:ops:admin\\n' "$(openssl rand -hex 32)" > api-keys
+# Keys are stored hashed; line 1 is the key, line 2 the keyfile entry.
+$ membrane keys generate --subject ops --scope admin > ops.txt
+$ sed -n 2p ops.txt > api-keys && chmod 600 api-keys
 $ membrane serve --host 0.0.0.0 --api-key-file api-keys --daemon
 
-# Or as a container (read-only root, non-root user):
+# Or as a container (Python 3.14, read-only root, non-root user):
 $ docker build -t membrane .
 $ docker run --read-only --tmpfs /tmp -p 8080:8080 \\
-    -v "$PWD:/run/secrets:ro" \\
+    -v "$PWD/api-keys:/run/secrets/api-keys:ro" \\
     -e MEMBRANE_API_KEY_FILE=/run/secrets/api-keys membrane`,
   },
   {

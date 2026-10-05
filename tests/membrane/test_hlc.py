@@ -1,7 +1,5 @@
 """Tests for HLC — pack/unpack, tick, merge, Clock."""
 
-from __future__ import annotations
-
 import time
 
 import pytest

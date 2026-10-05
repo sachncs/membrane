@@ -1,7 +1,5 @@
 """Tests for the K/V tensor quantizers + QuantizedFrame (Phase 3)."""
 
-from __future__ import annotations
-
 import struct
 
 import numpy as np

@@ -16,8 +16,6 @@ real engine in production and call :func:`create_router`
 on the resulting app.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

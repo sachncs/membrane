@@ -166,3 +166,9 @@ class Versions:
             cursor2 = entry.parent_version
 
         return None
+
+
+__all__ = [
+    "VersionEntry",
+    "Versions",
+]

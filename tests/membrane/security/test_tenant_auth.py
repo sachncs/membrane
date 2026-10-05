@@ -1,7 +1,5 @@
 """Tests for the per-tenant filter (Phase 3.1.6)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.errors import TenantScopeError

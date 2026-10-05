@@ -7,8 +7,6 @@ enabled, a content_store under memory pressure, and the
 Node.window_size() returns the adaptive value.
 """
 
-from __future__ import annotations
-
 import pytest
 
 

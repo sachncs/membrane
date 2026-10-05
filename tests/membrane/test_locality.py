@@ -1,7 +1,5 @@
 """Tests for Phase 6 region tags + locality-aware placement."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.node import Node, NodeAttributes

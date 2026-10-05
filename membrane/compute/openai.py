@@ -27,11 +27,12 @@ Security:
 
 import json
 import logging
+from typing import override
 
 import httpx
 
-from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
+from membrane.compute.hashing import token_hash
 from membrane.compute.remote import RemoteLLMBackend
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
@@ -58,9 +59,16 @@ class OpenAI(RemoteLLMBackend):
         model: str = "gpt-4o-mini",
         embedding_model: str = "text-embedding-3-small",
     ) -> None:
-        """Initialize the backend."""
+        """Initialize the backend.
+
+        Args:
+            api_key: OpenAI API key.
+            base_url: API base URL (for OpenAI-compatible endpoints).
+            model: OpenAI model name.
+            embedding_model: Model used for embedding requests.
+        """
         super().__init__()
-        self._api_key = api_key
+        self.__api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.embedding_model = embedding_model
@@ -72,14 +80,21 @@ class OpenAI(RemoteLLMBackend):
     @property
     def api_key(self) -> str:
         """Return the configured API key (redacted when logged)."""
-        return self._api_key
+        return self.__api_key
 
+    @override
     def __repr__(self) -> str:
+        """Describe the backend without exposing the API key.
+
+        Returns:
+            str: Backend class and model name.
+        """
         return (
             f"OpenAI(base_url={self.base_url!r}, model={self.model!r}, "
             f"embedding_model={self.embedding_model!r}, api_key=***)"
         )
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Fetch embeddings from OpenAI and convert to fragments.
 
@@ -151,6 +166,7 @@ class OpenAI(RemoteLLMBackend):
         )
         return fragments
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Generate text via OpenAI chat completions.
 
@@ -186,10 +202,16 @@ class OpenAI(RemoteLLMBackend):
             logger.warning("OpenAI generate failed: %s", exc)
             return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
-        """Return whether the API is reachable."""
+        """Return whether the API is reachable.
+
+        Returns:
+            bool: Whether the API is reachable.
+        """
         return self.probe("models", timeout=5.0)
 
+    @override
     def device_name(self) -> str:
         """Return the backend's device descriptor.
 
@@ -228,3 +250,8 @@ class OpenAI(RemoteLLMBackend):
                 )
             )
         return fragments
+
+
+__all__ = [
+    "OpenAI",
+]

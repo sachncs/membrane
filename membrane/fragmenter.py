@@ -438,3 +438,11 @@ class Fragmenter:
             # silently regress to an older revision.
             version_id=max(f.version_id for f in fragments),
         )
+
+
+__all__ = [
+    "Fragmenter",
+    "FragmenterConfig",
+    "compute_content_hash",
+    "generate_embedding",
+]

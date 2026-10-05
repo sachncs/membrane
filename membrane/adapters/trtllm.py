@@ -8,12 +8,10 @@ TensorRT-LLM is importable. The tests run against a
 duck-typed stub that mirrors the same surface.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, override
 
 from membrane.adapters import (
     BaseAdapter,
@@ -25,7 +23,7 @@ from membrane.adapters import (
 logger = logging.getLogger(__name__)
 
 
-def _load_trtllm_base() -> type[Any] | None:
+def load_trtllm_base() -> type[Any] | None:
     """Import TRT-LLM's :class:`KVCacheManager` if installed.
 
     Returns:
@@ -41,7 +39,7 @@ def _load_trtllm_base() -> type[Any] | None:
     return KVCacheManager
 
 
-_TRTLLM_BASE: type[Any] | None = _load_trtllm_base()
+TRTLLM_BASE: type[Any] | None = load_trtllm_base()
 
 
 @dataclass(frozen=True)
@@ -90,8 +88,9 @@ class InMemoryTrtClient(TrtClusterClient):
     """In-memory TRT-LLM client used by tests + the v1 single-process path."""
 
     def __init__(self) -> None:
-        self._by_handle: dict[tuple[str, str], tuple[TrtKVBlock, ...]] = {}
-        self._lock = threading.RLock()
+        """Create an empty in-memory KV block pool."""
+        self.by_handle: dict[tuple[str, str], tuple[TrtKVBlock, ...]] = {}
+        self.lock = threading.RLock()
 
     def seed(self, model_id: str, handle: str, blocks: tuple[TrtKVBlock, ...]) -> None:
         """Pre-populate blocks for ``handle``.
@@ -101,16 +100,35 @@ class InMemoryTrtClient(TrtClusterClient):
             handle: Cluster-side handle.
             blocks: K/V blocks in order.
         """
-        with self._lock:
-            self._by_handle[(model_id, handle)] = blocks
+        with self.lock:
+            self.by_handle[(model_id, handle)] = blocks
 
+    @override
     def get(self, model_id: str, handle: str) -> tuple[TrtKVBlock, ...]:
-        with self._lock:
-            return self._by_handle.get((model_id, handle), ())
+        """Return the KV blocks stored for ``(model_id, handle)``.
 
+        Args:
+            model_id: Model identifier.
+            handle: Cluster-side handle.
+
+        Returns:
+            tuple[TrtKVBlock, ...]: The KV blocks stored for ``(model_id,
+            handle)``.
+        """
+        with self.lock:
+            return self.by_handle.get((model_id, handle), ())
+
+    @override
     def put(self, model_id: str, handle: str, blocks: tuple[TrtKVBlock, ...]) -> None:
-        with self._lock:
-            self._by_handle[(model_id, handle)] = blocks
+        """Store the KV blocks for ``(model_id, handle)``.
+
+        Args:
+            model_id: Model identifier.
+            handle: Cluster-side handle.
+            blocks: K/V blocks in order.
+        """
+        with self.lock:
+            self.by_handle[(model_id, handle)] = blocks
 
 
 class MembraneTrtAdapter(BaseAdapter):
@@ -161,17 +179,17 @@ class MembraneTrtAdapter(BaseAdapter):
                 head_range=head_range,
                 token_span=token_span,
                 shape=(1, 1, 1, 64),
-                fingerprint=_placeholder_fingerprint(),
+                fingerprint=placeholder_fingerprint(),
             )
-        block_indices = self._blocks_for(token_span)
-        layers = self._read_blocks(manager, layer_range, block_indices)
+        block_indices = self.blocks_for(token_span)
+        layers = self.__read_blocks(manager, layer_range, block_indices)
         return KVTensor(
             layers=layers,
             layer_range=layer_range,
             head_range=head_range,
             token_span=token_span,
             shape=(layers[0].k.__sizeof__() if layers else 1, 1, 1, 64),
-            fingerprint=_placeholder_fingerprint(),
+            fingerprint=placeholder_fingerprint(),
         )
 
     def import_into(
@@ -191,9 +209,10 @@ class MembraneTrtAdapter(BaseAdapter):
         if manager is None:
             logger.debug("MembraneTrtAdapter.import_into: no kv_cache_manager on model")
             return
-        block_indices = self._blocks_for(tensor.token_span)
-        self._write_blocks(manager, tensor.layers, block_indices)
+        block_indices = self.blocks_for(tensor.token_span)
+        self.__write_blocks(manager, tensor.layers, block_indices)
 
+    @override
     def validate(self, tensor: KVTensor) -> ValidationResult:
         """Default BaseAdapter validation.
 
@@ -205,7 +224,7 @@ class MembraneTrtAdapter(BaseAdapter):
         """
         return super().validate(tensor)
 
-    def _blocks_for(self, token_span: tuple[int, int]) -> tuple[int, ...]:
+    def blocks_for(self, token_span: tuple[int, int]) -> tuple[int, ...]:
         """Translate a token span into a tuple of block indices.
 
         Args:
@@ -220,7 +239,7 @@ class MembraneTrtAdapter(BaseAdapter):
         return tuple(range(start // self.BLOCK_SIZE, end // self.BLOCK_SIZE + 1))
 
     @staticmethod
-    def _read_blocks(
+    def __read_blocks(
         manager: Any,
         layer_range: tuple[int, int],
         block_indices: tuple[int, ...],
@@ -237,8 +256,8 @@ class MembraneTrtAdapter(BaseAdapter):
         """
         layers: list[LayerKV] = []
         for layer in range(layer_range[0], layer_range[1] + 1):
-            k_bytes = _read_block(manager, layer, "k", block_indices)
-            v_bytes = _read_block(manager, layer, "v", block_indices)
+            k_bytes = read_block(manager, layer, "k", block_indices)
+            v_bytes = read_block(manager, layer, "v", block_indices)
             layers.append(
                 LayerKV(
                     layer_idx=layer,
@@ -251,7 +270,7 @@ class MembraneTrtAdapter(BaseAdapter):
         return tuple(layers)
 
     @staticmethod
-    def _write_blocks(
+    def __write_blocks(
         manager: Any,
         layers: tuple[LayerKV, ...],
         block_indices: tuple[int, ...],
@@ -264,11 +283,11 @@ class MembraneTrtAdapter(BaseAdapter):
             block_indices: Tuple of block indices.
         """
         for layer in layers:
-            _write_block(manager, layer.layer_idx, "k", layer.k, block_indices)
-            _write_block(manager, layer.layer_idx, "v", layer.v, block_indices)
+            write_block(manager, layer.layer_idx, "k", layer.k, block_indices)
+            write_block(manager, layer.layer_idx, "v", layer.v, block_indices)
 
 
-def _read_block(manager: Any, layer: int, kind: str, block_indices: tuple[int, ...]) -> bytes:
+def read_block(manager: Any, layer: int, kind: str, block_indices: tuple[int, ...]) -> bytes:
     """Read a K or V block from ``manager``.
 
     Args:
@@ -289,7 +308,7 @@ def _read_block(manager: Any, layer: int, kind: str, block_indices: tuple[int, .
     return b""
 
 
-def _write_block(manager: Any, layer: int, kind: str, payload: Any, block_indices: tuple[int, ...]) -> None:
+def write_block(manager: Any, layer: int, kind: str, payload: Any, block_indices: tuple[int, ...]) -> None:
     """Write a K or V block into ``manager``.
 
     Args:
@@ -312,7 +331,7 @@ def _write_block(manager: Any, layer: int, kind: str, payload: Any, block_indice
                 buf.setdefault(layer, {})[block_id] = chunk
 
 
-def _placeholder_fingerprint() -> Any:
+def placeholder_fingerprint() -> Any:
     """Return a placeholder fingerprint for TRT-LLM bundles.
 
     Returns:
@@ -332,4 +351,4 @@ __all__ = [
 ]
 
 
-TRTLLM_AVAILABLE: bool = _TRTLLM_BASE is not None
+TRTLLM_AVAILABLE: bool = TRTLLM_BASE is not None

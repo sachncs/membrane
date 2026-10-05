@@ -182,3 +182,8 @@ class KVCache:
             CacheMetrics: The current immutable metrics value.
         """
         return self.metrics
+
+
+__all__ = [
+    "KVCache",
+]

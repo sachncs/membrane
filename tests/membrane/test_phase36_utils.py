@@ -1,7 +1,5 @@
 """Tests for OpenAPI spec, demo entry-point, and ClusterConfig validation (Phase 3.6.2 + 3.6.4 + 3.6.5)."""
 
-from __future__ import annotations
-
 import json
 import subprocess
 import sys
@@ -78,4 +76,4 @@ class TestDemoEntryPoint:
         )
         # The demo writes to stdout via print; the exit code is 0.
         assert result.returncode == 0
-        assert "demo:" in result.stdout
+        assert "demo:" in result.stderr  # diagnostics are logged to stderr

@@ -16,8 +16,6 @@ The :class:`~membrane.persistence.memory.Memory` class is the
 test-only fallback (no inner backend, no caching layer).
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from collections.abc import Callable
@@ -54,7 +52,11 @@ class CachingPersistence:
         self.on_unavailable = on_unavailable or (lambda op, exc: None)
 
     def ping(self) -> bool:
-        """``True`` if the inner backend responds (cache hit on Redis still works)."""
+        """``True`` if the inner backend responds (cache hit on Redis still works).
+
+        Returns:
+            bool: True when the inner backend responds.
+        """
         try:
             return self.inner.ping()
         except Exception as exc:
@@ -67,6 +69,14 @@ class CachingPersistence:
         The cache write is performed first so that even if the inner
         backend fails, subsequent reads can be served from the cache
         until the inner backend recovers.
+
+        Args:
+            fragment: The fragment.
+            node_id: Node identifier.
+            is_primary: Whether this node owns the fragment's primary copy.
+
+        Returns:
+            bool: True when the inner backend stored it.
         """
         with self.lock:
             self.cache[fragment.identity.payload_hash] = fragment
@@ -82,6 +92,12 @@ class CachingPersistence:
         On cache miss, falls through to the inner backend. On inner
         backend failure, returns ``None`` (the cache will repopulate
         on a later successful read).
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            Fragment | None: The fragment from cache or inner backend.
         """
         with self.lock:
             cached = self.cache.get(content_hash)
@@ -98,7 +114,14 @@ class CachingPersistence:
             return None
 
     def delete_fragment(self, content_hash: str) -> bool:
-        """Invalidate the cache and forward to the inner backend."""
+        """Invalidate the cache and forward to the inner backend.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            bool: True when the inner backend removed it.
+        """
         with self.lock:
             self.cache.pop(content_hash, None)
         try:
@@ -107,23 +130,36 @@ class CachingPersistence:
             self.on_unavailable("delete_fragment", exc)
             return False
 
-    def forget_on_node(self, content_hash: str, node_id: str) -> None:
-        """Drop ``content_hash`` from ``node_id``'s set in the inner backend."""
+    def forget_on_node(self, content_hash: str, node_id: str) -> bool:
+        """Drop ``content_hash`` from ``node_id``'s set in the inner backend.
+
+        Args:
+            content_hash: Content hash of the fragment.
+            node_id: Node identifier.
+
+        Returns:
+            bool: False when the inner backend failed, so callers can retry.
+        """
         with self.lock:
             self.cache.pop(content_hash, None)
         forget = getattr(self.inner, "forget_on_node", None)
         if forget is None:
-            return
+            return True
         try:
             forget(content_hash, node_id)
         except Exception as exc:
             self.on_unavailable("forget_on_node", exc)
+            return False
+        return True
 
     def inventory_digest(self) -> dict[str, int]:
         """Return the inventory digest from the inner backend.
 
         The cache does not maintain its own digest (the canonical digest
         lives in Redis) — caching here would risk divergence.
+
+        Returns:
+            dict[str, int]: The inventory digest from the inner backend.
         """
         try:
             return self.inner.inventory_digest()
@@ -132,7 +168,14 @@ class CachingPersistence:
             return {}
 
     def list_node_fragments(self, node_id: str) -> list[str]:
-        """Return the per-node fragment list from the inner backend."""
+        """Return the per-node fragment list from the inner backend.
+
+        Args:
+            node_id: Node identifier.
+
+        Returns:
+            list[str]: The per-node fragment list from the inner backend.
+        """
         try:
             return self.inner.list_node_fragments(node_id)
         except Exception as exc:
@@ -140,14 +183,26 @@ class CachingPersistence:
             return []
 
     def record_location(self, content_hash: str, node_id: str) -> None:
-        """Forward to the inner backend."""
+        """Forward to the inner backend.
+
+        Args:
+            content_hash: Content hash of the fragment.
+            node_id: Node identifier.
+        """
         try:
             self.inner.record_location(content_hash, node_id)
         except Exception as exc:
             self.on_unavailable("record_location", exc)
 
     def locate(self, content_hash: str) -> list[str]:
-        """Return node IDs reporting holding ``content_hash``."""
+        """Return node IDs reporting holding ``content_hash``.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            list[str]: Node IDs reporting holding ``content_hash``.
+        """
         try:
             return self.inner.locate(content_hash)
         except Exception as exc:
@@ -155,7 +210,14 @@ class CachingPersistence:
             return []
 
     def get_primary(self, content_hash: str) -> str | None:
-        """Return the primary node ID for ``content_hash``."""
+        """Return the primary node ID for ``content_hash``.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            str | None: The primary node ID for ``content_hash``.
+        """
         try:
             return self.inner.get_primary(content_hash)
         except Exception as exc:
@@ -163,7 +225,14 @@ class CachingPersistence:
             return None
 
     def lru_candidates(self, count: int) -> list[str]:
-        """Return ``count`` eviction candidates from the inner backend."""
+        """Return ``count`` eviction candidates from the inner backend.
+
+        Args:
+            count: Maximum number of hashes to return.
+
+        Returns:
+            list[str]: ``count`` eviction candidates from the inner backend.
+        """
         try:
             return self.inner.lru_candidates(count)
         except Exception as exc:

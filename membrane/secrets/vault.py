@@ -16,11 +16,9 @@ Attributes:
     kv_version: KV engine version (``1`` or ``2``); default ``2``.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, override
 
 from membrane.secrets import SecretBackendError, SecretNotFoundError, SecretProvider
 
@@ -56,6 +54,7 @@ class VaultSecretProvider(SecretProvider):
                 "VaultSecretProvider requires the 'hvac' package; install membrane[secrets-vault]"
             ) from exc
 
+    @override
     def get(self, secret_name: str) -> str:
         """Read ``secret_name`` from Vault.
 

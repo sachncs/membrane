@@ -10,8 +10,6 @@ Thread safety:
     The dataclass is stateless and safe to share across threads.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 

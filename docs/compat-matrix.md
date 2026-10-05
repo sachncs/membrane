@@ -9,23 +9,23 @@ work with the 3.x series.
 
 | Python | Status |
 |--------|--------|
-| 3.10   | supported |
-| 3.11   | supported |
-| 3.12   | supported |
-| 3.13   | supported |
+| 3.14   | required |
+| 3.13 and older | not supported |
 
-All four versions run the full test suite in CI.
+`requires-python = ">=3.14,<3.15"`. Membrane uses 3.14 features
+throughout: deferred annotations (PEP 649), `compression.zstd`
+(PEP 784), template strings in structured logging (PEP 750),
+`InterpreterPoolExecutor` (PEP 734) for the threshold optimizer, and
+`uuid.uuid7()` for request and audit IDs. `.python-version` pins 3.14,
+`uv.lock` pins every dependency, and CI and the container image install
+from the lock.
 
 ## Optional runtime deps
 
 | Package              | Optional dep group      | Required by                |
 |----------------------|-------------------------|---------------------------|
 | ``cryptography``      | ``membrane[server]``     | TLS, encryption at rest   |
-| ``numpy`` / ``lz4`` / ``zstandard`` | ``membrane[transfer]`` | KV transfer engine, quantization |
-| ``lmcache>=0.5,<0.6``| ``membrane[lmcache]``    | LMCache backend storage    |
-| ``vllm>=0.10,<0.12`` | ``membrane[vllm]``       | vLLM KVConnector v1 backend |
-| ``sglang>=0.4,<0.6`` | ``membrane[sglang]``     | SGLang radix-cache backend |
-| ``tensorrt-llm>=0.20,<0.22`` | ``membrane[trtllm]`` | TensorRT-LLM backend |
+| ``numpy`` / ``lz4`` | ``membrane[transfer]`` | KV transfer engine, quantization |
 | ``fastapi`` / ``uvicorn`` / ``httpx`` | ``membrane[server]`` | HTTP transport and clients |
 | ``grpcio`` | ``membrane[disagg]`` | Disaggregation gRPC surface |
 | ``redis>=8.1.0``     | ``membrane[server]``     | Redis persistence backend  |
@@ -47,14 +47,18 @@ All four versions run the full test suite in CI.
 | SGLang      | 0.4.x – 0.5.x    | ``membrane.adapters.sglang`` |
 | TensorRT-LLM | 0.20.x – 0.21.x | ``membrane.adapters.trtllm`` |
 
-CI exercises the adapters against their in-memory clients; the engines
-themselves are not installed in CI.
+The engines are not extras. They pin their own dependency stacks (vLLM
+caps FastAPI below what the server needs) and do not all ship Python
+3.14 wheels. Install the engine in its own environment;
+``membrane.adapters`` imports it lazily. CI exercises the adapters
+against their in-memory clients. The LMCache integration was removed in
+the Python 3.14 release (LMCache has no 3.14 wheels).
 
 ## Transports
 
 | Transport     | Version | Notes                                  |
 |---------------|---------|----------------------------------------|
-| HTTP (FastAPI) | 0.141+ | The only ``membrane serve`` transport; HTTPS with mTLS optional |
+| HTTP (FastAPI) | 0.142+ | The only ``membrane serve`` transport; HTTPS with mTLS optional |
 
 ## Wire schema
 

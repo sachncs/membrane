@@ -63,3 +63,21 @@ def test_optimal_point_matches_paper():
     assert n_d == 5 or n_d == 4
     # Lambda should be in the vicinity of 3.24 req/s
     assert 2.8 <= lam <= 3.6
+
+
+def test_parallel_search_matches_sequential():
+    """Subinterpreter chunks must reproduce the sequential answer exactly."""
+    lengths = workload.generate_request_lengths(5000, seed=7)
+    sequential = optimizer.search(lengths, workers=1)
+    for workers in (2, 3, 8):
+        assert optimizer.search(lengths, workers=workers) == sequential
+
+
+def test_importing_the_model_does_not_load_the_server_stack():
+    """Subinterpreters cannot load pydantic_core, so membrane.model must stay light."""
+    import subprocess
+    import sys
+
+    code = "import sys, membrane.model.optimizer; print('fastapi' in sys.modules or 'pydantic_core' in sys.modules)"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
+    assert out.strip() == "False"

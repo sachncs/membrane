@@ -1,7 +1,5 @@
 """Tests for the /admin/placement + /admin/evict + /admin/repair + /admin/policy endpoints."""
 
-from __future__ import annotations
-
 import pytest
 
 

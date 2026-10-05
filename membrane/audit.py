@@ -17,12 +17,11 @@ shim). The :data:`AuditStorage` Protocol is the swap point for
 operators that want to back the chain with a relational store.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import logging
 import threading
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,7 +30,7 @@ from typing import Protocol, runtime_checkable
 logger = logging.getLogger(__name__)
 
 
-def _canonical_json(payload: dict[str, object]) -> str:
+def canonical_json(payload: dict[str, object]) -> str:
     """Serialize ``payload`` as a deterministic JSON string.
 
     Args:
@@ -43,7 +42,7 @@ def _canonical_json(payload: dict[str, object]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
-def _hash_entry(prev_hash: str, entry: dict[str, object]) -> str:
+def hash_entry(prev_hash: str, entry: dict[str, object]) -> str:
     """Compute the SHA-256 hash chain for ``entry``.
 
     Args:
@@ -57,7 +56,7 @@ def _hash_entry(prev_hash: str, entry: dict[str, object]) -> str:
     h = hashlib.sha256()
     h.update(prev_hash.encode("utf-8"))
     h.update(b"|")
-    h.update(_canonical_json(entry).encode("utf-8"))
+    h.update(canonical_json(entry).encode("utf-8"))
     return h.hexdigest()
 
 
@@ -75,6 +74,10 @@ class AuditEntry:
         prev_hash: Hash of the previous entry; the empty
             string for the first entry.
         entry_hash: SHA-256 of (prev_hash || payload).
+        entry_id: UUIDv7: globally unique and ordered by wall-clock
+            time, so entries from several nodes or restarts sort and
+            deduplicate after they are shipped elsewhere. Covered by
+            the hash. Empty only for entries written before 3.1.
     """
 
     index: int
@@ -84,6 +87,30 @@ class AuditEntry:
     payload: dict[str, object]
     prev_hash: str
     entry_hash: str
+    entry_id: str = ""
+
+
+def hashed_fields(entry_id: str, actor: str, action: str, payload: dict[str, object], ts: float) -> dict[str, object]:
+    """Return the fields an entry's hash covers.
+
+    ``entry_id`` is included only when present so chains written before
+    it existed still verify.
+
+    Args:
+        entry_id: UUIDv7 of the entry; empty for entries written before IDs
+            existed.
+        actor: The caller identity.
+        action: A short stable verb (e.g., ``"fragment.store"``).
+        payload: The entry's structured payload.
+        ts: Entry timestamp.
+
+    Returns:
+        dict[str, object]: The fields an entry's hash covers.
+    """
+    fields: dict[str, object] = {"actor": actor, "action": action, "payload": payload, "timestamp": ts}
+    if entry_id:
+        fields["entry_id"] = entry_id
+    return fields
 
 
 @runtime_checkable
@@ -96,11 +123,19 @@ class AuditStorage(Protocol):
     """
 
     def append(self, entry: AuditEntry) -> None:
-        """Persist ``entry`` atomically."""
+        """Persist ``entry`` atomically.
+
+        Args:
+            entry: The entry to persist.
+        """
         ...
 
     def all(self) -> list[AuditEntry]:
-        """Return every entry in order."""
+        """Return every entry in order.
+
+        Returns:
+            list[AuditEntry]: Every entry in order.
+        """
         ...
 
 
@@ -114,9 +149,9 @@ class AuditLog:
     """
 
     storage: AuditStorage | None = None
-    _entries: list[AuditEntry] = field(default_factory=list)
-    _last_hash: str = ""
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    entries: list[AuditEntry] = field(default_factory=list)
+    head_hash: str = ""
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
     def record(
         self,
@@ -141,27 +176,23 @@ class AuditLog:
         import time as _time
 
         payload_dict: dict[str, object] = payload or {}
-        with self._lock:
-            index = len(self._entries)
+        with self.lock:
+            index = len(self.entries)
             ts = _time.monotonic() if timestamp is None else timestamp
-            entry_payload: dict[str, object] = {
-                "actor": actor,
-                "action": action,
-                "payload": payload_dict,
-                "timestamp": ts,
-            }
-            entry_hash = _hash_entry(self._last_hash, entry_payload)
+            entry_id = str(uuid.uuid7())
+            entry_hash = hash_entry(self.head_hash, hashed_fields(entry_id, actor, action, payload_dict, ts))
             entry = AuditEntry(
                 index=index,
                 timestamp=ts,
                 actor=actor,
                 action=action,
                 payload=payload_dict,
-                prev_hash=self._last_hash,
+                prev_hash=self.head_hash,
                 entry_hash=entry_hash,
+                entry_id=entry_id,
             )
-            self._entries.append(entry)
-            self._last_hash = entry_hash
+            self.entries.append(entry)
+            self.head_hash = entry_hash
             if self.storage is not None:
                 self.storage.append(entry)
             return entry
@@ -172,8 +203,8 @@ class AuditLog:
         Returns:
             list[AuditEntry]: Snapshot of the in-memory entries.
         """
-        with self._lock:
-            return list(self._entries)
+        with self.lock:
+            return list(self.entries)
 
     def last_hash(self) -> str:
         """Return the hash of the most recent entry (or empty string).
@@ -181,8 +212,8 @@ class AuditLog:
         Returns:
             str: Hex digest, or empty string if the log is empty.
         """
-        with self._lock:
-            return self._last_hash
+        with self.lock:
+            return self.head_hash
 
 
 def verify_chain(entries: Iterable[AuditEntry]) -> int | None:
@@ -199,14 +230,9 @@ def verify_chain(entries: Iterable[AuditEntry]) -> int | None:
     for entry in entries:
         if entry.prev_hash != prev_hash:
             return entry.index
-        expected = _hash_entry(
+        expected = hash_entry(
             prev_hash,
-            {
-                "actor": entry.actor,
-                "action": entry.action,
-                "payload": entry.payload,
-                "timestamp": entry.timestamp,
-            },
+            hashed_fields(entry.entry_id, entry.actor, entry.action, entry.payload, entry.timestamp),
         )
         if expected != entry.entry_hash:
             return entry.index
@@ -225,7 +251,7 @@ class FileAuditStorage:
     """
 
     path: Path
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
     def append(self, entry: AuditEntry) -> None:
         """Append ``entry`` as one JSON line.
@@ -233,7 +259,7 @@ class FileAuditStorage:
         Args:
             entry: The entry to persist.
         """
-        line = _canonical_json(
+        line = canonical_json(
             {
                 "index": entry.index,
                 "timestamp": entry.timestamp,
@@ -242,9 +268,10 @@ class FileAuditStorage:
                 "payload": entry.payload,
                 "prev_hash": entry.prev_hash,
                 "entry_hash": entry.entry_hash,
+                "entry_id": entry.entry_id,
             }
         )
-        with self._lock, self.path.open("a", encoding="utf-8") as f:
+        with self.lock, self.path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
             f.flush()
 
@@ -256,7 +283,7 @@ class FileAuditStorage:
         """
         if not self.path.exists():
             return []
-        with self._lock, self.path.open("r", encoding="utf-8") as f:
+        with self.lock, self.path.open("r", encoding="utf-8") as f:
             out: list[AuditEntry] = []
             for raw in f:
                 line = raw.strip()
@@ -278,12 +305,18 @@ class FileAuditStorage:
                         payload=dict(payload.get("payload") or {}),
                         prev_hash=str(payload["prev_hash"]),
                         entry_hash=str(payload["entry_hash"]),
+                        entry_id=str(payload.get("entry_id", "")),
                     )
                 )
             return out
 
     def lock_for_read(self) -> threading.Lock:
-        return self._lock
+        """Return the lock that serializes reads and appends.
+
+        Returns:
+            threading.Lock: The lock that serializes reads and appends.
+        """
+        return self.lock
 
 
 __all__ = [

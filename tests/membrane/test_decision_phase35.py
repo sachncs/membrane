@@ -1,7 +1,5 @@
 """Tests for the v3.0 admission + TinyLFU + quota + EMA + prefetcher (Phase 3.5.1-3.5.5 + 3.5.9)."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 import pytest
@@ -92,7 +90,7 @@ class TestTinyLFU:
         cache.touch("alpha")
         # The sketch's hash bucket for "alpha" should have a
         # non-zero count.
-        assert cache._estimate("alpha") >= 3
+        assert cache.estimate("alpha") >= 3
 
 
 class TestTenantQuota:

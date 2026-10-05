@@ -1,7 +1,5 @@
 """Tests for the admin CLI subcommands (Phase 3.2.7)."""
 
-from __future__ import annotations
-
 import pytest
 from typer.testing import CliRunner
 

@@ -12,13 +12,11 @@ construction via the ``failure_detector=...`` and ``migrator=...``
 kwargs; the rest of the cluster loop machinery is unchanged.
 """
 
-from __future__ import annotations
-
 import logging
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol, override, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +70,20 @@ class ThresholdDetector:
         suspect_votes: int,
         healthy_peer_count: int,
     ) -> bool:
-        """Remove ``peer_id`` if its missed-heartbeat count exceeds the threshold."""
+        """Remove ``peer_id`` if its missed-heartbeat count exceeds the threshold.
+
+        Args:
+            peer_id: Identifier of the peer under evaluation.
+            peer_missed: Number of consecutive heartbeat misses observed by this
+                node for the peer.
+            suspect_votes: Number of other healthy peers that have independently
+                reported this peer as suspect.
+            healthy_peer_count: Total number of healthy peers in the cluster,
+                including this node.
+
+        Returns:
+            bool: True when the peer should be removed.
+        """
         return peer_missed >= self.failure_remove_threshold
 
 
@@ -100,7 +111,20 @@ class QuorumDetector:
         suspect_votes: int,
         healthy_peer_count: int,
     ) -> bool:
-        """Remove ``peer_id`` only when majority of healthy peers suspect it."""
+        """Remove ``peer_id`` only when majority of healthy peers suspect it.
+
+        Args:
+            peer_id: Identifier of the peer under evaluation.
+            peer_missed: Number of consecutive heartbeat misses observed by this
+                node for the peer.
+            suspect_votes: Number of other healthy peers that have independently
+                reported this peer as suspect.
+            healthy_peer_count: Total number of healthy peers in the cluster,
+                including this node.
+
+        Returns:
+            bool: True when the peer should be removed.
+        """
         if healthy_peer_count <= 1:
             # Single-node cluster: fall back to threshold semantics.
             return peer_missed >= self.failure_remove_threshold
@@ -141,7 +165,11 @@ class Migrator:
         return float("inf")
 
     def delay(self) -> float:
-        """Return the sleep duration to apply before the next migration."""
+        """Return the sleep duration to apply before the next migration.
+
+        Returns:
+            float: The sleep duration to apply before the next migration.
+        """
         rate = self.migrations_per_second()
         if rate == float("inf") or rate <= 0:
             return 0.0
@@ -183,7 +211,13 @@ class Migrator:
 class EagerMigrator(Migrator):
     """Migrate all primaries immediately on topology change."""
 
+    @override
     def migrations_per_second(self) -> float:
+        """Return the migration rate limit (unlimited).
+
+        Returns:
+            float: The migration rate limit (unlimited).
+        """
         return float("inf")
 
 
@@ -193,7 +227,13 @@ class RateLimitedMigrator(Migrator):
 
     max_per_second: float = 50.0
 
+    @override
     def migrations_per_second(self) -> float:
+        """Return the configured migration rate limit.
+
+        Returns:
+            float: The configured migration rate limit.
+        """
         return self.max_per_second
 
 

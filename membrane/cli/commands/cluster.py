@@ -4,30 +4,31 @@ Connects to a remote Membrane server's ``/peers`` endpoint and
 renders the cluster membership as a Rich table.
 """
 
-from __future__ import annotations
-
 import typer
-from rich.console import Console
 from rich.table import Table
 
+from membrane.cli import output
 from membrane.cli.dashboard import fetch_json
-
-console = Console()
 
 
 def main(
     host: str = typer.Option("localhost", "--host", help="Server host"),
     port: int = typer.Option(8080, "--port", "-p", help="Server port"),
 ) -> None:
-    """Show cluster membership and peer health."""
+    """Show cluster membership and peer health.
+
+    Args:
+        host: Server host.
+        port: Server port.
+    """
     data = fetch_json(host, port, "/peers")
     if not data:
-        console.print(f"[red]Could not fetch cluster status from http://{host}:{port}/peers[/red]")
+        output.error(f"Could not fetch cluster status from http://{host}:{port}/peers")
         raise typer.Exit(1)
 
     peers = data.get("peers", [])
     if not peers:
-        console.print("[dim]No peers connected.[/dim]")
+        output.result("No peers connected.")
         return
 
     table = Table(title="Cluster Peers", box=None)
@@ -43,7 +44,7 @@ def main(
             str(p.get("port", "?")),
             is_healthy,
         )
-    console.print(table)
+    output.result(table)
 
 
 __all__ = ["main"]

@@ -1,7 +1,5 @@
 """Tests for Registry.forget_fragment_location + forget_fragment."""
 
-from __future__ import annotations
-
 from membrane.registry import Registry
 
 

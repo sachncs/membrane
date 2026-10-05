@@ -20,7 +20,13 @@ Endpoints:
 * ``GET /metrics`` -- Prometheus text exposition.
 * ``GET /metrics.json`` -- legacy JSON for the TUI.
 * ``GET /livez`` -- process liveness probe.
-* ``GET /readyz`` -- deep readiness probe.
+* ``GET /readyz`` -- readiness probe (503 while draining).
+* ``GET /openapi.json`` -- API schema; only with
+  ``TransportLimits.enable_api_docs``, behind the ``read`` scope.
+
+Capacity: :mod:`membrane.transport.limits` bounds in-flight requests
+(503 + ``Retry-After`` when saturated) and optionally rate-limits each
+credential (429).
 
 Observability:
     * ``/livez`` -- process liveness probe.
@@ -39,8 +45,6 @@ Security:
       from a request header.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
@@ -52,6 +56,8 @@ from membrane.metrics import MetricsCollector
 from membrane.network.cluster import Cluster
 from membrane.node import Node
 from membrane.transfer import TransferService
+from membrane.transport.limits import ConcurrencyLimitMiddleware, RateLimitMiddleware, TransportLimits
+from membrane.transport.request_id import RequestIdMiddleware
 from membrane.transport.routes_fastapi import register_routes
 from membrane.transport.tls import MTLSConfig, build_server_context
 from membrane.transport.tls_protocol import PeerCertH11Protocol
@@ -66,6 +72,7 @@ def create_app(
     cluster_manager: Cluster | None,
     metrics_registry: MetricsCollector | None = None,
     authenticator: Authenticator | None = None,
+    limits: TransportLimits | None = None,
 ) -> FastAPI:
     """Build a configured FastAPI application for a Membrane node.
 
@@ -80,12 +87,21 @@ def create_app(
         authenticator: Optional :class:`~membrane.auth.Authenticator`.
             When set, every route except ``/livez`` and ``/readyz``
             authenticates the caller and enforces its route scope.
+        limits: Concurrency, rate-limit, and API-docs settings; defaults
+            to :class:`TransportLimits`.
 
     Returns:
         FastAPI: Configured application ready to be served by
         uvicorn.
     """
-    app = FastAPI(title="Membrane", version="2.0.0")
+    from membrane import __version__
+
+    limits = limits or TransportLimits()
+    # FastAPI's built-in /docs, /redoc and /openapi.json bypass route
+    # authentication, so they stay off; register_routes serves the schema
+    # behind the read scope when enable_api_docs is set.
+    app = FastAPI(title="Membrane", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.limits = limits
     app.state.node = node
     app.state.compute_backend = compute_backend
     app.state.transfer_service = transfer_service
@@ -102,6 +118,31 @@ def create_app(
         app.state.cluster_metrics = None
 
     register_routes(app)
+    on_reject = None
+    if app.state.transport_metrics is not None:
+        rejected = app.state.transport_metrics.rejected
+
+        def on_reject(reason: str) -> None:
+            rejected.inc(reason=reason)
+
+    # Starlette runs the last-added middleware first: request IDs wrap
+    # everything (so 429 / 503 responses carry one), then rate limiting,
+    # then the concurrency bound.
+    if limits.max_concurrency > 0:
+        app.add_middleware(
+            ConcurrencyLimitMiddleware,
+            max_concurrency=limits.max_concurrency,
+            queue_timeout_sec=limits.queue_timeout_sec,
+            on_reject=on_reject,
+        )
+    if limits.rate_limit_per_sec > 0:
+        app.add_middleware(
+            RateLimitMiddleware,
+            rate_per_sec=limits.rate_limit_per_sec,
+            burst=limits.rate_limit_burst or max(1, round(2 * limits.rate_limit_per_sec)),
+            on_reject=on_reject,
+        )
+    app.add_middleware(RequestIdMiddleware)
     try:
         from membrane.transport.admin import create_admin_router
 
@@ -135,6 +176,7 @@ class FastAPIServer:
             scope, where :class:`MTLSAuthenticator` reads it.
         authenticator: Optional authenticator enforced on every
             non-probe route.
+        limits: Capacity settings (see :class:`TransportLimits`).
     """
 
     def __init__(
@@ -148,9 +190,28 @@ class FastAPIServer:
         metrics_registry: MetricsCollector | None = None,
         tls: MTLSConfig | None = None,
         authenticator: Authenticator | None = None,
+        limits: TransportLimits | None = None,
     ) -> None:
-        """Initialize the FastAPI server wrapper."""
+        """Initialize the FastAPI server wrapper.
+
+        Args:
+            node: Local :class:`Node`.
+            host: Bind address.
+            port: Listen port.
+            compute_backend: Optional :class:`Backend`.
+            transfer_service: :class:`TransferService`.
+            cluster_manager: Optional :class:`Cluster`.
+            metrics_registry: Optional :class:`MetricsCollector` for the
+                ``/metrics`` Prometheus endpoint. When ``None``, ``/metrics``
+                falls back to a JSON snapshot of the node's stats.
+            tls: mTLS configuration; defaults to ``cluster_config.mtls``.
+            authenticator: Optional :class:`~membrane.auth.Authenticator`. When
+                set, every route except ``/livez`` and ``/readyz`` authenticates
+                the caller and enforces its route scope.
+            limits: Concurrency, rate-limit, connection, and API-docs settings.
+        """
         self.node = node
+        self.limits = limits or TransportLimits()
         self.host = host
         self.port = port
         self.compute_backend = compute_backend
@@ -159,7 +220,7 @@ class FastAPIServer:
         self.metrics_registry = metrics_registry
         self.tls = tls
         self.server: Any | None = None
-        self._tls_tmpdir: Any | None = None
+        self.tls_tmpdir: Any | None = None
         self.app = create_app(
             node=node,
             compute_backend=compute_backend,
@@ -167,6 +228,7 @@ class FastAPIServer:
             cluster_manager=cluster_manager,
             metrics_registry=metrics_registry,
             authenticator=authenticator,
+            limits=self.limits,
         )
 
     def start(self) -> None:
@@ -187,10 +249,10 @@ class FastAPIServer:
             # and CA bundle. We write the configured PEMs to a
             # short-lived tmpdir; cleanup happens in ``stop`` so
             # the lifetime matches the running server.
-            self._tls_tmpdir = tempfile.TemporaryDirectory(prefix="membrane-tls-")
-            cert_path = f"{self._tls_tmpdir.name}/server.crt.pem"
-            key_path = f"{self._tls_tmpdir.name}/server.key.pem"
-            ca_path = f"{self._tls_tmpdir.name}/ca-bundle.pem"
+            self.tls_tmpdir = tempfile.TemporaryDirectory(prefix="membrane-tls-")
+            cert_path = f"{self.tls_tmpdir.name}/server.crt.pem"
+            key_path = f"{self.tls_tmpdir.name}/server.key.pem"
+            ca_path = f"{self.tls_tmpdir.name}/ca-bundle.pem"
             with open(cert_path, "w") as f:
                 f.write(self.tls.server_cert_pem)
             with open(key_path, "w") as f:
@@ -214,7 +276,12 @@ class FastAPIServer:
             host=self.host,
             port=self.port,
             log_level="info",
+            # Keep uvicorn's records on Membrane's handlers (text or JSON).
+            log_config=None,
             access_log=False,
+            limit_concurrency=self.limits.max_connections,
+            timeout_keep_alive=int(self.limits.keep_alive_timeout_sec),
+            timeout_graceful_shutdown=10,
             **ssl_kwargs,
         )
         self.server = uvicorn.Server(config)
@@ -223,10 +290,10 @@ class FastAPIServer:
         try:
             self.server.run()
         finally:
-            tmp = getattr(self, "_tls_tmpdir", None)
+            tmp = getattr(self, "tls_tmpdir", None)
             if tmp is not None:
                 tmp.cleanup()
-                self._tls_tmpdir = None
+                self.tls_tmpdir = None
 
     def stop(self) -> None:
         """Stop the uvicorn server.
@@ -244,3 +311,9 @@ class FastAPIServer:
 
         t = threading.Thread(target=self.start, daemon=True)
         t.start()
+
+
+__all__ = [
+    "FastAPIServer",
+    "create_app",
+]

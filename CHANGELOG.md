@@ -7,11 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Production-readiness pass. Several fixes change operator-visible
-behaviour; see **Breaking** before upgrading.
+Production-readiness pass, then the Python 3.14 release: Python 3.14
+only, a modular and hardened runtime, logging-only output, and complete
+docstrings. Several changes affect operators; read **Breaking** before
+upgrading.
 
 ### Security
 
+- API keyfiles hold SHA-256 digests (`sha256:<digest>:<subject>:<scopes>`);
+  `membrane keys generate` creates a key and its line. Keys are compared
+  in constant time; plaintext lines still load, with a warning.
+- The server refuses secret files (keyfile, TLS key, data key,
+  `--auth-config`) that other users can read or write.
+- FastAPI's `/docs`, `/redoc`, and `/openapi.json` were served without
+  authentication. They are off; `--enable-api-docs` serves the schema
+  behind the `read` scope.
+- Per-credential rate limiting (`--rate-limit`, `--rate-limit-burst`;
+  `429` + `Retry-After`).
 - **Authentication was never enforced by a running server.** `Server`
   now attaches an authenticator (API keyfile via `--api-key-file`, or
   `MTLSAuthenticator` when mTLS is configured) to the FastAPI app.
@@ -35,6 +47,29 @@ behaviour; see **Breaking** before upgrading.
 
 ### Fixed
 
+- Strong writes overran their deadline: the quorum fan-out waited for
+  every peer, created a thread pool per write, and peer retries ran past
+  the budget. A shared `QuorumReplicator` returns on quorum or timeout,
+  and the remaining budget caps peer retries.
+- Background cluster threads died for good on the first error. The
+  gossip thread died on a concurrent write ("dictionary changed size"),
+  and the replication thread on an empty ring during restarts, leaving
+  nodes without gossip or replication. Readers use a locked
+  `Node.fragment_snapshot()`, loops are supervised and restarted, and
+  uncaught thread exceptions are logged.
+- The replication sweep probed every fragment on every replica every
+  5 s, and every gossip exchange rebuilt a Bloom filter and Merkle tree
+  over the whole inventory. Sweeps now track new primaries plus a
+  digest-based full pass every `repair_interval_sec`, and the gossip
+  summary is cached. Strong-write throughput on a 3-node kind cluster
+  went from about 30/s to about 270/s.
+- Redis writes ran under the node's lock; they are now written behind
+  by an ordered, bounded queue that retries through outages and flushes
+  on shutdown (`membrane_persistence_queue_depth`,
+  `membrane_persistence_dropped_total`).
+- `SIGTERM` stopped the node abruptly. It now drains: `/readyz` and
+  writes return 503, primaries are handed off, the node leaves the
+  cluster, and it exits 0 (`--drain-timeout`).
 - Multi-node clusters could not form: the SSRF guard rejected every
   private / loopback peer address. Seed hosts are now allowed, and
   `--peer-network` admits the peer CIDR (`URLAllowlist.allowed_networks`).
@@ -86,6 +121,21 @@ behaviour; see **Breaking** before upgrading.
 
 ### Added
 
+- `membrane.runtime`: `ServerSettings` (validated settings),
+  `build_server` (startup policy), plugin registries, write-behind
+  persistence, lifecycle tasks, and diagnostics.
+- Plugin entry points `membrane.compute`, `membrane.authenticators`, and
+  `membrane.content_stores`; `--content-store`, `--authenticator`, and
+  `--auth-config` ([Plugins](docs/plugins.md)).
+- Backpressure: `--max-concurrency` (`503` + `Retry-After` when
+  saturated), `--max-connections`, and `--keep-alive-timeout`;
+  rejections are counted in `membrane_requests_rejected_total`.
+- Request IDs: every response carries `X-Request-ID` (UUIDv7) and every
+  log line written for the request includes it.
+- `--log-format json` (the default in the container image).
+- `python -m membrane.healthcheck` (mTLS-aware) replaces curl in the
+  image.
+- `membrane --version`.
 - `--data-dir` keeps KV bytes on disk (AES-256-GCM, `FilesystemBlob`)
   and `--redis` now actually persists fragment metadata write-through;
   together a node restores its fragments after a restart. `--redis`
@@ -118,6 +168,25 @@ behaviour; see **Breaking** before upgrading.
 
 ### Changed
 
+- Python 3.14 features: deferred annotations (no `from __future__ import
+  annotations`), `compression.zstd` replaces `zstandard`, template
+  strings for structured log fields, `InterpreterPoolExecutor` for the
+  threshold optimizer (about 4x faster), `uuid7` request and audit IDs,
+  `type` aliases, `typing.override` (enforced by mypy), and slotted
+  `Fragment` / `PayloadIdentity` (344 to 112 bytes).
+- `membrane/server.py` was split into `membrane/runtime/`; `Server` and
+  the names it exported are still importable from `membrane.server`.
+- Every module, class, and function has a Google-style docstring
+  (enforced by `tools/check_docstrings.py` and ruff `D`), and every
+  module declares `__all__`.
+- The container image is built from `uv.lock` on `python:3.14-slim`
+  (both base images pinned by digest), without pip or curl.
+- Kubernetes: `preStop` pause, drain settings, JSON logs, and a hashed
+  keyfile template. Compose and systemd: drain budget below the stop
+  timeout.
+- The Anthropic backend defaults to `claude-sonnet-5-5` (the previous
+  default model is retired).
+- httpx request logging is lowered to `WARNING`.
 - CI: uv-based installs with caching, per-job timeouts, concurrency
   cancellation, a coverage floor, lint of `scripts/` and `examples/`,
   site type-check and build, offline docs link check, and a single
@@ -131,6 +200,31 @@ behaviour; see **Breaking** before upgrading.
 
 ### Breaking
 
+- **Python 3.14 only** (`requires-python = ">=3.14,<3.15"`). Install
+  with `uv sync --frozen`, which reads `.python-version` and `uv.lock`.
+- **LMCache integration removed** (`membrane.storage`, `LMCacheDiskStore`,
+  the `lmcache` extra). The `vllm`, `sglang`, `trtllm`, and `all` extras
+  are gone: install engines in their own environment.
+- **Secret files must be private** (see Security). `chmod 600` keyfiles
+  and keys before upgrading.
+- **No semi-private names.** Single-underscore names in `membrane/` were
+  made public (when used across modules or by tests) or name-mangled
+  (`__name`, class-internal). Code that reached into `_`-prefixed
+  attributes must use the public names, e.g. `routes_fastapi.handle_store`,
+  `ops.ok_response`, `ops.select_replica_peers`, `transfer.NodeEndpoint`,
+  `admin.auth_headers`, `audit.head_hash`, `membrane.compute.hashing`
+  (was `_hash`).
+- **CLI output goes through logging.** Command results are still on
+  stdout, unadorned, so pipes keep working. Status, warnings, and errors
+  are log records on stderr (text, or JSON with `MEMBRANE_LOG_FORMAT=json`).
+- FastAPI docs endpoints are off by default (`--enable-api-docs`).
+- `membrane.server` no longer exports `COMPUTE_BACKENDS`,
+  `register_compute_backends`, `try_import`, or `ComputeBackendFactory`;
+  use `membrane.runtime.plugins`.
+- `ServerEvent` and `ServerDiagnostics` are frozen; `Server.events` is an
+  `EventLog`, not a list.
+- Redis persistence is write-behind: call
+  `server.persistence_writer.flush()` before reading Redis in tests.
 - `membrane serve` binds `127.0.0.1` by default (was `0.0.0.0`), and
   refuses a non-loopback bind without authentication unless
   `--allow-unauthenticated` is passed.

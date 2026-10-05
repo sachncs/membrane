@@ -1,7 +1,5 @@
 """Tests for Phase 3 verified migration + anti-entropy."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock
 
 import pytest

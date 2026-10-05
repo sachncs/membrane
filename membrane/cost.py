@@ -128,3 +128,8 @@ class CostModel:
         # Caller-supplied measurement overrides the bandwidth-based estimate.
         retrieve_cost = retrieval_latency_seconds if retrieval_latency_seconds is not None else self.find_cost(kv_size)
         return retrieve_cost < compute_cost
+
+
+__all__ = [
+    "CostModel",
+]

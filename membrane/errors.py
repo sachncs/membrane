@@ -19,8 +19,6 @@ Hierarchy::
     └── MigrationError            # shard migration failure
 """
 
-from __future__ import annotations
-
 
 class Error(Exception):
     """Base class for all Membrane-raised exceptions."""
@@ -87,3 +85,20 @@ class TenantScopeError(AuthError):
     authorization failure the :func:`op_store` /
     :func:`op_retrieve` paths raise on a cross-tenant access.
     """
+
+
+__all__ = [
+    "AuthError",
+    "BackendError",
+    "CapacityError",
+    "ConfigError",
+    "ConnectionError",
+    "CorruptPayloadError",
+    "Error",
+    "MigrationError",
+    "NetworkError",
+    "PersistenceError",
+    "SchemaError",
+    "TenantScopeError",
+    "TimeoutError",
+]

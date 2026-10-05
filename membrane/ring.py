@@ -192,3 +192,9 @@ class Ring:
             str: Hexadecimal digest string.
         """
         return hashlib.md5(value.encode("utf-8"), usedforsecurity=False).hexdigest()
+
+
+__all__ = [
+    "EmptyRingError",
+    "Ring",
+]

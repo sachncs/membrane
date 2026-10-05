@@ -123,7 +123,7 @@ class Trace:
         )
 
     @classmethod
-    def from_fragment(cls, fragment: Fragment) -> "Trace":
+    def from_fragment(cls, fragment: Fragment) -> Trace:
         """Reconstruct a :class:`Trace` from a stored :class:`Fragment`.
 
         ``tool_name``, ``input_hash``, and ``structured_output`` are
@@ -157,3 +157,8 @@ class Trace:
             size_bytes=fragment.payload_size,
             reuse_score=fragment.reuse_score,
         )
+
+
+__all__ = [
+    "Trace",
+]

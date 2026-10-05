@@ -1,7 +1,5 @@
 """Tests for the Bloom + Merkle inventory exchange (Phase 5)."""
 
-from __future__ import annotations
-
 import base64
 import json
 import threading
@@ -129,6 +127,9 @@ class _FakeNode:
     def __init__(self, fragments: dict | None = None) -> None:
         self.node_id = "local"
         self.fragments = fragments or {}
+
+    def fragment_snapshot(self) -> dict:
+        return dict(self.fragments)
 
     def get_stats(self):
         from dataclasses import dataclass

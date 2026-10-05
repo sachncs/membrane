@@ -5,8 +5,6 @@ the admin surface + tier migration in one go, so a single
 test demonstrates the v3.0+ observability story end-to-end.
 """
 
-from __future__ import annotations
-
 import pytest
 
 

@@ -16,8 +16,6 @@ pytest-benchmark stores its own file-per-commit cache in
 captures a *human-readable* baseline for review.
 """
 
-from __future__ import annotations
-
 import pytest
 
 

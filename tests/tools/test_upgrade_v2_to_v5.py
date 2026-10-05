@@ -1,7 +1,5 @@
 """Tests for the v2 / v4 / v5 magic migration tool."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

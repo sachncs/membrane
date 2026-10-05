@@ -15,8 +15,6 @@ and carry the standard service attributes
 (``service.name``, ``service.version``).
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from collections.abc import Iterator
@@ -30,8 +28,12 @@ SERVICE_NAME: str = "membrane"
 """The OTel ``service.name`` value."""
 
 
-def _noop_tracer() -> Any:
-    """Return a tracer whose spans are inert."""
+def noop_tracer() -> Any:
+    """Return a tracer whose spans are inert.
+
+    Returns:
+        Any: A tracer whose spans are inert.
+    """
     from opentelemetry.trace import NoOpTracer
 
     return NoOpTracer()
@@ -49,9 +51,10 @@ class TracerFactory:
     """
 
     def __init__(self) -> None:
+        """Create an unconfigured factory whose tracer records no spans."""
         self.provider: Any | None = None
         self.endpoint: str | None = None
-        self._tracer: Any | None = None
+        self.__tracer: Any | None = None
 
     def configure(self, endpoint: str | None = None) -> Any:
         """Configure the tracer from an OTLP endpoint.
@@ -66,8 +69,8 @@ class TracerFactory:
         """
         target = endpoint or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
         if not target:
-            self._tracer = _noop_tracer()
-            return self._tracer
+            self.__tracer = noop_tracer()
+            return self.__tracer
         try:
             from opentelemetry import trace
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
@@ -78,8 +81,8 @@ class TracerFactory:
             from opentelemetry.sdk.trace.export import BatchSpanProcessor
         except ImportError as exc:  # pragma: no cover - import guard
             logger.warning("OTel SDK not installed: %s", exc)
-            self._tracer = _noop_tracer()
-            return self._tracer
+            self.__tracer = noop_tracer()
+            return self.__tracer
         resource = Resource.create({"service.name": SERVICE_NAME, "service.version": "3.0.0"})
         provider = TracerProvider(resource=resource)
         exporter = OTLPSpanExporter(endpoint=target)
@@ -87,8 +90,8 @@ class TracerFactory:
         trace.set_tracer_provider(provider)
         self.provider = provider
         self.endpoint = target
-        self._tracer = trace.get_tracer(SERVICE_NAME)
-        return self._tracer
+        self.__tracer = trace.get_tracer(SERVICE_NAME)
+        return self.__tracer
 
     @property
     def tracer(self) -> Any:
@@ -97,12 +100,12 @@ class TracerFactory:
         Returns:
             Either the OTel tracer or the no-op tracer.
         """
-        if self._tracer is None:
-            self._tracer = _noop_tracer()
-        return self._tracer
+        if self.__tracer is None:
+            self.__tracer = noop_tracer()
+        return self.__tracer
 
 
-_default_factory: TracerFactory | None = None
+default_factory: TracerFactory | None = None
 
 
 def get_default_tracer() -> Any:
@@ -113,11 +116,11 @@ def get_default_tracer() -> Any:
         if it is, returns the configured tracer; otherwise
         installs the no-op tracer the first time it is asked.
     """
-    global _default_factory
-    if _default_factory is None:
-        _default_factory = TracerFactory()
-        _default_factory.configure()
-    return _default_factory.tracer
+    global default_factory
+    if default_factory is None:
+        default_factory = TracerFactory()
+        default_factory.configure()
+    return default_factory.tracer
 
 
 @contextmanager

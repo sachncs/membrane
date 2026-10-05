@@ -25,6 +25,7 @@ Security:
 
 import json
 import logging
+from typing import override
 
 import httpx
 
@@ -43,18 +44,24 @@ class Anthropic(RemoteLLMBackend):
         base_url: API base URL
             (default ``https://api.anthropic.com/v1``).
         model: Model name
-            (default ``"claude-3-sonnet-20240229"``).
+            (default ``"claude-sonnet-5-5"``).
     """
 
     def __init__(
         self,
         api_key: str,
         base_url: str = "https://api.anthropic.com/v1",
-        model: str = "claude-3-sonnet-20240229",
+        model: str = "claude-sonnet-5-5",
     ) -> None:
-        """Initialize the backend."""
+        """Initialize the backend.
+
+        Args:
+            api_key: Anthropic API key.
+            base_url: API base URL.
+            model: Anthropic model name.
+        """
         super().__init__()
-        self._api_key = api_key
+        self.__api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.client = self.build_client(
@@ -68,11 +75,18 @@ class Anthropic(RemoteLLMBackend):
     @property
     def api_key(self) -> str:
         """Return the configured API key (redacted when logged)."""
-        return self._api_key
+        return self.__api_key
 
+    @override
     def __repr__(self) -> str:
+        """Describe the backend without exposing the API key.
+
+        Returns:
+            str: Backend class and model name.
+        """
         return f"Anthropic(base_url={self.base_url!r}, model={self.model!r}, api_key=***)"
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Produce content-addressed fragments by hashing the prompt.
 
@@ -110,6 +124,7 @@ class Anthropic(RemoteLLMBackend):
         )
         return fragments
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Generate text via the Anthropic Messages API.
 
@@ -155,10 +170,16 @@ class Anthropic(RemoteLLMBackend):
             logger.warning("Anthropic generate failed: %s", exc)
             return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
-        """Return whether the API is reachable."""
+        """Return whether the API is reachable.
+
+        Returns:
+            bool: Whether the API is reachable.
+        """
         return self.probe("models", timeout=5.0)
 
+    @override
     def device_name(self) -> str:
         """Return the backend's device descriptor.
 
@@ -166,3 +187,8 @@ class Anthropic(RemoteLLMBackend):
             str: ``"anthropic(<model>)"``.
         """
         return f"anthropic({self.model})"
+
+
+__all__ = [
+    "Anthropic",
+]

@@ -21,11 +21,12 @@ warning.
 
 import json
 import logging
+from typing import override
 
 import httpx
 
-from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
+from membrane.compute.hashing import token_hash
 from membrane.compute.remote import RemoteLLMBackend
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
@@ -43,12 +44,18 @@ class Ollama(RemoteLLMBackend):
     """
 
     def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.2") -> None:
-        """Initialize the backend."""
+        """Initialize the backend.
+
+        Args:
+            base_url: Ollama server URL.
+            model: Ollama model name.
+        """
         super().__init__()
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.client = self.build_client(timeout=30.0)
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Fetch embeddings from Ollama and convert to fragments.
 
@@ -119,6 +126,7 @@ class Ollama(RemoteLLMBackend):
         )
         return fragments
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Generate text via Ollama's ``/api/generate``.
 
@@ -155,10 +163,16 @@ class Ollama(RemoteLLMBackend):
             logger.warning("Ollama generate failed: %s", exc)
             return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
-        """Return whether Ollama is reachable."""
+        """Return whether Ollama is reachable.
+
+        Returns:
+            bool: Whether Ollama is reachable.
+        """
         return self.probe("api/tags")
 
+    @override
     def device_name(self) -> str:
         """Return the backend's device descriptor.
 
@@ -172,7 +186,15 @@ class Ollama(RemoteLLMBackend):
         prompt_tokens: list[int],
         model_id: str,
     ) -> list[Fragment]:
-        """Simulated prefill used when the API call is unavailable."""
+        """Simulated prefill used when the API call is unavailable.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            list[Fragment]: One simulated fragment per prompt window.
+        """
         window_size = Backend.SIMULATE_WINDOW_SIZE
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):
@@ -187,3 +209,8 @@ class Ollama(RemoteLLMBackend):
                 )
             )
         return fragments
+
+
+__all__ = [
+    "Ollama",
+]

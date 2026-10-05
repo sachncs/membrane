@@ -1,7 +1,5 @@
 """Wire v3 bidi Open-stream integration test (Phase 3.3.3-3.3.4 follow-up)."""
 
-from __future__ import annotations
-
 import threading
 from collections.abc import Iterator
 

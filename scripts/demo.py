@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    """Reproduce the paper's Section 4 case study and log the comparison."""
     logger.info("=" * 60)
     logger.info("Membrane-PD Case Study Reproduction (arXiv:2604.15039v2)")
     logger.info("=" * 60)

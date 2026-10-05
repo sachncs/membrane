@@ -17,14 +17,13 @@ in the cache; the v1 keeps a fixed capacity and evicts the
 oldest entry once the limit is reached.
 """
 
-from __future__ import annotations
-
 import hashlib
 import logging
 import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from typing import override
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +52,7 @@ class KVHandle:
     token_len: int
     created_at: float
 
+    @override
     def __eq__(self, other: object) -> bool:
         """Compare by ``handle`` (the identity of the prefix).
 
@@ -67,8 +67,13 @@ class KVHandle:
             return NotImplemented
         return self.handle == other.handle
 
+    @override
     def __hash__(self) -> int:
-        """Hash by ``handle`` for use in dict / set."""
+        """Hash by ``handle`` for use in dict / set.
+
+        Returns:
+            int: Hash of ``handle``.
+        """
         return hash(self.handle)
 
     @classmethod
@@ -141,7 +146,7 @@ class PrefixMatch:
 
 
 @dataclass
-class _Entry:
+class Entry:
     """Internal record stored in the cache.
 
     Attributes:
@@ -186,10 +191,10 @@ class PrefixCache:
         if capacity < 0:
             raise ValueError("capacity must be non-negative")
         self.capacity = capacity
-        self._by_handle: OrderedDict[str, _Entry] = OrderedDict()
-        self._lock = threading.RLock()
-        self._hits = 0
-        self._misses = 0
+        self.by_handle: OrderedDict[str, Entry] = OrderedDict()
+        self.lock = threading.RLock()
+        self.__hits = 0
+        self.__misses = 0
 
     def insert(
         self,
@@ -209,19 +214,19 @@ class PrefixCache:
             KVHandle: Handle for the inserted entry.
         """
         handle = KVHandle.for_prefix(model_id, token_ids)
-        with self._lock:
-            if handle.handle in self._by_handle:
-                entry = self._by_handle.pop(handle.handle)
+        with self.lock:
+            if handle.handle in self.by_handle:
+                entry = self.by_handle.pop(handle.handle)
                 entry.last_access = time.monotonic()
-                self._by_handle[handle.handle] = entry
+                self.by_handle[handle.handle] = entry
                 return entry.handle
-            entry = _Entry(
+            entry = Entry(
                 handle=handle,
                 token_ids=tuple(token_ids),
                 layer_range=layer_range,
             )
-            self._by_handle[handle.handle] = entry
-            self._evict_if_needed()
+            self.by_handle[handle.handle] = entry
+            self.__evict_if_needed()
         return handle
 
     def lookup(self, model_id: str, token_ids: tuple[int, ...]) -> PrefixMatch:
@@ -237,12 +242,12 @@ class PrefixCache:
         """
         if not token_ids:
             return PrefixMatch.miss()
-        with self._lock:
-            best: _Entry | None = None
-            for entry in self._by_handle.values():
+        with self.lock:
+            best: Entry | None = None
+            for entry in self.by_handle.values():
                 if entry.handle.model_id != model_id:
                     continue
-                prefix_len = self._matching_prefix_len(entry.token_ids, token_ids)
+                prefix_len = self.__matching_prefix_len(entry.token_ids, token_ids)
                 if prefix_len == 0:
                     continue
                 if best is None or prefix_len > best.handle.token_len:
@@ -250,11 +255,11 @@ class PrefixCache:
                     if prefix_len == len(token_ids):
                         break
             if best is None:
-                self._misses += 1
+                self.__misses += 1
                 return PrefixMatch.miss()
             best.last_access = time.monotonic()
-            self._by_handle.move_to_end(best.handle.handle)
-            self._hits += 1
+            self.by_handle.move_to_end(best.handle.handle)
+            self.__hits += 1
             is_full = best.handle.token_len == len(token_ids)
             return PrefixMatch(handle=best.handle, token_len=best.handle.token_len, is_full=is_full)
 
@@ -267,13 +272,13 @@ class PrefixCache:
         Returns:
             bool: ``True`` if the handle was present.
         """
-        with self._lock:
-            return self._by_handle.pop(handle.handle, None) is not None
+        with self.lock:
+            return self.by_handle.pop(handle.handle, None) is not None
 
     def clear(self) -> None:
         """Drop every entry from the cache."""
-        with self._lock:
-            self._by_handle.clear()
+        with self.lock:
+            self.by_handle.clear()
 
     def size(self) -> int:
         """Return the number of entries in the cache.
@@ -281,8 +286,8 @@ class PrefixCache:
         Returns:
             int: The entry count.
         """
-        with self._lock:
-            return len(self._by_handle)
+        with self.lock:
+            return len(self.by_handle)
 
     def stats(self) -> dict[str, int]:
         """Return a stats dict with hits, misses, and size.
@@ -290,15 +295,15 @@ class PrefixCache:
         Returns:
             dict: ``{"hits": ..., "misses": ..., "size": ...}``.
         """
-        with self._lock:
+        with self.lock:
             return {
-                "hits": self._hits,
-                "misses": self._misses,
-                "size": len(self._by_handle),
+                "hits": self.__hits,
+                "misses": self.__misses,
+                "size": len(self.by_handle),
             }
 
     @staticmethod
-    def _matching_prefix_len(a: tuple[int, ...], b: tuple[int, ...]) -> int:
+    def __matching_prefix_len(a: tuple[int, ...], b: tuple[int, ...]) -> int:
         """Compute the length of the common prefix of ``a`` and ``b``.
 
         Args:
@@ -315,12 +320,12 @@ class PrefixCache:
             common += 1
         return common
 
-    def _evict_if_needed(self) -> None:
+    def __evict_if_needed(self) -> None:
         """Evict the oldest entry until size <= capacity."""
-        while self.capacity > 0 and len(self._by_handle) > self.capacity:
-            self._by_handle.popitem(last=False)
+        while self.capacity > 0 and len(self.by_handle) > self.capacity:
+            self.by_handle.popitem(last=False)
         if self.capacity == 0:
-            self._by_handle.clear()
+            self.by_handle.clear()
 
 
 __all__ = [

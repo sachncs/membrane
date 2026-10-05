@@ -34,8 +34,6 @@ selects the appropriate :class:`LocalEndpoint` /
 operation.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, Protocol
 
@@ -59,15 +57,35 @@ class LocalEndpoint(Protocol):
         ...
 
     def inventory(self) -> dict[str, int]:
-        """``content_hash -> version_id`` for every fragment held."""
+        """``content_hash -> version_id`` for every fragment held.
+
+        Returns:
+            dict[str, int]: ``content_hash -> version_id`` for every fragment
+            held.
+        """
         ...
 
     def retrieve(self, content_hash: str) -> Fragment | None:
-        """Fetch a fragment by hash, or ``None`` if absent."""
+        """Fetch a fragment by hash, or ``None`` if absent.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            Fragment | None: A fragment by hash, or ``None`` if absent.
+        """
         ...
 
     def store(self, fragment: Fragment, *, is_primary: bool = False) -> bool:
-        """Persist ``fragment``; returns True on success."""
+        """Persist ``fragment``; returns True on success.
+
+        Args:
+            fragment: The fragment.
+            is_primary: Whether this node owns the fragment's primary copy.
+
+        Returns:
+            bool: True when stored.
+        """
         ...
 
 
@@ -85,49 +103,112 @@ class RemoteEndpoint(Protocol):
         ...
 
     def inventory(self) -> dict[str, int] | None:
-        """Inventory digest fetched over the wire, or ``None`` on failure."""
+        """Inventory digest fetched over the wire, or ``None`` on failure.
+
+        Returns:
+            dict[str, int] | None: Inventory digest fetched over the wire, or
+            ``None`` on failure.
+        """
         ...
 
     def retrieve(self, content_hash: str) -> Fragment | None:
-        """Fetch a fragment over the wire, or ``None`` on failure."""
+        """Fetch a fragment over the wire, or ``None`` on failure.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            Fragment | None: A fragment over the wire, or ``None`` on failure.
+        """
         ...
 
     def push(self, fragment: Fragment) -> bool:
-        """Send a fragment to the remote peer (e.g., via its /replicate endpoint)."""
+        """Send a fragment to the remote peer (e.g., via its /replicate endpoint).
+
+        Args:
+            fragment: The fragment.
+
+        Returns:
+            bool: True when the peer acknowledged.
+        """
         ...
 
 
-class _LocalEndpoint:
+class NodeEndpoint:
     """Adapter that promotes a :class:`Node` to a :class:`LocalEndpoint`."""
 
     __slots__ = ("node",)
 
     def __init__(self, node: Node) -> None:
+        """Wrap a local :class:`~membrane.node.Node`.
+
+        Args:
+            node: Local node.
+        """
         self.node = node
 
     def inventory(self) -> dict[str, int]:
-        return {h: frag.version_id for h, frag in self.node.fragments.items()}
+        """Return ``content_hash -> version_id`` for the node's fragments.
+
+        Returns:
+            dict[str, int]: ``content_hash -> version_id`` for the node's
+            fragments.
+        """
+        return {h: frag.version_id for h, frag in self.node.fragment_snapshot().items()}
 
     def retrieve(self, content_hash: str) -> Fragment | None:
+        """Return a fragment from the node.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            Fragment | None: A fragment from the node.
+        """
         return self.node.retrieve(content_hash)
 
     def store(self, fragment: Fragment, *, is_primary: bool = False) -> bool:
+        """Store a fragment on the node.
+
+        Args:
+            fragment: The fragment.
+            is_primary: Whether this node owns the fragment's primary copy.
+
+        Returns:
+            bool: True when stored.
+        """
         return self.node.store(fragment, is_primary=is_primary)
 
 
-class _RemoteEndpoint:
+class ClusterPeerEndpoint:
     """Adapter that promotes a peer node-id + cluster to a :class:`RemoteEndpoint`."""
 
-    __slots__ = ("_cluster", "node_id")
+    __slots__ = ("cluster", "node_id")
 
     def __init__(self, node_id: str, cluster: Cluster) -> None:
+        """Address peer ``node_id`` through ``cluster``.
+
+        Args:
+            node_id: Node identifier.
+            cluster: Cluster whose membership resolves the peer.
+        """
         self.node_id = node_id
-        self._cluster = cluster
+        self.cluster = cluster
 
     def client_for(self) -> Peer | None:
-        return self._cluster.membership.get_client(self.node_id)
+        """Return the HTTP client for the peer, if it is a member.
+
+        Returns:
+            Peer | None: The HTTP client for the peer, if it is a member.
+        """
+        return self.cluster.membership.get_client(self.node_id)
 
     def inventory(self) -> dict[str, int] | None:
+        """Return the peer's inventory digest.
+
+        Returns:
+            dict[str, int] | None: The peer's inventory digest.
+        """
         client = self.client_for()
         if client is None:
             return None
@@ -137,26 +218,51 @@ class _RemoteEndpoint:
         return resp.get("digest", {})
 
     def retrieve(self, content_hash: str) -> Fragment | None:
+        """Return a fragment from the peer.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            Fragment | None: A fragment from the peer.
+        """
         client = self.client_for()
         if client is None:
             return None
         return client.retrieve_fragment(content_hash)
 
     def push(self, fragment: Fragment) -> bool:
+        """Replicate ``fragment`` to the peer.
+
+        Args:
+            fragment: The fragment.
+
+        Returns:
+            bool: True when the peer acknowledged.
+        """
         client = self.client_for()
         if client is None:
             return False
         return client.request_replicate(fragment)
 
 
-def _resolve(node_or_id: Node | str, cluster: Cluster | None) -> LocalEndpoint | RemoteEndpoint:
-    """Promote a ``Node`` or remote node-id to the matching endpoint."""
+def resolve_endpoint(node_or_id: Node | str, cluster: Cluster | None) -> LocalEndpoint | RemoteEndpoint:
+    """Promote a ``Node`` or remote node-id to the matching endpoint.
+
+    Args:
+        node_or_id: A local :class:`~membrane.node.Node`, or the id of a
+            peer.
+        cluster: Cluster used to resolve peer ids; required for remote ids.
+
+    Returns:
+        LocalEndpoint | RemoteEndpoint: The endpoint.
+    """
     if isinstance(node_or_id, Node):
-        return _LocalEndpoint(node_or_id)
+        return NodeEndpoint(node_or_id)
     if cluster is None:
         msg = f"remote endpoint {node_or_id!r} requested but no cluster is configured"
         raise ValueError(msg)
-    return _RemoteEndpoint(node_or_id, cluster)
+    return ClusterPeerEndpoint(node_or_id, cluster)
 
 
 class TransferService:
@@ -182,7 +288,16 @@ class TransferService:
         self.local_node = local_node
 
     def resolve_endpoint(self, node_or_id: Node | str) -> LocalEndpoint | RemoteEndpoint:
-        return _resolve(node_or_id, self.cluster_manager)
+        """Resolve a node or node id to a local or remote endpoint.
+
+        Args:
+            node_or_id: A local :class:`~membrane.node.Node`, or the id of a
+                peer.
+
+        Returns:
+            LocalEndpoint | RemoteEndpoint: The endpoint.
+        """
+        return resolve_endpoint(node_or_id, self.cluster_manager)
 
     # ------------------------------------------------------------------
     # Dispatch table — three concrete transfer operations, each
@@ -197,7 +312,16 @@ class TransferService:
         target: LocalEndpoint,
         content_hash: str,
     ) -> bool:
-        """Move a fragment between two local endpoints."""
+        """Move a fragment between two local endpoints.
+
+        Args:
+            source: Source node or remote node id.
+            target: Target node or remote node id.
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            bool: True when the fragment was transferred.
+        """
         fragment = source.retrieve(content_hash)
         if fragment is None:
             return False
@@ -214,6 +338,14 @@ class TransferService:
         Remote-to-remote transfers chain through the source
         peer's HTTP API: the source serves the fragment over
         GET /retrieve; the target pulls it via POST /replicate.
+
+        Args:
+            source: Source node or remote node id.
+            target: Target node or remote node id.
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            bool: True when the fragment was transferred.
         """
         fragment = source.retrieve(content_hash)
         if fragment is None:
@@ -226,7 +358,16 @@ class TransferService:
         target: RemoteEndpoint,
         content_hash: str,
     ) -> bool:
-        """Read from a local source and push via the remote target's /replicate."""
+        """Read from a local source and push via the remote target's /replicate.
+
+        Args:
+            source: Source node or remote node id.
+            target: Target node or remote node id.
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            bool: True when the fragment was transferred.
+        """
         fragment = source.retrieve(content_hash)
         if fragment is None:
             return False
@@ -258,7 +399,15 @@ class TransferService:
         local: dict[str, int],
         remote: dict[str, int],
     ) -> set[str]:
-        """Find hashes present in ``remote`` but missing or outdated in ``local``."""
+        """Find hashes present in ``remote`` but missing or outdated in ``local``.
+
+        Args:
+            local: ``content_hash -> version_id`` of the receiving side.
+            remote: ``content_hash -> version_id`` of the sending side.
+
+        Returns:
+            set[str]: Content hashes ``local`` should fetch.
+        """
         missing: set[str] = set()
         for h, remote_version in remote.items():
             local_version = local.get(h)
@@ -294,16 +443,16 @@ class TransferService:
         except ValueError:
             return False
 
-        if isinstance(src_endpoint, _LocalEndpoint) and isinstance(tgt_endpoint, _LocalEndpoint):
+        if isinstance(src_endpoint, NodeEndpoint) and isinstance(tgt_endpoint, NodeEndpoint):
             return self.transfer_local_endpoint(src_endpoint, tgt_endpoint, content_hash)
-        if isinstance(src_endpoint, _RemoteEndpoint):
+        if isinstance(src_endpoint, ClusterPeerEndpoint):
             return self.transfer_remote_source(
                 src_endpoint,
                 tgt_endpoint,  # type: ignore[arg-type]
                 content_hash,
             )
-        # isinstance(tgt_endpoint, _RemoteEndpoint)  (mypy narrowing)
-        if not isinstance(src_endpoint, _LocalEndpoint) or not isinstance(tgt_endpoint, _RemoteEndpoint):
+        # isinstance(tgt_endpoint, ClusterPeerEndpoint)  (mypy narrowing)
+        if not isinstance(src_endpoint, NodeEndpoint) or not isinstance(tgt_endpoint, ClusterPeerEndpoint):
             return False
         return self.transfer_remote_target(
             src_endpoint,
@@ -316,14 +465,22 @@ class TransferService:
         source: Node | str,
         target: Node | str,
     ) -> list[str]:
-        """Synchronize all missing fragments from ``source`` to ``target``."""
+        """Synchronize all missing fragments from ``source`` to ``target``.
+
+        Args:
+            source: Source node or remote node id.
+            target: Target node or remote node id.
+
+        Returns:
+            list[str]: Content hashes transferred.
+        """
         try:
             src_endpoint = self.resolve_endpoint(source)
             tgt_endpoint = self.resolve_endpoint(target)
         except ValueError:
             return []
 
-        if isinstance(src_endpoint, _LocalEndpoint) and isinstance(tgt_endpoint, _LocalEndpoint):
+        if isinstance(src_endpoint, NodeEndpoint) and isinstance(tgt_endpoint, NodeEndpoint):
             return self.sync_local(src_endpoint.node, tgt_endpoint.node)
 
         src_digest = src_endpoint.inventory()
@@ -334,15 +491,15 @@ class TransferService:
         missing = self.compare_inventories(tgt_digest, src_digest)
         transferred: list[str] = []
         for h in missing:
-            if isinstance(src_endpoint, _LocalEndpoint) and isinstance(tgt_endpoint, _LocalEndpoint):
+            if isinstance(src_endpoint, NodeEndpoint) and isinstance(tgt_endpoint, NodeEndpoint):
                 ok: bool = self.transfer_local_endpoint(src_endpoint, tgt_endpoint, h)
-            elif isinstance(src_endpoint, _RemoteEndpoint):
+            elif isinstance(src_endpoint, ClusterPeerEndpoint):
                 ok = self.transfer_remote_source(
                     src_endpoint,
                     tgt_endpoint,  # type: ignore[arg-type]
                     h,
                 )
-            elif isinstance(tgt_endpoint, _RemoteEndpoint):
+            elif isinstance(tgt_endpoint, ClusterPeerEndpoint):
                 ok = self.transfer_remote_target(
                     src_endpoint,  # type: ignore[arg-type]
                     tgt_endpoint,
@@ -355,7 +512,15 @@ class TransferService:
         return transferred
 
     def sync_local(self, source: Node, target: Node) -> list[str]:
-        """Synchronize all missing fragments between two local nodes."""
+        """Synchronize all missing fragments between two local nodes.
+
+        Args:
+            source: Source node or remote node id.
+            target: Target node or remote node id.
+
+        Returns:
+            list[str]: Content hashes transferred.
+        """
         local = self.inventory_digest(target) or {}
         remote = self.inventory_digest(source) or {}
         missing = self.compare_inventories(local, remote)
@@ -376,8 +541,16 @@ class TransferService:
         Convenience wrapper over
         :meth:`transfer_local_endpoint` for callers that pass
         :class:`Node` instances directly.
+
+        Args:
+            source: Source node or remote node id.
+            target: Target node or remote node id.
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            bool: True when the fragment was transferred.
         """
-        return self.transfer_local_endpoint(_LocalEndpoint(source), _LocalEndpoint(target), content_hash)
+        return self.transfer_local_endpoint(NodeEndpoint(source), NodeEndpoint(target), content_hash)
 
     def pull_from_remote(
         self,
@@ -394,20 +567,23 @@ class TransferService:
                 replicated peer-to-peer via the source peer's
                 ``/replicate`` endpoint.
             content_hash: Hash to transfer.
+
+        Returns:
+            bool: True when the fragment was fetched and stored.
         """
         if self.cluster_manager is None:
             return False
-        src_endpoint = _RemoteEndpoint(source_id, self.cluster_manager)
+        src_endpoint = ClusterPeerEndpoint(source_id, self.cluster_manager)
         try:
             tgt_endpoint = self.resolve_endpoint(target)
         except ValueError:
             return False
-        if isinstance(tgt_endpoint, _LocalEndpoint):
+        if isinstance(tgt_endpoint, NodeEndpoint):
             fragment = src_endpoint.retrieve(content_hash)
             if fragment is None:
                 return False
             return tgt_endpoint.store(fragment, is_primary=False)
-        if not isinstance(tgt_endpoint, _RemoteEndpoint):
+        if not isinstance(tgt_endpoint, ClusterPeerEndpoint):
             return False
         # Remote target: chain peer-to-peer.
         return self.transfer_remote_source(src_endpoint, tgt_endpoint, content_hash)
@@ -424,12 +600,15 @@ class TransferService:
             source: Local source node.
             target_id: Remote peer node id (target).
             content_hash: Hash to transfer.
+
+        Returns:
+            bool: True when the fragment was transferred.
         """
         if self.cluster_manager is None:
             return False
         return self.transfer_remote_target(
-            _LocalEndpoint(source),
-            _RemoteEndpoint(target_id, self.cluster_manager),
+            NodeEndpoint(source),
+            ClusterPeerEndpoint(target_id, self.cluster_manager),
             content_hash,
         )
 

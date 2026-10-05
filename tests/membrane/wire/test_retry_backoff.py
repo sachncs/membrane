@@ -1,7 +1,5 @@
 """AsyncWireClient retry backoff timing (Phase 3.3.5-3.3.7 follow-up)."""
 
-from __future__ import annotations
-
 import asyncio
 import time
 

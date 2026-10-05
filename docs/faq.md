@@ -48,7 +48,10 @@ publish a container image to `ghcr.io/sachncs/membrane`.
 
 ### Which Python versions are supported?
 
-3.10, 3.11, 3.12, and 3.13 (all tested in CI).
+Python 3.14 only. Membrane uses 3.14 features (deferred annotations,
+`compression.zstd`, template strings, subinterpreters, `uuid7`) and
+declares `requires-python = ">=3.14,<3.15"`. `uv sync` installs 3.14
+for you.
 
 ### Do I need Redis?
 
@@ -89,7 +92,7 @@ or lower `--quorum-count` / use `--consistency eventual`. See
 
 Peer calls to private addresses are blocked unless they are seeds or in
 `MEMBRANE_PEER_NETWORKS`. Set it to your pod CIDR. See
-[Deployment](deployment.md#7-kubernetes).
+[Deployment](deployment.md#8-kubernetes).
 
 ### Why does `retrieve` say `found: false` for a fragment I stored as another key?
 

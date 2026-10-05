@@ -5,8 +5,6 @@ and Redis records dropped ``tenant_id`` (a restored fragment would
 have become public).
 """
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.auth import AuthContext
@@ -41,6 +39,7 @@ def test_fragments_survive_restart_with_tenant(tmp_path) -> None:
     status, body = op_prefill(first.node, CPU(), list(range(300)), "m", auth_context=acme)
     assert status == 200
     hashes = [f["identity"]["payload_hash"] for f in body["fragments"]]
+    assert first.persistence_writer.flush()  # writes are write-behind
 
     second = _server(str(tmp_path))  # fresh process: empty node, same Redis + data dir
     assert second.node.fragments == {}
@@ -58,6 +57,7 @@ def test_evicted_fragments_are_not_restored(tmp_path) -> None:
     _, body = op_prefill(first.node, CPU(), list(range(10)), "m")
     content_hash = body["fragments"][0]["identity"]["payload_hash"]
     first.node.remove_fragment(content_hash)
+    assert first.persistence_writer.flush()
 
     second = _server(str(tmp_path))
     assert second.restore_fragments() == 0

@@ -22,8 +22,6 @@ The factory supports several historical calling conventions:
   — keyword form, preferred for new tests.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 from membrane.fragment import Fragment

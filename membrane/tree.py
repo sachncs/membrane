@@ -69,8 +69,8 @@ class IntervalNode:
     start: int
     end: int
     max_end: int
-    left: "IntervalNode | None" = None
-    right: "IntervalNode | None" = None
+    left: IntervalNode | None = None
+    right: IntervalNode | None = None
     height: int = 1
 
     @property
@@ -107,12 +107,26 @@ class Tree:
 
     @staticmethod
     def height(node: IntervalNode | None) -> int:
-        """Return the height of ``node`` (0 for a ``None`` child)."""
+        """Return the height of ``node`` (0 for a ``None`` child).
+
+        Args:
+            node: Current subtree root (may be ``None``).
+
+        Returns:
+            int: The height of ``node`` (0 for a ``None`` child).
+        """
         return node.height if node else 0
 
     @staticmethod
     def max_end(node: IntervalNode | None) -> int:
-        """Return the augmented max-end of ``node`` (0 for ``None``)."""
+        """Return the augmented max-end of ``node`` (0 for ``None``).
+
+        Args:
+            node: Current subtree root (may be ``None``).
+
+        Returns:
+            int: The augmented max-end of ``node`` (0 for ``None``).
+        """
         return node.max_end if node else 0
 
     @classmethod
@@ -475,3 +489,9 @@ class Tree:
             cls.find_adjacent_recursive(node.left, position, max_gap, results)
         if node.start <= position + max_gap:
             cls.find_adjacent_recursive(node.right, position, max_gap, results)
+
+
+__all__ = [
+    "IntervalNode",
+    "Tree",
+]

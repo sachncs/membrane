@@ -7,8 +7,6 @@ an audit entry AND a span, and both are observable from the
 out-of-process surfaces.
 """
 
-from __future__ import annotations
-
 import pytest
 
 

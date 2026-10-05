@@ -1,7 +1,5 @@
 """Tests for the canonical ContentStore interface and its implementations."""
 
-from __future__ import annotations
-
 import contextlib
 import io
 import os

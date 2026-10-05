@@ -36,8 +36,6 @@ one of those ranges is permitted. Ranges should be as narrow as
 the deployment allows, and never include ``169.254.0.0/16``.
 """
 
-from __future__ import annotations
-
 import ipaddress
 import logging
 import socket
@@ -48,14 +46,17 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 
+type IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
 class SSRFError(ValueError):
     """Raised when an outbound URL fails the allow-list check."""
 
 
-_ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
+ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
 
-def _is_blocked_ip(ip: ipaddress._BaseAddress) -> bool:
+def is_blocked_ip(ip: IPAddress) -> bool:
     """Return True if ``ip`` falls in a blocked private range.
 
     Args:
@@ -101,8 +102,15 @@ class URLAllowlist:
     resolve_timeout: float = 2.0
     allowed_networks: frozenset[ipaddress.IPv4Network | ipaddress.IPv6Network] = field(default_factory=frozenset)
 
-    def is_ip_allowed(self, ip: ipaddress._BaseAddress) -> bool:
-        """Return True if ``ip`` is inside one of :attr:`allowed_networks`."""
+    def is_ip_allowed(self, ip: IPAddress) -> bool:
+        """Return True if ``ip`` is inside one of :attr:`allowed_networks`.
+
+        Args:
+            ip: The resolved address to test.
+
+        Returns:
+            bool: True if ``ip`` is inside one of :attr:`allowed_networks`.
+        """
         return any(ip.version == net.version and ip in net for net in self.allowed_networks)
 
     def is_host_allowed(self, hostname: str) -> bool:
@@ -117,7 +125,7 @@ class URLAllowlist:
         return hostname.lower() in self.allowlist
 
 
-_DEFAULT_ALLOWLIST: URLAllowlist = URLAllowlist()
+DEFAULT_ALLOWLIST: URLAllowlist = URLAllowlist()
 
 
 def get_default_allowlist() -> URLAllowlist:
@@ -132,7 +140,7 @@ def get_default_allowlist() -> URLAllowlist:
     Returns:
         URLAllowlist: The current default.
     """
-    return _DEFAULT_ALLOWLIST
+    return DEFAULT_ALLOWLIST
 
 
 def set_default_allowlist(allowlist: URLAllowlist) -> None:
@@ -141,8 +149,8 @@ def set_default_allowlist(allowlist: URLAllowlist) -> None:
     Args:
         allowlist: The new default.
     """
-    global _DEFAULT_ALLOWLIST
-    _DEFAULT_ALLOWLIST = allowlist
+    global DEFAULT_ALLOWLIST
+    DEFAULT_ALLOWLIST = allowlist
 
 
 def reset_default_allowlist() -> None:
@@ -151,11 +159,11 @@ def reset_default_allowlist() -> None:
     Tests use this to undo a :func:`set_default_allowlist`
     call without leaking policy into other tests.
     """
-    global _DEFAULT_ALLOWLIST
-    _DEFAULT_ALLOWLIST = URLAllowlist()
+    global DEFAULT_ALLOWLIST
+    DEFAULT_ALLOWLIST = URLAllowlist()
 
 
-def _resolve_addresses(hostname: str) -> list[ipaddress._BaseAddress]:
+def resolve_addresses(hostname: str) -> list[IPAddress]:
     """Resolve ``hostname`` and return every IP it points at.
 
     Args:
@@ -198,7 +206,7 @@ def validate_outbound_url(
         parsed = urlparse(url)
     except ValueError as exc:
         raise SSRFError(f"malformed url: {exc}") from exc
-    if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
+    if parsed.scheme.lower() not in ALLOWED_SCHEMES:
         raise SSRFError(f"scheme not allowed: {parsed.scheme!r}")
     host = (parsed.hostname or "").lower()
     if not host:
@@ -208,13 +216,13 @@ def validate_outbound_url(
     if not policy.block_private:
         return url
     try:
-        addresses = _resolve_addresses(host)
+        addresses = resolve_addresses(host)
     except socket.gaierror as exc:
         raise SSRFError(f"dns resolution failed for {host!r}: {exc}") from exc
     if not addresses:
         raise SSRFError(f"no addresses for {host!r}")
     for ip in addresses:
-        if _is_blocked_ip(ip) and not policy.is_ip_allowed(ip):
+        if is_blocked_ip(ip) and not policy.is_ip_allowed(ip):
             raise SSRFError(f"host {host!r} resolves to blocked address {ip}")
     return url
 

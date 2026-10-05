@@ -1,7 +1,5 @@
 """Tests for GossipState tombstone merge + Gossip delivery."""
 
-from __future__ import annotations
-
 import json
 import threading
 import time
@@ -110,6 +108,9 @@ class _FakeNode:
     def __init__(self) -> None:
         self.node_id = "local"
         self.fragments: dict[str, object] = {}
+
+    def fragment_snapshot(self) -> dict:
+        return dict(self.fragments)
 
     def get_stats(self) -> object:
         from dataclasses import dataclass

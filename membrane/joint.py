@@ -138,3 +138,9 @@ class Joint:
             memory_node_id=memory_node.node_id,
             estimated_latency_seconds=est_latency,
         )
+
+
+__all__ = [
+    "Joint",
+    "PlacementDecision",
+]

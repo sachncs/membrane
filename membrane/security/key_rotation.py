@@ -13,11 +13,10 @@ adopt :class:`RotatingKeyProvider` when they need a rotation
 cycle.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from dataclasses import dataclass
+from typing import override
 
 from membrane.security.encryption import KeyProvider
 
@@ -62,9 +61,9 @@ class RotatingKeyProvider(KeyProvider):
         """
         if len(initial_key) != 32:
             raise ValueError(f"initial_key must be 32 bytes, got {len(initial_key)}")
-        self._lock = threading.RLock()
-        self._versions: list[KeyVersion] = [KeyVersion(version=1, key=initial_key)]
-        self._active: bytes = initial_key
+        self.lock = threading.RLock()
+        self.__versions: list[KeyVersion] = [KeyVersion(version=1, key=initial_key)]
+        self.__active: bytes = initial_key
 
     @property
     def active_version(self) -> int:
@@ -73,8 +72,8 @@ class RotatingKeyProvider(KeyProvider):
         Returns:
             int: The currently active key version.
         """
-        with self._lock:
-            return self._versions[-1].version
+        with self.lock:
+            return self.__versions[-1].version
 
     def rotate(self, new_key: bytes) -> int:
         """Add ``new_key`` as the active master key.
@@ -90,14 +89,14 @@ class RotatingKeyProvider(KeyProvider):
         """
         if len(new_key) != 32:
             raise ValueError(f"new_key must be 32 bytes, got {len(new_key)}")
-        with self._lock:
-            new_version = self._versions[-1].version + 1
-            self._versions.append(KeyVersion(version=new_version, key=new_key))
-            self._active = new_key
+        with self.lock:
+            new_version = self.__versions[-1].version + 1
+            self.__versions.append(KeyVersion(version=new_version, key=new_key))
+            self.__active = new_key
             logger.info(
                 "RotatingKeyProvider rotated to version %d (kept %d older versions)",
                 new_version,
-                len(self._versions) - 1,
+                len(self.__versions) - 1,
             )
             return new_version
 
@@ -108,17 +107,18 @@ class RotatingKeyProvider(KeyProvider):
             tuple[bytes, ...]: The master keys in chronological
             order; the last entry is the active key.
         """
-        with self._lock:
-            return tuple(v.key for v in self._versions)
+        with self.lock:
+            return tuple(v.key for v in self.__versions)
 
+    @override
     def master_key(self) -> bytes:
         """Return the active master key.
 
         Returns:
             bytes: The currently active 32-byte master key.
         """
-        with self._lock:
-            return self._active
+        with self.lock:
+            return self.__active
 
 
 __all__ = ["KeyVersion", "RotatingKeyProvider"]

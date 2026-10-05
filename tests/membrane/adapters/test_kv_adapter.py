@@ -1,7 +1,5 @@
 """Tests for the KVAdapter protocol + BaseAdapter (Phase 2.1-2.3)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.adapters import (

@@ -39,34 +39,27 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 ### Prerequisites
 
-- Python 3.10 or later
-- pip
+- [uv](https://docs.astral.sh/uv/). It installs Python 3.14, the only
+  supported version (pinned in `.python-version`).
 - (Optional) Redis for persistence backend testing
 
 ### Install dependencies
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate   # Windows
-
-pip install -e ".[dev]"
+uv sync --frozen --extra dev     # exact versions from uv.lock
+source .venv/bin/activate        # Linux/macOS
 ```
+
+`--frozen` installs exactly what `uv.lock` records, as CI does. When you
+change dependencies in `pyproject.toml`, run `uv lock` and commit
+`uv.lock`.
 
 ### Optional extras
 
 ```bash
-# Server dependencies (FastAPI, Redis client, cryptography)
-pip install -e ".[server]"
-
-# KV transfer engine and quantization (numpy, lz4, zstandard)
-pip install -e ".[transfer]"
-
-# GPU backend (PyTorch CUDA)
-pip install -e ".[gpu]"
-
-# Local LLM backend (HuggingFace Transformers)
-pip install -e ".[local-llm]"
+uv sync --frozen --extra dev --extra transfer    # numpy, lz4 (zstd is stdlib)
+uv sync --frozen --extra dev --extra gpu         # PyTorch CUDA
+uv sync --frozen --extra dev --extra local-llm   # HuggingFace Transformers
 ```
 
 ## Branch Naming
@@ -133,6 +126,8 @@ chore: update pytest to 8.x
    ruff check membrane tests scripts examples
    ruff format --check membrane tests scripts examples
    mypy membrane
+   python tools/check_naming.py      # naming, __all__, no direct output
+   python tools/check_docstrings.py  # complete Google-style docstrings
    ```
    CI's `CI passed` check must be green before merge.
 
@@ -155,8 +150,23 @@ chore: update pytest to 8.x
 ### General
 
 - Follow [PEP 8](https://peps.python.org/pep-0008/) style guidelines.
-- Use type hints for all function signatures.
-- Write docstrings for public APIs using Google-style format.
+- Use type hints for all function signatures. Annotations are deferred
+  (PEP 649), so do not add `from __future__ import annotations`.
+- Every module, class, and function (private ones included) has a
+  Google-style docstring with `Args:`, `Returns:`, `Yields:`, and
+  `Raises:` sections as applicable; `tools/check_docstrings.py` and
+  ruff's `D` rules enforce it.
+- Mark overriding methods with `@typing.override`; mypy enforces it.
+- Write Python 3.14: `type` aliases, `match`, `compression.zstd`,
+  `uuid.uuid7()`, template strings for structured logs.
+
+### Output
+
+- Never `print`. Diagnostics use `logging.getLogger(__name__)`. CLI
+  commands report through `membrane.cli.output`: `result()` and
+  `result_json()` write to stdout for piping, `info()` and `error()`
+  write to stderr. ruff `T20` and `tools/check_naming.py` reject `print`,
+  `console.print`, `typer.echo`, and `sys.stdout.write`.
 
 ### Formatting and linting
 
@@ -172,6 +182,10 @@ chore: update pytest to 8.x
 - Use `snake_case` for functions, methods, and variables.
 - Use `PascalCase` for classes and exceptions.
 - Use `UPPER_SNAKE_CASE` for constants.
+- No single-underscore names. A name is either public, or private to
+  its class with a double underscore (`__name`, name-mangled). Module
+  APIs are declared in `__all__`, which every module defines.
+  `tools/check_naming.py` enforces this.
 
 ## Running Tests
 
@@ -190,7 +204,7 @@ docker run -d --rm -p 6379:6379 redis:7-alpine
 pytest tests/membrane/persistence
 
 # Run type checking
-python -m mypy membrane/
+mypy membrane
 ```
 
 ## Documentation

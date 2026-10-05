@@ -1,7 +1,5 @@
 """Tests for the wire_v3 chunked / resumable transport (Phase 3.3.3 + 3.3.4)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.errors import CorruptPayloadError

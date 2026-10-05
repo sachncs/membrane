@@ -6,8 +6,6 @@ every HTTP route via :mod:`membrane.transport.authz`. The
 which scope a given ``(method, path)`` requires.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.auth import (

@@ -211,3 +211,9 @@ class Selector:
             + cfg.weight_memory * memory_norm
             + cfg.weight_bandwidth * bandwidth_norm
         )
+
+
+__all__ = [
+    "Selector",
+    "SelectorConfig",
+]

@@ -20,6 +20,7 @@ transport used for gossip can also be used for warming.
 """
 
 import logging
+from typing import override
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ class Replica(Node):
                 warmed.append(h)
         return warmed
 
+    @override
     def store(
         self,
         fragment: Fragment,
@@ -109,3 +111,8 @@ class Replica(Node):
             bool: True if the fragment is stored.
         """
         return super().store(fragment, is_primary=False)
+
+
+__all__ = [
+    "Replica",
+]

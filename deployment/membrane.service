@@ -13,10 +13,14 @@ Environment=MEMBRANE_LOG_LEVEL=INFO
 Environment=MEMBRANE_DAEMON=true
 # MEMBRANE_* settings, one per line (see `membrane serve --help`). At a
 # minimum set MEMBRANE_API_KEY_FILE (or the MEMBRANE_TLS_* files); the
-# server refuses to listen on a public address without authentication.
+# server refuses to listen on a public address without authentication,
+# and refuses secret files other users can read (chmod 600, owned by
+# membrane). Create keys with `membrane keys generate`.
 EnvironmentFile=/etc/membrane/membrane.env
 ExecStart=/opt/membrane/.venv/bin/membrane serve
-# SIGTERM triggers a graceful shutdown.
+# SIGTERM drains the node (readiness 503, primaries handed off) within
+# MEMBRANE_DRAIN_TIMEOUT; TimeoutStopSec leaves headroom above it.
+Environment=MEMBRANE_DRAIN_TIMEOUT=30
 KillSignal=SIGTERM
 TimeoutStopSec=45
 

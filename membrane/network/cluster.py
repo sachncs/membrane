@@ -21,11 +21,10 @@ Threading:
       with a short timeout).
 """
 
-from __future__ import annotations
-
 import logging
 import socket
 import threading
+from collections.abc import Callable
 
 from membrane.gc import TombstoneTable
 from membrane.network.config import ClusterConfig
@@ -87,6 +86,25 @@ class Cluster:
         server: object | None = None,
         tombstones: TombstoneTable | None = None,
     ) -> None:
+        """Compose the membership, failure-detection, gossip, and placement subsystems.
+
+        Args:
+            node_id: Node identifier.
+            host: Bind host of this node.
+            port: Listen port of this node.
+            node: Local node whose fragments the cluster serves.
+            config: Cluster configuration.
+            directory: Fragment location registry; a new one by default.
+            hash_ring: Ring to use for node selection. A default empty ring is
+                created when ``None``.
+            shard_manager: Placement manager; built on ``hash_ring`` by default.
+            failure_detector: Failure-detection strategy; threshold-based by
+                default.
+            migrator: Primary migration strategy; eager by default.
+            server: Owning server, if any.
+            tombstones: Tombstone table shared with the server; a new one by
+                default.
+        """
         self.node_id = node_id
         self.host = host
         self.port = port
@@ -187,11 +205,30 @@ class Cluster:
             loops.append((self.replicator.loop, "replication"))
 
         for target, name in loops:
-            t = threading.Thread(target=target, daemon=True, name=f"membrane-{name}")
+            t = threading.Thread(target=self.__supervise, args=(name, target), daemon=True, name=f"membrane-{name}")
             t.start()
             self.threads.append(t)
 
         logger.info("Cluster started with %s background threads", len(loops))
+
+    def __supervise(self, name: str, loop: Callable[[], None]) -> None:
+        """Run a background loop, restarting it after an unexpected exception.
+
+        A loop that raised used to end its thread silently, leaving the
+        node without gossip or replication until restart.
+
+        Args:
+            name: Loop name used in logs.
+            loop: The loop; it returns when the cluster stops.
+        """
+        while True:
+            try:
+                loop()
+                return
+            except Exception:
+                logger.exception("cluster %s loop crashed; restarting it", name)
+            if self.stop_event.wait(1.0) or not self.running[0]:
+                return
 
     def stop(self, deadline_sec: float = 10.0) -> bool:
         """Signal all background threads to exit.
@@ -273,6 +310,10 @@ class Cluster:
         ``Server.__init__``), the migration also forwards the
         canonical bytes through the wire path so the leaving
         peer's replicas stay in sync.
+
+        Args:
+            content_hash: Content hash of the fragment.
+            leaving_peer: Identifier of the peer being removed.
         """
         self.shard_manager.migrate_primary(
             content_hash,

@@ -27,8 +27,6 @@ Thread safety:
     facade as a whole is not thread-safe.
 """
 
-from __future__ import annotations
-
 import logging
 
 logger = logging.getLogger(__name__)
@@ -187,3 +185,8 @@ class Index:
             when the hash has no recorded co-accesses.
         """
         return self.co_access.lookup(content_hash)
+
+
+__all__ = [
+    "Index",
+]

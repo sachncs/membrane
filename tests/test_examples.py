@@ -4,8 +4,6 @@ Several demos had silently broken against API changes; running them in
 the test suite keeps the onboarding path honest.
 """
 
-from __future__ import annotations
-
 import os
 import socket
 import subprocess
@@ -70,7 +68,7 @@ def test_rag_pipeline_against_live_server() -> None:
                 time.sleep(0.2)
         result = _run("examples/rag_pipeline.py", {"MEMBRANE_URL": f"http://127.0.0.1:{port}"})
         assert result.returncode == 0, result.stderr[-2000:]
-        assert result.stdout.count("hit") == 2
+        assert result.stderr.count("hit") == 2
     finally:
         server.terminate()
         server.wait(timeout=30)
@@ -134,10 +132,11 @@ def test_quickstart_cli_flow(tmp_path: Path) -> None:
 
     refused = _cli("serve", "--host", "0.0.0.0", "--daemon", "--port", str(_free_port()))
     assert refused.returncode == 2
-    assert "Refusing to serve unauthenticated" in refused.stdout
+    assert "Refusing to serve unauthenticated" in refused.stderr
 
     keyfile = tmp_path / "api-keys"
     keyfile.write_text("quickstart-key:acme:read,write\n")
+    keyfile.chmod(0o600)
     port = _free_port()
     node = _start_node(port, "--api-key-file", str(keyfile))
     base = f"http://127.0.0.1:{port}"
@@ -176,3 +175,36 @@ def test_quickstart_local_cluster_forms() -> None:
             node.terminate()
         for node in nodes:
             node.wait(timeout=30)
+
+
+def test_sigterm_drains_and_exits_cleanly(tmp_path: Path) -> None:
+    """Containers stop the server with SIGTERM: it must drain, log it, and exit 0."""
+    import signal
+
+    port = _free_port()
+    log = tmp_path / "serve.log"
+    with log.open("wb") as sink:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "membrane", "serve", "--daemon", "--port", str(port), "--drain-timeout", "5"],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=sink,
+        )
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/readyz", timeout=1)
+                break
+            except OSError:
+                if time.monotonic() > deadline or proc.poll() is not None:
+                    proc.kill()
+                    pytest.fail("membrane serve did not come up")
+                time.sleep(0.2)
+        proc.send_signal(signal.SIGTERM)
+        try:
+            assert proc.wait(timeout=15) == 0
+        finally:
+            proc.kill()
+    text = log.read_text()
+    assert "SIGTERM received; draining" in text
+    assert "drain complete" in text

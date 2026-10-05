@@ -152,3 +152,9 @@ class Economic:
         # telemetry is missing).
         best = max(candidate_node_ids, key=lambda nid: vd - normalized_cost(nid))
         return best
+
+
+__all__ = [
+    "Economic",
+    "EconomicRouterConfig",
+]

@@ -11,8 +11,6 @@ drives a 5xx storm on the /store route, and verifies:
 * The exception message includes the server payload.
 """
 
-from __future__ import annotations
-
 import pytest
 
 

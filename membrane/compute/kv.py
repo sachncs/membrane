@@ -26,12 +26,10 @@ extras, OOM, network outage), ``prefill`` falls back to the shared
 receive well-formed fragments.
 """
 
-from __future__ import annotations
-
 import hashlib
 import logging
 import struct
-from typing import Any
+from typing import Any, override
 
 from membrane.compute.base import Backend
 from membrane.compute.remote import RemoteLLMBackend
@@ -42,7 +40,7 @@ from membrane.identity import PayloadIdentity
 logger = logging.getLogger(__name__)
 
 
-_DTYPE_BYTES: dict[str, int] = {
+DTYPE_BYTES: dict[str, int] = {
     "float16": 2,
     "bfloat16": 2,
     "float32": 4,
@@ -101,8 +99,8 @@ class KVBackend(RemoteLLMBackend):
                 :data:`Backend.SIMULATE_WINDOW_SIZE` default.
         """
         super().__init__()
-        if dtype not in _DTYPE_BYTES:
-            raise ValueError(f"dtype must be one of {sorted(_DTYPE_BYTES)}, got {dtype!r}")
+        if dtype not in DTYPE_BYTES:
+            raise ValueError(f"dtype must be one of {sorted(DTYPE_BYTES)}, got {dtype!r}")
         self.content_store = content_store
         self.model_id = model_id
         self.model_revision = model_revision
@@ -165,6 +163,7 @@ class KVBackend(RemoteLLMBackend):
             self.model = None
             self.tokenizer = None
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Run real prefill and emit one fragment per window.
 
@@ -207,8 +206,8 @@ class KVBackend(RemoteLLMBackend):
             logger.warning("KVBackend forward pass failed (%s); falling back to simulation", exc)
             return self.simulate_prefill(prompt_tokens, model_id)
 
-        element_size = _DTYPE_BYTES[self.dtype]
-        fragment_kv = self._frames_for_windows(pkv, seq_len, model_id)
+        element_size = DTYPE_BYTES[self.dtype]
+        fragment_kv = self.frames_for_windows(pkv, seq_len, model_id)
         fragments: list[Fragment] = []
         for ident, frame in fragment_kv:
             self.content_store.put(ident.payload_hash, frame)
@@ -227,7 +226,7 @@ class KVBackend(RemoteLLMBackend):
         del element_size
         return fragments
 
-    def _frames_for_windows(
+    def frames_for_windows(
         self,
         pkv: Any,
         seq_len: int,
@@ -246,7 +245,7 @@ class KVBackend(RemoteLLMBackend):
         """
         torch = self.torch
         window_size = self.window_size
-        element_size = _DTYPE_BYTES[self.dtype]
+        element_size = DTYPE_BYTES[self.dtype]
         # Per-layer view: each entry is a (K, V) tensor.
         # Newer transformers return DynamicCache where iteration
         # yields the per-layer tuples.
@@ -311,6 +310,13 @@ class KVBackend(RemoteLLMBackend):
 
         Delegates to :meth:`Backend.simulate_prefill_fragment`, which
         builds a deterministic :class:`PayloadIdentity` per window.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            list[Fragment]: One simulated fragment per prompt window.
         """
         window_size = Backend.SIMULATE_WINDOW_SIZE
         fragments: list[Fragment] = []
@@ -327,16 +333,25 @@ class KVBackend(RemoteLLMBackend):
             )
         return fragments
 
+    @override
     def simulated_payload(self, fragment: Fragment) -> bytes | None:
         """Return ``None`` for real frames, which are already in :attr:`content_store`.
 
         Fragments from the :meth:`simulate_prefill` fallback (no
         model loaded) get the base class placeholder bytes.
+
+        Args:
+            fragment: The fragment.
+
+        Returns:
+            bytes | None: Placeholder bytes, or ``None`` when real frames were
+            written.
         """
         if fragment.payload_ref is not None and self.content_store.has(fragment.payload_ref):
             return None
         return super().simulated_payload(fragment)
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Stub text-generation entry point.
 
@@ -354,6 +369,7 @@ class KVBackend(RemoteLLMBackend):
         """
         return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
         """Return whether the model and tokenizer are loaded.
 
@@ -363,6 +379,7 @@ class KVBackend(RemoteLLMBackend):
         """
         return self.model is not None and self.tokenizer is not None
 
+    @override
     def device_name(self) -> str:
         """Return a descriptive device name.
 

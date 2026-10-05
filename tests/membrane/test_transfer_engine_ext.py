@@ -1,7 +1,5 @@
 """Tests for the GPUDirect + adaptive fragment sizing surfaces (Phase 3.3.9-3.3.10)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.transfer_engine_ext import (

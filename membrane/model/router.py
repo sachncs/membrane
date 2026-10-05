@@ -143,3 +143,9 @@ class Router:
             cached_prefix_length=cached_prefix_membrane,
             cross_cluster_cache_transfer=False,
         )
+
+
+__all__ = [
+    "Router",
+    "RoutingDecision",
+]

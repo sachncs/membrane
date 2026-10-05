@@ -14,6 +14,7 @@ The backend is suitable for:
 """
 
 import logging
+from typing import override
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class CPU(Backend):
         """Initialize the backend."""
         self.initialized = True
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Simulate prefill on CPU.
 
@@ -69,6 +71,7 @@ class CPU(Backend):
         )
         return fragments
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Stub text-generation entry point.
 
@@ -84,6 +87,7 @@ class CPU(Backend):
         """
         return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
         """Return availability.
 
@@ -92,6 +96,7 @@ class CPU(Backend):
         """
         return True
 
+    @override
     def device_name(self) -> str:
         """Return device name.
 
@@ -99,3 +104,8 @@ class CPU(Backend):
             str: Always ``"cpu"``.
         """
         return "cpu"
+
+
+__all__ = [
+    "CPU",
+]

@@ -1,7 +1,5 @@
 """Tests for the data-integrity gauges (Phase 3.2.3)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.errors import CorruptPayloadError

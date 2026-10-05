@@ -125,3 +125,9 @@ class Sessions:
             session. Empty for unknown sessions.
         """
         return set(self.get_session_history(session_id))
+
+
+__all__ = [
+    "Session",
+    "Sessions",
+]

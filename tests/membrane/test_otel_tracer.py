@@ -6,8 +6,6 @@ provider; the contracts under test are the import surface,
 the no-op path, and the convenience context manager.
 """
 
-from __future__ import annotations
-
 from membrane.otel_tracer import (
     SERVICE_NAME,
     TracerFactory,

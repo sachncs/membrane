@@ -1,7 +1,5 @@
 """Tests for Fragment.fingerprint_compat + MembraneValidator (Phase 1.3)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.compat import (

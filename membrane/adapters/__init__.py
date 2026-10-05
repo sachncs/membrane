@@ -11,11 +11,9 @@ tensors and the metadata required to install them back into a
 HuggingFace, vLLM, or SGLang engine.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, override, runtime_checkable
 
 from membrane.compat import ModelCompatibilityFingerprint
 
@@ -288,8 +286,8 @@ class BaseAdapter:
             struct.pack("<I", tensor.shape[2]),
         ]
         for layer in tensor.layers:
-            parts.append(self._tensor_to_bytes(layer.k))
-            parts.append(self._tensor_to_bytes(layer.v))
+            parts.append(self.__tensor_to_bytes(layer.k))
+            parts.append(self.__tensor_to_bytes(layer.v))
         body = b"".join(parts)
         # Fingerprint digest at the tail so a single
         # :class:`MembraneValidator` can re-verify on import.
@@ -329,7 +327,7 @@ class BaseAdapter:
                 head_range=(-1, -1),
                 token_span=(0, 0),
                 shape=(1, 1, 1, 64),
-                fingerprint=_placeholder_fingerprint(),
+                fingerprint=placeholder_fingerprint(),
             )
         offset += 4
         lstart, lend, hstart, hend, tstart, tend, shape0, shape1, shape2 = struct.unpack_from(
@@ -345,7 +343,7 @@ class BaseAdapter:
             offset += per_layer_bytes
             v_bytes = payload[offset : offset + per_layer_bytes]
             offset += per_layer_bytes
-            layers.append(_safe_layer(k_bytes, v_bytes, len(layers), (hstart, hend)))
+            layers.append(safe_layer(k_bytes, v_bytes, len(layers), (hstart, hend)))
         # Fingerprint digest at the tail; recompute via the
         # adapter's :class:`MembraneValidator` once the bundle is
         # installed.
@@ -357,7 +355,7 @@ class BaseAdapter:
             head_range=(hstart, hend),
             token_span=(tstart, tend),
             shape=(shape0, shape1, shape2, 64),
-            fingerprint=_placeholder_fingerprint(),
+            fingerprint=placeholder_fingerprint(),
         )
 
     def validate(self, tensor: KVTensor) -> ValidationResult:
@@ -389,7 +387,7 @@ class BaseAdapter:
             return ValidationResult.fail(*errors)
         return ValidationResult.ok()
 
-    def _tensor_to_bytes(self, tensor: Any) -> bytes:
+    def __tensor_to_bytes(self, tensor: Any) -> bytes:
         """Convert a tensor-like object to canonical bytes.
 
         Supports ``torch.Tensor`` (with ``.numpy()``) and raw
@@ -422,7 +420,7 @@ __all__ = [
 ]
 
 
-def _safe_layer(k_bytes: bytes, v_bytes: bytes, layer_idx: int, head_range: tuple[int, int]) -> LayerKV:
+def safe_layer(k_bytes: bytes, v_bytes: bytes, layer_idx: int, head_range: tuple[int, int]) -> LayerKV:
     """Construct a :class:`LayerKV` from raw bytes.
 
     Used by the deserializer. The tensor field is a
@@ -448,7 +446,7 @@ def _safe_layer(k_bytes: bytes, v_bytes: bytes, layer_idx: int, head_range: tupl
     )
 
 
-def _placeholder_fingerprint() -> ModelCompatibilityFingerprint:
+def placeholder_fingerprint() -> ModelCompatibilityFingerprint:
     """Build a default fingerprint for the deserializer's stand-in.
 
     The deserializer returns a placeholder; callers that need
@@ -490,6 +488,7 @@ class MembraneAdapter(BaseAdapter, KVAdapter):
         """
         self.kv_backend = kv_backend
 
+    @override
     def extract(
         self,
         model: Any,
@@ -545,6 +544,7 @@ class MembraneAdapter(BaseAdapter, KVAdapter):
             fingerprint=fingerprint,
         )
 
+    @override
     def import_into(
         self,
         model: Any,

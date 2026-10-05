@@ -1,7 +1,5 @@
 """Tests for the AsyncMembraneClient prefill / decode surfaces (Phase 3.6.1 follow-up)."""
 
-from __future__ import annotations
-
 import asyncio
 
 import httpx

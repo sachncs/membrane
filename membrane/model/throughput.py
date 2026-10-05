@@ -27,7 +27,7 @@ from membrane.model import profiler
 
 
 def kv_throughput(length: int) -> float:
-    """Per-instance KV throughput ``Phi_kv(l)`` in Gbps.
+    r"""Per-instance KV throughput ``Phi_kv(l)`` in Gbps.
 
     Equation (1):
 
@@ -49,7 +49,7 @@ def stage_throughput_membrane(
     long_length: int,
     compute_scale: float = 1.0,
 ) -> float:
-    """Membrane cluster throughput ``Theta_membrane`` in req/s.
+    r"""Membrane cluster throughput ``Theta_membrane`` in req/s.
 
     Equation (3):
 
@@ -86,7 +86,7 @@ def prefill_throughput(
     short_length: int,
     compute_scale: float = 1.0,
 ) -> float:
-    """PD-P (local prefill) throughput ``Theta_pd-p`` in req/s.
+    r"""PD-P (local prefill) throughput ``Theta_pd-p`` in req/s.
 
     Equation (4):
 
@@ -112,7 +112,7 @@ def decode_throughput(
     decode_time_seconds: float,
     output_length: int,
 ) -> float:
-    """PD-D (decode) throughput ``Theta_pd-d`` in req/s.
+    r"""PD-D (decode) throughput ``Theta_pd-d`` in req/s.
 
     Equation (5):
 
@@ -140,7 +140,7 @@ def end_to_end_throughput(
     theta_pd_d: float,
     fraction_to_membrane: float,
 ) -> float:
-    """End-to-end system throughput ``Lambda_max`` in req/s.
+    r"""End-to-end system throughput ``Lambda_max`` in req/s.
 
     Equation (6):
 
@@ -168,3 +168,12 @@ def end_to_end_throughput(
     # The system is bottlenecked by whichever stage has the
     # smallest scaled throughput.
     return min(upstream_membrane, upstream_pd_p, theta_pd_d)
+
+
+__all__ = [
+    "decode_throughput",
+    "end_to_end_throughput",
+    "kv_throughput",
+    "prefill_throughput",
+    "stage_throughput_membrane",
+]

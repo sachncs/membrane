@@ -17,8 +17,6 @@ Subclasses are expected to:
   checks.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
@@ -41,6 +39,7 @@ class RemoteLLMBackend(Backend):
     base_url: str = ""
 
     def __init__(self) -> None:
+        """Initialize with no HTTP client; one is built on first use."""
         self.client: Any | None = None
 
     def build_client(
@@ -88,3 +87,8 @@ class RemoteLLMBackend(Backend):
         except Exception as exc:
             logger.debug("%s probe failed: %s", type(self).__name__, exc)
             return False
+
+
+__all__ = [
+    "RemoteLLMBackend",
+]

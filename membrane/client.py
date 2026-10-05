@@ -20,8 +20,6 @@ Exceptions:
   to distinguish from a benign miss).
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
@@ -65,11 +63,20 @@ class MembraneConnectionError(MembraneClientError):
     """The server could not be reached (refused, DNS failure, timeout)."""
 
 
-def _connection_error(url: str, exc: Exception) -> MembraneConnectionError:
+def connection_error(url: str, exc: Exception) -> MembraneConnectionError:
+    """Wrap a transport failure as :class:`MembraneConnectionError`.
+
+    Args:
+        url: Base URL that could not be reached.
+        exc: The underlying transport error.
+
+    Returns:
+        MembraneConnectionError: The error to raise.
+    """
     return MembraneConnectionError(f"cannot reach Membrane at {url}: {exc}")
 
 
-def _raise_for_status(status_code: int, body: Any) -> None:
+def raise_for_status(status_code: int, body: Any) -> None:
     """Translate an HTTP status code into a typed exception.
 
     Args:
@@ -119,10 +126,10 @@ class MembraneClient:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
-        self._client = transport or httpx.Client(timeout=timeout)
+        self.__client = transport or httpx.Client(timeout=timeout)
 
     @property
-    def _headers(self) -> dict[str, str]:
+    def __headers(self) -> dict[str, str]:
         """Build the default request headers.
 
         Returns:
@@ -147,14 +154,14 @@ class MembraneClient:
         Raises:
             MembraneClientError: subclass as appropriate.
         """
-        resp = self._call(
-            self._client.post,
+        resp = self.__call(
+            self.__client.post,
             f"{self.base_url}/store",
             json={"fragment": fragment_payload, "is_primary": is_primary},
-            headers=self._headers,
+            headers=self.__headers,
         )
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def retrieve(self, content_hash: str) -> dict[str, Any] | None:
@@ -174,14 +181,14 @@ class MembraneClient:
             MembraneCorruptPayloadError: When the server reports
                 ``"corrupt": True`` for the requested hash.
         """
-        resp = self._call(
-            self._client.get,
+        resp = self.__call(
+            self.__client.get,
             f"{self.base_url}/retrieve",
             params={"content_hash": content_hash},
-            headers=self._headers,
+            headers=self.__headers,
         )
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         body = resp.json()
         if isinstance(body, dict) and body.get("corrupt"):
             raise MembraneCorruptPayloadError(f"corrupt payload for content_hash={content_hash}")
@@ -193,35 +200,51 @@ class MembraneClient:
         Returns:
             dict: ``{"node_id": ..., "digest": {...}}``.
         """
-        resp = self._call(self._client.get, f"{self.base_url}/inventory", headers=self._headers)
+        resp = self.__call(self.__client.get, f"{self.base_url}/inventory", headers=self.__headers)
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def peers(self) -> dict[str, Any]:
-        """Call ``GET /peers``."""
-        resp = self._call(self._client.get, f"{self.base_url}/peers", headers=self._headers)
+        """Call ``GET /peers``.
+
+        Returns:
+            dict[str, Any]: The node's peer list.
+        """
+        resp = self.__call(self.__client.get, f"{self.base_url}/peers", headers=self.__headers)
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def heartbeat(self) -> dict[str, Any]:
-        """Call ``GET /heartbeat``."""
-        resp = self._call(self._client.get, f"{self.base_url}/heartbeat", headers=self._headers)
+        """Call ``GET /heartbeat``.
+
+        Returns:
+            dict[str, Any]: The node's health and load snapshot.
+        """
+        resp = self.__call(self.__client.get, f"{self.base_url}/heartbeat", headers=self.__headers)
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def prefill(self, prompt_tokens: list[int], model_id: str = "default") -> dict[str, Any]:
-        """Call ``POST /prefill``."""
-        resp = self._call(
-            self._client.post,
+        """Call ``POST /prefill``.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            dict[str, Any]: The created fragments.
+        """
+        resp = self.__call(
+            self.__client.post,
             f"{self.base_url}/prefill",
             json={"prompt_tokens": prompt_tokens, "model_id": model_id},
-            headers=self._headers,
+            headers=self.__headers,
         )
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def metrics(self) -> str:
@@ -230,26 +253,45 @@ class MembraneClient:
         Returns:
             str: Prometheus text exposition.
         """
-        resp = self._call(self._client.get, f"{self.base_url}/metrics", headers=self._headers)
+        resp = self.__call(self.__client.get, f"{self.base_url}/metrics", headers=self.__headers)
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         return resp.text
 
-    def _call(self, method: Any, *args: Any, **kwargs: Any) -> Any:
-        """Issue a request, translating transport failures."""
+    def __call(self, method: Any, *args: Any, **kwargs: Any) -> Any:
+        """Issue a request, translating transport failures.
+
+        Args:
+            method: Bound HTTP client method (``get``/``post``).
+            *args: Positional arguments for ``method``.
+            **kwargs: Keyword arguments for ``method``.
+
+        Returns:
+            Any: The HTTP response.
+        """
         try:
             return method(*args, **kwargs)
         except httpx.TransportError as exc:
-            raise _connection_error(self.base_url, exc) from exc
+            raise connection_error(self.base_url, exc) from exc
 
     def close(self) -> None:
         """Close the underlying :class:`httpx.Client`."""
-        self._client.close()
+        self.__client.close()
 
     def __enter__(self) -> MembraneClient:
+        """Return the client for use in a ``with`` block.
+
+        Returns:
+            MembraneClient: The client for use in a ``with`` block.
+        """
         return self
 
     def __exit__(self, *exc: object) -> None:
+        """Close the client when the ``with`` block exits.
+
+        Args:
+            *exc: Exception info from the ``with`` block (ignored).
+        """
         self.close()
 
 
@@ -275,67 +317,108 @@ class AsyncMembraneClient:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
-        self._client = client or httpx.AsyncClient(timeout=timeout)
+        self.__client = client or httpx.AsyncClient(timeout=timeout)
 
     @property
-    def _headers(self) -> dict[str, str]:
+    def __headers(self) -> dict[str, str]:
         """Build the default request headers."""
         if self.api_key:
             return {"authorization": f"Bearer {self.api_key}"}
         return {}
 
     async def store(self, fragment_payload: dict[str, Any], is_primary: bool = False) -> dict[str, Any]:
-        resp = await self._acall(
-            self._client.post,
+        """Call ``POST /store``.
+
+        Args:
+            fragment_payload: The :class:`FragmentPayload` body
+                (``serialization.to_dict`` round-trip).
+            is_primary: Whether this node owns the fragment's primary copy.
+
+        Returns:
+            dict[str, Any]: The server's response body.
+        """
+        resp = await self.__acall(
+            self.__client.post,
             f"{self.base_url}/store",
             json={"fragment": fragment_payload, "is_primary": is_primary},
-            headers=self._headers,
+            headers=self.__headers,
         )
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     async def retrieve(self, content_hash: str) -> dict[str, Any] | None:
-        resp = await self._acall(
-            self._client.get,
+        """Call ``GET /retrieve?content_hash=...``.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            dict[str, Any] | None: The response body, or ``None`` when absent.
+        """
+        resp = await self.__acall(
+            self.__client.get,
             f"{self.base_url}/retrieve",
             params={"content_hash": content_hash},
-            headers=self._headers,
+            headers=self.__headers,
         )
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         body = resp.json()
         if isinstance(body, dict) and body.get("corrupt"):
             raise MembraneCorruptPayloadError(f"corrupt payload for content_hash={content_hash}")
         return body
 
     async def prefill(self, prompt_tokens: list[int], model_id: str = "default") -> dict[str, Any]:
-        resp = await self._acall(
-            self._client.post,
+        """Call ``POST /prefill``.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            dict[str, Any]: The created fragments.
+        """
+        resp = await self.__acall(
+            self.__client.post,
             f"{self.base_url}/prefill",
             json={"prompt_tokens": prompt_tokens, "model_id": model_id},
-            headers=self._headers,
+            headers=self.__headers,
         )
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     async def inventory(self) -> dict[str, Any]:
-        resp = await self._acall(self._client.get, f"{self.base_url}/inventory", headers=self._headers)
+        """Call ``GET /inventory``.
+
+        Returns:
+            dict[str, Any]: The node's inventory digest.
+        """
+        resp = await self.__acall(self.__client.get, f"{self.base_url}/inventory", headers=self.__headers)
         if resp.status_code >= 400:
-            _raise_for_status(resp.status_code, resp.text)
+            raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
-    async def _acall(self, method: Any, *args: Any, **kwargs: Any) -> Any:
-        """Issue a request, translating transport failures."""
+    async def __acall(self, method: Any, *args: Any, **kwargs: Any) -> Any:
+        """Issue a request, translating transport failures.
+
+        Args:
+            method: Bound async HTTP client method (``get``/``post``).
+            *args: Positional arguments for ``method``.
+            **kwargs: Keyword arguments for ``method``.
+
+        Returns:
+            Any: The HTTP response.
+        """
         try:
             return await method(*args, **kwargs)
         except httpx.TransportError as exc:
-            raise _connection_error(self.base_url, exc) from exc
+            raise connection_error(self.base_url, exc) from exc
 
     async def close(self) -> None:
         """Close the underlying :class:`httpx.AsyncClient`."""
-        await self._client.aclose()
+        await self.__client.aclose()
 
 
 __all__ = [

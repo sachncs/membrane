@@ -1,30 +1,39 @@
 # syntax=docker/dockerfile:1
-# Membrane runtime image.
+# Membrane runtime image (Python 3.14).
 #
-# Two stages: the builder compiles a wheel from the full source tree and
-# installs it with its dependencies into a virtualenv; the runtime stage
-# copies only that virtualenv. Installing a wheel (not the source tree)
-# is what makes `membrane` importable from any working directory.
+# The builder installs the exact locked dependency set (uv.lock) and the
+# project itself, non-editable and byte-compiled, into /opt/venv. The
+# runtime stage copies only that virtualenv onto a slim base without
+# compilers, pip, or curl.
 #
-# The base image is pinned by digest for reproducibility; Dependabot
-# (docker ecosystem) proposes digest bumps.
-ARG PYTHON_IMAGE=python:3.12-slim@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d
+# Both base images are pinned by digest; Dependabot (docker ecosystem)
+# proposes bumps.
+ARG PYTHON_IMAGE=python:3.14-slim@sha256:c3e521df8b2b498a7a682e7e18676771cb80c6b75b8699af886b2d554ce40151
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711
+
+FROM ${UV_IMAGE} AS uv
+
 
 FROM ${PYTHON_IMAGE} AS builder
 
-ENV PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-RUN python -m venv /opt/venv
-ENV PATH=/opt/venv/bin:$PATH
+COPY --from=uv /uv /usr/local/bin/uv
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_PYTHON=/usr/local/bin/python3.14 \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 WORKDIR /src
-COPY pyproject.toml README.md LICENSE ./
+# Dependencies first: this layer is reused until uv.lock changes.
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --extra server --no-install-project
+COPY README.md LICENSE ./
 COPY membrane/ membrane/
-RUN pip install --upgrade pip build \
- && python -m build --wheel --outdir /dist \
- && pip install "$(ls /dist/membrane-*.whl)[server]" \
- && pip uninstall -y build pip
+# uv caches a local project's wheel until pyproject.toml changes, so
+# rebuild the project itself from the copied source every time.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --extra server --no-editable --reinstall-package membrane
 
 
 FROM ${PYTHON_IMAGE}
@@ -39,16 +48,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH=/opt/venv/bin:$PATH \
     MEMBRANE_HOST=0.0.0.0 \
     MEMBRANE_PORT=8080 \
-    MEMBRANE_DAEMON=true
+    MEMBRANE_DAEMON=true \
+    MEMBRANE_LOG_FORMAT=json
 
-# tini reaps zombies and forwards SIGTERM so `membrane serve` can shut
-# down gracefully; curl backs the HEALTHCHECK.
-# Apply Debian security updates, and drop the base image's pip: the
-# runtime never installs packages, and pip's vendored libraries are
-# what scanners flag.
+# tini reaps zombies and forwards SIGTERM so `membrane serve` drains
+# gracefully. Apply Debian security updates, and drop the base image's
+# pip: the runtime never installs packages, and pip's vendored libraries
+# are what scanners flag.
 RUN apt-get update \
  && apt-get upgrade -y --no-install-recommends \
- && apt-get install -y --no-install-recommends curl tini ca-certificates \
+ && apt-get install -y --no-install-recommends tini ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && rm -rf /usr/local/lib/python3*/site-packages/pip /usr/local/lib/python3*/site-packages/pip-* /usr/local/bin/pip*
 
@@ -67,12 +76,17 @@ EXPOSE 8080
 # KV bytes across restarts (pair with MEMBRANE_REDIS_URL for metadata).
 VOLUME ["/var/lib/membrane"]
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -fsS "http://localhost:${MEMBRANE_PORT}/livez" || exit 1
+# Uses the same MEMBRANE_* settings as the server, including mTLS.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python", "-m", "membrane.healthcheck"]
+
+# SIGTERM drains the node (MEMBRANE_DRAIN_TIMEOUT, default 30 s): give the
+# container a longer stop timeout, e.g. `docker stop -t 40`.
+STOPSIGNAL SIGTERM
 
 # Configuration comes from MEMBRANE_* environment variables (see
 # `membrane serve --help`). The server refuses to start on 0.0.0.0
-# without authentication: mount a keyfile and set
+# without authentication: mount a keyfile (mode 0600 or 0640) and set
 # MEMBRANE_API_KEY_FILE, configure mTLS, or (development only) set
 # MEMBRANE_ALLOW_UNAUTHENTICATED=true.
 ENTRYPOINT ["/usr/bin/tini", "--"]

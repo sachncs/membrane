@@ -1,7 +1,5 @@
 """Tests for the wire_v3 async client + retry + circuit breaker (Phase 3.3.5-3.3.7)."""
 
-from __future__ import annotations
-
 import asyncio
 import time
 

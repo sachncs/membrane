@@ -8,6 +8,8 @@ Commands:
 * ``membrane cluster-status`` — show cluster membership (commands/cluster.py).
 * ``membrane llm-status`` — show LLM backend status (commands/llm.py).
 * ``membrane config`` — show static configuration (commands/config.py).
+* ``membrane keys generate`` — create an API key and its hashed keyfile
+  line (commands/keys.py).
 
 Example::
 
@@ -18,11 +20,13 @@ The CLI is built on :mod:`typer` (commands and option parsing) and
 :mod:`rich` (TUI rendering).
 """
 
-from __future__ import annotations
+import os
 
 import typer
 
-from membrane.cli.commands import admin, client, cluster, config, dashboard, llm, serve
+from membrane.cli import output
+from membrane.cli.commands import admin, client, cluster, config, dashboard, keys, llm, serve
+from membrane.logging import configure_logging
 
 app = typer.Typer(
     name="membrane",
@@ -31,21 +35,48 @@ app = typer.Typer(
 )
 
 
-def _version_callback(value: bool) -> None:
+def ensure_cli_logging() -> None:
+    """Route CLI output and diagnostics through logging.
+
+    Honours ``MEMBRANE_LOG_LEVEL`` and ``MEMBRANE_LOG_FORMAT`` (``json``
+    for one JSON object per diagnostic line); ``membrane serve``
+    reconfigures from its own flags.
+    """
+    configure_logging(
+        level=os.environ.get("MEMBRANE_LOG_LEVEL", "INFO"),
+        json_mode=os.environ.get("MEMBRANE_LOG_FORMAT", "text") == "json",
+    )
+
+
+def version_callback(value: bool) -> None:
+    """Show the version and exit when ``--version`` is given.
+
+    Args:
+        value: Whether the flag was passed.
+
+    Raises:
+        typer.Exit: After printing the version.
+    """
     if value:
+        ensure_cli_logging()
         from membrane import __version__
 
-        typer.echo(f"membrane {__version__}")
+        output.result(f"membrane {__version__}")
         raise typer.Exit()
 
 
 @app.callback()
-def _root(
+def root(
     version: bool = typer.Option(
-        False, "--version", "-V", callback=_version_callback, is_eager=True, help="Show the version and exit."
+        False, "--version", "-V", callback=version_callback, is_eager=True, help="Show the version and exit."
     ),
 ) -> None:
-    """Membrane — Global Contextual Memory Fabric CLI."""
+    """Membrane — Global Contextual Memory Fabric CLI.
+
+    Args:
+        version: Show the version and exit.
+    """
+    ensure_cli_logging()
 
 
 # Register subcommands. Each is a typer.command function from
@@ -59,6 +90,7 @@ app.command(name="config", help="Show Membrane configuration and environment.")(
 # as a plain command would hide every subcommand.
 app.add_typer(admin.admin_app, name="admin", help="Admin operations against a running Membrane node.")
 app.add_typer(client.client_app, name="client", help="One-off interactions with a running Membrane server.")
+app.add_typer(keys.keys_app, name="keys", help="Create API keys for the --api-key-file keyfile.")
 
 
 def main() -> None:

@@ -15,13 +15,11 @@ and stable across processes that have observed the same set
 of pairs in the same order.
 """
 
-from __future__ import annotations
-
 import hashlib
 from dataclasses import dataclass
 
 
-def _leaf_hash(payload_hash: str, owner_node_id: str) -> bytes:
+def leaf_hash(payload_hash: str, owner_node_id: str) -> bytes:
     """Compute the leaf hash for a single inventory entry.
 
     Args:
@@ -38,7 +36,7 @@ def _leaf_hash(payload_hash: str, owner_node_id: str) -> bytes:
     return h.digest()
 
 
-def _internal_hash(left: bytes, right: bytes) -> bytes:
+def internal_hash(left: bytes, right: bytes) -> bytes:
     """Internal node hash ``sha256(left || right)``.
 
     Args:
@@ -80,16 +78,16 @@ class MerkleTree:
             MerkleTree: The built tree.
         """
         if not items:
-            return cls(items=(), root=_internal_hash(b"", b""))
+            return cls(items=(), root=internal_hash(b"", b""))
         ordered = tuple(sorted((str(h), str(n)) for h, n in items))
-        levels: list[list[bytes]] = [[_leaf_hash(payload_hash, owner) for payload_hash, owner in ordered]]
+        levels: list[list[bytes]] = [[leaf_hash(payload_hash, owner) for payload_hash, owner in ordered]]
         while len(levels[-1]) > 1:
             current = levels[-1]
             nxt: list[bytes] = []
             for i in range(0, len(current), 2):
                 left = current[i]
                 right = current[i + 1] if i + 1 < len(current) else current[i]
-                nxt.append(_internal_hash(left, right))
+                nxt.append(internal_hash(left, right))
             levels.append(nxt)
         return cls(items=ordered, root=levels[-1][0])
 

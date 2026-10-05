@@ -8,10 +8,13 @@ them, isolates tenants, and protects data at rest.
 | Concern | Module | Key names |
 |---------|--------|-----------|
 | Authentication protocol | `membrane.auth` | `Authenticator`, `AuthContext`, `require_scope` |
-| API keys | `membrane.auth.apikey` | `APIKeyAuthenticator` |
+| API keys | `membrane.auth.apikey` | `APIKeyAuthenticator`, `generate_key`, `hash_key` |
 | mTLS | `membrane.auth.mtls`, `membrane.transport.tls`, `membrane.transport.tls_protocol` | `MTLSAuthenticator`, `MTLSConfig`, `PeerCertH11Protocol` |
 | Route scopes | `membrane.transport.authz` | `ROUTE_SCOPES`, `enforce_route_scope` |
 | Tenant isolation | `membrane.security.tenant` | `TenantAuthorizer` |
+| Secret file permissions | `membrane.security.files` | `require_private_file` |
+| Backpressure and rate limits | `membrane.transport.limits` | `TransportLimits`, `ConcurrencyLimitMiddleware`, `RateLimitMiddleware` |
+| Request IDs | `membrane.transport.request_id` | `RequestIdMiddleware` |
 | Outbound URL guard (SSRF) | `membrane.security.url_allowlist` | `URLAllowlist`, `validate_outbound_url` |
 | Encryption at rest | `membrane.security.encryption`, `membrane.content_store` | `encrypt_payload`, `FilesystemBlob`, `DecryptError` |
 | Key rotation | `membrane.security.key_rotation` | versioned master keys |
@@ -27,8 +30,17 @@ passed explicitly):
 * **API key**: `APIKeyAuthenticator` (`membrane.auth.apikey`),
   enabled with `--api-key-file`. Clients send
   `Authorization: Bearer <key>`. Keyfile lines are
-  `<key>:<subject>:<scope,...>`; lines with an empty key or subject
-  are ignored, because an empty subject would bypass the tenant check.
+  `sha256:<hex digest of the key>:<subject>:<scope,...>`, so a leaked
+  keyfile holds no usable credentials. `membrane keys generate
+  --subject S --scope read` prints a new key and its line. Plaintext
+  `<key>:<subject>:<scope,...>` lines are still accepted, with a
+  warning. Only digests are kept in memory, and a presented key is
+  compared against them in constant time (`hmac.compare_digest`).
+  Lines with an empty subject are ignored, because an empty subject
+  would bypass the tenant check.
+* **Plugin**: `--authenticator NAME --auth-config PATH` loads an
+  authenticator registered under the `membrane.authenticators` entry
+  point ([Plugins](plugins.md)).
 * **mTLS**: `MTLSConfig` (`membrane.transport.tls`), enabled with
   `--tls-cert/--tls-key/--tls-ca`. Every connection must present a
   certificate signed by the CA bundle, and `MTLSAuthenticator` admits
@@ -42,6 +54,21 @@ passed explicitly):
 Authentication failures return `401` with `WWW-Authenticate: Bearer`;
 a valid caller without the required scope gets `403`.
 
+### Secret files
+
+The server refuses to start when the API keyfile, the TLS private key,
+the `--auth-config` file, or the data key can be read by other users
+or written by anyone but their owner. The error tells you to run
+`chmod 600`. Group read is allowed for the Kubernetes `fsGroup`
+pattern (secret volumes mounted 0440); it is logged when the file's
+group is not one of the server's own groups.
+
+### API schema
+
+FastAPI's interactive docs (`/docs`, `/redoc`) and `/openapi.json` are
+disabled, because FastAPI serves them outside route authentication.
+`--enable-api-docs` serves `/openapi.json` behind the `read` scope.
+
 ## Authorisation
 
 `membrane.transport.authz.ROUTE_SCOPES` maps every route to a scope,
@@ -50,7 +77,7 @@ and `enforce_route_scope` runs it at the top of every handler:
 | Scope | Routes |
 |-------|--------|
 | public | `GET /livez`, `GET /readyz` |
-| `read` | `GET /retrieve`, `/inventory`, `/peers`, `/heartbeat`, `/metrics`, `/metrics.json` |
+| `read` | `GET /retrieve`, `/inventory`, `/peers`, `/heartbeat`, `/metrics`, `/metrics.json`, `/openapi.json` (with `--enable-api-docs`) |
 | `write` | `POST /store`, `/replicate`, `/prefill`, `/sync`, `/gossip`, `/join`, `/leave` |
 | `admin` | `POST /delete`, `/tombstone`, `/purge`, `/verify`, and everything under `/admin/` |
 
@@ -84,6 +111,24 @@ the second tenant's write succeeds but its reads miss, exactly as if the
 fragment were absent. Nothing is exposed across tenants, but the second
 tenant gets no cache benefit for that content. Tenant-scoped fragment
 keys are planned.
+
+## Abuse and overload protection
+
+* **Backpressure.** At most `--max-concurrency` requests (default 64)
+  are handled at once. A request that cannot get a slot within 100 ms
+  gets `503` with `Retry-After: 1`, so a saturated node sheds load
+  instead of queueing it without bound.
+* **Rate limiting.** `--rate-limit R` (requests per second) and
+  `--rate-limit-burst B` apply a token bucket per credential: the
+  bearer key's digest, or the client address for unauthenticated
+  callers. A caller over its limit gets `429` with `Retry-After`.
+* **Connections.** `--max-connections` caps open connections, and
+  `--keep-alive-timeout` closes idle keep-alive connections.
+
+Probes (`/livez`, `/readyz`) bypass these limits. Rejections are
+counted in `membrane_requests_rejected_total{reason}`. Every response
+carries an `X-Request-ID` (UUIDv7, or the caller's own if well formed),
+and every log line written while handling the request includes it.
 
 ## SSRF / outbound URL guard
 
@@ -119,7 +164,8 @@ is encrypted with AES-256-GCM under a key derived from the node's
 master key and the blob's content hash, and written atomically
 (temp file, `fsync`, rename). The master key comes from
 `--data-key-file` or is generated once into `<data-dir>/master.key`
-with mode 0600. Keep the key outside the volume in production; a
+with mode 0600; a key file other users can read is refused. Keep the
+key outside the volume in production; a
 snapshot that contains both the blobs and the key protects nothing.
 
 A blob that fails authentication (tampering, or the wrong key) is

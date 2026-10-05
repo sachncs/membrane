@@ -11,8 +11,6 @@ A :class:`ResumableReceiver` verifies each chunk on arrival
 and surfaces the SHA-256 mismatch as :class:`membrane.errors.CorruptPayloadError`.
 """
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass, field

@@ -16,8 +16,6 @@ that lets callers purge every identity variant when a fragment is
 removed.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from dataclasses import dataclass
@@ -165,12 +163,23 @@ class IdentityIndex:
             self.reverse.clear()
 
     def __len__(self) -> int:
-        """Return the number of bound identities."""
+        """Return the number of bound identities.
+
+        Returns:
+            int: The number of bound identities.
+        """
         with self.lock:
             return len(self.forward)
 
     def __contains__(self, identity: object) -> bool:
-        """Dunder ``__contains__`` for ``identity in index`` checks."""
+        """Dunder ``__contains__`` for ``identity in index`` checks.
+
+        Args:
+            identity: The full fingerprint.
+
+        Returns:
+            bool: Whether ``identity`` is bound.
+        """
         if not isinstance(identity, PayloadIdentity):
             return False
         with self.lock:

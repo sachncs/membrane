@@ -14,8 +14,6 @@ serving path. This module ships:
   paths without inflating the call sites (3.5.7).
 """
 
-from __future__ import annotations
-
 import logging
 import random
 import threading
@@ -79,8 +77,7 @@ class HotTier:
 
 
 class WarmTier:
-    """Warm tier (e.g., a second FilesystemBlob instance on warm
-    spinning disks)."""
+    """Warm tier (e.g., a second FilesystemBlob on slower disks)."""
 
     def name(self) -> str:
         """Return the human-readable tier name.
@@ -92,7 +89,7 @@ class WarmTier:
 
 
 class ColdTier:
-    """Cold tier (e.g., LMCache or an S3-compatible object store)."""
+    """Cold tier (e.g., an S3-compatible object store)."""
 
     def __init__(self, storage: Any | None = None) -> None:
         """Initialize the cold tier.
@@ -182,7 +179,7 @@ class Bandit:
         """
         self.arms = list(arms)
         self.epsilon = epsilon
-        self._lock = threading.RLock()
+        self.lock = threading.RLock()
 
     def select_arm(self) -> BanditArm:
         """Return an arm via ε-greedy selection.
@@ -190,10 +187,10 @@ class Bandit:
         Returns:
             BanditArm: The selected arm.
         """
-        with self._lock:
+        with self.lock:
             if random.random() < self.epsilon:
                 return random.choice(self.arms)
-            return max(self.arms, key=lambda arm: self._estimated_reward(arm))
+            return max(self.arms, key=lambda arm: self.estimated_reward(arm))
 
     def update(self, arm: BanditArm, reward: float) -> None:
         """Record reward for ``arm`` and update estimated reward.
@@ -203,13 +200,13 @@ class Bandit:
             reward: Observed reward (e.g., the hit rate observed
                 at the routed store / retrieve op).
         """
-        with self._lock:
+        with self.lock:
             arm.pulls += 1
             arm.reward_sum += reward
             # Recompute the weight as the running average.
             arm.weight = arm.reward_sum / max(1, arm.pulls)
 
-    def _estimated_reward(self, arm: BanditArm) -> float:
+    def estimated_reward(self, arm: BanditArm) -> float:
         """Return the running average reward for ``arm``.
 
         Args:

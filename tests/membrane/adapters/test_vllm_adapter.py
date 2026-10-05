@@ -1,7 +1,5 @@
 """Tests for the vLLM KVConnector adapter (Phase 5)."""
 
-from __future__ import annotations
-
 from typing import Any
 
 import pytest
@@ -127,7 +125,7 @@ class TestMembraneVLLMConnector:
         kv_cache = _SplitFakeTensor(b"k0k0v0v0")
         connector.save_kv(0, [kv_cache], None)
         assert captured == [0, 0]
-        assert 0 in connector.client._by_handle.get("mem:0", {})
+        assert 0 in connector.client.by_handle.get("mem:0", {})
 
     def test_make_connector_returns_vllm_subclass(self):
         if VLLM_AVAILABLE:

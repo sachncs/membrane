@@ -166,6 +166,10 @@ class Redis:
 
         Other nodes may still hold the fragment, so the shared record
         is left to expire with its TTL.
+
+        Args:
+            content_hash: Content hash of the fragment.
+            node_id: Node identifier.
         """
         self.client.srem(self.key_for(f"node:{node_id}:fragments"), content_hash)
 
@@ -273,7 +277,7 @@ class Redis:
         """
         try:
             return cast(bool, self.client.ping())
-        except (self.RedisError, OSError):
+        except self.RedisError, OSError:
             # Connection refused, timeout, or any other Redis/network
             # failure translates to "not reachable" from the caller's
             # perspective.
@@ -372,3 +376,8 @@ class Redis:
             hlc=int(data.get("hlc") or 0),
             fingerprint_compat=data.get("fingerprint_compat", ""),
         )
+
+
+__all__ = [
+    "Redis",
+]

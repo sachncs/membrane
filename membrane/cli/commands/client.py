@@ -17,14 +17,12 @@ state or perform retries; operators use the Python client
 for advanced flows.
 """
 
-from __future__ import annotations
-
 import json
-import sys
 from collections.abc import Sequence  # noqa: F401
 
 import typer
 
+from membrane.cli import output
 from membrane.client import MembraneClient, MembraneClientError
 
 client_app = typer.Typer(
@@ -34,7 +32,7 @@ client_app = typer.Typer(
 )
 
 
-def _build_client(base_url: str, api_key: str) -> MembraneClient:
+def build_client(base_url: str, api_key: str) -> MembraneClient:
     """Construct a MembraneClient from CLI flags.
 
     Args:
@@ -53,17 +51,14 @@ def _build_client(base_url: str, api_key: str) -> MembraneClient:
     )
 
 
-def _emit(payload: dict | list | None) -> None:
+def emit(payload: dict | list | None) -> None:
     """Pretty-print ``payload`` to stdout as JSON.
 
     Args:
         payload: The result to print; ``None`` prints an empty
             object.
     """
-    if payload is None:
-        payload = {}
-    json.dump(payload, sys.stdout, indent=2, sort_keys=True)
-    sys.stdout.write("\n")
+    output.result_json({} if payload is None else payload)
 
 
 @client_app.command("store")
@@ -77,13 +72,20 @@ def client_store(
     api_key: str = typer.Option("", "--api-key"),
     is_primary: bool = typer.Option(False, "--primary/--no-primary"),
 ) -> None:
-    """POST a fragment to ``/store``."""
+    """POST a fragment to ``/store``.
+
+    Args:
+        body: Wire-format fragment dict as a JSON string.
+        base_url: Base URL of the Membrane node.
+        api_key: Bearer API key (optional).
+        is_primary: Whether this node owns the fragment's primary copy.
+    """
     import httpx
 
     try:
         payload = json.loads(body)
     except json.JSONDecodeError as exc:
-        typer.echo(f"error: invalid JSON: {exc}", err=True)
+        output.error(f"error: invalid JSON: {exc}")
         raise typer.Exit(code=1) from None
 
     client = MembraneClient(
@@ -94,9 +96,9 @@ def client_store(
     try:
         result = client.store(payload, is_primary=is_primary)
     except MembraneClientError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        output.error(f"error: {exc}")
         raise typer.Exit(code=1) from None
-    _emit(result)
+    emit(result)
 
 
 @client_app.command("retrieve")
@@ -105,7 +107,13 @@ def client_retrieve(
     base_url: str = typer.Option("http://localhost:8080", "--base-url"),
     api_key: str = typer.Option("", "--api-key"),
 ) -> None:
-    """GET a fragment from ``/retrieve``."""
+    """GET a fragment from ``/retrieve``.
+
+    Args:
+        content_hash: Content hash to retrieve.
+        base_url: Base URL of the Membrane node.
+        api_key: Bearer API key (optional).
+    """
     import httpx
 
     client = MembraneClient(
@@ -116,9 +124,9 @@ def client_retrieve(
     try:
         result = client.retrieve(content_hash)
     except MembraneClientError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        output.error(f"error: {exc}")
         raise typer.Exit(code=1) from None
-    _emit(result)
+    emit(result)
 
 
 @client_app.command("inventory")
@@ -126,7 +134,12 @@ def client_inventory(
     base_url: str = typer.Option("http://localhost:8080", "--base-url"),
     api_key: str = typer.Option("", "--api-key"),
 ) -> None:
-    """GET the inventory digest from ``/inventory``."""
+    """GET the inventory digest from ``/inventory``.
+
+    Args:
+        base_url: Base URL of the Membrane node.
+        api_key: Bearer API key (optional).
+    """
     import httpx
 
     client = MembraneClient(
@@ -137,9 +150,9 @@ def client_inventory(
     try:
         result = client.inventory()
     except MembraneClientError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        output.error(f"error: {exc}")
         raise typer.Exit(code=1) from None
-    _emit(result)
+    emit(result)
 
 
 @client_app.command("prefill")
@@ -153,7 +166,14 @@ def client_prefill(
     base_url: str = typer.Option("http://localhost:8080", "--base-url"),
     api_key: str = typer.Option("", "--api-key"),
 ) -> None:
-    """POST a prefill request to ``/prefill``."""
+    """POST a prefill request to ``/prefill``.
+
+    Args:
+        prompt_tokens: Whitespace-separated token ids (e.g. '1 2 3 4 5').
+        model_id: Model identifier.
+        base_url: Base URL of the Membrane node.
+        api_key: Bearer API key (optional).
+    """
     import httpx
 
     client = MembraneClient(
@@ -165,9 +185,9 @@ def client_prefill(
         tokens = [int(t) for t in prompt_tokens.split()]
         result = client.prefill(tokens, model_id=model_id)
     except (ValueError, MembraneClientError) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        output.error(f"error: {exc}")
         raise typer.Exit(code=1) from None
-    _emit(result)
+    emit(result)
 
 
 def main() -> None:

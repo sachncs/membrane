@@ -6,8 +6,6 @@ over a token chunk. The earlier code had five copies of this
 function (one per backend).
 """
 
-from __future__ import annotations
-
 import hashlib
 from collections.abc import Sequence
 
@@ -23,3 +21,8 @@ def token_hash(tokens: Sequence[int]) -> str:
     """
     payload = ",".join(str(t) for t in tokens)
     return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
+
+
+__all__ = [
+    "token_hash",
+]

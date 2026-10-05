@@ -116,8 +116,7 @@ class Semantics:
         query_embedding: Sequence[float],
         k: int = 5,
     ) -> list[Fragment]:
-        """Return the k fragments whose payload hash most closely
-        resembles ``query_embedding``.
+        """Return the ``k`` fragments most similar to ``query_embedding``.
 
         Cosine similarity is used as the metric. The function
         sorts all fragments by descending similarity and returns
@@ -181,7 +180,11 @@ class SemanticCluster:
     """
 
     def __init__(self, semantic_index: Semantics | None = None) -> None:
-        """Initialize the clusterer with an optional semantic index."""
+        """Initialize the clusterer with an optional semantic index.
+
+        Args:
+            semantic_index: Semantic index used for nearest-neighbour lookups.
+        """
         self.semantic_index = semantic_index or Semantics()
 
     def cluster(
@@ -227,6 +230,13 @@ def cosine_similarity(a: tuple[float, ...], b: tuple[float, ...]) -> float:
     Returns 0.0 when either vector has zero norm. Retained for
     API compatibility with callers that supply embeddings
     out-of-band; ``Fragment`` itself no longer carries one.
+
+    Args:
+        a: First vector.
+        b: Second vector.
+
+    Returns:
+        float: Cosine similarity between two embedding tuples.
     """
     dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = sum(x * x for x in a) ** 0.5

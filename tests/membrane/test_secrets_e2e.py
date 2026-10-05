@@ -13,8 +13,6 @@ a new cluster:
   the encrypted stores.
 """
 
-from __future__ import annotations
-
 import os
 
 import pytest
@@ -78,7 +76,7 @@ class TestSecretProviderE2E:
         store = EncryptedInProcessBytes(tenant_id="public", key_provider=provider)
         store.put("k", b"v1-secret")
         # The encrypted blob does not contain the plaintext.
-        blob = store._store["k"]  # type: ignore[attr-defined]
+        blob = store.store["k"]  # type: ignore[attr-defined]
         assert b"v1-secret" not in blob
         # The decrypting get returns the plaintext.
         assert store.get("k") == b"v1-secret"

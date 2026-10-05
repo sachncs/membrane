@@ -36,8 +36,6 @@ Design rationale:
       eviction and promotion decisions.
 """
 
-from __future__ import annotations
-
 import logging
 
 logger = logging.getLogger(__name__)
@@ -53,10 +51,10 @@ from membrane.identity import PayloadIdentity
 #: :class:`~membrane.server.Server` may reset the level according
 #: to the cluster's :attr:`ClusterConfig.default_consistency`
 #: at the moment of :func:`op_store`.
-_CONSISTENCY_LEVELS: tuple[str, ...] = ("strong", "quorum", "eventual")
+CONSISTENCY_LEVELS: tuple[str, ...] = ("strong", "quorum", "eventual")
 
 
-def _validate_tenant_id(tenant_id: str) -> None:
+def validate_tenant_id(tenant_id: str) -> None:
     """Validate a tenant id at construction time.
 
     Args:
@@ -76,7 +74,7 @@ def _validate_tenant_id(tenant_id: str) -> None:
         raise ValueError(f"tenant_id contains forbidden character in {tenant_id!r}")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Fragment:
     """Immutable content-addressed fragment.
 
@@ -178,9 +176,9 @@ class Fragment:
             raise ValueError(f"Fragment reuse_score must be in [0, 1], got {self.reuse_score}")
         if self.version_id < 1:
             raise ValueError(f"Fragment version_id must be >= 1, got {self.version_id}")
-        if self.consistency not in _CONSISTENCY_LEVELS:
-            raise ValueError(f"Fragment consistency must be one of {_CONSISTENCY_LEVELS}, got {self.consistency!r}")
-        _validate_tenant_id(self.tenant_id)
+        if self.consistency not in CONSISTENCY_LEVELS:
+            raise ValueError(f"Fragment consistency must be one of {CONSISTENCY_LEVELS}, got {self.consistency!r}")
+        validate_tenant_id(self.tenant_id)
         if self.hlc < 0:
             raise ValueError(f"Fragment hlc must be >= 0, got {self.hlc}")
         # ``fingerprint_compat`` is either the empty string
@@ -213,8 +211,8 @@ class Fragment:
         Returns:
             Fragment: New instance with the updated field.
         """
-        if level not in _CONSISTENCY_LEVELS:
-            raise ValueError(f"Fragment consistency must be one of {_CONSISTENCY_LEVELS}, got {level!r}")
+        if level not in CONSISTENCY_LEVELS:
+            raise ValueError(f"Fragment consistency must be one of {CONSISTENCY_LEVELS}, got {level!r}")
         return Fragment(
             identity=self.identity,
             payload_ref=self.payload_ref,

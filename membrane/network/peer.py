@@ -18,24 +18,24 @@ Thread safety:
     :class:`HTTPTransport` handles concurrent sockets internally.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import ssl
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from membrane.errors import NetworkError
 from membrane.fragment import Fragment
-from membrane.serialization import from_dict, to_dict
+from membrane.serialization import JsonDict, from_dict, to_dict
 
 logger = logging.getLogger(__name__)
 
-
-#: A JSON object (used for every Membrane wire payload).
-JsonDict = dict[str, Any]
+#: Monotonic deadline for peer requests made in the current context.
+#: Callers with a budget (e.g. the quorum fan-out) set it so retries stop
+#: once the result can no longer be used; ``None`` means no deadline.
+peer_deadline: ContextVar[float | None] = ContextVar("membrane_peer_deadline", default=None)
 
 
 @dataclass(frozen=True)
@@ -57,12 +57,16 @@ class PeerCredentials:
     ssl_context: ssl.SSLContext | None = None
 
 
-_DEFAULT_CREDENTIALS = PeerCredentials()
+DEFAULT_CREDENTIALS = PeerCredentials()
 
 
 def get_default_peer_credentials() -> PeerCredentials:
-    """Return the process-wide :class:`PeerCredentials`."""
-    return _DEFAULT_CREDENTIALS
+    """Return the process-wide :class:`PeerCredentials`.
+
+    Returns:
+        PeerCredentials: The process-wide :class:`PeerCredentials`.
+    """
+    return DEFAULT_CREDENTIALS
 
 
 def set_default_peer_credentials(credentials: PeerCredentials) -> None:
@@ -71,13 +75,24 @@ def set_default_peer_credentials(credentials: PeerCredentials) -> None:
     :class:`~membrane.server.Server` calls this at startup so every
     :class:`Peer` the cluster layer creates uses the same scheme and
     credentials.
+
+    Args:
+        credentials: Credentials to install.
     """
-    global _DEFAULT_CREDENTIALS
-    _DEFAULT_CREDENTIALS = credentials
+    global DEFAULT_CREDENTIALS
+    DEFAULT_CREDENTIALS = credentials
 
 
 def peer_url(host_port: str) -> str:
-    """Return the base URL for a bare ``host:port`` peer address."""
+    """Return the base URL for a bare ``host:port`` peer address.
+
+    Args:
+        host_port: Peer address as ``host:port`` (or a full URL, returned
+            unchanged).
+
+    Returns:
+        str: The base URL for a bare ``host:port`` peer address.
+    """
     if "://" in host_port:
         return host_port
     return f"{get_default_peer_credentials().scheme}://{host_port}"
@@ -138,11 +153,22 @@ class HTTPTransport:
     """
 
     def __init__(self, ssl_context: ssl.SSLContext | None = None) -> None:
-        self._client: Any | None = None
+        """Create the transport; the pooled HTTP client is built on first use.
+
+        Args:
+            ssl_context: Client TLS context for HTTPS peers; ``None`` uses the
+                system trust store.
+        """
+        self.__client: Any | None = None
         self.ssl_context = ssl_context
 
-    def _get_client(self) -> Any:
-        if self._client is None:
+    def __get_client(self) -> Any:
+        """Return the pooled HTTP client, creating it on first use.
+
+        Returns:
+            Any: The pooled HTTP client, creating it on first use.
+        """
+        if self.__client is None:
             try:
                 import httpx
 
@@ -150,7 +176,7 @@ class HTTPTransport:
                     max_keepalive_connections=10,
                     max_connections=100,
                 )
-                self._client = httpx.Client(
+                self.__client = httpx.Client(
                     timeout=httpx.Timeout(60.0),
                     limits=limits,
                     follow_redirects=False,
@@ -158,8 +184,8 @@ class HTTPTransport:
                 )
             except ImportError:
                 logger.warning("HTTPTransport: httpx not installed; falling back to None")
-                self._client = None
-        return self._client
+                self.__client = None
+        return self.__client
 
     def request(
         self,
@@ -169,12 +195,24 @@ class HTTPTransport:
         headers: dict[str, str],
         timeout_sec: float,
     ) -> JsonDict | None:
-        """Issue an HTTP request via the pooled client."""
+        """Issue an HTTP request via the pooled client.
+
+        Args:
+            method: HTTP method.
+            url: Full URL.
+            body: Request body bytes or ``None``.
+            headers: Request headers.
+            timeout_sec: Per-request timeout in seconds.
+
+        Returns:
+            JsonDict | None: The parsed JSON body, or ``None`` when the SSRF
+            policy rejects the URL.
+        """
         from urllib.parse import urlparse
 
         from membrane.errors import NetworkError
         from membrane.security import validate_outbound_url
-        from membrane.security.url_allowlist import SSRFError, _resolve_addresses, get_default_allowlist
+        from membrane.security.url_allowlist import SSRFError, get_default_allowlist, resolve_addresses
 
         try:
             validate_outbound_url(url)
@@ -182,7 +220,7 @@ class HTTPTransport:
             logger.warning("HTTPTransport %s %s rejected by SSRF policy: %s", method, url, exc)
             return None
 
-        client = self._get_client()
+        client = self.__get_client()
         if client is None:
             raise NetworkError("HTTPTransport: httpx not installed")
 
@@ -192,7 +230,7 @@ class HTTPTransport:
         policy = get_default_allowlist()
         if policy.block_private and parsed.hostname and not policy.is_host_allowed(parsed.hostname.lower()):
             try:
-                addresses = _resolve_addresses(parsed.hostname)
+                addresses = resolve_addresses(parsed.hostname)
             except OSError:
                 addresses = []
             if addresses:
@@ -315,37 +353,90 @@ class Peer:
         return self.request_with_retry("GET", "/heartbeat", extra_headers=self.base_headers)
 
     def get_inventory(self) -> JsonDict | None:
-        """Send ``GET /inventory`` to the peer."""
+        """Send ``GET /inventory`` to the peer.
+
+        Returns:
+            JsonDict | None: The peer's inventory digest, or ``None`` on
+            failure.
+        """
         return self.request_with_retry("GET", "/inventory")
 
     def store_fragment(self, fragment: Fragment, is_primary: bool = False) -> bool:
-        """Send ``POST /store`` with ``fragment`` and ``is_primary``."""
+        """Send ``POST /store`` with ``fragment`` and ``is_primary``.
+
+        Args:
+            fragment: The fragment.
+            is_primary: Whether this node owns the fragment's primary copy.
+
+        Returns:
+            bool: True when the peer stored the fragment.
+        """
         payload = {"fragment": to_dict(fragment), "is_primary": is_primary}
         resp = self.request_with_retry("POST", "/store", payload)
         return resp is not None and resp.get("success", False)
 
     def retrieve_fragment(self, content_hash: str) -> Fragment | None:
-        """Send ``GET /retrieve?content_hash=...``."""
+        """Send ``GET /retrieve?content_hash=...``.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            Fragment | None: The fragment, or ``None`` when absent or
+            unreachable.
+        """
         resp = self.request_with_retry("GET", f"/retrieve?content_hash={content_hash}")
         if resp and resp.get("found"):
             return from_dict(resp["fragment"])
         return None
 
     def join_cluster(self, node_id: str, host: str, port: int) -> JsonDict | None:
-        """Send ``POST /join`` to bootstrap into the cluster."""
+        """Send ``POST /join`` to bootstrap into the cluster.
+
+        Args:
+            node_id: Id of this node, sent to the peer.
+            host: Address the peer should use to reach this node.
+            port: Port the peer should use to reach this node.
+
+        Returns:
+            JsonDict | None: The join response with the seed's peers, or
+            ``None`` on failure.
+        """
         return self.request_with_retry("POST", "/join", {"node_id": node_id, "host": host, "port": port})
 
     def leave_cluster(self, node_id: str) -> bool:
-        """Send ``POST /leave`` to remove ``node_id`` from the cluster."""
+        """Send ``POST /leave`` to remove ``node_id`` from the cluster.
+
+        Args:
+            node_id: Id of this node, sent to the peer.
+
+        Returns:
+            bool: True when the peer acknowledged.
+        """
         resp = self.request_with_retry("POST", "/leave", {"node_id": node_id})
         return resp is not None and resp.get("success", False)
 
     def gossip(self, state: JsonDict) -> JsonDict | None:
-        """Send ``POST /gossip`` with the supplied state payload."""
+        """Send ``POST /gossip`` with the supplied state payload.
+
+        Args:
+            state: This node's gossip state.
+
+        Returns:
+            JsonDict | None: The peer's own gossip state, or ``None`` on
+            failure.
+        """
         return self.request_with_retry("POST", "/gossip", state)
 
     def request_replicate(self, fragment: Fragment) -> bool:
-        """Send ``POST /replicate`` with ``fragment``."""
+        """Send ``POST /replicate`` with ``fragment``.
+
+        Args:
+            fragment: The fragment.
+
+        Returns:
+            bool: True when the peer stored the replica.
+        """
         payload = {"fragment": to_dict(fragment)}
         resp = self.request_with_retry("POST", "/replicate", payload)
         return resp is not None and resp.get("success", False)
@@ -430,7 +521,11 @@ class Peer:
         return resp is not None and bool(resp.get("success", False))
 
     def get_peers(self) -> JsonDict | None:
-        """Send ``GET /peers``."""
+        """Send ``GET /peers``.
+
+        Returns:
+            JsonDict | None: The peer's membership list, or ``None`` on failure.
+        """
         return self.request_with_retry("GET", "/peers")
 
     # ------------------------------------------------------------------
@@ -474,22 +569,33 @@ class Peer:
             headers.update(extra_headers)
         last_error: Exception | None = None
 
+        deadline = peer_deadline.get()
         for attempt in range(self.max_retries):
+            timeout = self.timeout_sec
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                timeout = min(timeout, remaining)
             try:
                 resp = self.transport.request(
                     method=method,
                     url=url,
                     body=data,
                     headers=headers,
-                    timeout_sec=self.timeout_sec,
+                    timeout_sec=timeout,
                 )
                 if resp is not None:
                     return resp
             except NetworkError as exc:
                 last_error = exc
 
+            if attempt == self.max_retries - 1:
+                break  # no point sleeping after the last attempt
             # Exponential backoff: 1x, 2x, 4x, ...
             delay = self.retry_delay_sec * (2**attempt)
+            if deadline is not None and time.monotonic() + delay >= deadline:
+                break  # the caller has already given up
             logger.debug(
                 "Request to %s%s failed (attempt %s/%s), retrying in %.1fs",
                 self.base_url,
@@ -510,4 +616,13 @@ class Peer:
         return None
 
 
-__all__ = ["HTTPTransport", "Peer", "Transport"]
+__all__ = [
+    "HTTPTransport",
+    "Peer",
+    "PeerCredentials",
+    "Transport",
+    "get_default_peer_credentials",
+    "peer_deadline",
+    "peer_url",
+    "set_default_peer_credentials",
+]

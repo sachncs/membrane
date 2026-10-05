@@ -8,8 +8,6 @@ default CI run does not pay the time cost; the dedicated
 ``stress`` CI job enables the marker.
 """
 
-from __future__ import annotations
-
 import threading
 
 import pytest

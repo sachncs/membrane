@@ -13,12 +13,21 @@ connector to the vLLM scheduler + model runner. This script
 exercises the Membrane side of the same flow.
 """
 
-from __future__ import annotations
-
+import logging
 import sys
+
+logger = logging.getLogger(__name__)
 
 
 def main(argv: list[str]) -> int:
+    """Drive the vLLM-style flow against an in-process node.
+
+    Args:
+        argv: Command-line arguments (unused).
+
+    Returns:
+        int: Process exit status.
+    """
     base_url = argv[1] if len(argv) > 1 else "http://localhost:8080"
     import httpx
     from fastapi.testclient import TestClient
@@ -77,9 +86,10 @@ def main(argv: list[str]) -> int:
             )
             store.put(ident.payload_hash, f"completion-for:{prompt}".encode())
             result = client.store(to_dict(frag), is_primary=True)
-            print(f"prompt={prompt!r} -> {result!r}")
+            logger.info("prompt=%r -> %r", prompt, result)
     return 0
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     raise SystemExit(main(sys.argv))

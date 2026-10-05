@@ -7,8 +7,6 @@ client + the production ``create_app`` path so a contract
 change on either side surfaces here immediately.
 """
 
-from __future__ import annotations
-
 import pytest
 
 

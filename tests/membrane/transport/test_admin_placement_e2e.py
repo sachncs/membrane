@@ -6,8 +6,6 @@ manager). This test wires a real Shard manager and asserts
 the placement override takes effect end-to-end.
 """
 
-from __future__ import annotations
-
 import pytest
 
 

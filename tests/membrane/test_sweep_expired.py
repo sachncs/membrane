@@ -4,8 +4,6 @@ It used to call ``Node.evict``, whose LRU / graph phases removed live
 fragments every sweep interval.
 """
 
-from __future__ import annotations
-
 from membrane.fragment import Fragment
 from membrane.node import Node
 from tests.conftest import make_fragment

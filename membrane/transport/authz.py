@@ -32,8 +32,6 @@ closed: an unlisted route is treated as a read-class operation,
 and missing scope is rejected.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 from membrane.auth import (
@@ -59,6 +57,7 @@ ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("GET", "/retrieve"): "read",
     ("GET", "/inventory"): "read",
     ("GET", "/peers"): "read",
+    ("GET", "/openapi.json"): "read",
     # Writes
     ("POST", "/store"): "write",
     ("POST", "/replicate"): "write",
@@ -99,7 +98,7 @@ def required_scope(method: str, path: str) -> str:
     return ROUTE_SCOPES.get(key, DEFAULT_SCOPE)
 
 
-def _authenticate(
+def authenticate(
     authenticator: Any | None,
     method: str,
     path: str,
@@ -176,7 +175,7 @@ def enforce_route_scope(
     if authenticator is None:
         return AuthContext(subject="", scopes=frozenset())
     headers = dict(headers or {})
-    context = _authenticate(authenticator, method, path, headers)
+    context = authenticate(authenticator, method, path, headers)
     try:
         require_scope(context, scope)
     except AuthBackendError:

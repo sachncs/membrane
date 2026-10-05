@@ -20,8 +20,6 @@ Operations:
 * ``GET /admin/audit`` -- query the audit log (Phase 3.2.8).
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
@@ -98,7 +96,7 @@ def create_admin_router() -> APIRouter:
             dict: Fragment metadata or a 404 if the local node
             does not hold the fragment.
         """
-        context = _scope(request, "GET", "/admin/fragments/{content_hash}")
+        context = admin_scope(request, "GET", "/admin/fragments/{content_hash}")
         node = request.app.state.node
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
@@ -106,7 +104,7 @@ def create_admin_router() -> APIRouter:
             fragment = node.fragments.get(content_hash)
             if fragment is None:
                 raise HTTPException(status_code=404, detail="not_found")
-            _audit_log(request).record(
+            request_audit_log(request).record(
                 actor=context.subject,
                 action="admin.fragment.inspect",
                 payload={"content_hash": content_hash},
@@ -127,12 +125,12 @@ def create_admin_router() -> APIRouter:
     @router.post("/placement")
     async def admin_placement(payload: PlacementOverride, request: Request) -> dict[str, Any]:
         """Override the primary node for a fragment's shard."""
-        context = _scope(request, "POST", "/admin/placement")
+        context = admin_scope(request, "POST", "/admin/placement")
         cluster = getattr(request.app.state, "cluster_manager", None)
         if cluster is None:
             raise HTTPException(status_code=503, detail="cluster manager not enabled")
         cluster.shard_manager.primary_map[payload.content_hash] = payload.primary_node_id
-        _audit_log(request).record(
+        request_audit_log(request).record(
             actor=context.subject,
             action="admin.placement.override",
             payload={
@@ -148,7 +146,7 @@ def create_admin_router() -> APIRouter:
     @router.post("/evict")
     async def admin_evict(payload: EvictRequest, request: Request) -> dict[str, Any]:
         """Manually evict a fragment from the local node."""
-        context = _scope(request, "POST", "/admin/evict")
+        context = admin_scope(request, "POST", "/admin/evict")
         node = request.app.state.node
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
@@ -156,7 +154,7 @@ def create_admin_router() -> APIRouter:
             if payload.content_hash not in node.fragments:
                 raise HTTPException(status_code=404, detail="not_found")
             node.remove_fragment(payload.content_hash)
-        _audit_log(request).record(
+        request_audit_log(request).record(
             actor=context.subject,
             action="admin.evict",
             payload={"content_hash": payload.content_hash},
@@ -166,14 +164,14 @@ def create_admin_router() -> APIRouter:
     @router.post("/repair")
     async def admin_repair(payload: RepairRequest, request: Request) -> dict[str, Any]:
         """Trigger :meth:`Replicator.repair` for a peer."""
-        context = _scope(request, "POST", "/admin/repair")
+        context = admin_scope(request, "POST", "/admin/repair")
         cluster = getattr(request.app.state, "cluster_manager", None)
         if cluster is None:
             raise HTTPException(status_code=503, detail="cluster manager not enabled")
         if cluster.replicator is None:
             raise HTTPException(status_code=503, detail="replicator not configured")
         cluster.replicator.repair(payload.peer_node_id)
-        _audit_log(request).record(
+        request_audit_log(request).record(
             actor=context.subject,
             action="admin.repair.start",
             payload={"peer_node_id": payload.peer_node_id},
@@ -183,7 +181,7 @@ def create_admin_router() -> APIRouter:
     @router.get("/policy")
     async def admin_get_policy(request: Request) -> dict[str, Any]:
         """Return the current :class:`Promotion` knobs."""
-        _scope(request, "GET", "/admin/policy")
+        admin_scope(request, "GET", "/admin/policy")
         return {
             "min_reuse_score": 0.0,
             "demand_threshold": 0,
@@ -193,8 +191,8 @@ def create_admin_router() -> APIRouter:
     @router.post("/policy")
     async def admin_set_policy(payload: PolicyUpdate, request: Request) -> dict[str, Any]:
         """Set the :class:`Promotion` knobs."""
-        context = _scope(request, "POST", "/admin/policy")
-        _audit_log(request).record(
+        context = admin_scope(request, "POST", "/admin/policy")
+        request_audit_log(request).record(
             actor=context.subject,
             action="admin.policy.update",
             payload={
@@ -219,7 +217,7 @@ def create_admin_router() -> APIRouter:
             ``intact`` boolean is True when every entry's hash
             lines up with the previous one.
         """
-        _scope(request, "GET", "/admin/audit")
+        admin_scope(request, "GET", "/admin/audit")
         log = getattr(request.app.state, "audit_log", None)
         if log is None:
             raise HTTPException(status_code=503, detail="audit log not configured")
@@ -253,7 +251,7 @@ def create_admin_router() -> APIRouter:
         """
         from pathlib import Path
 
-        context = _scope(request, "POST", "/admin/backup")
+        context = admin_scope(request, "POST", "/admin/backup")
         node = request.app.state.node
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
@@ -265,14 +263,14 @@ def create_admin_router() -> APIRouter:
                     "memory_used_bytes": node.get_stats().memory_used_bytes,
                     "memory_limit_bytes": node.get_stats().memory_limit_bytes,
                 },
-                "fragments": {h: to_dict(f) for h, f in node.fragments.items()},
+                "fragments": {h: to_dict(f) for h, f in node.fragment_snapshot().items()},
             }
         target = Path(payload.destination)
         target.parent.mkdir(parents=True, exist_ok=True)
         import json as _json
 
         target.write_text(_json.dumps(data, sort_keys=True, indent=2), encoding="utf-8")
-        _audit_log(request).record(
+        request_audit_log(request).record(
             actor=context.subject,
             action="admin.backup",
             payload={
@@ -299,7 +297,7 @@ def create_admin_router() -> APIRouter:
         """
         from pathlib import Path
 
-        context = _scope(request, "POST", "/admin/restore")
+        context = admin_scope(request, "POST", "/admin/restore")
         node = request.app.state.node
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
@@ -323,7 +321,7 @@ def create_admin_router() -> APIRouter:
                 frag = _from_dict(wire)
                 if node.store(frag, is_primary=False):
                     restored += 1
-        _audit_log(request).record(
+        request_audit_log(request).record(
             actor=context.subject,
             action="admin.restore",
             payload={"source": source_path, "restored": restored},
@@ -333,7 +331,7 @@ def create_admin_router() -> APIRouter:
     return router
 
 
-def _audit_log(request: Request) -> AuditLog:
+def request_audit_log(request: Request) -> AuditLog:
     """Return the cluster's :class:`AuditLog` from app.state, creating one if missing.
 
     Args:
@@ -351,7 +349,7 @@ def _audit_log(request: Request) -> AuditLog:
     return log
 
 
-def _scope(request: Request, method: str, path: str) -> Any:
+def admin_scope(request: Request, method: str, path: str) -> Any:
     """Run the per-route scope check on an admin route.
 
     Args:

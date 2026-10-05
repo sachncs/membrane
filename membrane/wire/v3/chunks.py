@@ -7,8 +7,6 @@ rejects the transfer if the manifest hash disagrees with the
 recomputed hash.
 """
 
-from __future__ import annotations
-
 import hashlib
 from dataclasses import dataclass
 

@@ -36,8 +36,6 @@ durable KV store) carries the canonical state; the file is the
 fallback when Redis is empty or unreachable.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import os
@@ -71,7 +69,14 @@ class Snapshot:
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
     def path_for(self, node_id: str) -> Path:
-        """Return the canonical snapshot path for ``node_id``."""
+        """Return the canonical snapshot path for ``node_id``.
+
+        Args:
+            node_id: Node identifier.
+
+        Returns:
+            Path: The canonical snapshot path for ``node_id``.
+        """
         return self.state_dir / f"{node_id}.json"
 
     def save(self, node_id: str, payload: dict[str, Any]) -> Path:
@@ -165,7 +170,7 @@ class Snapshot:
             try:
                 with path.open("rb") as fh:
                     data = json.loads(fh.read().decode("utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except OSError, json.JSONDecodeError:
                 continue
             captured = float(data.get("captured_at", 0.0))
             if captured > latest_time:
@@ -194,7 +199,11 @@ class Snapshot:
             return False
 
     def __len__(self) -> int:
-        """Count the snapshots currently held in the directory."""
+        """Count the snapshots currently held in the directory.
+
+        Returns:
+            int: Number of snapshot files.
+        """
         return sum(1 for _ in self.state_dir.glob("*.json"))
 
 

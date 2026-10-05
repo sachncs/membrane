@@ -9,8 +9,6 @@ encrypted store, the client retrieves them, and a hit /
 miss loop drives a small ranking step.
 """
 
-from __future__ import annotations
-
 import pytest
 
 
@@ -95,7 +93,7 @@ class TestRagPipelineE2E:
 
             # 4. The encrypted store defends against tamper:
             # the plaintext marker is never on disk.
-            for path in store._store:  # type: ignore[attr-defined]
+            for path in store.store:  # type: ignore[attr-defined]
                 # Internal: blob bytes are nonce + ciphertext + tag.
-                blob = store._store[path]  # type: ignore[attr-defined]
+                blob = store.store[path]  # type: ignore[attr-defined]
                 assert b"answer-for-" not in blob

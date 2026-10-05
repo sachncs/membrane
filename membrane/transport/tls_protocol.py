@@ -14,11 +14,9 @@ authenticator: it drops any client-supplied ``x-ssl-client-cn`` and
 substitutes the verified value.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, override
 
 from uvicorn.protocols.http.h11_impl import H11Protocol
 
@@ -54,8 +52,13 @@ def peer_cn_from_transport(transport: asyncio.BaseTransport) -> str | None:
 class PeerCertH11Protocol(H11Protocol):
     """h11 protocol that records the verified peer CN in the ASGI scope."""
 
+    @override
     def connection_made(self, transport: asyncio.Transport) -> None:  # type: ignore[override]
-        """Capture the peer CN once per connection and wrap the app."""
+        """Capture the peer CN once per connection and wrap the app.
+
+        Args:
+            transport: The connection's asyncio transport.
+        """
         super().connection_made(transport)
         peer_cn = peer_cn_from_transport(transport)
         inner_app = self.app

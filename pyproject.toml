@@ -7,7 +7,7 @@ name = "membrane"
 version = "3.0.1"
 description = "Membrane: Global Contextual Memory Fabric for cross-datacenter LLM serving."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.14,<3.15"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
@@ -18,10 +18,8 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
@@ -56,7 +54,6 @@ dev = [
     "cryptography>=44.0.0",
     "numpy>=1.26.0",
     "lz4>=4.3.0",
-    "zstandard>=0.23.0",
     "hypothesis>=6.100.0",
     "pytest-benchmark>=4.0.0",
     "pytest-timeout>=2.3.0",
@@ -64,7 +61,8 @@ dev = [
 # Everything `membrane serve` needs, including TLS / encryption at rest.
 server = ["redis>=8.1.0", "fastapi>=0.142.2", "uvicorn[standard]>=0.54.0", "httpx>=0.28.1", "pydantic>=2.13.5", "cryptography>=44.0.0"]
 # KV transfer engine and quantization (membrane.transfer_engine, membrane.quantization).
-transfer = ["numpy>=1.26.0", "lz4>=4.3.0", "zstandard>=0.23.0"]
+# zstd comes from the standard library (compression.zstd, PEP 784).
+transfer = ["numpy>=1.26.0", "lz4>=4.3.0"]
 # Secret backends (membrane.secrets.*). Each pulls cryptography for envelope encryption.
 secrets-aws = ["boto3>=1.34.0", "cryptography>=44.0.0"]
 secrets-gcp = ["google-cloud-secret-manager>=2.20.0", "cryptography>=44.0.0"]
@@ -74,28 +72,15 @@ tls-spiffe = ["spiffe>=0.2.0"]
 otel = ["opentelemetry-api>=1.25.0", "opentelemetry-sdk>=1.25.0", "opentelemetry-exporter-otlp-proto-grpc>=1.25.0"]
 gpu = ["torch>=2.13.0"]
 local-llm = ["transformers>=5.18.0", "tokenizers>=0.23.1", "torch>=2.13.0", "sentencepiece>=0.2.2", "protobuf>=7.36.2"]
-# LMCache is the v2.0+ canonical KV substrate. Optional install;
-# operators opt in via `pip install membrane[lmcache]`. The exact
-# pin is left to the deployment image so the protobuf <-> grpcio
-# version conflict in 0.5.4 can be resolved in CI without
-# breaking the existing `[server]` extras.
-lmcache = ["lmcache>=0.5.5,<0.6"]
-# Engine integrations for v2.0+. The pins are loose on purpose:
-# the v2.0 release is the first one that targets the v0.10+
-# vLLM KVConnector v1 surface, the SGLang radix-cache pool,
-# and the TensorRT-LLM runtime; operators pin the exact
-# version in their deployment image.
-vllm = ["vllm>=0.30.0,<0.31"]
-sglang = ["sglang>=0.5.21,<0.6"]
-trtllm = ["tensorrt-llm>=0.20,<0.22"]
+# Serving engines (vLLM, SGLang, TensorRT-LLM) are not extras: they pin
+# their own dependency stacks (vLLM caps fastapi below what the server
+# needs) and do not all ship Python 3.14 wheels. Install the engine in its
+# own environment; membrane.adapters imports it lazily.
 # Prefill / decode disaggregation surface (Phase 8). The
 # REST surface is FastAPI-only; the gRPC surface additionally
 # pulls in grpcio. Operators that only need one of the two
 # surfaces can install the corresponding extra directly.
 disagg = ["fastapi>=0.142.2", "uvicorn[standard]>=0.54.0", "grpcio>=1.84.0", "grpcio-tools>=1.84.0"]
-# Convenience: every v2.0+ engine integration plus the
-# disagg surface. Use for local end-to-end demos.
-all = ["membrane[lmcache,vllm,sglang,trtllm,disagg]"]
 
 [project.scripts]
 membrane = "membrane.cli:main"
@@ -104,10 +89,11 @@ membrane = "membrane.cli:main"
 where = ["."]
 include = ["membrane*"]
 
-[tool.isort]
-profile = "black"
-
 [tool.mypy]
+python_version = "3.14"
+# Overriding methods must say so (typing.override), so a renamed base
+# method is a type error instead of a silently dead override.
+enable_error_code = ["explicit-override"]
 exclude = ["membrane/transport/proto/", "membrane/wire/v3/wire_v3_pb2*.py"]
 ignore_missing_imports = true
 
@@ -120,13 +106,17 @@ markers = [
 ]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py314"
 line-length = 120
 extend-exclude = ["membrane/transport/proto/", "membrane/wire/v3/wire_v3_pb2*.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF", "T20", "D"]
 ignore = ["E501", "E402", "RUF002"]
+
+[tool.ruff.lint.pydocstyle]
+# Google-style docstrings (Args:, Returns:, Raises:).
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 # Generated gRPC stubs preserve the canonical PascalCase method names from
@@ -140,10 +130,8 @@ ignore = ["E501", "E402", "RUF002"]
 # generated transfer_pb2 / transfer_pb2_grpc stubs.
 "membrane/disagg/grpc.py" = ["N802"]
 "membrane/disagg/transfer_pb2*.py" = ["N802"]
-# serialization uses Union[...] aliases that ruff's UP007 prefers to
-# be X | Y; the project still targets Python 3.10 where that rewrite
-# requires from __future__ import annotations everywhere.
-"membrane/serialization.py" = ["UP007"]
 # Test files may import modules purely for their side effects (fixtures)
 # and call callables whose return values are not always used.
-"tests/**" = ["F401", "N802", "B007", "B905", "E741"]
+"tests/**" = ["F401", "N802", "B007", "B905", "E741", "D"]
+# Generated protobuf modules.
+"membrane/**/*_pb2*.py" = ["D"]

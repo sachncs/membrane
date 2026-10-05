@@ -1,7 +1,5 @@
 """Tests for the tier-migration primitive (Phase 3.5.6 follow-up)."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 
 import pytest

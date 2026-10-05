@@ -8,8 +8,6 @@ the cache hit rate so a new operator can see the system doing
 real work without standing up a cluster.
 """
 
-from __future__ import annotations
-
 import logging
 
 logger = logging.getLogger(__name__)
@@ -70,9 +68,17 @@ def main() -> int:
             logger.info("stored slot=%s", slot)
 
     stats = node.get_stats()
-    print(f"demo: stored {stats.fragment_count} fragments, memory_used_bytes={stats.memory_used_bytes}")
+    logger.info("demo: stored %s fragments, memory_used_bytes=%s", stats.fragment_count, stats.memory_used_bytes)
     return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
+    from membrane.logging import configure_logging
+
+    configure_logging()
     raise SystemExit(main())
+
+
+__all__ = [
+    "main",
+]

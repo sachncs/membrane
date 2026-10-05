@@ -1,7 +1,5 @@
 """Tests for ModelCompatibilityFingerprint + compute_config_hash (Phase 1.1)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.compat import (

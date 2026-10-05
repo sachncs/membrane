@@ -13,5 +13,5 @@ export function withBase(path: string): string {
 
 export const INSTALL_COMMANDS = `git clone ${REPO_URL}.git
 cd membrane
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[server]"`;
+uv sync --frozen --extra server   # Python 3.14 + locked deps
+source .venv/bin/activate`;

@@ -24,8 +24,6 @@ retrieve / replicate call paths and increments the relevant
 counters (3.5.7).
 """
 
-from __future__ import annotations
-
 import hashlib
 import logging
 import threading
@@ -118,15 +116,15 @@ class TinyLFU:
         self.capacity = capacity
         self.window_size = max(1, int(capacity * window_ratio))
         self.main_size = capacity - self.window_size
-        self._sketch_size = sketch_size
-        self._sketch: list[int] = [0] * sketch_size
-        self._counter = 0
-        self._window: OrderedDict[str, None] = OrderedDict()
-        self._main: OrderedDict[str, None] = OrderedDict()
-        self._lock = threading.RLock()
+        self.__sketch_size = sketch_size
+        self.__sketch: list[int] = [0] * sketch_size
+        self.__counter = 0
+        self.__window: OrderedDict[str, None] = OrderedDict()
+        self.__main: OrderedDict[str, None] = OrderedDict()
+        self.lock = threading.RLock()
 
-    def _hash(self, key: str) -> int:
-        """Hash ``key`` into [0, _sketch_size).
+    def hash(self, key: str) -> int:
+        """Hash ``key`` into [0, __sketch_size).
 
         Args:
             key: The cache key.
@@ -136,18 +134,18 @@ class TinyLFU:
         """
         # Bucketing only, not a security boundary.
         digest = hashlib.sha1(key.encode("utf-8"), usedforsecurity=False).hexdigest()
-        return int(digest, 16) % self._sketch_size
+        return int(digest, 16) % self.__sketch_size
 
-    def _estimate(self, key: str) -> int:
+    def estimate(self, key: str) -> int:
         """Return the current estimated frequency of ``key``.
 
         Args:
             key: The cache key.
 
         Returns:
-            int: ``min(self._sketch[k])`` for k in ``self._hashes``.
+            int: ``min(self.__sketch[k])`` for k in ``self._hashes``.
         """
-        return self._sketch[self._hash(key)]
+        return self.__sketch[self.hash(key)]
 
     def admit(self, key: str) -> TinyLFUDecisions:
         """Decide whether to admit ``key`` and pick a victim if so.
@@ -161,25 +159,25 @@ class TinyLFU:
             into the appropriate segment before the helper
             returns.
         """
-        with self._lock:
-            self._counter += 1
-            self._sketch[self._hash(key)] += 1
-            window_full = len(self._window) >= self.window_size
-            if len(self._window) + len(self._main) < self.capacity:
-                self._window[key] = None
+        with self.lock:
+            self.__counter += 1
+            self.__sketch[self.hash(key)] += 1
+            window_full = len(self.__window) >= self.window_size
+            if len(self.__window) + len(self.__main) < self.capacity:
+                self.__window[key] = None
                 return TinyLFUDecisions(admit=True, victim_key=None, reason="under_capacity")
             if not window_full:
-                self._window[key] = None
+                self.__window[key] = None
                 return TinyLFUDecisions(
                     admit=True,
-                    victim_key=next(iter(self._main), None),
+                    victim_key=next(iter(self.__main), None),
                     reason="window_capacity",
                 )
             # Window full: admit vs replace the worst main entry.
-            victim = next(iter(self._main))
-            self._window[key] = None
-            if len(self._window) > self.window_size:
-                self._window.popitem(last=False)
+            victim = next(iter(self.__main))
+            self.__window[key] = None
+            if len(self.__window) > self.window_size:
+                self.__window.popitem(last=False)
             return TinyLFUDecisions(admit=True, victim_key=victim, reason="window_replace_worst")
 
     def touch(self, key: str) -> None:
@@ -188,24 +186,24 @@ class TinyLFU:
         Args:
             key: The accessed key.
         """
-        with self._lock:
-            self._counter += 1
-            self._sketch[self._hash(key)] += 1
-            if key in self._main:
-                self._main.move_to_end(key)
+        with self.lock:
+            self.__counter += 1
+            self.__sketch[self.hash(key)] += 1
+            if key in self.__main:
+                self.__main.move_to_end(key)
                 return
-            if key in self._window:
-                self._window.pop(key, None)
-                if len(self._main) >= self.main_size:
+            if key in self.__window:
+                self.__window.pop(key, None)
+                if len(self.__main) >= self.main_size:
                     # Evict the oldest main entry to make room.
-                    self._main.popitem(last=False)
-                self._main[key] = None
+                    self.__main.popitem(last=False)
+                self.__main[key] = None
                 return
             # New key not in cache: route to the window so it has
             # a chance to collect future hits.
-            self._window[key] = None
-            if len(self._window) > self.window_size:
-                self._window.popitem(last=False)
+            self.__window[key] = None
+            if len(self.__window) > self.window_size:
+                self.__window.popitem(last=False)
 
     def evict(self, key: str) -> None:
         """Remove ``key`` from both segments.
@@ -213,17 +211,17 @@ class TinyLFU:
         Args:
             key: The key to remove.
         """
-        with self._lock:
-            self._window.pop(key, None)
-            self._main.pop(key, None)
+        with self.lock:
+            self.__window.pop(key, None)
+            self.__main.pop(key, None)
 
     def size(self) -> int:
         """Return the total entry count.
 
         Returns:
-            int: ``len(self._window) + len(self._main)``.
+            int: ``len(self.__window) + len(self.__main)``.
         """
-        return len(self._window) + len(self._main)
+        return len(self.__window) + len(self.__main)
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +250,7 @@ class TenantQuota:
     max_entries: int | None = None
     used_bytes: int = 0
     used_entries: int = 0
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
     def admit(self, payload_size: int) -> bool:
         """Return True when storing ``payload_size`` fits the quota.
@@ -263,7 +261,7 @@ class TenantQuota:
         Returns:
             bool: True when the admit fits within both caps.
         """
-        with self._lock:
+        with self.lock:
             if self.max_bytes is not None and self.used_bytes + payload_size > self.max_bytes:
                 return False
             if self.max_entries is not None and self.used_entries >= self.max_entries:
@@ -278,7 +276,7 @@ class TenantQuota:
         Args:
             payload_size: Bytes to release.
         """
-        with self._lock:
+        with self.lock:
             self.used_bytes = max(0, self.used_bytes - payload_size)
             self.used_entries = max(0, self.used_entries - 1)
 
@@ -341,7 +339,14 @@ class CoaccessIndex(Protocol):
     """Protocol for a coaccess index the prefetcher can read."""
 
     def neighbors(self, key: str) -> Iterable[str]:
-        """Return co-access neighbors of ``key``."""
+        """Return co-access neighbors of ``key``.
+
+        Args:
+            key: Key whose co-accessed neighbours are returned.
+
+        Returns:
+            Iterable[str]: Co-access neighbors of ``key``.
+        """
         ...
 
 
@@ -377,9 +382,9 @@ class CoaccessSessionPrefetcher:
         self.coaccess = coaccess
         self.max_concurrent = max_concurrent
         self.access_window = access_window
-        self._history: deque[str] = deque(maxlen=access_window)
-        self._seen: set[str] = set()
-        self._lock = threading.RLock()
+        self.__history: deque[str] = deque(maxlen=access_window)
+        self.__seen: set[str] = set()
+        self.lock = threading.RLock()
 
     def record_access(self, key: str) -> None:
         """Record ``key`` as recently used and prefetch neighbors.
@@ -387,13 +392,13 @@ class CoaccessSessionPrefetcher:
         Args:
             key: The accessed key.
         """
-        with self._lock:
-            self._history.append(key)
+        with self.lock:
+            self.__history.append(key)
             neighbors = list(self.coaccess.neighbors(key))
         for neighbor in neighbors:
-            if neighbor in self._seen:
+            if neighbor in self.__seen:
                 continue
-            self._seen.add(neighbor)
+            self.__seen.add(neighbor)
             try:
                 self.cache.get_or_load(neighbor)
             except Exception:
@@ -412,7 +417,7 @@ class CoaccessSessionPrefetcher:
         Returns:
             PredictHitProbability: Probability + reasoning.
         """
-        history = list(session_history if session_history is not None else self._history)
+        history = list(session_history if session_history is not None else self.__history)
         if not history:
             return PredictHitProbability(probability=0.0, reasoning="empty_history")
         hits = history.count(key)

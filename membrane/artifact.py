@@ -120,7 +120,7 @@ class Artifact:
         )
 
     @classmethod
-    def from_fragment(cls, fragment: Fragment) -> "Artifact":
+    def from_fragment(cls, fragment: Fragment) -> Artifact:
         """Reconstruct an :class:`Artifact` from a stored :class:`Fragment`.
 
         ``source_url`` and ``embedding`` are not stored on a
@@ -157,3 +157,8 @@ class Artifact:
             token_count=count,
             reuse_score=fragment.reuse_score,
         )
+
+
+__all__ = [
+    "Artifact",
+]

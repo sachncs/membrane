@@ -7,8 +7,6 @@ real Membrane Server. This test boots a Membrane server in
 a thread and drives the sync + async clients through it.
 """
 
-from __future__ import annotations
-
 import asyncio
 import socket
 import threading
