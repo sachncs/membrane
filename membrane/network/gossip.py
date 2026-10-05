@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 
 from membrane.bloom import BloomFilter
 from membrane.errors import AuthError, NetworkError, SchemaError
+from membrane.fragment import Fragment
 from membrane.gc import TombstoneTable
 from membrane.merkle import MerkleTree
 from membrane.network.config import ClusterConfig
@@ -42,6 +43,9 @@ from membrane.node import Node
 from membrane.serialization import JsonDict
 
 logger = logging.getLogger(__name__)
+
+SMALL_INVENTORY = 1_000
+"""Inventories up to this size rebuild their gossip summary on every change."""
 
 
 @dataclass
@@ -294,6 +298,7 @@ class Gossip:
         """
         self.membership = membership
         self.node = node
+        self.__summary: tuple[float, int, tuple[bytes, bytes, int]] | None = None
         self.config = config
         self.directory = directory
         self.tombstones = tombstones
@@ -316,41 +321,15 @@ class Gossip:
             PeerEndpoint(node_id=p.node_id, host=p.host, port=p.port, healthy=p.healthy)
             for p in self.membership.snapshot()
         ]
-        all_hashes = list(self.node.fragments.keys())
+        fragments = self.node.fragment_snapshot()
+        all_hashes = list(fragments)
         sample_size = min(self.config.gossip_max_fragment_entries, len(all_hashes))
         sample_hashes = random.sample(all_hashes, sample_size) if all_hashes else []
         locations: dict[str, list[str]] = {}
         for h in sample_hashes:
             locations[h] = list(self.directory.locate_fragment(h))
 
-        # Phase 5 inventory: build the Bloom filter and Merkle
-        # tree from the (content_hash, owner_node_id) pairs. The
-        # Bloom filter is tuned to the configured
-        # ``gossip_payload_expected_items`` / ``gossip_payload_fpr``
-        # knobs (with a small floor so single-fragment clusters
-        # still get a non-trivial filter).
-        expected = max(
-            self.config.gossip_payload_expected_items,
-            len(self.node.fragments),
-        )
-        bloom = BloomFilter.tuned_for(
-            expected_items=max(1, expected),
-            fp_rate=float(self.config.gossip_payload_fpr),
-        )
-        pairs: list[tuple[str, str]] = []
-        for h, frag in self.node.fragments.items():
-            bloom = bloom.add(h)
-            pairs.append((h, frag.identity.payload_hash or ""))
-        # We need a real owner_node_id; the registry gives us the
-        # holder set for ``h``. We use the first one (deterministic
-        # because the registry is sorted).
-        owners_for_pair: dict[str, str] = {}
-        for h, _ in pairs:
-            holders = self.directory.locate_fragment(h)
-            owner = sorted(holders)[0] if holders else self.node.node_id
-            owners_for_pair[h] = owner
-        ordered_pairs = sorted((h, owners_for_pair[h]) for h, _ in pairs)
-        tree = MerkleTree.from_inventory(ordered_pairs)
+        bloom_bytes, merkle_root, inventory_size = self.inventory_summary(fragments)
 
         # Surface every active tombstone to peers. There is no
         # sampling here because tombstone purges depend on every
@@ -366,11 +345,54 @@ class Gossip:
             timestamp=time.time(),
             peers=peers,
             fragment_locations=locations,
-            inventory_bloom=bloom.serialize(),
-            inventory_merkle_root=tree.root,
-            inventory_size=len(ordered_pairs),
+            inventory_bloom=bloom_bytes,
+            inventory_merkle_root=merkle_root,
+            inventory_size=inventory_size,
             fragment_tombstones=tombstone_map,
         )
+
+    def inventory_summary(self, fragments: dict[str, Fragment]) -> tuple[bytes, bytes, int]:
+        """Return the Bloom filter, Merkle root, and size of the local inventory.
+
+        Building them hashes every fragment (about 0.75 s for 70,000), and
+        every gossip send and receive needs them. The result is reused for
+        ``inventory_summary_interval_sec``. Small inventories (at most
+        :data:`SMALL_INVENTORY` fragments) are rebuilt as soon as their
+        size changes. The summary is an anti-entropy hint, and the
+        replicator's periodic repair does not depend on it.
+
+        Args:
+            fragments: Snapshot of the local fragment table.
+
+        Returns:
+            tuple[bytes, bytes, int]: Serialized Bloom filter, Merkle root,
+            and leaf count.
+        """
+        now = time.monotonic()
+        cached = self.__summary
+        if cached is not None:
+            built_at, length, summary = cached
+            fresh = now - built_at < self.config.inventory_summary_interval_sec
+            if fresh and (length == len(fragments) or len(fragments) > SMALL_INVENTORY):
+                return summary
+        # The Bloom filter is tuned to the configured
+        # ``gossip_payload_expected_items`` / ``gossip_payload_fpr`` knobs,
+        # with a floor so single-fragment clusters still get a real filter.
+        bloom = BloomFilter.tuned_for(
+            expected_items=max(1, self.config.gossip_payload_expected_items, len(fragments)),
+            fp_rate=float(self.config.gossip_payload_fpr),
+        )
+        pairs: list[tuple[str, str]] = []
+        for content_hash in fragments:
+            bloom = bloom.add(content_hash)
+            # The owner is the first holder the registry records
+            # (deterministic: the registry is sorted).
+            holders = self.directory.locate_fragment(content_hash)
+            pairs.append((content_hash, sorted(holders)[0] if holders else self.node.node_id))
+        tree = MerkleTree.from_inventory(sorted(pairs))
+        summary = (bloom.serialize(), tree.root, len(pairs))
+        self.__summary = (now, len(fragments), summary)
+        return summary
 
     def loop(self) -> None:
         """Push our gossip state to random healthy peers on each tick."""
@@ -483,7 +505,7 @@ class Gossip:
             no record for the hash.
         """
         pairs: set[tuple[str, str]] = set()
-        for h, _frag in self.node.fragments.items():
+        for h in self.node.fragment_snapshot():
             holders = self.directory.locate_fragment(h)
             owner = sorted(holders)[0] if holders else self.node.node_id
             pairs.add((h, owner))
@@ -526,4 +548,4 @@ class Gossip:
             )
 
 
-__all__ = ["Gossip", "GossipState", "PeerEndpoint"]
+__all__ = ["SMALL_INVENTORY", "Gossip", "GossipState", "PeerEndpoint"]

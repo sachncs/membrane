@@ -20,6 +20,7 @@ Everything Membrane writes goes through :mod:`logging`; nothing uses
 import json
 import logging
 import sys
+import threading
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from string.templatelib import Interpolation, Template
@@ -246,6 +247,25 @@ def output_logger() -> logging.Logger:
     return logging.getLogger(OUTPUT_LOGGER_NAME)
 
 
+def log_thread_exception(args: threading.ExceptHookArgs) -> None:
+    """Route an exception that escaped a thread through logging.
+
+    The default hook writes a bare traceback to stderr, which bypasses the
+    JSON formatter and log pipelines.
+
+    Args:
+        args: The exception details passed to :data:`threading.excepthook`.
+    """
+    if args.exc_type is SystemExit:
+        return
+    name = args.thread.name if args.thread is not None else "unknown"
+    logging.getLogger("membrane.threads").critical(
+        "unhandled exception in thread %s; the thread has stopped",
+        name,
+        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),  # type: ignore[arg-type]
+    )
+
+
 def configure_logging(
     level: str | None = None,
     fmt: str | None = None,
@@ -278,6 +298,10 @@ def configure_logging(
     output.addHandler(results)
     output.setLevel(logging.INFO)
     output.propagate = False
+    # httpx logs every request at INFO; peer traffic would drown the log.
+    for chatty in ("httpx", "httpcore"):
+        logging.getLogger(chatty).setLevel(logging.WARNING)
+    threading.excepthook = log_thread_exception
     LoggingState.configured = True
 
 
@@ -305,6 +329,7 @@ __all__ = [
     "configure_logging",
     "get_logger",
     "log_event",
+    "log_thread_exception",
     "output_logger",
     "render_template",
     "request_id",

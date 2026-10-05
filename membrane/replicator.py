@@ -8,8 +8,9 @@ helper. The class has two modes selected by the constructor:
   :class:`~membrane.transfer.TransferService`.
 * **Background shard replication** — when a :class:`Cluster` membership
   table and the local node are provided, the class also exposes a
-  :meth:`loop` coroutine that pushes every primary hash to each of
-  its replica peers at a configured interval.
+  :meth:`loop` that keeps every primary replicated on its replica
+  peers: new primaries each sweep, a digest-based full pass every
+  ``repair_interval_sec``.
 
 The two modes share state (``transfer_service``, ``membership``,
 ``node``) so the same instance can serve both ad-hoc and scheduled
@@ -24,9 +25,13 @@ Thread safety:
 
 import logging
 import threading
+import time
+from collections.abc import Callable
+from functools import partial
 from typing import TYPE_CHECKING
 
 from membrane.node import Node
+from membrane.ring import EmptyRingError
 from membrane.transfer import TransferService
 
 if TYPE_CHECKING:
@@ -125,17 +130,22 @@ class Replicator:
         return results
 
     def loop(self) -> None:
-        """Push every primary hash to each missing replica.
+        """Keep every local primary replicated on its replica peers.
 
         Only available when the replicator was constructed with a
         ``membership`` table and ``node``. Otherwise raises
         :class:`RuntimeError`.
 
-        The loop iterates the node's primary hash set, asks the shard
-        manager for the replica targets of each primary, and pushes
-        the fragment to each peer. It sleeps on ``stop_event`` for
-        the gossip interval between sweeps so the thread can be
-        cleanly shut down.
+        Work per sweep (every ``gossip_interval_sec``) is proportional
+        to the write rate, not the data size: only primaries that are
+        new since the last sweep, or whose push failed, are checked. A
+        full pass, one inventory request per peer and a push of only
+        what each peer lacks, runs every ``repair_interval_sec`` to heal
+        replicas lost to restarts. An empty hash ring (all peers
+        restarting) skips the sweep.
+
+        Raises:
+            RuntimeError: When the replicator lacks the cluster wiring.
         """
         if (
             self.membership is None
@@ -151,55 +161,141 @@ class Replicator:
                 "constructor before calling loop()."
             )
 
+        known: set[str] = set()
+        pending: set[str] = set()
+        next_full = 0.0
         while self.running[0] and not self.stop_event.is_set():
-            primary_hashes = list(self.node.get_shard_hashes())
-            for h in primary_hashes:
-                if self.stop_event.is_set():
-                    return
-                replicas = self.shard.get_replicas(h)
-                for peer_id in replicas:
-                    if peer_id == self.node.node_id:
-                        continue
-                    self.push_one(h, peer_id)
+            primaries = self.node.get_shard_hashes()
+            now = time.monotonic()
+            full = now >= next_full
+            candidates = primaries if full else (primaries - known) | (pending & primaries)
+            targets = self.replica_targets(candidates)
+            if targets is not None:
+                failed: set[str] = set()
+                for peer_id, hashes in targets.items():
+                    if self.stop_event.is_set():
+                        return
+                    if full:
+                        failed |= self.push_missing(peer_id, hashes)
+                    else:
+                        failed |= {h for h in hashes if not self.push_one(h, peer_id)}
+                known, pending = primaries, failed
+                if full:
+                    next_full = now + self.config.repair_interval_sec
             self.stop_event.wait(timeout=self.config.gossip_interval_sec)
 
-    def push_one(self, content_hash: str, peer_id: str) -> None:
+    def replica_targets(self, hashes: set[str]) -> dict[str, list[str]] | None:
+        """Group ``hashes`` by the peers that should hold a replica.
+
+        Args:
+            hashes: Primary content hashes.
+
+        Returns:
+            dict[str, list[str]] | None: Peer id to the hashes it should
+            hold; ``None`` while the hash ring is empty.
+        """
+        if self.shard is None or self.node is None:
+            return {}
+        targets: dict[str, list[str]] = {}
+        for content_hash in sorted(hashes):
+            try:
+                replicas = self.shard.get_replicas(content_hash)
+            except EmptyRingError:
+                return None
+            for peer_id in replicas:
+                if peer_id != self.node.node_id:
+                    targets.setdefault(peer_id, []).append(content_hash)
+        return targets
+
+    def push_missing(self, peer_id: str, hashes: list[str]) -> set[str]:
+        """Push the fragments in ``hashes`` that ``peer_id`` lacks.
+
+        One ``GET /inventory`` replaces a probe per fragment.
+
+        Args:
+            peer_id: Destination peer id.
+            hashes: Content hashes the peer should hold.
+
+        Returns:
+            set[str]: Hashes that could not be confirmed or pushed.
+        """
+        if self.membership is None or self.node is None:
+            return set(hashes)
+        client = self.membership.get_client(peer_id)
+        if client is None:
+            return set(hashes)
+        try:
+            inventory = client.get_inventory()
+        except Exception as exc:
+            logger.debug("replication: inventory from %s failed: %s", peer_id, exc)
+            return set(hashes)
+        if not isinstance(inventory, dict):
+            return set(hashes)
+        held = inventory.get("digest", {})
+        failed: set[str] = set()
+        for content_hash in hashes:
+            if content_hash in held or (self.stop_event is not None and self.stop_event.is_set()):
+                continue
+            fragment = self.node.retrieve(content_hash)
+            if fragment is None:
+                continue
+            try:
+                ok = self.__guarded(partial(client.request_replicate, fragment))
+            except Exception as exc:
+                logger.debug("replication of %s to %s failed: %s", content_hash, peer_id, exc)
+                ok = False
+            if not ok:
+                failed.add(content_hash)
+        return failed
+
+    def push_one(self, content_hash: str, peer_id: str) -> bool:
         """Push a single fragment to a peer (no-op if it already has it).
 
         Args:
             content_hash: Content hash of the fragment to push.
             peer_id: Destination peer id.
+
+        Returns:
+            bool: True when the peer holds the fragment afterwards, or the
+            fragment is no longer local (nothing to push).
         """
         membership = self.membership
         node = self.node
         if membership is None or node is None:
-            return
+            return False
 
-        def do_push() -> None:
-            try:
-                client = membership.get_client(peer_id)
-                if client is None:
-                    return
-                existing = client.retrieve_fragment(content_hash)
-                if existing is not None:
-                    return
-                frag = node.retrieve(content_hash)
-                if frag is not None:
-                    client.request_replicate(frag)
-                    logger.debug("Replicated %s to %s", content_hash, peer_id)
-            except Exception as exc:
-                logger.debug(
-                    "Replication of %s to %s failed: %s",
-                    content_hash,
-                    peer_id,
-                    exc,
-                )
+        def do_push() -> bool:
+            client = membership.get_client(peer_id)
+            if client is None:
+                return False
+            if client.retrieve_fragment(content_hash) is not None:
+                return True
+            frag = node.retrieve(content_hash)
+            if frag is None:
+                return True
+            ok = bool(client.request_replicate(frag))
+            logger.debug("Replicated %s to %s: %s", content_hash, peer_id, ok)
+            return ok
 
+        try:
+            return self.__guarded(do_push)
+        except Exception as exc:
+            logger.debug("Replication of %s to %s failed: %s", content_hash, peer_id, exc)
+            return False
+
+    def __guarded(self, call: Callable[[], bool]) -> bool:
+        """Run ``call`` under the concurrency cap, if one is set.
+
+        Args:
+            call: The push to run.
+
+        Returns:
+            bool: What ``call`` returned.
+        """
         if self.semaphore is None:
-            do_push()
-        else:
-            with self.semaphore:
-                do_push()
+            return call()
+        with self.semaphore:
+            return call()
 
     def repair(self, peer_id: str) -> int:
         """Run an anti-entropy round against ``peer_id``.
@@ -237,7 +333,7 @@ class Replicator:
         if not isinstance(remote_resp, dict):
             return 0
         remote_versions: dict[str, int] = remote_resp.get("digest", {})
-        local_versions = {h: frag.version_id for h, frag in self.node.fragments.items()}
+        local_versions = {h: frag.version_id for h, frag in self.node.fragment_snapshot().items()}
         # Pull what we are missing (peer has it, we do not).
         missing_here = [h for h, v in remote_versions.items() if h not in local_versions or local_versions[h] < v]
         # Push what the peer is missing.

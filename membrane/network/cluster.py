@@ -24,6 +24,7 @@ Threading:
 import logging
 import socket
 import threading
+from collections.abc import Callable
 
 from membrane.gc import TombstoneTable
 from membrane.network.config import ClusterConfig
@@ -204,11 +205,30 @@ class Cluster:
             loops.append((self.replicator.loop, "replication"))
 
         for target, name in loops:
-            t = threading.Thread(target=target, daemon=True, name=f"membrane-{name}")
+            t = threading.Thread(target=self.__supervise, args=(name, target), daemon=True, name=f"membrane-{name}")
             t.start()
             self.threads.append(t)
 
         logger.info("Cluster started with %s background threads", len(loops))
+
+    def __supervise(self, name: str, loop: Callable[[], None]) -> None:
+        """Run a background loop, restarting it after an unexpected exception.
+
+        A loop that raised used to end its thread silently, leaving the
+        node without gossip or replication until restart.
+
+        Args:
+            name: Loop name used in logs.
+            loop: The loop; it returns when the cluster stops.
+        """
+        while True:
+            try:
+                loop()
+                return
+            except Exception:
+                logger.exception("cluster %s loop crashed; restarting it", name)
+            if self.stop_event.wait(1.0) or not self.running[0]:
+                return
 
     def stop(self, deadline_sec: float = 10.0) -> bool:
         """Signal all background threads to exit.

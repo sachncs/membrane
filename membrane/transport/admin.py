@@ -263,7 +263,7 @@ def create_admin_router() -> APIRouter:
                     "memory_used_bytes": node.get_stats().memory_used_bytes,
                     "memory_limit_bytes": node.get_stats().memory_limit_bytes,
                 },
-                "fragments": {h: to_dict(f) for h, f in node.fragments.items()},
+                "fragments": {h: to_dict(f) for h, f in node.fragment_snapshot().items()},
             }
         target = Path(payload.destination)
         target.parent.mkdir(parents=True, exist_ok=True)

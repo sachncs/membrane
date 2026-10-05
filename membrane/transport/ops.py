@@ -181,7 +181,7 @@ def op_inventory(node: Node | None, auth_context: AuthContext | None = None) -> 
     """
     if node is None:
         return ok_response({"node_id": "", "digest": {}})
-    digest = {h: frag.version_id for h, frag in node.fragments.items()}
+    digest = {h: frag.version_id for h, frag in node.fragment_snapshot().items()}
     return ok_response({"node_id": node.node_id, "digest": digest})
 
 

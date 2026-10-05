@@ -154,7 +154,7 @@ class NodeEndpoint:
             dict[str, int]: ``content_hash -> version_id`` for the node's
             fragments.
         """
-        return {h: frag.version_id for h, frag in self.node.fragments.items()}
+        return {h: frag.version_id for h, frag in self.node.fragment_snapshot().items()}
 
     def retrieve(self, content_hash: str) -> Fragment | None:
         """Return a fragment from the node.

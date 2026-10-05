@@ -109,6 +109,9 @@ class _FakeNode:
         self.node_id = "local"
         self.fragments: dict[str, object] = {}
 
+    def fragment_snapshot(self) -> dict:
+        return dict(self.fragments)
+
     def get_stats(self) -> object:
         from dataclasses import dataclass
 

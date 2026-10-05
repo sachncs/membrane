@@ -767,6 +767,19 @@ class Node:
         with self.lock:
             return self.memory_usage
 
+    def fragment_snapshot(self) -> dict[str, Fragment]:
+        """Return a consistent copy of the fragment table.
+
+        Background threads (gossip, repair, inventory) must iterate this
+        copy: iterating :attr:`fragments` while a store or eviction runs
+        raises ``RuntimeError: dictionary changed size during iteration``.
+
+        Returns:
+            dict[str, Fragment]: ``content_hash -> fragment`` at one instant.
+        """
+        with self.lock:
+            return dict(self.fragments)
+
     def get_shard_hashes(self) -> set[str]:
         """Return content hashes owned as primary by this node.
 
