@@ -80,9 +80,9 @@ def register_routes(app: FastAPI) -> None:
     def retrieve_handler(content_hash: str, request: Request):
         return handle_retrieve(app, content_hash, route_scope(request, "GET", "/retrieve"))
 
-    def inventory_handler(request: Request):
+    def inventory_handler(request: Request, after: str = "", limit: int = 0):
         route_scope(request, "GET", "/inventory")
-        return handle_inventory(app)
+        return handle_inventory(app, after, limit)
 
     def peers_handler(request: Request):
         route_scope(request, "GET", "/peers")

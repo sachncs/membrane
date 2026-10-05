@@ -168,6 +168,7 @@ def configure_peer_access(
     mtls: MTLSConfig | None,
     peer_api_key: str,
     peer_networks: tuple[str, ...],
+    compression: str = "zstd",
 ) -> None:
     """Install process-wide peer credentials and the outbound URL policy.
 
@@ -182,6 +183,7 @@ def configure_peer_access(
             ``admin`` scope).
         peer_networks: CIDR ranges of the peer network, exempt from the SSRF
             private-address block.
+        compression: How KV bytes travel to peers.
     """
     from membrane.network.peer import PeerCredentials, set_default_peer_credentials
     from membrane.security.url_allowlist import configure as configure_allowlist
@@ -192,6 +194,7 @@ def configure_peer_access(
             scheme="https" if mtls is not None else "http",
             bearer_token=peer_api_key,
             ssl_context=build_client_context(mtls) if mtls is not None else None,
+            compression=compression,
         )
     )
     seed_hosts = [seed.rsplit(":", 1)[0].strip("[]") for seed in cluster_config.peers]

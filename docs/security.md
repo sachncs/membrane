@@ -117,8 +117,8 @@ and `enforce_route_scope` runs it at the top of every handler:
 |-------|--------|
 | public | `GET /livez`, `GET /readyz` |
 | `read` | `GET /retrieve`, `/inventory`, `/peers`, `/heartbeat`, `/metrics`, `/metrics.json`, `/openapi.json` (with `--enable-api-docs`) |
-| `write` | `POST /store`, `/replicate`, `/prefill`, `/sync`, `/gossip`, `/join`, `/leave` |
-| `admin` | `POST /delete`, `/tombstone`, `/purge`, `/verify`, `PUT`/`GET`/`HEAD /blobs/{payload_ref}` (peer-to-peer KV bytes), and everything under `/admin/` |
+| `write` | `POST /store`, `/replicate`, `/prefill`, `/gossip`, `/join`, `/leave` |
+| `admin` | `POST /sync`, `/delete`, `/tombstone`, `/purge`, `/verify`, `PUT`/`GET`/`HEAD /blobs/{payload_ref}` (peer-to-peer KV bytes), and everything under `/admin/` |
 
 `admin` implies `write` implies `read`. Unlisted routes default to
 `read`, so a new route fails closed.

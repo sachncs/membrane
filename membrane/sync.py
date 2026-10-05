@@ -108,31 +108,38 @@ class DeltaSync:
         """
         source_digest = self.transfer_service.inventory_digest(source) or {}
         target_digest = self.transfer_service.inventory_digest(target) or {}
+        plan = self.plan_from_digests(source.node_id, target.node_id, source_digest, target_digest)
+        sizes = source.fragment_snapshot()
+        plan.estimated_bytes = sum(
+            sizes[h].payload_size for h in plan.missing_hashes + plan.outdated_hashes if h in sizes
+        )
+        return plan
 
+    @staticmethod
+    def plan_from_digests(
+        source_id: str, target_id: str, source_digest: dict[str, int], target_digest: dict[str, int]
+    ) -> SyncPlan:
+        """Compute a plan from two ``content_hash -> version_id`` digests.
+
+        Args:
+            source_id: Source node identifier.
+            target_id: Target node identifier.
+            source_digest: The source's inventory.
+            target_digest: The target's inventory.
+
+        Returns:
+            SyncPlan: Hashes the target lacks or holds at an older version
+            (``estimated_bytes`` is 0; digests carry no sizes).
+        """
         missing: list[str] = []
         outdated: list[str] = []
-        estimated_bytes = 0
-
-        for h, source_version in source_digest.items():
-            target_version = target_digest.get(h)
+        for content_hash, source_version in sorted(source_digest.items()):
+            target_version = target_digest.get(content_hash)
             if target_version is None:
-                missing.append(h)
-                frag = source.fragments.get(h)
-                if frag is not None:
-                    estimated_bytes += frag.payload_size
+                missing.append(content_hash)
             elif target_version < source_version:
-                outdated.append(h)
-                frag = source.fragments.get(h)
-                if frag is not None:
-                    estimated_bytes += frag.payload_size
-
-        return SyncPlan(
-            source_id=source.node_id,
-            target_id=target.node_id,
-            missing_hashes=missing,
-            outdated_hashes=outdated,
-            estimated_bytes=estimated_bytes,
-        )
+                outdated.append(content_hash)
+        return SyncPlan(source_id=source_id, target_id=target_id, missing_hashes=missing, outdated_hashes=outdated)
 
     def execute_plan(
         self,

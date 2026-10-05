@@ -172,21 +172,34 @@ def op_metrics(
     )
 
 
-def op_inventory(node: Node | None, auth_context: AuthContext | None = None) -> tuple[int, JsonDict]:
-    """``GET /inventory`` — node's inventory digest.
+def op_inventory(
+    node: Node | None, auth_context: AuthContext | None = None, after: str = "", limit: int = 0
+) -> tuple[int, JsonDict]:
+    """``GET /inventory`` — node's inventory digest, optionally one page at a time.
 
     Args:
         node: Local :class:`Node`.
         auth_context: Authenticated caller; ``None`` when authentication is
             off.
+        after: Return hashes sorting after this cursor (paged mode).
+        limit: Page size; ``0`` returns everything in one response.
 
     Returns:
-        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+        tuple[int, JsonDict]: ``(status, body)``; in paged mode ``next`` is
+        the cursor for the following page, empty on the last page.
     """
     if node is None:
-        return ok_response({"node_id": "", "digest": {}})
-    digest = {h: frag.version_id for h, frag in node.fragment_snapshot().items()}
-    return ok_response({"node_id": node.node_id, "digest": digest})
+        return ok_response({"node_id": "", "digest": {}, "next": ""})
+    snapshot = node.fragment_snapshot()
+    if limit <= 0:
+        return ok_response(
+            {"node_id": node.node_id, "digest": {h: f.version_id for h, f in snapshot.items()}, "next": ""}
+        )
+    page = sorted(h for h in snapshot if h > after)[: limit + 1]
+    more = len(page) > limit
+    page = page[:limit]
+    digest = {h: snapshot[h].version_id for h in page}
+    return ok_response({"node_id": node.node_id, "digest": digest, "next": page[-1] if more else ""})
 
 
 def op_peers(cluster: Cluster | None, auth_context: AuthContext | None = None) -> tuple[int, JsonDict]:

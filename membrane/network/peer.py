@@ -26,6 +26,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from membrane.codec import CompressionTransport
 from membrane.errors import NetworkError
 from membrane.fragment import Fragment
 from membrane.otel_tracer.otel import TRACING
@@ -40,6 +41,15 @@ logger = logging.getLogger(__name__)
 #: once the result can no longer be used; ``None`` means no deadline.
 peer_deadline: ContextVar[float | None] = ContextVar("membrane_peer_deadline", default=None)
 
+#: Request/response header naming the compression of a blob body.
+COMPRESSION_HEADER = "X-Membrane-Compression"
+#: Request header: the compression the caller accepts for a blob download.
+ACCEPT_COMPRESSION_HEADER = "X-Membrane-Accept-Compression"
+#: Blobs smaller than this travel uncompressed.
+COMPRESS_MIN_BYTES = 1024
+#: Upper bound for a decompressed blob (matches the server's body limit).
+MAX_BLOB_BYTES = 100 << 20
+
 
 @dataclass(frozen=True)
 class PeerCredentials:
@@ -53,11 +63,14 @@ class PeerCredentials:
         ssl_context: Client TLS context (CA bundle plus, for mTLS,
             this node's client certificate). ``None`` uses the
             system trust store.
+        compression: How KV bytes travel between peers: ``zstd``
+            (default), ``lz4``, ``deflate``, or ``raw``.
     """
 
     scheme: str = "http"
     bearer_token: str = ""
     ssl_context: ssl.SSLContext | None = None
+    compression: str = "zstd"
 
 
 DEFAULT_CREDENTIALS = PeerCredentials()
@@ -474,6 +487,29 @@ class Peer:
         """
         return self.request_with_retry("GET", "/inventory")
 
+    def inventory_digest(self, page_size: int = 10_000) -> dict[str, int] | None:
+        """Fetch the peer's whole inventory, one page at a time.
+
+        Args:
+            page_size: Hashes per request.
+
+        Returns:
+            dict[str, int] | None: ``content_hash -> version_id``, or
+            ``None`` when a page could not be fetched.
+        """
+        from urllib.parse import quote
+
+        digest: dict[str, int] = {}
+        cursor = ""
+        while True:
+            page = self.request_with_retry("GET", f"/inventory?limit={page_size}&after={quote(cursor)}")
+            if not isinstance(page, dict):
+                return None
+            digest.update(page.get("digest", {}))
+            cursor = str(page.get("next", ""))
+            if not cursor:
+                return digest
+
     def store_fragment(self, fragment: Fragment, is_primary: bool = False) -> bool:
         """Send ``POST /store`` with ``fragment`` and ``is_primary``.
 
@@ -573,7 +609,12 @@ class Peer:
             bool: True when the peer stored (or already held) the bytes.
         """
         headers = {"Content-Type": "application/octet-stream", "X-Content-SHA256": sha256_hex(data)}
-        resp = self.request_with_retry("PUT", f"/blobs/{payload_ref}", raw_body=data, extra_headers=headers)
+        body = data
+        method = self.credentials.compression
+        if method != "raw" and len(data) >= COMPRESS_MIN_BYTES:
+            body = CompressionTransport(method).compress(data)
+            headers[COMPRESSION_HEADER] = method
+        resp = self.request_with_retry("PUT", f"/blobs/{payload_ref}", raw_body=body, extra_headers=headers)
         return resp is not None and bool(resp.get("stored", False))
 
     def get_blob(self, payload_ref: str) -> bytes | None:
@@ -586,13 +627,22 @@ class Peer:
             bytes | None: The verified bytes, or ``None`` when the peer does
             not hold them, they fail verification, or the request fails.
         """
-        resp = self.request_raw("GET", f"/blobs/{payload_ref}")
+        resp = self.request_raw(
+            "GET", f"/blobs/{payload_ref}", {ACCEPT_COMPRESSION_HEADER: self.credentials.compression}
+        )
         if resp is None or resp.status != 200:
             return None
-        if resp.headers.get("x-content-sha256") != sha256_hex(resp.body):
+        body = resp.body
+        if resp.headers.get(COMPRESSION_HEADER.lower()):
+            try:
+                body = CompressionTransport().decompress(body, max_size=MAX_BLOB_BYTES)
+            except (ValueError, RuntimeError) as exc:
+                logger.warning("blob %s from %s did not decompress: %s", payload_ref, self.base_url, exc)
+                return None
+        if resp.headers.get("x-content-sha256") != sha256_hex(body):
             logger.warning("blob %s from %s failed its digest check", payload_ref, self.base_url)
             return None
-        return resp.body
+        return body
 
     def blob_digest(self, payload_ref: str) -> str | None:
         """Return the SHA-256 the peer reports for its copy of ``payload_ref``.
@@ -609,12 +659,13 @@ class Peer:
             return None
         return resp.headers.get("x-content-sha256")
 
-    def request_raw(self, method: str, path: str) -> RawResponse | None:
+    def request_raw(self, method: str, path: str, extra_headers: dict[str, str] | None = None) -> RawResponse | None:
         """Issue a body-less request and return the raw response, with retries.
 
         Args:
             method: HTTP method.
             path: URL path appended to ``self.base_url``.
+            extra_headers: Additional request headers.
 
         Returns:
             RawResponse | None: The response, or ``None`` on terminal failure.
@@ -624,7 +675,7 @@ class Peer:
             return None
         for attempt in range(self.max_retries):
             try:
-                headers = dict(self.base_headers)
+                headers = {**self.base_headers, **(extra_headers or {})}
                 TRACING.inject(headers)
                 response = self.transport.request_bytes(method, url, None, headers, self.timeout_sec)
                 self.breaker.record_success()

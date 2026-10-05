@@ -134,9 +134,9 @@ class CountingPeer:
         self.held: set[str] = set()
         self.calls: list[str] = []
 
-    def get_inventory(self) -> dict:
+    def inventory_digest(self) -> dict:
         self.calls.append("inventory")
-        return {"digest": dict.fromkeys(self.held, 1)}
+        return dict.fromkeys(self.held, 1)
 
     def retrieve_fragment(self, content_hash: str):
         self.calls.append("retrieve")

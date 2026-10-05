@@ -6,9 +6,11 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from membrane.auth import AuthContext
+from membrane.codec import COMPRESSION_METHODS, CompressionTransport
 from membrane.compute.cpu import CPU
 from membrane.integrity import record_corrupt_payload
 from membrane.metrics import NodeMetrics
+from membrane.network.peer import ACCEPT_COMPRESSION_HEADER, COMPRESS_MIN_BYTES, COMPRESSION_HEADER
 from membrane.transport.context import app_context
 from membrane.transport.metrics import record_transport
 from membrane.transport.ops import (
@@ -92,20 +94,23 @@ def handle_store(app: FastAPI, req: StoreRequest, request: Request):
     return respond(status, body)
 
 
-def handle_inventory(app: FastAPI):
-    """Serve ``GET /inventory``.
+def handle_inventory(app: FastAPI, after: str = "", limit: int = 0):
+    """Serve ``GET /inventory`` (``?after=&limit=`` pages through large nodes).
 
     Args:
         app: The FastAPI application.
+        after: Page cursor.
+        limit: Page size; ``0`` for everything (capped at 100,000 per page).
 
     Returns:
         object: The HTTP response.
     """
+    limit = min(max(limit, 0), 100_000)
     status, body = record_transport(
         transport_metrics_for(app),
         "inventory",
         "GET",
-        lambda: op_inventory(app_context(app).node),
+        lambda: op_inventory(app_context(app).node, after=after, limit=limit),
     )
     return respond(status, body)
 
@@ -180,6 +185,11 @@ async def handle_put_blob(app: FastAPI, payload_ref: str, request: Request) -> R
     if data is None:
         return JSONResponse({"error": "payload too large", "limit": MAX_BODY_BYTES}, status_code=413)
     claimed = request.headers.get("x-content-sha256", "")
+    if request.headers.get(COMPRESSION_HEADER.lower()):
+        try:
+            data = await asyncio.to_thread(CompressionTransport().decompress, data, MAX_BODY_BYTES)
+        except (ValueError, RuntimeError) as exc:
+            return JSONResponse({"error": "bad compressed body", "detail": str(exc)}, status_code=400)
     status, body = await asyncio.to_thread(
         record_transport,
         transport_metrics_for(app),
@@ -206,9 +216,14 @@ async def handle_get_blob(app: FastAPI, payload_ref: str, request: Request) -> R
     status, data = await asyncio.to_thread(op_get_blob, app_context(app).node, payload_ref)
     if data is None:
         return JSONResponse({"error": "not found" if status == 404 else "invalid payload_ref"}, status_code=status)
-    headers = {"X-Content-SHA256": sha256_hex(data), "Content-Length": str(len(data))}
+    headers = {"X-Content-SHA256": sha256_hex(data)}
     if request.method == "HEAD":
+        headers["Content-Length"] = str(len(data))
         return Response(status_code=200, headers=headers, media_type="application/octet-stream")
+    accepted = request.headers.get(ACCEPT_COMPRESSION_HEADER.lower(), "raw")
+    if accepted in COMPRESSION_METHODS and accepted != "raw" and len(data) >= COMPRESS_MIN_BYTES:
+        data = await asyncio.to_thread(CompressionTransport(accepted).compress, data)
+        headers[COMPRESSION_HEADER] = accepted
     return Response(content=data, headers=headers, media_type="application/octet-stream")
 
 
