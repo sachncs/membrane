@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from membrane.fragment import Fragment
 from membrane.node import Node
+from membrane.replication import payload_for, replicate_fragment
 
 if TYPE_CHECKING:
     from membrane.network.cluster import Cluster
@@ -76,12 +77,25 @@ class LocalEndpoint(Protocol):
         """
         ...
 
-    def store(self, fragment: Fragment, *, is_primary: bool = False) -> bool:
-        """Persist ``fragment``; returns True on success.
+    def payload(self, fragment: Fragment) -> bytes | None:
+        """Return the KV bytes behind ``fragment``.
+
+        Args:
+            fragment: The fragment.
+
+        Returns:
+            bytes | None: The bytes, or ``None`` when metadata-only or absent.
+        """
+        ...
+
+    def store(self, fragment: Fragment, *, is_primary: bool = False, payload: bytes | None = None) -> bool:
+        """Persist ``fragment`` and its bytes; returns True on success.
 
         Args:
             fragment: The fragment.
             is_primary: Whether this node owns the fragment's primary copy.
+            payload: The fragment's KV bytes, written to the content store
+                first; required when it has a ``payload_ref`` the store lacks.
 
         Returns:
             bool: True when stored.
@@ -122,11 +136,23 @@ class RemoteEndpoint(Protocol):
         """
         ...
 
-    def push(self, fragment: Fragment) -> bool:
-        """Send a fragment to the remote peer (e.g., via its /replicate endpoint).
+    def payload(self, fragment: Fragment) -> bytes | None:
+        """Return the KV bytes behind ``fragment``.
 
         Args:
             fragment: The fragment.
+
+        Returns:
+            bytes | None: The bytes, or ``None`` when metadata-only or absent.
+        """
+        ...
+
+    def push(self, fragment: Fragment, payload: bytes | None) -> bool:
+        """Send a fragment and its bytes to the remote peer.
+
+        Args:
+            fragment: The fragment.
+            payload: Its KV bytes, when it has a ``payload_ref``.
 
         Returns:
             bool: True when the peer acknowledged.
@@ -167,16 +193,35 @@ class NodeEndpoint:
         """
         return self.node.retrieve(content_hash)
 
-    def store(self, fragment: Fragment, *, is_primary: bool = False) -> bool:
-        """Store a fragment on the node.
+    def payload(self, fragment: Fragment) -> bytes | None:
+        """Return the fragment's bytes from the node's content store.
+
+        Args:
+            fragment: The fragment.
+
+        Returns:
+            bytes | None: The bytes, or ``None`` when metadata-only or absent.
+        """
+        return payload_for(fragment, self.node.content_store)
+
+    def store(self, fragment: Fragment, *, is_primary: bool = False, payload: bytes | None = None) -> bool:
+        """Store a fragment, and its bytes, on the node.
 
         Args:
             fragment: The fragment.
             is_primary: Whether this node owns the fragment's primary copy.
+            payload: The fragment's KV bytes.
 
         Returns:
-            bool: True when stored.
+            bool: True when stored. In-process transfers keep working when
+            the source never held bytes (library use without a content
+            store); :meth:`Node.store` logs the missing payload. The
+            network path refuses such replicas (``POST /replicate``
+            returns 422).
         """
+        ref = fragment.payload_ref
+        if ref is not None and payload is not None and not self.node.content_store.has(ref):
+            self.node.content_store.put(ref, payload)
         return self.node.store(fragment, is_primary=is_primary)
 
 
@@ -231,11 +276,27 @@ class ClusterPeerEndpoint:
             return None
         return client.retrieve_fragment(content_hash)
 
-    def push(self, fragment: Fragment) -> bool:
-        """Replicate ``fragment`` to the peer.
+    def payload(self, fragment: Fragment) -> bytes | None:
+        """Download the fragment's bytes from the peer (digest-verified).
 
         Args:
             fragment: The fragment.
+
+        Returns:
+            bytes | None: The bytes, or ``None`` when metadata-only or
+            unavailable.
+        """
+        client = self.client_for()
+        if client is None or fragment.payload_ref is None:
+            return None
+        return client.get_blob(fragment.payload_ref)
+
+    def push(self, fragment: Fragment, payload: bytes | None) -> bool:
+        """Replicate ``fragment`` and its bytes to the peer.
+
+        Args:
+            fragment: The fragment.
+            payload: Its KV bytes, when it has a ``payload_ref``.
 
         Returns:
             bool: True when the peer acknowledged.
@@ -243,7 +304,7 @@ class ClusterPeerEndpoint:
         client = self.client_for()
         if client is None:
             return False
-        return client.request_replicate(fragment)
+        return replicate_fragment(client, fragment, payload)
 
 
 def resolve_endpoint(node_or_id: Node | str, cluster: Cluster | None) -> LocalEndpoint | RemoteEndpoint:
@@ -325,7 +386,7 @@ class TransferService:
         fragment = source.retrieve(content_hash)
         if fragment is None:
             return False
-        return target.store(fragment, is_primary=False)
+        return target.store(fragment, is_primary=False, payload=source.payload(fragment))
 
     def transfer_remote_source(
         self,
@@ -350,7 +411,7 @@ class TransferService:
         fragment = source.retrieve(content_hash)
         if fragment is None:
             return False
-        return target.push(fragment)
+        return target.push(fragment, source.payload(fragment))
 
     def transfer_remote_target(
         self,
@@ -371,7 +432,7 @@ class TransferService:
         fragment = source.retrieve(content_hash)
         if fragment is None:
             return False
-        return target.push(fragment)
+        return target.push(fragment, source.payload(fragment))
 
     # ------------------------------------------------------------------
     # Public API (Node-or-id convenience wrappers)
@@ -446,11 +507,15 @@ class TransferService:
         if isinstance(src_endpoint, NodeEndpoint) and isinstance(tgt_endpoint, NodeEndpoint):
             return self.transfer_local_endpoint(src_endpoint, tgt_endpoint, content_hash)
         if isinstance(src_endpoint, ClusterPeerEndpoint):
-            return self.transfer_remote_source(
-                src_endpoint,
-                tgt_endpoint,  # type: ignore[arg-type]
-                content_hash,
-            )
+            if isinstance(tgt_endpoint, NodeEndpoint):
+                # Pull from a peer into a local node.
+                fragment = src_endpoint.retrieve(content_hash)
+                if fragment is None:
+                    return False
+                return tgt_endpoint.store(fragment, payload=src_endpoint.payload(fragment))
+            if isinstance(tgt_endpoint, ClusterPeerEndpoint):
+                return self.transfer_remote_source(src_endpoint, tgt_endpoint, content_hash)
+            return False
         # isinstance(tgt_endpoint, ClusterPeerEndpoint)  (mypy narrowing)
         if not isinstance(src_endpoint, NodeEndpoint) or not isinstance(tgt_endpoint, ClusterPeerEndpoint):
             return False

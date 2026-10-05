@@ -31,12 +31,14 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 from membrane.node import Node
+from membrane.replication import hand_off_primary, payload_for, replicate_fragment
 from membrane.ring import EmptyRingError
 from membrane.transfer import TransferService
 
 if TYPE_CHECKING:
     from membrane.network.cluster import ClusterConfig
     from membrane.network.membership import Membership
+    from membrane.network.strategy import Migrator
     from membrane.shard import Shard
 
 
@@ -69,6 +71,7 @@ class Replicator:
         stop_event: threading.Event | None = None,
         running: list[bool] | None = None,
         max_concurrent: int = 0,
+        migrator: Migrator | None = None,
     ) -> None:
         """Initialize the replicator.
 
@@ -87,6 +90,9 @@ class Replicator:
             running: Mutable bool flag.
             max_concurrent: Maximum concurrent in-flight replication
                 calls (0 = unbounded).
+            migrator: Paces primary hand-offs during rebalancing
+                (:meth:`Migrator.delay` between moves); unpaced when
+                ``None``.
         """
         self.transfer_service = transfer_service or TransferService()
         self.membership = membership
@@ -96,6 +102,7 @@ class Replicator:
         self.stop_event = stop_event
         self.running = running
         self.semaphore = threading.Semaphore(max_concurrent) if max_concurrent > 0 else None
+        self.migrator = migrator
 
     def replicate_cluster(
         self,
@@ -164,10 +171,15 @@ class Replicator:
         known: set[str] = set()
         pending: set[str] = set()
         next_full = 0.0
+        members: frozenset[str] = frozenset()
         while self.running[0] and not self.stop_event.is_set():
             primaries = self.node.get_shard_hashes()
             now = time.monotonic()
-            full = now >= next_full
+            healthy = frozenset(peer.node_id for peer in self.membership.healthy())
+            # A membership change moves ring ownership: run a full pass
+            # (re-replicate and rebalance) right away.
+            full = now >= next_full or healthy != members
+            members = healthy
             candidates = primaries if full else (primaries - known) | (pending & primaries)
             targets = self.replica_targets(candidates)
             if targets is not None:
@@ -181,6 +193,7 @@ class Replicator:
                         failed |= {h for h in hashes if not self.push_one(h, peer_id)}
                 known, pending = primaries, failed
                 if full:
+                    self.rebalance(set(healthy))
                     next_full = now + self.config.repair_interval_sec
             self.stop_event.wait(timeout=self.config.gossip_interval_sec)
 
@@ -240,7 +253,8 @@ class Replicator:
             if fragment is None:
                 continue
             try:
-                ok = self.__guarded(partial(client.request_replicate, fragment))
+                payload = payload_for(fragment, self.node.content_store)
+                ok = self.__guarded(partial(replicate_fragment, client, fragment, payload))
             except Exception as exc:
                 logger.debug("replication of %s to %s failed: %s", content_hash, peer_id, exc)
                 ok = False
@@ -273,7 +287,7 @@ class Replicator:
             frag = node.retrieve(content_hash)
             if frag is None:
                 return True
-            ok = bool(client.request_replicate(frag))
+            ok = replicate_fragment(client, frag, payload_for(frag, node.content_store))
             logger.debug("Replicated %s to %s: %s", content_hash, peer_id, ok)
             return ok
 
@@ -282,6 +296,87 @@ class Replicator:
         except Exception as exc:
             logger.debug("Replication of %s to %s failed: %s", content_hash, peer_id, exc)
             return False
+
+    def hand_off(self, content_hash: str, peer_id: str) -> bool:
+        """Make ``peer_id`` the verified primary owner of a local primary.
+
+        The peer receives the bytes and metadata with ``is_primary``; its
+        copy is then checked (metadata present, payload digest equal to the
+        local bytes). Only after that does this node drop its primary flag
+        and record the new owner in the shard table.
+
+        Args:
+            content_hash: A primary held by this node.
+            peer_id: The new owner.
+
+        Returns:
+            bool: True when ownership moved; False leaves this node primary.
+        """
+        if self.membership is None or self.node is None:
+            return False
+        client = self.membership.get_client(peer_id)
+        fragment = self.node.retrieve(content_hash)
+        if client is None or fragment is None:
+            return False
+        payload = payload_for(fragment, self.node.content_store)
+        try:
+            moved = self.__guarded(partial(hand_off_primary, client, fragment, payload))
+        except Exception as exc:
+            logger.warning("hand-off of %s to %s failed: %s", content_hash, peer_id, exc)
+            return False
+        if not moved:
+            logger.warning("hand-off of %s to %s not verified; keeping ownership", content_hash, peer_id)
+            return False
+        self.node.primary_hashes.discard(content_hash)
+        if self.shard is not None:
+            self.shard.migrate_primary(content_hash, leaving_peer=self.node.node_id, local_node_id=peer_id)
+        return True
+
+    def rebalance(self, healthy: set[str]) -> int:
+        """Hand off every primary the hash ring now assigns to another healthy node.
+
+        Args:
+            healthy: Node ids of healthy peers.
+
+        Returns:
+            int: Primaries moved; the rest stay here and are retried on the
+            next full pass.
+        """
+        moved = 0
+        for content_hash, owner in self.misplaced_primaries(healthy).items():
+            if self.stop_event is not None and self.stop_event.is_set():
+                break
+            if self.hand_off(content_hash, owner):
+                moved += 1
+            pause = self.migrator.delay() if self.migrator is not None else 0.0
+            if pause > 0 and self.stop_event is not None and self.stop_event.wait(pause):
+                break
+        if moved:
+            logger.info("rebalanced %s primaries to their ring owners", moved)
+        return moved
+
+    def misplaced_primaries(self, healthy: set[str]) -> dict[str, str]:
+        """Find local primaries that the hash ring now assigns to a healthy peer.
+
+        Args:
+            healthy: Node ids of healthy peers.
+
+        Returns:
+            dict[str, str]: Content hash to its ring-assigned owner, for
+            primaries this node should hand off. Empty while the ring is
+            empty.
+        """
+        if self.shard is None or self.node is None:
+            return {}
+        moves: dict[str, str] = {}
+        for content_hash in sorted(self.node.get_shard_hashes()):
+            try:
+                owner = self.shard.hash_ring.get_node(content_hash)
+            except EmptyRingError:
+                return {}
+            if owner != self.node.node_id and owner in healthy:
+                moves[content_hash] = owner
+        return moves
 
     def __guarded(self, call: Callable[[], bool]) -> bool:
         """Run ``call`` under the concurrency cap, if one is set.

@@ -11,6 +11,7 @@ scope check, so a node configured with an authenticator never
 serves an unauthenticated read.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -21,12 +22,14 @@ from pydantic import BaseModel, Field, conlist
 from membrane.auth import AuthBackendError, AuthContext, AuthForbiddenError
 from membrane.compute.cpu import CPU
 from membrane.metrics import TransportMetrics
+from membrane.security.tenant import has_admin_scope
 from membrane.serialization import JsonDict
 from membrane.transport.authz import enforce_route_scope
 from membrane.transport.metrics import record_transport
 from membrane.transport.ops import (
     MAX_BODY_BYTES,
     op_delete,
+    op_get_blob,
     op_gossip,
     op_heartbeat,
     op_inventory,
@@ -36,6 +39,7 @@ from membrane.transport.ops import (
     op_peers,
     op_prefill,
     op_purge,
+    op_put_blob,
     op_replicate,
     op_retrieve,
     op_store,
@@ -44,6 +48,7 @@ from membrane.transport.ops import (
     op_verify_received,
 )
 from membrane.transport.tls_protocol import peer_headers_from_scope
+from membrane.wire.v3.chunks import sha256_hex
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +173,7 @@ class ReplicateRequest(BaseModel):
     """``POST /replicate`` body."""
 
     fragment: FragmentPayload
+    is_primary: bool = False
 
 
 class PrefillRequest(BaseModel):
@@ -408,6 +414,14 @@ def register_routes(app: FastAPI) -> None:
     def verify_handler(req: VerifyRequest, request: Request):
         return handle_verify(app, req, request)
 
+    async def put_blob_handler(payload_ref: str, request: Request):
+        return await handle_put_blob(app, payload_ref, request)
+
+    async def get_blob_handler(payload_ref: str, request: Request):
+        return await handle_get_blob(app, payload_ref, request)
+
+    app.add_api_route("/blobs/{payload_ref}", put_blob_handler, methods=["PUT"], response_model=None)
+    app.add_api_route("/blobs/{payload_ref}", get_blob_handler, methods=["GET", "HEAD"], response_model=None)
     app.add_api_route("/store", store_handler, methods=["POST"], response_model=None)
     app.add_api_route("/replicate", replicate_handler, methods=["POST"], response_model=None)
     app.add_api_route("/sync", sync_handler, methods=["POST"], response_model=None)
@@ -620,9 +634,84 @@ def handle_replicate(app: FastAPI, req: ReplicateRequest, request: Request):
             app.state.node,
             req.fragment.to_wire_dict(),
             auth_context=context,
+            # Only peers (admin) may hand over primary ownership.
+            # (An empty subject means authentication is off.)
+            is_primary=req.is_primary and (not context.subject or has_admin_scope(context.scopes)),
         ),
     )
     return respond(status, body)
+
+
+async def read_limited_body(request: Request, limit: int) -> bytes | None:
+    """Read the request body, giving up once it exceeds ``limit`` bytes.
+
+    Args:
+        request: The inbound request.
+        limit: Maximum body size in bytes.
+
+    Returns:
+        bytes | None: The body, or ``None`` when it is too large.
+    """
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > limit:
+        return None
+    parts: list[bytes] = []
+    total = 0
+    async for part in request.stream():
+        total += len(part)
+        if total > limit:
+            return None
+        parts.append(part)
+    return b"".join(parts)
+
+
+async def handle_put_blob(app: FastAPI, payload_ref: str, request: Request) -> Response:
+    """Serve ``PUT /blobs/{payload_ref}``: store KV bytes sent by a peer.
+
+    Args:
+        app: The FastAPI application.
+        payload_ref: Content-store key from the path.
+        request: The inbound request; the body is the raw bytes and
+            ``X-Content-SHA256`` their digest.
+
+    Returns:
+        Response: ``200``, ``400`` (bad key or digest), or ``413`` (too large).
+    """
+    route_scope(request, "PUT", "/blobs")
+    data = await read_limited_body(request, MAX_BODY_BYTES)
+    if data is None:
+        return JSONResponse({"error": "payload too large", "limit": MAX_BODY_BYTES}, status_code=413)
+    claimed = request.headers.get("x-content-sha256", "")
+    status, body = await asyncio.to_thread(
+        record_transport,
+        transport_metrics_for(app),
+        "blobs",
+        "PUT",
+        lambda: op_put_blob(app.state.node, payload_ref, data, claimed),
+    )
+    return respond(status, body)
+
+
+async def handle_get_blob(app: FastAPI, payload_ref: str, request: Request) -> Response:
+    """Serve ``GET`` / ``HEAD /blobs/{payload_ref}``: KV bytes for a peer.
+
+    Args:
+        app: The FastAPI application.
+        payload_ref: Content-store key from the path.
+        request: The inbound request.
+
+    Returns:
+        Response: The bytes with ``X-Content-SHA256`` (``HEAD``: headers
+        only), ``404`` when absent, or ``400`` for a bad key.
+    """
+    route_scope(request, request.method, "/blobs")
+    status, data = await asyncio.to_thread(op_get_blob, app.state.node, payload_ref)
+    if data is None:
+        return JSONResponse({"error": "not found" if status == 404 else "invalid payload_ref"}, status_code=status)
+    headers = {"X-Content-SHA256": sha256_hex(data), "Content-Length": str(len(data))}
+    if request.method == "HEAD":
+        return Response(status_code=200, headers=headers, media_type="application/octet-stream")
+    return Response(content=data, headers=headers, media_type="application/octet-stream")
 
 
 def handle_sync(app: FastAPI, req: SyncRequest, request: Request):

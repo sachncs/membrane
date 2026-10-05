@@ -12,6 +12,35 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Fixed (replication)
+
+- **Replication copied metadata only, never the KV bytes**, so replicas
+  answered `found: false` for any fragment with a payload and gave no
+  redundancy. Every replication path (quorum writes, the background
+  replicator, drain, `TransferService`) now sends the bytes first, over
+  new peer-only `PUT`/`GET`/`HEAD /blobs/{payload_ref}` routes (SHA-256
+  verified, 100 MiB limit). `POST /replicate` refuses metadata whose
+  bytes are absent (`422`), and quorum acknowledgements count only peers
+  holding both.
+- **Drain's primary hand-off was a stub** (it checked the local node and
+  ignored transfer errors). It now hands each primary to its next healthy
+  ring owner and verifies the copy before giving up ownership; stragglers
+  are logged.
+- **No rebalancing on membership change.** When the healthy node set
+  changes, primaries the ring assigns elsewhere move to their owner
+  (verified, rate-limited by the cluster's `Migrator`).
+- Transferring a fragment from a peer into a local node called a method
+  local endpoints do not have.
+- `membrane.wire.v3` imported the gRPC stubs eagerly; its exports are now
+  lazy, so the server does not need `grpcio`.
+
+### Added (testing)
+
+- `scripts/kind_e2e.sh` and a `Cluster e2e (kind)` CI job: the shipped
+  StatefulSet under payload-bearing strong writes through a rolling
+  restart (no failed write), a force-deleted pod (survivors serve its
+  bytes), and a scale from 3 to 4 nodes (the new pod receives primaries).
+
 ### Security
 
 - API keyfiles hold SHA-256 digests (`sha256:<digest>:<subject>:<scopes>`);

@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.network.peer import Peer, peer_deadline
+from membrane.replication import replicate_fragment
 
 logger = logging.getLogger(__name__)
 
@@ -88,14 +89,20 @@ class QuorumReplicator:
         peers: Iterable[Peer],
         quorum_count: int,
         timeout_sec: float,
+        blob: bytes | None = None,
     ) -> QuorumResult:
         """Send ``fragment`` to every peer and wait for ``quorum_count`` acks.
+
+        A peer acknowledges only once it holds both the KV bytes and the
+        metadata, so an acknowledged write survives the loss of this node.
 
         Args:
             fragment: The fragment to replicate (already stored locally).
             peers: Replica peers; all are contacted in parallel.
             quorum_count: Peer acknowledgements required.
             timeout_sec: Wall-clock budget for the whole fan-out.
+            blob: The fragment's KV bytes; required when it has a
+                ``payload_ref``.
 
         Returns:
             QuorumResult: Outcome and counters. Calls still in flight when
@@ -106,7 +113,6 @@ class QuorumReplicator:
         if quorum_count <= 0 or not peer_list:
             return QuorumResult(success=False, ack_count=0, timed_out=True, replica_count=len(peer_list))
 
-        payload = {"fragment": wire_dict_for(fragment), "is_primary": False}
         deadline = now() + timeout_sec
         pending: set[concurrent.futures.Future[bool]] = set()
         for peer in peer_list:
@@ -114,7 +120,7 @@ class QuorumReplicator:
             # Context cannot be entered by two threads at once.
             context = contextvars.copy_context()
             context.run(peer_deadline.set, deadline)
-            pending.add(self.pool().submit(context.run, post_replicate, peer, payload))
+            pending.add(self.pool().submit(context.run, post_replicate, peer, fragment, blob))
 
         ack_count = 0
         while pending and ack_count < quorum_count:
@@ -156,6 +162,7 @@ def attempt_quorum_acks(
     peers: Iterable[Peer],
     quorum_count: int,
     timeout_sec: float,
+    blob: bytes | None = None,
 ) -> QuorumResult:
     """Fan out ``fragment`` on the process-wide :data:`DEFAULT_REPLICATOR`.
 
@@ -164,11 +171,12 @@ def attempt_quorum_acks(
         peers: Replica peers; all are contacted in parallel.
         quorum_count: Peer acknowledgements required.
         timeout_sec: Wall-clock budget for the whole fan-out.
+        blob: The fragment's KV bytes, when it has a ``payload_ref``.
 
     Returns:
         QuorumResult: Outcome and counters.
     """
-    return DEFAULT_REPLICATOR(fragment, peers, quorum_count, timeout_sec)
+    return DEFAULT_REPLICATOR(fragment, peers, quorum_count, timeout_sec, blob)
 
 
 def now() -> float:
@@ -180,60 +188,21 @@ def now() -> float:
     return time.monotonic()
 
 
-def post_replicate(peer: Peer, payload: dict) -> bool:
-    """Send one replica write to ``peer``.
+def post_replicate(peer: Peer, fragment: Fragment, blob: bytes | None) -> bool:
+    """Send one replica write (bytes, then metadata) to ``peer``.
 
     Args:
         peer: Destination peer.
-        payload: Store request body carrying the fragment.
+        fragment: The fragment.
+        blob: Its KV bytes, when it has a ``payload_ref``.
 
     Returns:
         bool: True when the peer acknowledged.
     """
     try:
-        return peer.request_replicate(fragment_from(payload))
+        return replicate_fragment(peer, fragment, blob)
     except Exception as exc:  # pragma: no cover - propagation is the caller's job
         raise PeerError(str(exc)) from exc
-
-
-def fragment_from(payload: dict) -> Fragment:
-    """Reconstruct a Fragment from the wire dict carrying already-parsed bytes.
-
-    The ``op_store`` route serializes a Fragment once and ships
-    the same dict over the wire; the cluster's
-    ``request_replicate`` handler accepts the dict via the
-    same :func:`membrane.serialization.from_dict`. We import the
-    fragment lazily to keep :mod:`membrane.quorum` independent
-    of the serialization module's import cycle.
-
-    Args:
-        payload: Store request body carrying the fragment.
-
-    Returns:
-        Fragment: The fragment.
-    """
-    from membrane.serialization import from_dict
-
-    return from_dict(payload["fragment"])
-
-
-def wire_dict_for(fragment: Fragment) -> dict:
-    """Convert a Fragment to its v3 wire dict.
-
-    The package-private default lives in
-    :func:`membrane.serialization.to_dict`. We delegate so a
-    schema-version bump here does not require a corresponding
-    bump in :mod:`membrane.quorum`.
-
-    Args:
-        fragment: The fragment.
-
-    Returns:
-        dict: The wire-format dict.
-    """
-    from membrane.serialization import to_dict
-
-    return to_dict(fragment)
 
 
 class PeerError(Exception):

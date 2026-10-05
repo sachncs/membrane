@@ -142,7 +142,11 @@ class CountingPeer:
         self.calls.append("retrieve")
         return object() if content_hash in self.held else None
 
-    def request_replicate(self, fragment) -> bool:
+    def put_blob(self, payload_ref: str, data: bytes) -> bool:
+        self.calls.append("put_blob")
+        return True
+
+    def request_replicate(self, fragment, is_primary: bool = False) -> bool:
         self.calls.append("replicate")
         self.held.add(fragment.identity.payload_hash)
         return True
@@ -153,6 +157,7 @@ def test_replication_sweeps_scale_with_writes_not_data() -> None:
 
     node = Node("local", max_memory_bytes=10**7)
     for i in range(50):
+        node.content_store.put(f"blob-p{i}", b"kv")
         node.store(make_fragment(f"p{i}"), is_primary=True)
     peer = CountingPeer()
     membership = MagicMock()
@@ -174,18 +179,21 @@ def test_replication_sweeps_scale_with_writes_not_data() -> None:
         deadline = time.monotonic() + 5
         while len(peer.held) < 50 and time.monotonic() < deadline:
             time.sleep(0.01)
-        # Full pass: one inventory request, then a push per missing fragment.
+        # Full pass: one inventory request, then bytes and metadata per
+        # missing fragment.
         assert peer.calls.count("inventory") == 1
+        assert peer.calls.count("put_blob") == 50
         assert peer.calls.count("replicate") == 50
         assert peer.calls.count("retrieve") == 0
         time.sleep(0.3)  # several idle sweeps
         idle_calls = len(peer.calls)
-        assert idle_calls == 51
+        assert idle_calls == 101
+        node.content_store.put("blob-new", b"kv")
         node.store(make_fragment("new"), is_primary=True)
         deadline = time.monotonic() + 5
         while "new" not in peer.held and time.monotonic() < deadline:
             time.sleep(0.01)
-        assert peer.calls[idle_calls:] == ["retrieve", "replicate"]
+        assert peer.calls[idle_calls:] == ["retrieve", "put_blob", "replicate"]
     finally:
         stop.set()
         thread.join(timeout=2)

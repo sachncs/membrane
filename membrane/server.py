@@ -10,7 +10,6 @@ dashboard. The builders it uses, and the dashboard's event and
 diagnostics types, are re-exported here for compatibility.
 """
 
-import contextlib
 import logging
 import threading
 import time
@@ -395,68 +394,29 @@ class Server:
         self.log_event("info", f"Drain started with deadline={deadline_sec}s")
         start = time.time()
 
-        # Step 2: best-effort migration of every local primary.
+        # Step 2: hand every local primary, bytes included, to its next
+        # healthy ring owner, verified before this node lets go of it.
         migrated = 0
         stragglers: list[str] = []
         if self.cluster_manager is not None:
-            shard = self.cluster_manager.shard_manager
-            membership = self.cluster_manager.membership
-            transfer = self.transfer_service
-
-            def pull(content_hash: str) -> bool:
-                # The verified-migration flow needs the local node
-                # to already hold the bytes (Phase 3.2 contract).
-                # Leaves the byte-routing decision (TransferService
-                # vs direct Peer.request_replicate) to the caller;
-                # this stub returns True because Phase 3.4 doesn't
-                # yet wire a full verifier; the verified ordering
-                # is exercised in tests via the higher-level
-                # Shard.migrate_primary tests.
-                return content_hash in self.node.fragments
-
-            def verify(content_hash: str) -> bool:
-                return content_hash in self.node.fragments
-
-            primaries = list(getattr(self.node, "primary_hashes", set()))
-            for content_hash in list(primaries):
-                # Pick the next healthy peer (round-robin via
-                # membership order).
-                targets = [
-                    client
-                    for peer in membership.healthy()
-                    if (client := membership.get_client(peer.node_id)) is not None and peer.node_id != self.node.node_id
-                ]
-                if not targets:
+            replicator = self.cluster_manager.replicator
+            ring = self.cluster_manager.shard_manager.hash_ring
+            healthy = {peer.node_id for peer in self.cluster_manager.membership.healthy()}
+            healthy.discard(self.node.node_id)
+            for content_hash in sorted(self.node.get_shard_hashes()):
+                if time.time() - start >= deadline_sec:
                     stragglers.append(content_hash)
                     continue
-                # Pick the first target; for production this can
-                # improve to a hashed round-robin via the Shard
-                # manager's :meth:`get_next_node` helper.
-                target_peer = targets[0]  # type: ignore[assignment]
-                ok = bool(
-                    shard.migrate_primary(
-                        content_hash=content_hash,
-                        leaving_peer=self.node.node_id,
-                        local_node_id=target_peer.node_id,  # type: ignore[attr-defined]
-                        node=None,
-                        pull_fn=pull,
-                        verify_fn=verify,
-                    )
-                )
-                if ok and transfer is not None:
-                    with contextlib.suppress(Exception):
-                        transfer.transfer_fragment(
-                            self.node,
-                            target_peer.node_id,  # type: ignore[attr-defined]
-                            content_hash,
-                        )
-                if ok:
-                    self.node.primary_hashes.discard(content_hash)
+                target = self.drain_target(content_hash, ring, healthy)
+                if target is not None and replicator.hand_off(content_hash, target):
                     migrated += 1
                 else:
                     stragglers.append(content_hash)
-                if time.time() - start >= deadline_sec:
-                    break
+            if stragglers:
+                logger.warning(
+                    "drain: %s primaries could not be handed off; their replicas still serve them",
+                    len(stragglers),
+                )
 
         # Step 3: best-effort deadline while the leave propagates.
         elapsed = time.time() - start
@@ -484,6 +444,30 @@ class Server:
             "stragglers": len(stragglers),
             "duration_sec": duration,
         }
+
+    def drain_target(self, content_hash: str, ring: Any, healthy: set[str]) -> str | None:
+        """Pick the node that takes over a primary during drain.
+
+        Args:
+            content_hash: The primary being handed off.
+            ring: The cluster's hash ring.
+            healthy: Healthy peer ids, excluding this node.
+
+        Returns:
+            str | None: The first healthy node in the hash's ring order, any
+            healthy peer when the ring has none, or ``None`` when no peer is
+            healthy.
+        """
+        if not healthy:
+            return None
+        try:
+            ordered = ring.get_nodes(content_hash, n=len(healthy) + 1)
+        except Exception:
+            ordered = []
+        for node_id in ordered:
+            if node_id in healthy:
+                return str(node_id)
+        return sorted(healthy)[0]
 
     def restore_state(self) -> None:
         """Re-hydrate membership / shard tables from the configured snapshot.

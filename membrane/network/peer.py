@@ -29,6 +29,7 @@ from typing import Any, Protocol, runtime_checkable
 from membrane.errors import NetworkError
 from membrane.fragment import Fragment
 from membrane.serialization import JsonDict, from_dict, to_dict
+from membrane.wire.v3.chunks import sha256_hex
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,21 @@ def peer_url(host_port: str) -> str:
     return f"{get_default_peer_credentials().scheme}://{host_port}"
 
 
+@dataclass(frozen=True, slots=True)
+class RawResponse:
+    """An HTTP response whose body is returned as bytes, not parsed JSON.
+
+    Attributes:
+        status: HTTP status code (2xx or 404; other errors raise).
+        headers: Response headers, lower-cased names.
+        body: Response body.
+    """
+
+    status: int
+    headers: dict[str, str]
+    body: bytes
+
+
 @runtime_checkable
 class Transport(Protocol):
     """Pluggable wire-level HTTP transport.
@@ -128,6 +144,29 @@ class Transport(Protocol):
         Returns:
             JsonDict | None: Parsed JSON body on success,
             ``None`` on non-retryable failure.
+        """
+        ...
+
+    def request_bytes(
+        self,
+        method: str,
+        url: str,
+        body: bytes | None,
+        headers: dict[str, str],
+        timeout_sec: float,
+    ) -> RawResponse | None:
+        """Issue one HTTP request and return the raw response.
+
+        Args:
+            method: HTTP method.
+            url: Full URL.
+            body: Request body bytes or ``None``.
+            headers: Request headers.
+            timeout_sec: Per-request timeout in seconds.
+
+        Returns:
+            RawResponse | None: The response for 2xx and 404, or ``None``
+            when the URL is rejected by the outbound policy.
         """
         ...
 
@@ -207,10 +246,80 @@ class HTTPTransport:
         Returns:
             JsonDict | None: The parsed JSON body, or ``None`` when the SSRF
             policy rejects the URL.
+
+        Raises:
+            NetworkError: On transport failure, a redirect, or an HTTP error.
+        """
+        resp = self.__send(method, url, body, headers, timeout_sec)
+        if resp is None:
+            return None
+        if resp.status_code >= 400:
+            raise NetworkError(f"HTTP {resp.status_code} from {method} {url}")
+        raw = resp.text
+        return json.loads(raw) if raw else {}
+
+    def request_bytes(
+        self,
+        method: str,
+        url: str,
+        body: bytes | None,
+        headers: dict[str, str],
+        timeout_sec: float,
+    ) -> RawResponse | None:
+        """Issue an HTTP request and return the raw response.
+
+        Args:
+            method: HTTP method.
+            url: Full URL.
+            body: Request body bytes or ``None``.
+            headers: Request headers.
+            timeout_sec: Per-request timeout in seconds.
+
+        Returns:
+            RawResponse | None: The response for 2xx and 404, or ``None``
+            when the SSRF policy rejects the URL.
+
+        Raises:
+            NetworkError: On transport failure, a redirect, or another HTTP
+                error.
+        """
+        resp = self.__send(method, url, body, headers, timeout_sec)
+        if resp is None:
+            return None
+        if resp.status_code >= 400 and resp.status_code != 404:
+            raise NetworkError(f"HTTP {resp.status_code} from {method} {url}")
+        return RawResponse(
+            status=resp.status_code,
+            headers={k.lower(): v for k, v in resp.headers.items()},
+            body=resp.content,
+        )
+
+    def __send(
+        self,
+        method: str,
+        url: str,
+        body: bytes | None,
+        headers: dict[str, str],
+        timeout_sec: float,
+    ) -> Any:
+        """Validate ``url``, pin its address, and send the request.
+
+        Args:
+            method: HTTP method.
+            url: Full URL.
+            body: Request body bytes or ``None``.
+            headers: Request headers.
+            timeout_sec: Per-request timeout in seconds.
+
+        Returns:
+            Any: The ``httpx.Response``, or ``None`` when the SSRF policy
+            rejects the URL.
+
+        Raises:
+            NetworkError: On transport failure or a redirect.
         """
         from urllib.parse import urlparse
 
-        from membrane.errors import NetworkError
         from membrane.security import validate_outbound_url
         from membrane.security.url_allowlist import SSRFError, get_default_allowlist, resolve_addresses
 
@@ -225,7 +334,6 @@ class HTTPTransport:
             raise NetworkError("HTTPTransport: httpx not installed")
 
         parsed = urlparse(url)
-        pinned_ip: str | None = None
         extensions: dict[str, Any] = {}
         policy = get_default_allowlist()
         if policy.block_private and parsed.hostname and not policy.is_host_allowed(parsed.hostname.lower()):
@@ -235,17 +343,14 @@ class HTTPTransport:
                 addresses = []
             if addresses:
                 pinned_ip = str(addresses[0])
-                # Replace the host with the pinned IP and set
-                # the Host header to the original hostname so
-                # the SNI / cert verification continues to use
-                # the user-supplied hostname.
+                # Replace the host with the pinned IP and set the Host header
+                # to the original hostname so SNI and certificate
+                # verification still use the user-supplied hostname.
                 host_header = parsed.hostname
                 port = parsed.port
                 netloc = pinned_ip if port is None else f"{pinned_ip}:{port}"
                 url = parsed._replace(netloc=netloc).geturl()
                 headers = {**headers, "Host": host_header}
-                # Without this, TLS would verify the certificate
-                # against the pinned IP instead of the hostname.
                 extensions["sni_hostname"] = host_header
 
         try:
@@ -264,10 +369,7 @@ class HTTPTransport:
             raise NetworkError(
                 f"redirect not followed ({resp.status_code}) on {method} {url}; re-validate the target before retrying"
             )
-        if resp.status_code >= 400:
-            raise NetworkError(f"HTTP {resp.status_code} from {method} {url}")
-        raw = resp.text
-        return json.loads(raw) if raw else {}
+        return resp
 
 
 class Peer:
@@ -428,18 +530,93 @@ class Peer:
         """
         return self.request_with_retry("POST", "/gossip", state)
 
-    def request_replicate(self, fragment: Fragment) -> bool:
-        """Send ``POST /replicate`` with ``fragment``.
+    def request_replicate(self, fragment: Fragment, is_primary: bool = False) -> bool:
+        """Send ``POST /replicate`` with ``fragment``'s metadata.
+
+        The peer refuses (422) a fragment whose payload it does not
+        hold, so send the bytes with :meth:`put_blob` first; use
+        :func:`membrane.replication.replicate_fragment` for both steps.
 
         Args:
             fragment: The fragment.
+            is_primary: Ask the peer to take over as the primary owner.
 
         Returns:
             bool: True when the peer stored the replica.
         """
-        payload = {"fragment": to_dict(fragment)}
+        payload = {"fragment": to_dict(fragment), "is_primary": is_primary}
         resp = self.request_with_retry("POST", "/replicate", payload)
         return resp is not None and resp.get("success", False)
+
+    def put_blob(self, payload_ref: str, data: bytes) -> bool:
+        """Upload KV bytes with ``PUT /blobs/{payload_ref}``.
+
+        The peer verifies the ``X-Content-SHA256`` header against the
+        body before storing it.
+
+        Args:
+            payload_ref: Content-store key of the bytes.
+            data: The bytes, exactly as the local content store holds them.
+
+        Returns:
+            bool: True when the peer stored (or already held) the bytes.
+        """
+        headers = {"Content-Type": "application/octet-stream", "X-Content-SHA256": sha256_hex(data)}
+        resp = self.request_with_retry("PUT", f"/blobs/{payload_ref}", raw_body=data, extra_headers=headers)
+        return resp is not None and bool(resp.get("stored", False))
+
+    def get_blob(self, payload_ref: str) -> bytes | None:
+        """Download KV bytes with ``GET /blobs/{payload_ref}``.
+
+        Args:
+            payload_ref: Content-store key of the bytes.
+
+        Returns:
+            bytes | None: The verified bytes, or ``None`` when the peer does
+            not hold them, they fail verification, or the request fails.
+        """
+        resp = self.request_raw("GET", f"/blobs/{payload_ref}")
+        if resp is None or resp.status != 200:
+            return None
+        if resp.headers.get("x-content-sha256") != sha256_hex(resp.body):
+            logger.warning("blob %s from %s failed its digest check", payload_ref, self.base_url)
+            return None
+        return resp.body
+
+    def blob_digest(self, payload_ref: str) -> str | None:
+        """Return the SHA-256 the peer reports for its copy of ``payload_ref``.
+
+        Args:
+            payload_ref: Content-store key of the bytes.
+
+        Returns:
+            str | None: The hex digest, or ``None`` when the peer does not
+            hold the bytes or the request fails.
+        """
+        resp = self.request_raw("HEAD", f"/blobs/{payload_ref}")
+        if resp is None or resp.status != 200:
+            return None
+        return resp.headers.get("x-content-sha256")
+
+    def request_raw(self, method: str, path: str) -> RawResponse | None:
+        """Issue a body-less request and return the raw response, with retries.
+
+        Args:
+            method: HTTP method.
+            path: URL path appended to ``self.base_url``.
+
+        Returns:
+            RawResponse | None: The response, or ``None`` on terminal failure.
+        """
+        url = f"{self.base_url}{path}"
+        for attempt in range(self.max_retries):
+            try:
+                return self.transport.request_bytes(method, url, None, dict(self.base_headers), self.timeout_sec)
+            except NetworkError as exc:
+                logger.debug("%s %s failed (attempt %s/%s): %s", method, url, attempt + 1, self.max_retries, exc)
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay_sec * (2**attempt))
+        return None
 
     def request_delete(
         self,
@@ -538,6 +715,7 @@ class Peer:
         path: str,
         payload: JsonDict | None = None,
         extra_headers: dict[str, str] | None = None,
+        raw_body: bytes | None = None,
     ) -> JsonDict | None:
         """Issue an HTTP request with retries and exponential backoff.
 
@@ -555,13 +733,14 @@ class Peer:
                 with the per-request content-type. Used by
                 :meth:`heartbeat` to attach the local
                 ``X-Local-Peer-CN``.
+            raw_body: Request body sent as-is instead of ``payload``.
 
         Returns:
             JsonDict | None: Parsed JSON response or ``None`` on
             terminal failure.
         """
         url = f"{self.base_url}{path}"
-        data = json.dumps(payload).encode() if payload else None
+        data = raw_body if raw_body is not None else (json.dumps(payload).encode() if payload else None)
         headers = dict(self.base_headers)
         if payload:
             headers["Content-Type"] = "application/json"
@@ -620,6 +799,7 @@ __all__ = [
     "HTTPTransport",
     "Peer",
     "PeerCredentials",
+    "RawResponse",
     "Transport",
     "get_default_peer_credentials",
     "peer_deadline",
