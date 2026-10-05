@@ -23,6 +23,7 @@ path together:
 import logging
 import struct
 import threading
+from compression import zstd
 from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
@@ -168,7 +169,7 @@ class RdmaMemoryPool:
 class CompressionTransport:
     """Wraps the byte transport with optional zstd or lz4 compression.
 
-    Wire format: 1-byte method id + 4-byte big-endian u32 length
+    Wire format: 1-byte method id + 4-byte little-endian u32 length
     prefix + body. Method ids are 1=raw, 2=deflate, 3=zstd,
     4=lz4. The compressed body follows the length. The
     uncompressed size is not in the wire (operators can recover
@@ -219,12 +220,8 @@ class CompressionTransport:
 
             body = zlib.compress(payload, self.level)
         elif self.method == self.METHOD_ZSTD:
-            try:
-                import zstandard
-            except ImportError as exc:
-                raise RuntimeError("zstd compression requires the zstandard package") from exc
-            compressor = zstandard.ZstdCompressor(level=self.level)
-            body = compressor.compress(payload)
+            # Standard-library Zstandard (PEP 784); no third-party package.
+            body = zstd.compress(payload, level=self.level)
         else:  # lz4
             try:
                 import lz4.block
@@ -249,25 +246,23 @@ class CompressionTransport:
         if len(payload) < 5 + body_len:
             raise ValueError("compressed payload too short")
         body = payload[5 : 5 + body_len]
-        if method_id == 1:
-            return body
-        if method_id == 2:
-            import zlib
+        match method_id:
+            case 1:
+                return body
+            case 2:
+                import zlib
 
-            return zlib.decompress(body)
-        if method_id == 3:
-            try:
-                import zstandard
-            except ImportError as exc:
-                raise RuntimeError("zstd decompression requires the zstandard package") from exc
-            return zstandard.ZstdDecompressor().decompress(body)
-        if method_id == 4:
-            try:
-                import lz4.block
-            except ImportError as exc:
-                raise RuntimeError("lz4 decompression requires the lz4 package") from exc
-            return lz4.block.decompress(body)
-        raise ValueError(f"unknown compression method id: {method_id}")
+                return zlib.decompress(body)
+            case 3:
+                return zstd.decompress(body)
+            case 4:
+                try:
+                    import lz4.block
+                except ImportError as exc:
+                    raise RuntimeError("lz4 decompression requires the lz4 package") from exc
+                return lz4.block.decompress(body)
+            case _:
+                raise ValueError(f"unknown compression method id: {method_id}")
 
 
 # ---------------------------------------------------------------------------

@@ -30,7 +30,7 @@ Redis client, `cryptography`). Other extras:
 | Extra | Adds |
 |-------|------|
 | `dev` | Test, lint, and type-check tooling (`pytest`, `ruff`, `mypy`) |
-| `transfer` | KV transfer engine and quantization (`numpy`, `lz4`, `zstandard`) |
+| `transfer` | KV transfer engine and quantization (`numpy`, `lz4`; zstd is built into Python 3.14) |
 | `gpu` / `local-llm` | PyTorch / HuggingFace Transformers compute backends |
 | `vllm` / `sglang` / `trtllm` | Serving-engine adapters |
 | `secrets-aws` / `secrets-gcp` / `secrets-vault` | Secret backends |

@@ -1,7 +1,5 @@
 """Tests for Phase 4 memory pool + transfer engine (Phase 4)."""
 
-import sys
-
 import pytest
 
 from membrane.transfer_engine import (
@@ -90,14 +88,17 @@ class TestCompressionTransport:
         with pytest.raises(ValueError, match="too short"):
             CompressionTransport(method=CompressionTransport.METHOD_DEFLATE).decompress(b"deflate\x00")
 
-    def test_zstd_requires_optional_dependency(self, monkeypatch):
-        # The zstd path raises a clear error when zstandard is
-        # missing. A None entry in sys.modules makes the import
-        # fail even when the package is installed.
-        monkeypatch.setitem(sys.modules, "zstandard", None)
-        t = CompressionTransport(method=CompressionTransport.METHOD_ZSTD)
-        with pytest.raises(RuntimeError, match="zstandard"):
-            t.compress(b"x")
+    def test_zstd_uses_standard_library(self):
+        """zstd frames come from compression.zstd (PEP 784) and stay interoperable."""
+        from compression import zstd
+
+        payload = b"kv-bytes" * 4096
+        t = CompressionTransport(method=CompressionTransport.METHOD_ZSTD, level=5)
+        wire = t.compress(payload)
+        assert len(wire) < len(payload)
+        assert t.decompress(wire) == payload
+        # The body is a standard zstd frame any zstd decoder can read.
+        assert zstd.decompress(wire[5:]) == payload
 
 
 class TestKVTransferEngine:

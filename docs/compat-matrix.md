@@ -21,7 +21,7 @@ All four versions run the full test suite in CI.
 | Package              | Optional dep group      | Required by                |
 |----------------------|-------------------------|---------------------------|
 | ``cryptography``      | ``membrane[server]``     | TLS, encryption at rest   |
-| ``numpy`` / ``lz4`` / ``zstandard`` | ``membrane[transfer]`` | KV transfer engine, quantization |
+| ``numpy`` / ``lz4`` | ``membrane[transfer]`` | KV transfer engine, quantization |
 | ``vllm>=0.10,<0.12`` | ``membrane[vllm]``       | vLLM KVConnector v1 backend |
 | ``sglang>=0.4,<0.6`` | ``membrane[sglang]``     | SGLang radix-cache backend |
 | ``tensorrt-llm>=0.20,<0.22`` | ``membrane[trtllm]`` | TensorRT-LLM backend |
