@@ -48,12 +48,12 @@ dev = [
     # transport tests import fastapi and grpcio.
     "grpcio>=1.83.1",
     "grpcio-tools>=1.83.1",
-    "fastapi>=0.141.1",
+    "fastapi>=0.142.2",
     "uvicorn[standard]>=0.52.4",
     "httpx>=0.28.1",
     "pydantic>=2.13.5",
 ]
-server = ["grpcio>=1.83.1", "grpcio-tools>=1.83.1", "redis>=8.1.0", "fastapi>=0.141.1", "uvicorn[standard]>=0.52.4", "httpx>=0.28.1", "pydantic>=2.13.5"]
+server = ["grpcio>=1.83.1", "grpcio-tools>=1.83.1", "redis>=8.1.0", "fastapi>=0.142.2", "uvicorn[standard]>=0.52.4", "httpx>=0.28.1", "pydantic>=2.13.5"]
 gpu = ["torch>=2.13.0"]
 local-llm = ["transformers>=5.16.1", "tokenizers>=0.23.1", "torch>=2.13.0", "sentencepiece>=0.2.2", "protobuf>=7.36.0"]
 # LMCache is the v2.0+ canonical KV substrate. Optional install;
@@ -74,7 +74,7 @@ trtllm = ["tensorrt-llm>=0.20,<0.22"]
 # REST surface is FastAPI-only; the gRPC surface additionally
 # pulls in grpcio. Operators that only need one of the two
 # surfaces can install the corresponding extra directly.
-disagg = ["fastapi>=0.141.1", "uvicorn[standard]>=0.52.4", "grpcio>=1.83.1", "grpcio-tools>=1.83.1"]
+disagg = ["fastapi>=0.142.2", "uvicorn[standard]>=0.52.4", "grpcio>=1.83.1", "grpcio-tools>=1.83.1"]
 # Convenience: every v2.0+ engine integration plus the
 # disagg surface. Use for local end-to-end demos.
 all = ["membrane[lmcache,vllm,sglang,trtllm,disagg]"]
