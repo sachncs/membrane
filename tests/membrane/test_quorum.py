@@ -58,7 +58,10 @@ class _FakePeer:
         self._ok = ok
         self._delay = delay_sec
 
-    def request_replicate(self, _fragment: Fragment) -> bool:
+    def put_blob(self, _payload_ref: str, _data: bytes) -> bool:
+        return self._ok
+
+    def request_replicate(self, _fragment: Fragment, is_primary: bool = False) -> bool:
         if self._delay > 0:
             time.sleep(self._delay)
         return self._ok
@@ -218,6 +221,7 @@ class TestOpStoreConsistency:
             peers: list[Peer],
             quorum_count: int,
             timeout_sec: float,
+            blob: bytes | None = None,
         ) -> QuorumResult:
             return QuorumResult(
                 success=True,
@@ -253,6 +257,7 @@ class TestOpStoreConsistency:
             peers: list[Peer],
             quorum_count: int,
             timeout_sec: float,
+            blob: bytes | None = None,
         ) -> QuorumResult:
             return QuorumResult(
                 success=False,
@@ -300,6 +305,7 @@ class TestOpStoreConsistency:
             peers: list[Peer],
             quorum_count: int,
             timeout_sec: float,
+            blob: bytes | None = None,
         ) -> QuorumResult:
             captured["consistency"] = fragment.consistency
             return QuorumResult(
@@ -376,7 +382,7 @@ class TestOpStoreConsistency:
         cluster.membership.get_client.side_effect = lambda nid: _FakePeer()
         seen: dict[str, int] = {}
 
-        def _attempt(fragment, peers, required, timeout_sec):
+        def _attempt(fragment, peers, required, timeout_sec, blob=None):
             seen["peers"], seen["required"] = len(peers), required
             return QuorumResult(success=True, ack_count=required, timed_out=False, replica_count=len(peers))
 
@@ -394,7 +400,9 @@ class TestOpStoreConsistency:
         cluster.membership.healthy.return_value = []
 
         frag = _make_fragment_with_consistency("strong")
-        status, body = op_store(node, to_dict(frag), is_primary=True, cluster=cluster, quorum_attempt=lambda *a: None)
+        status, body = op_store(
+            node, to_dict(frag), is_primary=True, cluster=cluster, quorum_attempt=lambda *a, **k: None
+        )
         assert status == 503
         assert body["detail"] == "not enough healthy peers"
         assert frag.identity.payload_hash not in node.fragments

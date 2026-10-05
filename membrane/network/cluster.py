@@ -33,9 +33,9 @@ from membrane.network.gossip import Gossip
 from membrane.network.heartbeat import Heartbeat
 from membrane.network.membership import Membership, PeerInfo
 from membrane.network.strategy import (
-    EagerMigrator,
     FailureDetector,
     Migrator,
+    RateLimitedMigrator,
     ThresholdDetector,
 )
 from membrane.node import Node
@@ -143,7 +143,9 @@ class Cluster:
         self.failure_detector = failure_detector or ThresholdDetector(
             failure_remove_threshold=config.failure_remove_threshold
         )
-        self.migrator = migrator or EagerMigrator()
+        # Rebalancing moves bytes between nodes; a bounded rate keeps it
+        # from starving client traffic after a membership change.
+        self.migrator = migrator or RateLimitedMigrator()
         # Wire the migrator to a transfer function that re-homes the
         # leaving peer's primaries onto the local node. The function
         # updates the shard table and the local Node's primary set
@@ -174,6 +176,7 @@ class Cluster:
             config=config,
             stop_event=self.stop_event,
             running=self.running,
+            migrator=self.migrator,
         )
 
     # ------------------------------------------------------------------

@@ -20,15 +20,31 @@ written with the node's `--consistency` setting when that is `quorum` or
 
 1. The node checks the caller's tenant and that the payload bytes are
    in its content store, then writes locally.
-2. It sends the fragment to up to `replica_count` healthy peers
-   (`POST /replicate`) and waits for `quorum_count - 1` acknowledgements,
-   at most `cluster_quorum_timeout_sec`.
+2. It sends the fragment to up to `replica_count` healthy peers in
+   parallel, bytes first (`PUT /blobs/{payload_ref}`, SHA-256 verified
+   by the peer) and then the metadata (`POST /replicate`), and waits for
+   `quorum_count - 1` acknowledgements, at most
+   `cluster_quorum_timeout_sec`. A peer acknowledges only when it holds
+   both, so an acknowledged write survives the loss of the node that
+   took it.
 3. Enough acks: `200`. Otherwise the local copy is removed (unless it
    already existed before this write) and the caller gets `503` with
    `ack_count` and `required` in the body.
 
 A node with fewer than `quorum_count - 1` healthy peers rejects strong
 writes immediately instead of acknowledging a copy it cannot replicate.
+
+## Ownership and rebalancing
+
+The node that takes a write is its primary. The background replicator
+keeps every primary's replicas complete (new primaries on every sweep,
+and a digest-based full pass every `repair_interval_sec`). When the set
+of healthy nodes changes, it immediately hands each primary that the
+hash ring now assigns elsewhere to its new owner, at most 50 per second.
+Draining nodes (`SIGTERM`) hand off all their primaries the same way.
+A hand-off counts only after the new owner's copy is verified (metadata
+present, payload digest equal), so a failed hand-off leaves ownership
+where it was.
 
 ## Configuration
 

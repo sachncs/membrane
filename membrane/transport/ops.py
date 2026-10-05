@@ -16,6 +16,7 @@ Thread safety:
 """
 
 import logging
+import re
 from typing import Any, cast
 
 from membrane.auth import AuthContext
@@ -27,8 +28,11 @@ from membrane.network.cluster import Cluster
 from membrane.network.peer import JsonDict, Peer
 from membrane.node import Node
 from membrane.serialization import from_dict, to_dict
+from membrane.wire.v3.chunks import sha256_hex
 
 logger = logging.getLogger(__name__)
+
+PAYLOAD_REF_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,256}")
 
 
 MAX_BODY_BYTES: int = 100 << 20
@@ -406,8 +410,10 @@ def op_store(
             "Retry-After": 1,
         }
 
+    # Replicas must get the KV bytes too, or they cannot serve the fragment.
+    blob = node.content_store.get(frag.payload_ref) if frag.payload_ref is not None else None
     try:
-        result = quorum_attempt(frag, replica_peers, required_peer_acks, timeout_sec)  # type: ignore[operator]
+        result = quorum_attempt(frag, replica_peers, required_peer_acks, timeout_sec, blob=blob)  # type: ignore[operator]
     except Exception as exc:
         logger.warning("op_store quorum_attempt failed: %s", exc)
         return 503, {"error": "quorum_attempt failed", "detail": str(exc)}
@@ -504,8 +510,13 @@ def op_replicate(
     node: Node | None,
     fragment_payload: JsonDict,
     auth_context: AuthContext | None = None,
+    is_primary: bool = False,
 ) -> tuple[int, JsonDict]:
-    """``POST /replicate`` — store a fragment as a non-primary replica.
+    """``POST /replicate`` — store a fragment sent by a peer.
+
+    The payload bytes must already be here (``PUT /blobs`` first): a
+    replica without its bytes cannot serve reads, so it is refused with
+    ``422``.
 
     Args:
         node: Local :class:`Node`.
@@ -513,6 +524,8 @@ def op_replicate(
             (consistency + hlc fields included).
         auth_context: Authenticated caller; ``None`` when authentication is
             off.
+        is_primary: The sender is handing primary ownership to this node
+            (drain or rebalancing).
 
     Returns:
         tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
@@ -520,18 +533,82 @@ def op_replicate(
     if node is None:
         return ok_response({"error": "no node"})
     frag = from_dict(fragment_payload)
+    if frag.payload_ref is not None and not node.content_store.has(frag.payload_ref):
+        return 422, {
+            "error": "payload missing",
+            "detail": f"PUT /blobs/{frag.payload_ref} before replicating its fragment",
+            "content_hash": frag.identity.payload_hash,
+        }
     caller_tenant = auth_context.subject if auth_context is not None else ""
     caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
     try:
         ok = node.store(
             frag,
-            is_primary=False,
+            is_primary=is_primary,
             caller_tenant=caller_tenant,
             caller_scopes=caller_scopes,
         )
     except TenantScopeError as exc:
         return 403, {"error": "tenant scope", "detail": str(exc)}
     return ok_response({"success": ok, "content_hash": frag.identity.payload_hash})
+
+
+def valid_payload_ref(payload_ref: str) -> bool:
+    """Whether ``payload_ref`` is safe to use as a content-store key from the wire.
+
+    Args:
+        payload_ref: Candidate key from a URL path.
+
+    Returns:
+        bool: True for 1-256 characters from ``[A-Za-z0-9._:-]`` that are
+        not a path component like ``..``.
+    """
+    return bool(PAYLOAD_REF_PATTERN.fullmatch(payload_ref)) and payload_ref not in {".", ".."}
+
+
+def op_put_blob(node: Node | None, payload_ref: str, data: bytes, claimed_sha256: str) -> tuple[int, JsonDict]:
+    """``PUT /blobs/{payload_ref}`` — store KV bytes sent by a peer.
+
+    Content-addressed and idempotent: bytes already held under the key are
+    left as they are.
+
+    Args:
+        node: Local :class:`Node`.
+        payload_ref: Content-store key.
+        data: The request body.
+        claimed_sha256: The ``X-Content-SHA256`` header.
+
+    Returns:
+        tuple[int, JsonDict]: ``200 {"stored": true}``; ``400`` for a bad
+        key or a digest mismatch.
+    """
+    if node is None:
+        return 503, {"error": "no node"}
+    if not valid_payload_ref(payload_ref):
+        return 400, {"error": "invalid payload_ref"}
+    if claimed_sha256.lower() != sha256_hex(data):
+        return 400, {"error": "digest mismatch", "detail": "X-Content-SHA256 does not match the body"}
+    existing = node.content_store.has(payload_ref)
+    if not existing:
+        node.content_store.put(payload_ref, data)
+    return 200, {"stored": True, "existing": existing, "bytes": len(data)}
+
+
+def op_get_blob(node: Node | None, payload_ref: str) -> tuple[int, bytes | None]:
+    """``GET /blobs/{payload_ref}`` — read KV bytes for a peer.
+
+    Args:
+        node: Local :class:`Node`.
+        payload_ref: Content-store key.
+
+    Returns:
+        tuple[int, bytes | None]: ``(200, bytes)``, ``(404, None)`` when
+        absent, or ``(400, None)`` for a bad key.
+    """
+    if node is None or not valid_payload_ref(payload_ref):
+        return 400, None
+    data = node.content_store.get(payload_ref)
+    return (404, None) if data is None else (200, data)
 
 
 def op_prefill(
@@ -586,14 +663,18 @@ def op_prefill(
 
 __all__ = [
     "MAX_BODY_BYTES",
+    "PAYLOAD_REF_PATTERN",
+    "op_get_blob",
     "op_heartbeat",
     "op_inventory",
     "op_metrics",
     "op_peers",
     "op_prefill",
+    "op_put_blob",
     "op_replicate",
     "op_retrieve",
     "op_store",
+    "valid_payload_ref",
 ]
 
 # Re-export cluster-layer ops for backward compatibility.

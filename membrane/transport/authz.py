@@ -72,6 +72,10 @@ ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("POST", "/tombstone"): "admin",
     ("POST", "/purge"): "admin",
     ("POST", "/verify"): "admin",
+    # Peer-to-peer KV bytes: not tenant-scoped, so peers (admin) only.
+    ("PUT", "/blobs"): "admin",
+    ("GET", "/blobs"): "admin",
+    ("HEAD", "/blobs"): "admin",
 }
 """(method, path) -> required scope. ``public`` means no auth check."""
 

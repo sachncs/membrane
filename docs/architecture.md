@@ -110,7 +110,7 @@ writes them to a `ContentStore`.
 | `Gossip`, `GossipState` | Membership, fragment locations, Bloom / Merkle inventory digests (cached on large inventories), tombstones |
 | `Ring`, `Shard` | Consistent-hash placement of primaries and replicas |
 | `Peer`, `PeerCredentials` | Outbound HTTP(S) client; bearer key or mTLS client cert |
-| `Replicator` | Keeps primaries replicated: new primaries each sweep, a digest-based full pass every `repair_interval_sec` |
+| `Replicator` | Keeps primaries replicated (new primaries each sweep, a digest-based full pass every `repair_interval_sec`) and rebalances ownership when membership changes, through verified hand-offs (`membrane/replication.py`) |
 
 Outbound peer URLs pass the SSRF guard
 (`membrane/security/url_allowlist.py`): seed hosts and the configured

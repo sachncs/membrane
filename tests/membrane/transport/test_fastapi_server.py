@@ -93,15 +93,31 @@ class TestFastAPIServer:
         assert len(data["fragments"]) > 0
 
     def test_replicate(self, client):
+        import hashlib
+
         frag = make_fragment("rep1")
-        resp = client.post(
-            "/replicate",
-            json={
-                "fragment": to_dict(frag),
-            },
-        )
+        # Metadata without its bytes is refused: the replica could not serve it.
+        resp = client.post("/replicate", json={"fragment": to_dict(frag)})
+        assert resp.status_code == 422
+        assert resp.json()["error"] == "payload missing"
+
+        data = b"kv-bytes" * 8
+        bad = client.put(f"/blobs/{frag.payload_ref}", content=data, headers={"X-Content-SHA256": "0" * 64})
+        assert bad.status_code == 400
+        digest = hashlib.sha256(data).hexdigest()
+        put = client.put(f"/blobs/{frag.payload_ref}", content=data, headers={"X-Content-SHA256": digest})
+        assert put.status_code == 200 and put.json()["stored"] is True
+
+        resp = client.post("/replicate", json={"fragment": to_dict(frag)})
         assert resp.status_code == 200
         assert resp.json()["success"] is True
+
+        got = client.get(f"/blobs/{frag.payload_ref}")
+        assert got.content == data and got.headers["x-content-sha256"] == digest
+        head = client.head(f"/blobs/{frag.payload_ref}")
+        assert head.status_code == 200 and head.headers["x-content-sha256"] == digest
+        assert client.get("/blobs/absent").status_code == 404
+        assert client.get("/blobs/..").status_code in (400, 404)
 
     def test_join_leave_without_cluster_manager(self, client):
         resp = client.post("/join", json={"node_id": "n2", "host": "127.0.0.1", "port": 8081})
