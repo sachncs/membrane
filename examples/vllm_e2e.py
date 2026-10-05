@@ -20,6 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 def main(argv: list[str]) -> int:
+    """Drive the vLLM-style flow against an in-process node.
+
+    Args:
+        argv: Command-line arguments (unused).
+
+    Returns:
+        int: Process exit status.
+    """
     base_url = argv[1] if len(argv) > 1 else "http://localhost:8080"
     import httpx
     from fastapi.testclient import TestClient

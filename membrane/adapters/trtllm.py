@@ -88,6 +88,7 @@ class InMemoryTrtClient(TrtClusterClient):
     """In-memory TRT-LLM client used by tests + the v1 single-process path."""
 
     def __init__(self) -> None:
+        """Create an empty in-memory KV block pool."""
         self.by_handle: dict[tuple[str, str], tuple[TrtKVBlock, ...]] = {}
         self.lock = threading.RLock()
 
@@ -104,11 +105,28 @@ class InMemoryTrtClient(TrtClusterClient):
 
     @override
     def get(self, model_id: str, handle: str) -> tuple[TrtKVBlock, ...]:
+        """Return the KV blocks stored for ``(model_id, handle)``.
+
+        Args:
+            model_id: Model identifier.
+            handle: Cluster-side handle.
+
+        Returns:
+            tuple[TrtKVBlock, ...]: The KV blocks stored for ``(model_id,
+            handle)``.
+        """
         with self.lock:
             return self.by_handle.get((model_id, handle), ())
 
     @override
     def put(self, model_id: str, handle: str, blocks: tuple[TrtKVBlock, ...]) -> None:
+        """Store the KV blocks for ``(model_id, handle)``.
+
+        Args:
+            model_id: Model identifier.
+            handle: Cluster-side handle.
+            blocks: K/V blocks in order.
+        """
         with self.lock:
             self.by_handle[(model_id, handle)] = blocks
 

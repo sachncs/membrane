@@ -95,6 +95,17 @@ def hashed_fields(entry_id: str, actor: str, action: str, payload: dict[str, obj
 
     ``entry_id`` is included only when present so chains written before
     it existed still verify.
+
+    Args:
+        entry_id: UUIDv7 of the entry; empty for entries written before IDs
+            existed.
+        actor: The caller identity.
+        action: A short stable verb (e.g., ``"fragment.store"``).
+        payload: The entry's structured payload.
+        ts: Entry timestamp.
+
+    Returns:
+        dict[str, object]: The fields an entry's hash covers.
     """
     fields: dict[str, object] = {"actor": actor, "action": action, "payload": payload, "timestamp": ts}
     if entry_id:
@@ -112,11 +123,19 @@ class AuditStorage(Protocol):
     """
 
     def append(self, entry: AuditEntry) -> None:
-        """Persist ``entry`` atomically."""
+        """Persist ``entry`` atomically.
+
+        Args:
+            entry: The entry to persist.
+        """
         ...
 
     def all(self) -> list[AuditEntry]:
-        """Return every entry in order."""
+        """Return every entry in order.
+
+        Returns:
+            list[AuditEntry]: Every entry in order.
+        """
         ...
 
 
@@ -292,6 +311,11 @@ class FileAuditStorage:
             return out
 
     def lock_for_read(self) -> threading.Lock:
+        """Return the lock that serializes reads and appends.
+
+        Returns:
+            threading.Lock: The lock that serializes reads and appends.
+        """
         return self.lock
 
 

@@ -68,7 +68,11 @@ class PeerInfo:
     lease_until: float = 0.0
 
     def to_json(self) -> dict[str, Any]:
-        """Serialize this peer to a JSON-compatible dict."""
+        """Serialize this peer to a JSON-compatible dict.
+
+        Returns:
+            dict[str, Any]: Every field of the peer record.
+        """
         return {
             "node_id": self.node_id,
             "host": self.host,
@@ -101,6 +105,14 @@ class Membership:
         shard: Shard,
         directory: Registry | None = None,
     ) -> None:
+        """Create an empty membership table.
+
+        Args:
+            node_id: Id of the local node (never added as a peer).
+            ring: Consistent-hash ring updated as peers join and leave.
+            shard: Shard manager updated as peers join and leave.
+            directory: Fragment location registry cleaned up when peers leave.
+        """
         self.node_id = node_id
         self.ring = ring
         self.shard = shard
@@ -153,7 +165,14 @@ class Membership:
             logger.info("Added peer %s at %s:%s (cn=%s)", node_id, host, port, peer_cn)
 
     def remove(self, node_id: str) -> bool:
-        """Remove a peer; return True when it was registered."""
+        """Remove a peer; return True when it was registered.
+
+        Args:
+            node_id: Node identifier.
+
+        Returns:
+            bool: Whether the peer was registered.
+        """
         with self.lock:
             if node_id not in self.peers:
                 return False
@@ -166,33 +185,66 @@ class Membership:
             return True
 
     def snapshot(self) -> list[PeerInfo]:
-        """Return a copy of the membership list."""
+        """Return a copy of the membership list.
+
+        Returns:
+            list[PeerInfo]: A copy of the membership list.
+        """
         with self.lock:
             return list(self.peers.values())
 
     def find(self, node_id: str) -> PeerInfo | None:
-        """Return the PeerInfo for ``node_id`` or None."""
+        """Return the PeerInfo for ``node_id`` or None.
+
+        Args:
+            node_id: Node identifier.
+
+        Returns:
+            PeerInfo | None: The PeerInfo for ``node_id`` or None.
+        """
         with self.lock:
             return self.peers.get(node_id)
 
     def get_client(self, node_id: str) -> Peer | None:
-        """Return the cached HTTP client for a peer."""
+        """Return the cached HTTP client for a peer.
+
+        Args:
+            node_id: Node identifier.
+
+        Returns:
+            Peer | None: The cached HTTP client for a peer.
+        """
         with self.lock:
             return self.clients.get(node_id)
 
     def get_url(self, node_id: str) -> str | None:
-        """Return ``<scheme>://<host>:<port>`` for a peer, or None."""
+        """Return ``<scheme>://<host>:<port>`` for a peer, or None.
+
+        Args:
+            node_id: Node identifier.
+
+        Returns:
+            str | None: ``<scheme>://<host>:<port>`` for a peer, or None.
+        """
         with self.lock:
             p = self.peers.get(node_id)
             return peer_url(f"{p.host}:{p.port}") if p else None
 
     def healthy(self) -> list[PeerInfo]:
-        """Return the list of currently healthy peers."""
+        """Return the list of currently healthy peers.
+
+        Returns:
+            list[PeerInfo]: The list of currently healthy peers.
+        """
         with self.lock:
             return [p for p in self.peers.values() if p.healthy]
 
     def to_json(self) -> list[dict[str, Any]]:
-        """Return a JSON-serializable snapshot of membership."""
+        """Return a JSON-serializable snapshot of membership.
+
+        Returns:
+            list[dict[str, Any]]: A JSON-serializable snapshot of membership.
+        """
         with self.lock:
             return [p.to_json() for p in self.peers.values()]
 
@@ -355,14 +407,25 @@ class Membership:
             p.healthy = True
 
     def record_miss(self, node_id: str) -> None:
-        """Increment the missed-heartbeat counter for ``node_id``."""
+        """Increment the missed-heartbeat counter for ``node_id``.
+
+        Args:
+            node_id: Node identifier.
+        """
         with self.lock:
             p = self.peers.get(node_id)
             if p is not None:
                 p.missed_heartbeats += 1
 
     def mark_suspect(self, node_id: str) -> bool:
-        """Mark ``node_id`` as suspect. Returns True on transition."""
+        """Mark ``node_id`` as suspect. Returns True on transition.
+
+        Args:
+            node_id: Node identifier.
+
+        Returns:
+            bool: True when the peer just became suspect.
+        """
         with self.lock:
             p = self.peers.get(node_id)
             if p is None or p.suspect:

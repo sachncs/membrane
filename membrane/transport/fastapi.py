@@ -149,7 +149,23 @@ class FastAPIServer:
         tls: MTLSConfig | None = None,
         authenticator: Authenticator | None = None,
     ) -> None:
-        """Initialize the FastAPI server wrapper."""
+        """Initialize the FastAPI server wrapper.
+
+        Args:
+            node: Local :class:`Node`.
+            host: Bind address.
+            port: Listen port.
+            compute_backend: Optional :class:`Backend`.
+            transfer_service: :class:`TransferService`.
+            cluster_manager: Optional :class:`Cluster`.
+            metrics_registry: Optional :class:`MetricsCollector` for the
+                ``/metrics`` Prometheus endpoint. When ``None``, ``/metrics``
+                falls back to a JSON snapshot of the node's stats.
+            tls: mTLS configuration; defaults to ``cluster_config.mtls``.
+            authenticator: Optional :class:`~membrane.auth.Authenticator`. When
+                set, every route except ``/livez`` and ``/readyz`` authenticates
+                the caller and enforces its route scope.
+        """
         self.node = node
         self.host = host
         self.port = port

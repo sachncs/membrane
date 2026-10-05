@@ -65,7 +65,11 @@ class Isolation:
     """Evaluates whether fragments can be shared across tenants."""
 
     def __init__(self, policy: Tenant | None = None) -> None:
-        """Initialize with an optional tenant policy."""
+        """Initialize with an optional tenant policy.
+
+        Args:
+            policy: Tenant policy deciding what may be shared.
+        """
         self.policy = policy or Tenant()
 
     def can_share(
@@ -138,11 +142,23 @@ class Predict:
     """
 
     def __init__(self, kv_size_bias: float = 1.0) -> None:
-        """Initialize the predictor."""
+        """Initialize the predictor.
+
+        Args:
+            kv_size_bias: Weight given to KV size when scoring workload
+                patterns.
+        """
         self.kv_size_bias = kv_size_bias
 
     def predict_kv_size(self, prompt_tokens: list[int]) -> float:
-        """Predict KV cache size for a prompt."""
+        """Predict KV cache size for a prompt.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+
+        Returns:
+            float: Predicted KV cache size for the prompt.
+        """
         return kv_size(len(prompt_tokens)) * self.kv_size_bias
 
     def predict_reuse_probability(
@@ -150,7 +166,16 @@ class Predict:
         content_hash: str,
         session_history: list[str],
     ) -> float:
-        """Predict likelihood of reuse based on session history."""
+        """Predict likelihood of reuse based on session history.
+
+        Args:
+            content_hash: Content hash of the fragment.
+            session_history: Optional override of the session history. ``None``
+                reads the prefetcher's own.
+
+        Returns:
+            float: Estimated probability of reuse, in ``[0, 1]``.
+        """
         if not session_history:
             return 0.0
         recent = session_history[-10:]
@@ -162,7 +187,15 @@ class Predict:
         prompt_tokens: list[int],
         nodes: list[Node],
     ) -> str:
-        """Predict the optimal node for a prompt based on heartbeat load."""
+        """Predict the optimal node for a prompt based on heartbeat load.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            nodes: Candidate nodes.
+
+        Returns:
+            str: Id of the predicted best node.
+        """
         if not nodes:
             return ""
         best = min(nodes, key=lambda node: node.heartbeat())
@@ -176,7 +209,14 @@ class Workload:
         """Initialize the analyzer."""
 
     def analyze_patterns(self, access_log: list[str]) -> dict[str, float]:
-        """Compute a content_hash -> normalized frequency map."""
+        """Compute a content_hash -> normalized frequency map.
+
+        Args:
+            access_log: Observed fragment accesses, oldest first.
+
+        Returns:
+            dict[str, float]: A content_hash -> normalized frequency map.
+        """
         if not access_log:
             return {}
         counts = Counter(access_log)
@@ -188,13 +228,28 @@ class Workload:
         access_log: list[str],
         k: int = 5,
     ) -> list[tuple[str, float]]:
-        """Return the top-k most frequent patterns."""
+        """Return the top-k most frequent patterns.
+
+        Args:
+            access_log: Observed fragment accesses, oldest first.
+            k: Number of patterns to return.
+
+        Returns:
+            list[tuple[str, float]]: The top-k most frequent patterns.
+        """
         frequencies = self.analyze_patterns(access_log)
         sorted_items = sorted(frequencies.items(), key=lambda item: item[1], reverse=True)
         return sorted_items[:k]
 
     def reuse_ratio(self, access_log: list[str]) -> float:
-        """Fraction of accesses that repeat an earlier hash."""
+        """Fraction of accesses that repeat an earlier hash.
+
+        Args:
+            access_log: Observed fragment accesses, oldest first.
+
+        Returns:
+            float: Fraction of accesses that repeat an earlier hash.
+        """
         if not access_log:
             return 0.0
         unique = len(set(access_log))

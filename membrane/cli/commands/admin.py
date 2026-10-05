@@ -27,10 +27,28 @@ admin_app = typer.Typer(help="Admin operations against a running Membrane node."
 
 
 def base_url(host: str, port: int) -> str:
+    """Return the base URL of the node at ``host:port``.
+
+    Args:
+        host: Host of the node to call.
+        port: Port of the node to call.
+
+    Returns:
+        str: The base URL of the node at ``host:port``.
+    """
     return f"http://{host}:{port}"
 
 
 def auth_headers(api_key: str | None) -> dict[str, str]:
+    """Return the ``Authorization`` header for ``api_key``, if any.
+
+    Args:
+        api_key: Bearer API key (optional).
+
+    Returns:
+        dict[str, str]: The ``Authorization`` header for ``api_key``, if
+        any.
+    """
     if api_key:
         return {"authorization": f"Bearer {api_key}"}
     return {}
@@ -43,7 +61,14 @@ def admin_inspect(
     port: int = typer.Option(8080, "--port"),
     api_key: str | None = typer.Option(None, "--api-key"),
 ) -> None:
-    """Inspect a fragment by content hash."""
+    """Inspect a fragment by content hash.
+
+    Args:
+        content_hash: Content hash of the fragment.
+        host: Host of the node to call.
+        port: Port of the node to call.
+        api_key: Bearer API key (optional).
+    """
     headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
     url = f"{base_url(host, port)}/admin/fragments/{content_hash}"
     resp = httpx.get(url, headers=headers, timeout=5.0)
@@ -58,7 +83,15 @@ def admin_placement(
     port: int = typer.Option(8080, "--port"),
     api_key: str | None = typer.Option(None, "--api-key"),
 ) -> None:
-    """Override the primary node for a shard."""
+    """Override the primary node for a shard.
+
+    Args:
+        content_hash: Content hash of the fragment.
+        primary_node_id: Node that should own the shard's primary copy.
+        host: Host of the node to call.
+        port: Port of the node to call.
+        api_key: Bearer API key (optional).
+    """
     headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
     url = f"{base_url(host, port)}/admin/placement"
     body: dict[str, Any] = {
@@ -76,7 +109,14 @@ def admin_evict(
     port: int = typer.Option(8080, "--port"),
     api_key: str | None = typer.Option(None, "--api-key"),
 ) -> None:
-    """Manually evict a fragment."""
+    """Manually evict a fragment.
+
+    Args:
+        content_hash: Content hash of the fragment.
+        host: Host of the node to call.
+        port: Port of the node to call.
+        api_key: Bearer API key (optional).
+    """
     headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
     url = f"{base_url(host, port)}/admin/evict"
     body = {"content_hash": content_hash}
@@ -91,7 +131,14 @@ def admin_repair(
     port: int = typer.Option(8080, "--port"),
     api_key: str | None = typer.Option(None, "--api-key"),
 ) -> None:
-    """Trigger a repair for a peer."""
+    """Trigger a repair for a peer.
+
+    Args:
+        peer_node_id: Peer identifier used as the label.
+        host: Host of the node to call.
+        port: Port of the node to call.
+        api_key: Bearer API key (optional).
+    """
     headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
     url = f"{base_url(host, port)}/admin/repair"
     body = {"peer_node_id": peer_node_id}
@@ -107,7 +154,16 @@ def admin_policy(
     port: int = typer.Option(8080, "--port"),
     api_key: str | None = typer.Option(None, "--api-key"),
 ) -> None:
-    """Read or update the Promotion knobs."""
+    """Read or update the Promotion knobs.
+
+    Args:
+        min_reuse_score: Minimum reuse score a fragment needs for promotion.
+        demand_threshold: Minimum demand count a fragment needs for
+            promotion.
+        host: Host of the node to call.
+        port: Port of the node to call.
+        api_key: Bearer API key (optional).
+    """
     headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
     url = f"{base_url(host, port)}/admin/policy"
     if min_reuse_score is None and demand_threshold is None:
@@ -125,7 +181,11 @@ __all__ = ["admin_app", "main"]
 
 
 def main() -> Any:
-    """Entry point for ``membrane admin``."""
+    """Entry point for ``membrane admin``.
+
+    Returns:
+        Any: Whatever the Typer application returns.
+    """
     return admin_app()
 
 

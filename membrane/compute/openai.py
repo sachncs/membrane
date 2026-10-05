@@ -59,7 +59,14 @@ class OpenAI(RemoteLLMBackend):
         model: str = "gpt-4o-mini",
         embedding_model: str = "text-embedding-3-small",
     ) -> None:
-        """Initialize the backend."""
+        """Initialize the backend.
+
+        Args:
+            api_key: OpenAI API key.
+            base_url: API base URL (for OpenAI-compatible endpoints).
+            model: OpenAI model name.
+            embedding_model: Model used for embedding requests.
+        """
         super().__init__()
         self.__api_key = api_key
         self.base_url = base_url.rstrip("/")
@@ -77,6 +84,11 @@ class OpenAI(RemoteLLMBackend):
 
     @override
     def __repr__(self) -> str:
+        """Describe the backend without exposing the API key.
+
+        Returns:
+            str: Backend class and model name.
+        """
         return (
             f"OpenAI(base_url={self.base_url!r}, model={self.model!r}, "
             f"embedding_model={self.embedding_model!r}, api_key=***)"
@@ -192,7 +204,11 @@ class OpenAI(RemoteLLMBackend):
 
     @override
     def available(self) -> bool:
-        """Return whether the API is reachable."""
+        """Return whether the API is reachable.
+
+        Returns:
+            bool: Whether the API is reachable.
+        """
         return self.probe("models", timeout=5.0)
 
     @override

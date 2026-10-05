@@ -15,7 +15,12 @@ def main(
     host: str = typer.Option("localhost", "--host", help="Server host"),
     port: int = typer.Option(8080, "--port", "-p", help="Server port"),
 ) -> None:
-    """Show cluster membership and peer health."""
+    """Show cluster membership and peer health.
+
+    Args:
+        host: Server host.
+        port: Server port.
+    """
     data = fetch_json(host, port, "/peers")
     if not data:
         output.error(f"Could not fetch cluster status from http://{host}:{port}/peers")

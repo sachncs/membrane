@@ -96,7 +96,11 @@ class ModelCompatibilityFingerprint:
             raise ValueError("config_hash must be a string")
 
     def to_dict(self) -> dict[str, object]:
-        """Return a JSON-friendly dict for the wire field."""
+        """Return a JSON-friendly dict for the wire field.
+
+        Returns:
+            dict[str, object]: A JSON-friendly dict for the wire field.
+        """
         return {
             "model_id": self.model_id,
             "model_revision": self.model_revision,
@@ -232,8 +236,7 @@ __all__ = [
 
 
 class MembraneIncompatibleError(RuntimeError):
-    """Raised when a fragment's compatibility fingerprint disagrees
-    with the live engine's fingerprint.
+    """Raised when a fragment's fingerprint does not match the live engine's.
 
     This is the v2.0+ counterpart to a model-version mismatch.
     Operators that swap a model archive without bumping the

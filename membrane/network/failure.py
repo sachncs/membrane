@@ -37,6 +37,16 @@ class Failure:
         running: list[bool],
         detector: FailureDetector | None = None,
     ) -> None:
+        """Initialize the failure detector loop.
+
+        Args:
+            membership: Cluster membership table. Enables :meth:`loop` when
+                provided.
+            config: Cluster configuration.
+            stop_event: Stop signal shared across all cluster loops.
+            running: Mutable bool flag.
+            detector: Failure-detection strategy.
+        """
         self.membership = membership
         self.config = config
         self.stop_event = stop_event

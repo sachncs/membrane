@@ -310,6 +310,13 @@ class KVBackend(RemoteLLMBackend):
 
         Delegates to :meth:`Backend.simulate_prefill_fragment`, which
         builds a deterministic :class:`PayloadIdentity` per window.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            list[Fragment]: One simulated fragment per prompt window.
         """
         window_size = Backend.SIMULATE_WINDOW_SIZE
         fragments: list[Fragment] = []
@@ -332,6 +339,13 @@ class KVBackend(RemoteLLMBackend):
 
         Fragments from the :meth:`simulate_prefill` fallback (no
         model loaded) get the base class placeholder bytes.
+
+        Args:
+            fragment: The fragment.
+
+        Returns:
+            bytes | None: Placeholder bytes, or ``None`` when real frames were
+            written.
         """
         if fragment.payload_ref is not None and self.content_store.has(fragment.payload_ref):
             return None

@@ -29,7 +29,11 @@ SERVICE_NAME: str = "membrane"
 
 
 def noop_tracer() -> Any:
-    """Return a tracer whose spans are inert."""
+    """Return a tracer whose spans are inert.
+
+    Returns:
+        Any: A tracer whose spans are inert.
+    """
     from opentelemetry.trace import NoOpTracer
 
     return NoOpTracer()
@@ -47,6 +51,7 @@ class TracerFactory:
     """
 
     def __init__(self) -> None:
+        """Create an unconfigured factory whose tracer records no spans."""
         self.provider: Any | None = None
         self.endpoint: str | None = None
         self.__tracer: Any | None = None

@@ -53,7 +53,13 @@ class Anthropic(RemoteLLMBackend):
         base_url: str = "https://api.anthropic.com/v1",
         model: str = "claude-3-sonnet-20240229",
     ) -> None:
-        """Initialize the backend."""
+        """Initialize the backend.
+
+        Args:
+            api_key: Anthropic API key.
+            base_url: API base URL.
+            model: Anthropic model name.
+        """
         super().__init__()
         self.__api_key = api_key
         self.base_url = base_url.rstrip("/")
@@ -73,6 +79,11 @@ class Anthropic(RemoteLLMBackend):
 
     @override
     def __repr__(self) -> str:
+        """Describe the backend without exposing the API key.
+
+        Returns:
+            str: Backend class and model name.
+        """
         return f"Anthropic(base_url={self.base_url!r}, model={self.model!r}, api_key=***)"
 
     @override
@@ -161,7 +172,11 @@ class Anthropic(RemoteLLMBackend):
 
     @override
     def available(self) -> bool:
-        """Return whether the API is reachable."""
+        """Return whether the API is reachable.
+
+        Returns:
+            bool: Whether the API is reachable.
+        """
         return self.probe("models", timeout=5.0)
 
     @override

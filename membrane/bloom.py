@@ -55,6 +55,12 @@ class BloomFilter:
 
         False positives are possible at the configured rate;
         false negatives never occur.
+
+        Args:
+            item: Key to hash into the filter.
+
+        Returns:
+            bool: Whether ``item`` was likely added.
         """
         if not isinstance(item, bytes):
             item = str(item).encode("utf-8")
@@ -66,6 +72,12 @@ class BloomFilter:
         The original is left untouched. Membership is
         ``return a new filter`` to keep filters immutable +
         shareable across threads.
+
+        Args:
+            item: Key to hash into the filter.
+
+        Returns:
+            BloomFilter: A new filter with ``item`` inserted.
         """
         if not isinstance(item, bytes):
             item = str(item).encode("utf-8")
@@ -81,6 +93,12 @@ class BloomFilter:
         function is the high half of the digest for ``item``
         XORed with a counter-salted prefix, keeping the
         function deterministic.
+
+        Args:
+            item: Key to hash into the filter.
+
+        Returns:
+            list[int]: The k bit positions for ``item``.
         """
         primary = hashlib.sha256(BLOOM_MAGIC + item).digest()
         secondary = hashlib.sha256(BLOOM_MAGIC + b"-" + item).digest()
@@ -95,12 +113,19 @@ class BloomFilter:
         return out
 
     def serialize(self) -> bytes:
-        """Encode as a self-describing byte string for the wire."""
+        """Encode as a self-describing byte string for the wire.
+
+        Returns:
+            bytes: Header (bit count, hash count) followed by the bit array.
+        """
         return BLOOM_MAGIC + self.m_bits.to_bytes(4, "big") + self.k_hashes.to_bytes(2, "big") + self.bits
 
     @classmethod
     def deserialize(cls, payload: bytes) -> BloomFilter:
         """Decode the wire format produced by :meth:`serialize`.
+
+        Args:
+            payload: Bytes produced by :meth:`serialize`.
 
         Returns:
             BloomFilter: Decoded filter.
@@ -151,10 +176,25 @@ class BloomFilter:
 
 
 def get_bit(buf: bytes, idx: int) -> bool:
+    """Return whether bit ``idx`` of ``bits`` is set.
+
+    Args:
+        buf: Bit array.
+        idx: Bit position.
+
+    Returns:
+        bool: Whether bit ``idx`` of ``bits`` is set.
+    """
     return bool(buf[idx // 8] & (1 << (idx % 8)))
 
 
 def set_bit(buf: bytearray, idx: int) -> None:
+    """Set bit ``idx`` of ``bits`` in place.
+
+    Args:
+        buf: Bit array.
+        idx: Bit position.
+    """
     buf[idx // 8] |= 1 << (idx % 8)
 
 

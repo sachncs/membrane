@@ -39,7 +39,14 @@ logger = logging.getLogger(__name__)
 
 
 def ok(body: Any) -> tuple[int, JsonDict]:
-    """Build a uniform ``(status, body)`` success tuple."""
+    """Build a uniform ``(status, body)`` success tuple.
+
+    Args:
+        body: Response body.
+
+    Returns:
+        tuple[int, JsonDict]: A uniform ``(status, body)`` success tuple.
+    """
     return 200, cast(JsonDict, body)
 
 
@@ -54,6 +61,17 @@ def op_sync(
     Validates ``source_url`` against the SSRF policy before
     issuing any outbound HTTP request. A URL that fails the
     allow-list returns 400 with the SSRF reason.
+
+    Args:
+        node: Local node to fill.
+        transfer_service: Service used to move fragments. A default
+            :class:`TransferService` is created when ``None``.
+        source_url: Base URL of the node to pull missing fragments from.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
     """
     if not source_url:
         return ok({"error": "missing source_url"})
@@ -107,7 +125,22 @@ def op_join(
     authenticator: object | None = None,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /join`` — add a peer to the cluster."""
+    """``POST /join`` — add a peer to the cluster.
+
+    Args:
+        cluster: Local cluster manager.
+        node_id: Node identifier.
+        host: Address of the joining node.
+        port: Port of the joining node.
+        headers: Lowercased request headers.
+        authenticator: Authenticator used to verify the joining peer;
+            ``None`` skips verification.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+    """
     if not node_id or not host or not port:
         return ok({"error": "missing node_id, host, or port"})
     if cluster is None:
@@ -154,6 +187,14 @@ def cn_matches_node_id(authenticator: object, peer_cn: str, node_id: str) -> boo
     :data:`~membrane.auth.mtls.CN_SCOPE_PREFIXES`. Other
     authenticators (API keys) identify services rather than nodes;
     for those, the route's ``write`` scope check is the gate.
+
+    Args:
+        authenticator: The authenticator that admitted the caller.
+        peer_cn: Verified certificate CN of the caller.
+        node_id: Node identifier.
+
+    Returns:
+        bool: Whether an mTLS peer CN may register as ``node_id``.
     """
     from membrane.auth.mtls import CN_SCOPE_PREFIXES, MTLSAuthenticator
 
@@ -174,6 +215,16 @@ def op_leave(
 
     When ``graceful=True`` (the default) the path is
     drain-then-stop. ``graceful=False`` is the legacy fast-leave.
+
+    Args:
+        cluster: Local cluster manager.
+        node_id: Node identifier.
+        graceful: Drain before leaving instead of leaving immediately.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
     """
     if not node_id:
         return ok({"error": "missing node_id"})
@@ -200,7 +251,17 @@ def op_gossip(
     data: JsonDict,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /gossip``."""
+    """``POST /gossip``.
+
+    Args:
+        cluster: Local cluster manager.
+        data: The sender's gossip state.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+    """
     if cluster is None:
         return ok({"error": "cluster manager not enabled"})
     return ok(cluster.gossip.handle(data))
@@ -214,7 +275,21 @@ def op_delete(
     tombstone_until: float | None = None,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /delete`` — soft-delete a fragment on the local node."""
+    """``POST /delete`` — soft-delete a fragment on the local node.
+
+    Args:
+        node: Local node.
+        tombstones: Tombstone table to record the delete in.
+        content_hash: Content hash of the fragment.
+        node_id: Node identifier.
+        tombstone_until: Unix time the tombstone expires; a default window
+            when ``None``.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+    """
     if node is None:
         return ok({"error": "no node"})
     if content_hash not in node.fragments:
@@ -233,7 +308,19 @@ def op_tombstone(
     node_id: str,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /tombstone`` — record a soft-delete mark without removing."""
+    """``POST /tombstone`` — record a soft-delete mark without removing.
+
+    Args:
+        tombstones: Tombstone table to update.
+        content_hash: Content hash of the fragment.
+        until: Unix time the tombstone expires.
+        node_id: Node identifier.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+    """
     if tombstones is None:
         return ok({"error": "no tombstone table configured"})
     tombstones.record(content_hash, until=until, node_ids={node_id})
@@ -246,7 +333,18 @@ def op_purge(
     content_hash: str,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /purge`` -- admin force-delete bypassing the soft-delete."""
+    """``POST /purge`` -- admin force-delete bypassing the soft-delete.
+
+    Args:
+        node: Local node.
+        tombstones: Tombstone table whose expired entries are purged.
+        content_hash: Content hash of the fragment.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+    """
     if node is None:
         return ok({"error": "no node"})
     if tombstones is not None:
@@ -264,7 +362,19 @@ def op_verify_received(
     claimed_sha256_hex: str,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /verify`` -- confirm a peer's claimed canonical bytes."""
+    """``POST /verify`` -- confirm a peer's claimed canonical bytes.
+
+    Args:
+        node: Local node holding the fragment.
+        content_hash: Content hash of the fragment.
+        claimed_size: Payload size the sender claims.
+        claimed_sha256_hex: SHA-256 of the payload the sender claims.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+    """
     if node is None:
         return ok({"error": "no node"})
     if content_hash not in node.fragments:

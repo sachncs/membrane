@@ -41,7 +41,15 @@ MAX_BODY_BYTES: int = 100 << 20
 
 
 def err(status: int, message: str) -> tuple[int, JsonDict]:
-    """Build a uniform ``(status, body)`` error tuple."""
+    """Build a uniform ``(status, body)`` error tuple.
+
+    Args:
+        status: HTTP status code.
+        message: Error message for the response body.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, {"error": message})``.
+    """
     return status, cast(JsonDict, {"error": message})
 
 
@@ -52,6 +60,12 @@ def ok_response(body: Any) -> tuple[int, JsonDict]:
     ``JsonDict`` so deeply-typed nested dicts (``dict[str, int]``,
     ``list[dict[str, Any]]``, etc.) flow through without an
     explicit cast at every builder site.
+
+    Args:
+        body: Response body.
+
+    Returns:
+        tuple[int, JsonDict]: A uniform ``(status, body)`` success tuple.
     """
     return 200, cast(JsonDict, body)
 
@@ -81,6 +95,16 @@ def op_heartbeat(
     cluster has a verified identity for every live peer. Missing
     headers on an mTLS-required cluster result in 401 (the
     FastAPI route is expected to have already enforced that).
+
+    Args:
+        node: Local :class:`Node`.
+        cluster: Cluster manager; ``None`` on a single node.
+        headers: Lowercased request headers.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
     """
     if node is None:
         return ok_response({"error": "no node"})
@@ -113,6 +137,16 @@ def op_metrics(
     registry is configured, ``(200, json_dict)`` when falling
     back to the node snapshot. The transport layer dispatches
     on the body type.
+
+    Args:
+        node: Local :class:`Node`.
+        metrics_registry: Optional :class:`MetricsCollector` for the
+            ``/metrics`` Prometheus endpoint. When ``None``, ``/metrics``
+            falls back to a JSON snapshot of the node's stats.
+
+    Returns:
+        tuple[int, JsonDict | tuple[str, dict[str, str]]]: ``(200, (text,
+        headers))`` for Prometheus, or ``(200, json)``.
     """
     if metrics_registry is not None:
         return 200, (
@@ -135,7 +169,16 @@ def op_metrics(
 
 
 def op_inventory(node: Node | None, auth_context: AuthContext | None = None) -> tuple[int, JsonDict]:
-    """``GET /inventory`` — node's inventory digest."""
+    """``GET /inventory`` — node's inventory digest.
+
+    Args:
+        node: Local :class:`Node`.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+    """
     if node is None:
         return ok_response({"node_id": "", "digest": {}})
     digest = {h: frag.version_id for h, frag in node.fragments.items()}
@@ -143,7 +186,16 @@ def op_inventory(node: Node | None, auth_context: AuthContext | None = None) -> 
 
 
 def op_peers(cluster: Cluster | None, auth_context: AuthContext | None = None) -> tuple[int, JsonDict]:
-    """``GET /peers`` — cluster membership view."""
+    """``GET /peers`` — cluster membership view.
+
+    Args:
+        cluster: Cluster manager; ``None`` on a single node.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+    """
     if cluster is None:
         return ok_response({"error": "cluster manager not enabled"})
     return ok_response({"peers": cluster.membership.to_json()})
@@ -156,8 +208,13 @@ def op_retrieve(
 ) -> tuple[int, JsonDict]:
     """``GET /retrieve?content_hash=...``.
 
-    Returns:
+    Args:
+        node: Local :class:`Node`.
+        content_hash: Content hash of the fragment.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
 
+    Returns:
     * ``{"found": True, "fragment": ...}`` on success;
     * ``{"found": False, "fragment": None}`` on a benign miss;
     * ``{"found": False, "fragment": None, "corrupt": True,
@@ -249,6 +306,10 @@ def op_store(
         cluster_metrics: Optional :class:`ClusterMetrics` whose
             per-tenant operation counter is bumped on every
             successful store.
+        draining: Whether the node is draining (writes are refused with
+            503).
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
 
     Returns:
         tuple[int, JsonDict]: ``(200, {"success": True, ...})``
@@ -376,6 +437,13 @@ def payload_present(node: Node, payload_ref: str) -> bool:
 
     A ref the store cannot address at all (e.g. too short for the
     on-disk layout) counts as absent rather than a server error.
+
+    Args:
+        node: Local :class:`Node`.
+        payload_ref: Content-store key of the fragment's payload bytes.
+
+    Returns:
+        bool: Whether ``payload_ref`` is in the node's content store.
     """
     try:
         return bool(node.content_store.has(payload_ref))
@@ -384,7 +452,13 @@ def payload_present(node: Node, payload_ref: str) -> bool:
 
 
 def rollback_local_write(node: Node, content_hash: str, existed_before: bool) -> None:
-    """Undo a local write whose quorum failed, unless the copy pre-existed."""
+    """Undo a local write whose quorum failed, unless the copy pre-existed.
+
+    Args:
+        node: Local :class:`Node`.
+        content_hash: Content hash of the fragment.
+        existed_before: Whether the fragment was present before this write.
+    """
     if existed_before:
         return
     try:
@@ -431,7 +505,18 @@ def op_replicate(
     fragment_payload: JsonDict,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /replicate`` — store a fragment as a non-primary replica."""
+    """``POST /replicate`` — store a fragment as a non-primary replica.
+
+    Args:
+        node: Local :class:`Node`.
+        fragment_payload: Wire-format dict carrying the v3 schema
+            (consistency + hlc fields included).
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+    """
     if node is None:
         return ok_response({"error": "no node"})
     frag = from_dict(fragment_payload)
@@ -456,7 +541,19 @@ def op_prefill(
     model_id: str = "default",
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /prefill`` — run prefill and store fragments as primary."""
+    """``POST /prefill`` — run prefill and store fragments as primary.
+
+    Args:
+        node: Local :class:`Node`.
+        backend: Compute backend that runs the prefill; CPU by default.
+        prompt_tokens: Prompt token IDs.
+        model_id: Model identifier.
+        auth_context: Authenticated caller; ``None`` when authentication is
+            off.
+
+    Returns:
+        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+    """
     if node is None:
         return ok_response({"error": "no node"})
     backend = backend or CPU()

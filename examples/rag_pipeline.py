@@ -63,6 +63,11 @@ def make_fragment(prompt: str) -> Fragment:
 
 
 def main() -> int:
+    """Run two passes over the prompts against ``MEMBRANE_URL``.
+
+    Returns:
+        int: Process exit status.
+    """
     base_url = os.environ.get("MEMBRANE_URL", "http://localhost:8080")
     client = MembraneClient(base_url, api_key=os.environ.get("MEMBRANE_API_KEY", ""))
     try:

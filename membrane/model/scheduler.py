@@ -70,6 +70,7 @@ class EgressMonitor:
     def __post_init__(self):
         # Ensure the deque has the correct maxlen so that
         # historical samples are dropped automatically.
+        """Bound the sample history to ``window_size`` entries."""
         object.__setattr__(self, "history", deque(self.history, maxlen=self.window_size))
 
     def record(self, utilization: float) -> None:
@@ -117,6 +118,7 @@ class SchedulerState:
     effective_threshold: int = 0  # set dynamically from threshold
 
     def __post_init__(self):
+        """Start the effective threshold at the configured threshold."""
         if self.effective_threshold == 0:
             self.effective_threshold = self.threshold
 

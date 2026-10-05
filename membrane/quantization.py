@@ -64,7 +64,14 @@ class Quantizer(Protocol):
     format_name: str
 
     def quantize(self, tensor: np.ndarray) -> bytes:
-        """Quantize ``tensor`` to wire bytes."""
+        """Quantize ``tensor`` to wire bytes.
+
+        Args:
+            tensor: 2-D array (rows, cols).
+
+        Returns:
+            bytes: The quantized wire bytes.
+        """
         ...
 
     def dequantize(
@@ -73,7 +80,16 @@ class Quantizer(Protocol):
         original_dtype: str,
         original_shape: tuple[int, ...],
     ) -> np.ndarray:
-        """Inverse of :func:`quantize`."""
+        """Inverse of :func:`quantize`.
+
+        Args:
+            payload: Bytes produced by :meth:`quantize`.
+            original_dtype: Dtype of the tensor before quantization.
+            original_shape: Shape of the tensor before quantization.
+
+        Returns:
+            np.ndarray: The reconstructed tensor.
+        """
         ...
 
 
@@ -243,7 +259,15 @@ def dequantize(frame: QuantizedFrame) -> np.ndarray:
 
 
 def quantizer_for(format_name: str) -> Quantizer:
-    """Look up the :class:`Quantizer` for ``format_name``."""
+    """Look up the :class:`Quantizer` for ``format_name``.
+
+    Args:
+        format_name: One of ``"int8"``, ``"fp8_e4m3"``, ``"fp8_e5m2"``,
+            ``"nf4"``.
+
+    Returns:
+        Quantizer: The :class:`Quantizer` for ``format_name``.
+    """
     if format_name == "int8":
         return Int8PerChannelQuantizer()
     if format_name == "fp8_e4m3":
@@ -256,7 +280,14 @@ def quantizer_for(format_name: str) -> Quantizer:
 
 
 def quantizer_for_id(format_id: int) -> Quantizer:
-    """Inverse of :func:`quantizer_for` keyed on the wire byte."""
+    """Inverse of :func:`quantizer_for` keyed on the wire byte.
+
+    Args:
+        format_id: Wire byte identifying the quantization format.
+
+    Returns:
+        Quantizer: The quantizer for ``format_id``.
+    """
     return {
         FORMAT_INT8: Int8PerChannelQuantizer,
         FORMAT_FP8_E4M3: FP8E4M3Quantizer,
@@ -266,7 +297,14 @@ def quantizer_for_id(format_id: int) -> Quantizer:
 
 
 def to_numpy(tensor: Any) -> np.ndarray:
-    """Normalize ``tensor`` to a ``np.ndarray`` view."""
+    """Normalize ``tensor`` to a ``np.ndarray`` view.
+
+    Args:
+        tensor: 2-D array (rows, cols).
+
+    Returns:
+        np.ndarray: The tensor as a NumPy array.
+    """
     if hasattr(tensor, "detach") and hasattr(tensor, "cpu") and hasattr(tensor, "numpy"):
         return tensor.detach().cpu().numpy()
     if hasattr(tensor, "numpy"):
@@ -312,7 +350,16 @@ class Int8PerChannelQuantizer:
         original_dtype: str,
         original_shape: tuple[int, ...],
     ) -> np.ndarray:
-        """Inverse of :func:`quantize`."""
+        """Inverse of :func:`quantize`.
+
+        Args:
+            payload: Bytes produced by :meth:`quantize`.
+            original_dtype: Dtype of the tensor before quantization.
+            original_shape: Shape of the tensor before quantization.
+
+        Returns:
+            np.ndarray: The reconstructed tensor.
+        """
         offset = 0
         n_rows = struct.unpack_from("<I", payload, offset)[0]
         offset += 4
@@ -339,7 +386,11 @@ class FP8E4M3Quantizer:
     format_name: str = "fp8_e4m3"
 
     def __has_fp8(self) -> bool:
-        """Return whether both torch fp8 and numpy fp8 are available."""
+        """Return whether both torch fp8 and numpy fp8 are available.
+
+        Returns:
+            bool: Whether both torch fp8 and numpy fp8 are available.
+        """
         try:
             import torch
 
@@ -385,7 +436,16 @@ class FP8E4M3Quantizer:
         original_dtype: str,
         original_shape: tuple[int, ...],
     ) -> np.ndarray:
-        """Inverse of :func:`quantize`."""
+        """Inverse of :func:`quantize`.
+
+        Args:
+            payload: Bytes produced by :meth:`quantize`.
+            original_dtype: Dtype of the tensor before quantization.
+            original_shape: Shape of the tensor before quantization.
+
+        Returns:
+            np.ndarray: The reconstructed tensor.
+        """
         import numpy as np
 
         offset = 0
@@ -419,7 +479,11 @@ class FP8E5M2Quantizer:
     format_name: str = "fp8_e5m2"
 
     def __has_fp8(self) -> bool:
-        """Return whether both torch fp8 and numpy fp8 are available."""
+        """Return whether both torch fp8 and numpy fp8 are available.
+
+        Returns:
+            bool: Whether both torch fp8 and numpy fp8 are available.
+        """
         try:
             import torch
 
@@ -464,7 +528,16 @@ class FP8E5M2Quantizer:
         original_dtype: str,
         original_shape: tuple[int, ...],
     ) -> np.ndarray:
-        """Inverse of :func:`quantize`."""
+        """Inverse of :func:`quantize`.
+
+        Args:
+            payload: Bytes produced by :meth:`quantize`.
+            original_dtype: Dtype of the tensor before quantization.
+            original_shape: Shape of the tensor before quantization.
+
+        Returns:
+            np.ndarray: The reconstructed tensor.
+        """
         import numpy as np
 
         offset = 0
@@ -548,7 +621,16 @@ class NF4Quantizer:
         original_dtype: str,
         original_shape: tuple[int, ...],
     ) -> np.ndarray:
-        """Inverse of :func:`quantize`."""
+        """Inverse of :func:`quantize`.
+
+        Args:
+            payload: Bytes produced by :meth:`quantize`.
+            original_dtype: Dtype of the tensor before quantization.
+            original_shape: Shape of the tensor before quantization.
+
+        Returns:
+            np.ndarray: The reconstructed tensor.
+        """
         import numpy as np
 
         offset = 0

@@ -44,6 +44,9 @@ jobs:
       # No semi-private names, __all__ everywhere, no direct console output.
       - name: naming and output conventions
         run: python tools/check_naming.py
+      # Every module, class, and function has a complete Google docstring.
+      - name: docstrings
+        run: python tools/check_docstrings.py
 
   test:
     name: Tests

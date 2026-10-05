@@ -55,7 +55,11 @@ DEFAULT_CREDENTIALS = PeerCredentials()
 
 
 def get_default_peer_credentials() -> PeerCredentials:
-    """Return the process-wide :class:`PeerCredentials`."""
+    """Return the process-wide :class:`PeerCredentials`.
+
+    Returns:
+        PeerCredentials: The process-wide :class:`PeerCredentials`.
+    """
     return DEFAULT_CREDENTIALS
 
 
@@ -65,13 +69,24 @@ def set_default_peer_credentials(credentials: PeerCredentials) -> None:
     :class:`~membrane.server.Server` calls this at startup so every
     :class:`Peer` the cluster layer creates uses the same scheme and
     credentials.
+
+    Args:
+        credentials: Credentials to install.
     """
     global DEFAULT_CREDENTIALS
     DEFAULT_CREDENTIALS = credentials
 
 
 def peer_url(host_port: str) -> str:
-    """Return the base URL for a bare ``host:port`` peer address."""
+    """Return the base URL for a bare ``host:port`` peer address.
+
+    Args:
+        host_port: Peer address as ``host:port`` (or a full URL, returned
+            unchanged).
+
+    Returns:
+        str: The base URL for a bare ``host:port`` peer address.
+    """
     if "://" in host_port:
         return host_port
     return f"{get_default_peer_credentials().scheme}://{host_port}"
@@ -132,10 +147,21 @@ class HTTPTransport:
     """
 
     def __init__(self, ssl_context: ssl.SSLContext | None = None) -> None:
+        """Create the transport; the pooled HTTP client is built on first use.
+
+        Args:
+            ssl_context: Client TLS context for HTTPS peers; ``None`` uses the
+                system trust store.
+        """
         self.__client: Any | None = None
         self.ssl_context = ssl_context
 
     def __get_client(self) -> Any:
+        """Return the pooled HTTP client, creating it on first use.
+
+        Returns:
+            Any: The pooled HTTP client, creating it on first use.
+        """
         if self.__client is None:
             try:
                 import httpx
@@ -163,7 +189,19 @@ class HTTPTransport:
         headers: dict[str, str],
         timeout_sec: float,
     ) -> JsonDict | None:
-        """Issue an HTTP request via the pooled client."""
+        """Issue an HTTP request via the pooled client.
+
+        Args:
+            method: HTTP method.
+            url: Full URL.
+            body: Request body bytes or ``None``.
+            headers: Request headers.
+            timeout_sec: Per-request timeout in seconds.
+
+        Returns:
+            JsonDict | None: The parsed JSON body, or ``None`` when the SSRF
+            policy rejects the URL.
+        """
         from urllib.parse import urlparse
 
         from membrane.errors import NetworkError
@@ -309,37 +347,90 @@ class Peer:
         return self.request_with_retry("GET", "/heartbeat", extra_headers=self.base_headers)
 
     def get_inventory(self) -> JsonDict | None:
-        """Send ``GET /inventory`` to the peer."""
+        """Send ``GET /inventory`` to the peer.
+
+        Returns:
+            JsonDict | None: The peer's inventory digest, or ``None`` on
+            failure.
+        """
         return self.request_with_retry("GET", "/inventory")
 
     def store_fragment(self, fragment: Fragment, is_primary: bool = False) -> bool:
-        """Send ``POST /store`` with ``fragment`` and ``is_primary``."""
+        """Send ``POST /store`` with ``fragment`` and ``is_primary``.
+
+        Args:
+            fragment: The fragment.
+            is_primary: Whether this node owns the fragment's primary copy.
+
+        Returns:
+            bool: True when the peer stored the fragment.
+        """
         payload = {"fragment": to_dict(fragment), "is_primary": is_primary}
         resp = self.request_with_retry("POST", "/store", payload)
         return resp is not None and resp.get("success", False)
 
     def retrieve_fragment(self, content_hash: str) -> Fragment | None:
-        """Send ``GET /retrieve?content_hash=...``."""
+        """Send ``GET /retrieve?content_hash=...``.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            Fragment | None: The fragment, or ``None`` when absent or
+            unreachable.
+        """
         resp = self.request_with_retry("GET", f"/retrieve?content_hash={content_hash}")
         if resp and resp.get("found"):
             return from_dict(resp["fragment"])
         return None
 
     def join_cluster(self, node_id: str, host: str, port: int) -> JsonDict | None:
-        """Send ``POST /join`` to bootstrap into the cluster."""
+        """Send ``POST /join`` to bootstrap into the cluster.
+
+        Args:
+            node_id: Id of this node, sent to the peer.
+            host: Address the peer should use to reach this node.
+            port: Port the peer should use to reach this node.
+
+        Returns:
+            JsonDict | None: The join response with the seed's peers, or
+            ``None`` on failure.
+        """
         return self.request_with_retry("POST", "/join", {"node_id": node_id, "host": host, "port": port})
 
     def leave_cluster(self, node_id: str) -> bool:
-        """Send ``POST /leave`` to remove ``node_id`` from the cluster."""
+        """Send ``POST /leave`` to remove ``node_id`` from the cluster.
+
+        Args:
+            node_id: Id of this node, sent to the peer.
+
+        Returns:
+            bool: True when the peer acknowledged.
+        """
         resp = self.request_with_retry("POST", "/leave", {"node_id": node_id})
         return resp is not None and resp.get("success", False)
 
     def gossip(self, state: JsonDict) -> JsonDict | None:
-        """Send ``POST /gossip`` with the supplied state payload."""
+        """Send ``POST /gossip`` with the supplied state payload.
+
+        Args:
+            state: This node's gossip state.
+
+        Returns:
+            JsonDict | None: The peer's own gossip state, or ``None`` on
+            failure.
+        """
         return self.request_with_retry("POST", "/gossip", state)
 
     def request_replicate(self, fragment: Fragment) -> bool:
-        """Send ``POST /replicate`` with ``fragment``."""
+        """Send ``POST /replicate`` with ``fragment``.
+
+        Args:
+            fragment: The fragment.
+
+        Returns:
+            bool: True when the peer stored the replica.
+        """
         payload = {"fragment": to_dict(fragment)}
         resp = self.request_with_retry("POST", "/replicate", payload)
         return resp is not None and resp.get("success", False)
@@ -424,7 +515,11 @@ class Peer:
         return resp is not None and bool(resp.get("success", False))
 
     def get_peers(self) -> JsonDict | None:
-        """Send ``GET /peers``."""
+        """Send ``GET /peers``.
+
+        Returns:
+            JsonDict | None: The peer's membership list, or ``None`` on failure.
+        """
         return self.request_with_retry("GET", "/peers")
 
     # ------------------------------------------------------------------

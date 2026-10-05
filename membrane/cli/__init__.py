@@ -69,7 +69,11 @@ def root(
         False, "--version", "-V", callback=version_callback, is_eager=True, help="Show the version and exit."
     ),
 ) -> None:
-    """Membrane — Global Contextual Memory Fabric CLI."""
+    """Membrane — Global Contextual Memory Fabric CLI.
+
+    Args:
+        version: Show the version and exit.
+    """
     ensure_cli_logging()
 
 

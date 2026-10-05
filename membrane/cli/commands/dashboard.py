@@ -16,7 +16,13 @@ def main(
     port: int = typer.Option(8080, "--port", "-p", help="Server port to monitor"),
     refresh: float = typer.Option(1.0, "--refresh", help="Refresh interval seconds"),
 ) -> None:
-    """Open a live Rich dashboard connected to a running Membrane server."""
+    """Open a live Rich dashboard connected to a running Membrane server.
+
+    Args:
+        host: Server host to monitor.
+        port: Server port to monitor.
+        refresh: Refresh interval seconds.
+    """
     run_remote_dashboard(host=host, port=port, refresh=refresh)
 
 

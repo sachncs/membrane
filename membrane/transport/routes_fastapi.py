@@ -57,6 +57,12 @@ def authenticator_for(app: FastAPI) -> object | None:
     handler calls :func:`membrane.transport.authz.enforce_route_scope`
     against it. Absent the cluster is treated as non-mTLS
     (single-node deployments).
+
+    Args:
+        app: The FastAPI application.
+
+    Returns:
+        object | None: The cluster's authenticator from app.state, if any.
     """
     return getattr(app.state, "authenticator", None)
 
@@ -73,6 +79,12 @@ def peer_headers(request: Request) -> dict[str, str]:
     discarded. The only trusted source is the CN of the verified
     peer certificate, which :class:`~membrane.transport.tls_protocol.PeerCertH11Protocol`
     records in the ASGI scope after the TLS handshake.
+
+    Args:
+        request: The inbound FastAPI request.
+
+    Returns:
+        dict[str, str]: Lower-cased headers with a trusted peer CN.
     """
     return peer_headers_from_scope(request.scope, request.headers.items())
 
@@ -125,8 +137,11 @@ class FragmentPayload(BaseModel):
     fingerprint_compat: str = Field(default="", max_length=128)
 
     def to_wire_dict(self) -> JsonDict:
-        """Transform into the canonical wire dict accepted by
-        :func:`membrane.serialization.from_dict`."""
+        """Return the wire dict accepted by :func:`membrane.serialization.from_dict`.
+
+        Returns:
+            JsonDict: The wire-format fragment dict.
+        """
         return {
             "schema_version": self.schema_version,
             "tenant_id": self.tenant_id,
@@ -246,12 +261,23 @@ class VerifyRequest(BaseModel):
 
 
 def livez(_app: FastAPI) -> dict[str, str]:
-    """``GET /livez`` — liveness probe (public)."""
+    """``GET /livez`` — liveness probe (public).
+
+    Returns:
+        dict[str, str]: ``{"status": "alive"}``.
+    """
     return {"status": "alive"}
 
 
 def readyz(app: FastAPI):
-    """``GET /readyz`` — readiness probe (public, deep)."""
+    """``GET /readyz`` — readiness probe (public, deep).
+
+    Args:
+        app: The FastAPI application.
+
+    Returns:
+        object: ``{"status": "ready"}``, or a 503 response without a node.
+    """
     if not app.state.node:
         return JSONResponse({"status": "no node"}, status_code=503)
     # A full node is healthy: ``Node.store`` evicts to make room, so
@@ -271,6 +297,12 @@ def auth_error_response(_request: Request, exc: Exception) -> Response:
     The body is deliberately generic so a probe cannot distinguish
     an unknown key from a known key with the wrong scope beyond the
     status code itself.
+
+    Args:
+        exc: The authentication or authorization error.
+
+    Returns:
+        Response: A 401 or 403 JSON response.
     """
     if isinstance(exc, AuthForbiddenError):
         return JSONResponse({"error": "forbidden"}, status_code=403)
@@ -382,11 +414,27 @@ def transport_metrics_for(app: FastAPI) -> TransportMetrics | None:
     The :class:`Server` populates ``app.state.transport_metrics``
     at construction; transport handlers use the helper to
     record every op invocation.
+
+    Args:
+        app: The FastAPI application.
+
+    Returns:
+        TransportMetrics | None: The cluster's TransportMetrics from
+        app.state, if any.
     """
     return getattr(app.state, "transport_metrics", None)
 
 
 def handle_heartbeat(app: FastAPI, request: Request):
+    """Serve ``GET /heartbeat`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "GET", "/heartbeat")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -403,7 +451,14 @@ def handle_heartbeat(app: FastAPI, request: Request):
 
 
 def handle_metrics(app: FastAPI):
-    """``GET /metrics`` — Prometheus text or legacy JSON."""
+    """``GET /metrics`` — Prometheus text or legacy JSON.
+
+    Args:
+        app: The FastAPI application.
+
+    Returns:
+        object: Prometheus text, or the JSON snapshot.
+    """
     refresh = getattr(app.state, "refresh_metrics", None)
     if refresh is not None:
         refresh()
@@ -415,12 +470,27 @@ def handle_metrics(app: FastAPI):
 
 
 def metrics_json(app: FastAPI):
-    """``GET /metrics.json`` — legacy JSON snapshot for the TUI."""
+    """``GET /metrics.json`` — legacy JSON snapshot for the TUI.
+
+    Args:
+        app: The FastAPI application.
+
+    Returns:
+        object: The JSON metrics snapshot.
+    """
     status, body = op_metrics(app.state.node)
     return respond(status, body)
 
 
 def handle_inventory(app: FastAPI):
+    """Serve ``GET /inventory``.
+
+    Args:
+        app: The FastAPI application.
+
+    Returns:
+        object: The HTTP response.
+    """
     status, body = record_transport(
         transport_metrics_for(app),
         "inventory",
@@ -431,6 +501,14 @@ def handle_inventory(app: FastAPI):
 
 
 def handle_peers(app: FastAPI):
+    """Serve ``GET /peers``.
+
+    Args:
+        app: The FastAPI application.
+
+    Returns:
+        object: The HTTP response.
+    """
     status, body = record_transport(
         transport_metrics_for(app),
         "peers",
@@ -441,6 +519,16 @@ def handle_peers(app: FastAPI):
 
 
 def handle_retrieve(app: FastAPI, content_hash: str, context: AuthContext):
+    """Serve ``GET /retrieve`` for the authenticated caller.
+
+    Args:
+        app: The FastAPI application.
+        content_hash: Content hash of the fragment.
+        context: Authenticated caller.
+
+    Returns:
+        object: The HTTP response.
+    """
     status, body = record_transport(
         transport_metrics_for(app),
         "retrieve",
@@ -451,6 +539,16 @@ def handle_retrieve(app: FastAPI, content_hash: str, context: AuthContext):
 
 
 def handle_store(app: FastAPI, req: StoreRequest, request: Request):
+    """Serve ``POST /store`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/store")
     cluster_metrics_obj = getattr(app.state, "cluster_metrics", None)
     status, body = record_transport(
@@ -472,6 +570,16 @@ def handle_store(app: FastAPI, req: StoreRequest, request: Request):
 
 
 def respond_with_retry_after(status: int, body: JsonDict, retry_after: int) -> Response:
+    """Build a JSON response carrying a ``Retry-After`` header.
+
+    Args:
+        status: HTTP status code.
+        body: Response body.
+        retry_after: Seconds the client should wait before retrying.
+
+    Returns:
+        Response: A JSON response carrying a ``Retry-After`` header.
+    """
     return JSONResponse(
         body,
         status_code=status,
@@ -480,6 +588,16 @@ def respond_with_retry_after(status: int, body: JsonDict, retry_after: int) -> R
 
 
 def handle_replicate(app: FastAPI, req: ReplicateRequest, request: Request):
+    """Serve ``POST /replicate`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/replicate")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -495,6 +613,16 @@ def handle_replicate(app: FastAPI, req: ReplicateRequest, request: Request):
 
 
 def handle_sync(app: FastAPI, req: SyncRequest, request: Request):
+    """Serve ``POST /sync`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/sync")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -511,6 +639,16 @@ def handle_sync(app: FastAPI, req: SyncRequest, request: Request):
 
 
 def handle_prefill(app: FastAPI, req: PrefillRequest, request: Request):
+    """Serve ``POST /prefill`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/prefill")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -528,6 +666,16 @@ def handle_prefill(app: FastAPI, req: PrefillRequest, request: Request):
 
 
 def handle_join(app: FastAPI, req: JoinRequest, request: Request):
+    """Serve ``POST /join`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/join")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -547,6 +695,16 @@ def handle_join(app: FastAPI, req: JoinRequest, request: Request):
 
 
 def handle_leave(app: FastAPI, req: LeaveRequest, request: Request):
+    """Serve ``POST /leave`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/leave")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -562,6 +720,16 @@ def handle_leave(app: FastAPI, req: LeaveRequest, request: Request):
 
 
 def handle_gossip(app: FastAPI, req: GossipRequest, request: Request):
+    """Serve ``POST /gossip`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/gossip")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -577,6 +745,16 @@ def handle_gossip(app: FastAPI, req: GossipRequest, request: Request):
 
 
 def handle_delete(app: FastAPI, req: DeleteRequest, request: Request):
+    """Serve ``POST /delete`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/delete")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -595,6 +773,16 @@ def handle_delete(app: FastAPI, req: DeleteRequest, request: Request):
 
 
 def handle_tombstone(app: FastAPI, req: TombstoneRequest, request: Request):
+    """Serve ``POST /tombstone`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/tombstone")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -612,6 +800,16 @@ def handle_tombstone(app: FastAPI, req: TombstoneRequest, request: Request):
 
 
 def handle_purge(app: FastAPI, req: PurgeRequest, request: Request):
+    """Serve ``POST /purge`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/purge")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -628,6 +826,16 @@ def handle_purge(app: FastAPI, req: PurgeRequest, request: Request):
 
 
 def handle_verify(app: FastAPI, req: VerifyRequest, request: Request):
+    """Serve ``POST /verify`` after the scope check.
+
+    Args:
+        app: The FastAPI application.
+        req: Validated request body.
+        request: The inbound FastAPI request.
+
+    Returns:
+        object: The HTTP response.
+    """
     context = route_scope(request, "POST", "/verify")
     status, body = record_transport(
         transport_metrics_for(app),
@@ -645,7 +853,15 @@ def handle_verify(app: FastAPI, req: VerifyRequest, request: Request):
 
 
 def respond(status: int, body: JsonDict | tuple[str, dict[str, str]] | object) -> Response:
-    """Translate an operation's ``(status, body)`` to a FastAPI response."""
+    """Translate an operation's ``(status, body)`` to a FastAPI response.
+
+    Args:
+        status: HTTP status code.
+        body: Response body (JSON, or Prometheus text).
+
+    Returns:
+        Response: The JSON (or text) response.
+    """
     if status == 200:
         return JSONResponse(body)
     return JSONResponse(body, status_code=status)

@@ -339,7 +339,14 @@ class CoaccessIndex(Protocol):
     """Protocol for a coaccess index the prefetcher can read."""
 
     def neighbors(self, key: str) -> Iterable[str]:
-        """Return co-access neighbors of ``key``."""
+        """Return co-access neighbors of ``key``.
+
+        Args:
+            key: Key whose co-accessed neighbours are returned.
+
+        Returns:
+            Iterable[str]: Co-access neighbors of ``key``.
+        """
         ...
 
 

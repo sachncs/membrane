@@ -18,14 +18,41 @@ INF_LABEL = 'le="+Inf"'
 
 
 def label_key(names: tuple[str, ...], labels: Mapping[str, str]) -> LabelKey:
+    """Return the series key for ``labels`` in label-name order.
+
+    Args:
+        names: Label names of the metric, in declaration order.
+        labels: Label values keyed by label name.
+
+    Returns:
+        LabelKey: The series key for ``labels`` in label-name order.
+    """
     return tuple(str(labels.get(name, "")) for name in names)
 
 
 def escape(value: str) -> str:
+    """Escape a label value for the Prometheus text format.
+
+    Args:
+        value: Raw label value.
+
+    Returns:
+        str: The escaped value.
+    """
     return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
 
 def render_labels(names: tuple[str, ...], key: LabelKey, extra: str = "") -> str:
+    """Render a ``{name="value",...}`` label set.
+
+    Args:
+        names: Label names of the metric, in declaration order.
+        key: Label values in name order.
+        extra: Extra pre-rendered label (e.g. ``le="0.5"``), appended last.
+
+    Returns:
+        str: A ``{name="value",...}`` label set.
+    """
     parts = [f'{n}="{escape(v)}"' for n, v in zip(names, key, strict=True)]
     if extra:
         parts.append(extra)
@@ -64,7 +91,14 @@ class Counter:
             return sum(self.series.values())
 
     def get(self, **labels: str) -> float:
-        """Value of one series."""
+        """Value of one series.
+
+        Args:
+            **labels: Label values keyed by label name.
+
+        Returns:
+            float: Value of one series.
+        """
         with self.lock:
             return self.series.get(label_key(self.labels, labels), 0.0)
 
@@ -80,7 +114,12 @@ class Gauge:
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def set(self, value: float, **labels: str) -> None:
-        """Set the series selected by ``labels`` to ``value``."""
+        """Set the series selected by ``labels`` to ``value``.
+
+        Args:
+            value: New value.
+            **labels: Label values keyed by label name.
+        """
         key = label_key(self.labels, labels)
         with self.lock:
             self.series[key] = value
@@ -92,13 +131,22 @@ class Gauge:
             return sum(self.series.values())
 
     def get(self, **labels: str) -> float:
-        """Value of one series."""
+        """Value of one series.
+
+        Args:
+            **labels: Label values keyed by label name.
+
+        Returns:
+            float: Value of one series.
+        """
         with self.lock:
             return self.series.get(label_key(self.labels, labels), 0.0)
 
 
 @dataclass
 class HistogramSeries:
+    """Bucket counts, observation count, and sum of one histogram series."""
+
     counts: dict[float, int] = field(default_factory=dict)
     total: int = 0
     sum_: float = 0.0
@@ -116,7 +164,12 @@ class Histogram:
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def observe(self, value: float, **labels: str) -> None:
-        """Record ``value`` in the series selected by ``labels``."""
+        """Record ``value`` in the series selected by ``labels``.
+
+        Args:
+            value: Observed value (e.g. a latency in seconds).
+            **labels: Label values keyed by label name.
+        """
         key = label_key(self.labels, labels)
         with self.lock:
             series = self.series.setdefault(key, HistogramSeries())
@@ -142,18 +195,37 @@ class MetricsCollector:
     """
 
     def __init__(self) -> None:
+        """Create an empty registry."""
         self.counters: dict[str, Counter] = {}
         self.gauges: dict[str, Gauge] = {}
         self.histograms: dict[str, Histogram] = {}
 
     def counter(self, name: str, help_text: str, labels: tuple[str, ...] = ()) -> Counter:
-        """Get-or-create a counter."""
+        """Get-or-create a counter.
+
+        Args:
+            name: Metric name.
+            help_text: Metric help text.
+            labels: Label values keyed by label name.
+
+        Returns:
+            Counter: The counter named ``name``.
+        """
         if name not in self.counters:
             self.counters[name] = Counter(name=name, help_text=help_text, labels=labels)
         return self.counters[name]
 
     def gauge(self, name: str, help_text: str, labels: tuple[str, ...] = ()) -> Gauge:
-        """Get-or-create a gauge."""
+        """Get-or-create a gauge.
+
+        Args:
+            name: Metric name.
+            help_text: Metric help text.
+            labels: Label values keyed by label name.
+
+        Returns:
+            Gauge: The gauge named ``name``.
+        """
         if name not in self.gauges:
             self.gauges[name] = Gauge(name=name, help_text=help_text, labels=labels)
         return self.gauges[name]
@@ -165,7 +237,17 @@ class MetricsCollector:
         buckets: tuple[float, ...] | None = None,
         labels: tuple[str, ...] = (),
     ) -> Histogram:
-        """Get-or-create a histogram."""
+        """Get-or-create a histogram.
+
+        Args:
+            name: Metric name.
+            help_text: Metric help text.
+            buckets: Histogram bucket upper bounds; ``None`` uses the defaults.
+            labels: Label values keyed by label name.
+
+        Returns:
+            Histogram: The histogram named ``name``.
+        """
         if name not in self.histograms:
             h = Histogram(name=name, help_text=help_text, labels=labels)
             if buckets is not None:
@@ -221,6 +303,7 @@ class TransportMetrics:
 
     @property
     def requests(self) -> Counter:
+        """Requests handled, by endpoint, method, and status."""
         return self.registry.counter(
             "membrane_requests_total",
             "Total inbound HTTP/gRPC requests by endpoint, method, and status.",
@@ -229,6 +312,7 @@ class TransportMetrics:
 
     @property
     def errors(self) -> Counter:
+        """Requests that raised, by endpoint and exception type."""
         return self.registry.counter(
             "membrane_errors_total",
             "Total request errors by endpoint and exception class.",
@@ -237,6 +321,7 @@ class TransportMetrics:
 
     @property
     def duration(self) -> Histogram:
+        """Request latency, by endpoint."""
         return self.registry.histogram(
             "membrane_request_duration_seconds",
             "End-to-end request duration by endpoint.",
@@ -245,6 +330,11 @@ class TransportMetrics:
 
 
 def default_tenant_metrics() -> TenantMetrics:
+    """Return an empty :class:`TenantMetrics`.
+
+    Returns:
+        TenantMetrics: An empty :class:`TenantMetrics`.
+    """
     return TenantMetrics()
 
 
@@ -257,26 +347,32 @@ class ClusterMetrics:
 
     @property
     def peers_total(self) -> Gauge:
+        """Peers in the membership table."""
         return self.registry.gauge("membrane_peers_total", "Total peers known to this node.")
 
     @property
     def peers_healthy(self) -> Gauge:
+        """Peers currently considered healthy."""
         return self.registry.gauge("membrane_peers_healthy", "Healthy peers.")
 
     @property
     def gossip_rounds(self) -> Counter:
+        """Completed gossip rounds."""
         return self.registry.counter("membrane_gossip_rounds_total", "Completed gossip rounds.")
 
     @property
     def gossip_failures(self) -> Counter:
+        """Failed gossip rounds, by reason."""
         return self.registry.counter("membrane_gossip_failures_total", "Failed gossip sends.")
 
     @property
     def replications(self) -> Counter:
+        """Successful replica pushes."""
         return self.registry.counter("membrane_replications_total", "Replicated fragment pushes.")
 
     @property
     def replication_failures(self) -> Counter:
+        """Failed replica pushes."""
         return self.registry.counter("membrane_replication_failures_total", "Failed replication pushes.")
 
 
@@ -288,6 +384,7 @@ class PersistenceMetrics:
 
     @property
     def operations(self) -> Counter:
+        """Persistence operations, by kind and outcome."""
         return self.registry.counter(
             "membrane_persistence_operations_total",
             "Persistence operations by kind and outcome.",
@@ -296,6 +393,7 @@ class PersistenceMetrics:
 
     @property
     def circuit_open(self) -> Gauge:
+        """1 while the persistence circuit breaker is open."""
         return self.registry.gauge(
             "membrane_persistence_circuit_open", "1 when the persistence circuit breaker is open."
         )
@@ -346,18 +444,22 @@ class NodeMetrics:
 
     @property
     def fragments(self) -> Gauge:
+        """Fragments held by this node."""
         return self.registry.gauge("membrane_fragments_total", "Total fragments held locally.")
 
     @property
     def memory_used_bytes(self) -> Gauge:
+        """Bytes of fragment payload held by this node."""
         return self.registry.gauge("membrane_memory_used_bytes", "Memory used by local fragment store.")
 
     @property
     def memory_limit_bytes(self) -> Gauge:
+        """The node's memory budget in bytes."""
         return self.registry.gauge("membrane_memory_limit_bytes", "Configured memory budget.")
 
     @property
     def evictions(self) -> Counter:
+        """Evicted fragments, by reason."""
         return self.registry.counter(
             "membrane_evictions_total",
             "Evicted fragments by reason (expired, lru, capacity, graph).",
@@ -366,6 +468,7 @@ class NodeMetrics:
 
     @property
     def tenant_fragments(self) -> Gauge:
+        """Fragments held per tenant."""
         return self.registry.gauge(
             "membrane_tenant_fragments",
             "Fragments held locally per tenant.",
@@ -387,7 +490,15 @@ class NodeMetrics:
 
 
 def metrics_summary(registry: MetricsCollector) -> Mapping[str, float]:
-    """Return a flat ``name -> value`` summary (counters and gauges only)."""
+    """Return a flat ``name -> value`` summary (counters and gauges only).
+
+    Args:
+        registry: The Prometheus registry.
+
+    Returns:
+        Mapping[str, float]: A flat ``name -> value`` summary (counters and
+        gauges only).
+    """
     return {
         **{c.name: c.value for c in registry.counters.values()},
         **{g.name: g.value for g in registry.gauges.values()},

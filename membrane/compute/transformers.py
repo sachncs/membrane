@@ -253,7 +253,15 @@ class Transformers(Backend):
         prompt_tokens: list[int],
         model_id: str,
     ) -> list[Fragment]:
-        """Produce a simulated prefill (used when no model is loaded)."""
+        """Produce a simulated prefill (used when no model is loaded).
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            list[Fragment]: One simulated fragment per prompt window.
+        """
         window_size = Backend.SIMULATE_WINDOW_SIZE
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):

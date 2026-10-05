@@ -32,6 +32,15 @@ class Heartbeat:
         stop_event: threading.Event,
         running: list[bool],
     ) -> None:
+        """Initialize the heartbeat loop.
+
+        Args:
+            membership: Cluster membership table. Enables :meth:`loop` when
+                provided.
+            config: Cluster configuration.
+            stop_event: Stop signal shared across all cluster loops.
+            running: Mutable bool flag.
+        """
         self.membership = membership
         self.config = config
         self.stop_event = stop_event

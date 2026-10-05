@@ -44,15 +44,36 @@ class Storage(Protocol):
     """
 
     def ping(self) -> bool:
-        """Return ``True`` if the backend is reachable."""
+        """Return ``True`` if the backend is reachable.
+
+        Returns:
+            bool: ``True`` if the backend is reachable.
+        """
         ...
 
     def store_fragment(self, fragment: Fragment, node_id: str, is_primary: bool = False) -> bool:
-        """Persist ``fragment`` owned by ``node_id``."""
+        """Persist ``fragment`` owned by ``node_id``.
+
+        Args:
+            fragment: The fragment.
+            node_id: Node identifier.
+            is_primary: Whether this node owns the fragment's primary copy.
+
+        Returns:
+            bool: True when stored.
+        """
         ...
 
     def retrieve_fragment(self, content_hash: str) -> Fragment | None:
-        """Fetch a fragment by ``content_hash``, or ``None`` if absent."""
+        """Fetch a fragment by ``content_hash``, or ``None`` if absent.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            Fragment | None: A fragment by ``content_hash``, or ``None`` if
+            absent.
+        """
         ...
 
     def delete_fragment(self, content_hash: str) -> bool:
@@ -69,7 +90,14 @@ class Storage(Protocol):
         ...
 
     def list_node_fragments(self, node_id: str) -> list[str]:
-        """Return content hashes owned by ``node_id``."""
+        """Return content hashes owned by ``node_id``.
+
+        Args:
+            node_id: Node identifier.
+
+        Returns:
+            list[str]: Content hashes owned by ``node_id``.
+        """
         ...
 
     def flush(self) -> None:
@@ -89,27 +117,62 @@ class Inventory(Protocol):
     """
 
     def ping(self) -> bool:
-        """Return ``True`` if the backend is reachable."""
+        """Return ``True`` if the backend is reachable.
+
+        Returns:
+            bool: ``True`` if the backend is reachable.
+        """
         ...
 
     def inventory_digest(self) -> dict[str, int]:
-        """``content_hash -> version_id`` for every stored fragment."""
+        """``content_hash -> version_id`` for every stored fragment.
+
+        Returns:
+            dict[str, int]: ``content_hash -> version_id`` for every stored
+            fragment.
+        """
         ...
 
     def record_location(self, content_hash: str, node_id: str) -> None:
-        """Record that ``node_id`` holds ``content_hash``."""
+        """Record that ``node_id`` holds ``content_hash``.
+
+        Args:
+            content_hash: Content hash of the fragment.
+            node_id: Node identifier.
+        """
         ...
 
     def locate(self, content_hash: str) -> list[str]:
-        """Node IDs that report holding ``content_hash``."""
+        """Node IDs that report holding ``content_hash``.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            list[str]: Node IDs that report holding ``content_hash``.
+        """
         ...
 
     def get_primary(self, content_hash: str) -> str | None:
-        """Primary node ID for ``content_hash``, if any."""
+        """Primary node ID for ``content_hash``, if any.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            str | None: Primary node ID for ``content_hash``, if any.
+        """
         ...
 
     def lru_candidates(self, count: int) -> list[str]:
-        """``count`` content hashes eligible for LRU eviction."""
+        """``count`` content hashes eligible for LRU eviction.
+
+        Args:
+            count: Maximum number of hashes to return.
+
+        Returns:
+            list[str]: Up to ``count`` least recently used content hashes.
+        """
         ...
 
 

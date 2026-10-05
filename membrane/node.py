@@ -59,7 +59,11 @@ class NodeAttributes:
     bandwidth_class: int = 0
 
     def to_dict(self) -> dict[str, object]:
-        """Return a JSON-friendly dict (used by heartbeats)."""
+        """Return a JSON-friendly dict (used by heartbeats).
+
+        Returns:
+            dict[str, object]: A JSON-friendly dict (used by heartbeats).
+        """
         return {
             "region": self.region,
             "zone": self.zone,
@@ -684,12 +688,24 @@ class Node:
         leaves the node (eviction, TTL expiry, delete, or rollback).
         Hook failures are logged and never fail the node operation:
         the in-memory node stays authoritative.
+
+        Args:
+            on_store: Called with ``(fragment, is_primary)`` for each newly
+                stored fragment.
+            on_remove: Called with the content hash of each fragment that leaves
+                the node.
         """
         with self.lock:
             self.__on_store = on_store
             self.__on_remove = on_remove
 
     def __notify(self, hook: Callable[..., None] | None, *args: object) -> None:
+        """Call a persistence hook, logging (never raising) its failures.
+
+        Args:
+            hook: The hook to call, or ``None`` for no hook.
+            *args: Positional arguments for ``method``.
+        """
         if hook is None:
             return
         try:
@@ -716,6 +732,10 @@ class Node:
 
         ``reason`` is ``"expired"`` for TTL sweeps and ``"capacity"``
         when fragments were evicted to make room.
+
+        Args:
+            counter: Called with ``(reason, count)`` after each eviction batch;
+                ``None`` disables.
         """
         self.__eviction_counter = counter
 

@@ -75,7 +75,13 @@ class Adapter:
         compute_scale: float = 1.0,
         fragmentation_engine: Fragmenter | None = None,
     ) -> None:
-        """Initialize the adapter."""
+        """Initialize the adapter.
+
+        Args:
+            router: Router that picks the prefill target.
+            compute_scale: Hardware compute scale applied to prefill time.
+            fragmentation_engine: Fragmenter that splits prompts into fragments.
+        """
         self.router = router
         self.compute_scale = compute_scale
         self.fragmentation_engine = fragmentation_engine or Fragmenter()
@@ -201,7 +207,14 @@ class Prefiller:
         timeout_seconds: float = 5.0,
         latency_provider: dict[str, float] | None = None,
     ) -> None:
-        """Initialize the dispatcher."""
+        """Initialize the dispatcher.
+
+        Args:
+            prefill_adapter: Adapter that performs the prefill.
+            timeout_seconds: Per-request timeout in seconds.
+            latency_provider: Callable returning the current latency estimate
+                per node.
+        """
         self.prefill_adapter = prefill_adapter or Adapter()
         self.timeout_seconds = timeout_seconds
         self.latency_provider = latency_provider or {}
@@ -291,6 +304,14 @@ class Prefiller:
     ) -> PrefillResult:
         """Attempt prefill on a single node, simulating network latency.
 
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+            node: Node to try.
+
+        Returns:
+            PrefillResult: The outcome on that node.
+
         Raises:
             NodePrefillError: When the underlying adapter
                 raises, or when it returns no fragments.
@@ -315,7 +336,16 @@ class Prefiller:
         model_id: str,
         local_node: Node,
     ) -> PrefillResult:
-        """Run prefill locally and store fragments as primary."""
+        """Run prefill locally and store fragments as primary.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+            local_node: Optional local node for fallback.
+
+        Returns:
+            PrefillResult: The outcome of the local prefill.
+        """
         result = self.prefill_adapter.prefill(prompt_tokens, model_id)
         for frag in result.fragments:
             local_node.store(frag, is_primary=True)
@@ -333,6 +363,14 @@ class Prefiller:
         node is chosen by the caller (this method does not race);
         the resulting fragments are stored on the target as
         non-primary replicas.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+            target_node: Node to run the prefill on.
+
+        Returns:
+            PrefillResult: The outcome on ``target_node``.
 
         Raises:
             NodePrefillError: When the adapter raises or returns

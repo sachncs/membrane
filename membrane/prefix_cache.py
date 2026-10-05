@@ -69,7 +69,11 @@ class KVHandle:
 
     @override
     def __hash__(self) -> int:
-        """Hash by ``handle`` for use in dict / set."""
+        """Hash by ``handle`` for use in dict / set.
+
+        Returns:
+            int: Hash of ``handle``.
+        """
         return hash(self.handle)
 
     @classmethod

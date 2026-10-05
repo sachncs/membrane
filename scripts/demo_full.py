@@ -25,6 +25,17 @@ logger = logging.getLogger(__name__)
 
 
 def make_fragment(content_hash, embedding=(0.0, 0.0), reuse_score=0.5, size=10):
+    """Build a demo fragment.
+
+    Args:
+        content_hash: Content hash of the fragment.
+        embedding: Ignored; kept for older call sites.
+        reuse_score: Reuse score of the fragment.
+        size: Payload size in bytes.
+
+    Returns:
+        Fragment: The fragment.
+    """
     del embedding
     identity = PayloadIdentity(
         payload_hash=content_hash,
@@ -49,6 +60,7 @@ def make_fragment(content_hash, embedding=(0.0, 0.0), reuse_score=0.5, size=10):
 
 
 def main():
+    """Walk through every Membrane subsystem, one phase at a time."""
     logger.info("=== Membrane Demo ===\n")
 
     # Phase 1: Single-Region Cache

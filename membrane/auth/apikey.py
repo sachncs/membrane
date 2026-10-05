@@ -114,7 +114,14 @@ class NoopAuthenticator:
     """
 
     def authenticate(self, request: AuthRequest) -> AuthContext:
-        """Return an empty context for any request."""
+        """Return an empty context for any request.
+
+        Args:
+            request: The transport-agnostic request.
+
+        Returns:
+            AuthContext: An empty context for any request.
+        """
         return AuthContext(subject="", scopes=frozenset())
 
 

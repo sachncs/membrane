@@ -63,7 +63,11 @@ class PeerEndpoint:
     healthy: bool = True
 
     def to_json(self) -> JsonDict:
-        """Serialize this endpoint to a JSON-compatible dict."""
+        """Serialize this endpoint to a JSON-compatible dict.
+
+        Returns:
+            JsonDict: ``node_id``, ``host``, ``port``, and ``healthy``.
+        """
         return {
             "node_id": self.node_id,
             "host": self.host,
@@ -73,7 +77,14 @@ class PeerEndpoint:
 
     @classmethod
     def from_json(cls, data: JsonDict) -> PeerEndpoint:
-        """Deserialize a peer endpoint from a JSON-compatible dict."""
+        """Deserialize a peer endpoint from a JSON-compatible dict.
+
+        Args:
+            data: Mapping previously produced by :meth:`to_json`.
+
+        Returns:
+            PeerEndpoint: The endpoint.
+        """
         return cls(
             node_id=data["node_id"],
             host=data["host"],
@@ -269,6 +280,18 @@ class Gossip:
         stop_event: threading.Event,
         running: list[bool],
     ) -> None:
+        """Initialize the gossip loop.
+
+        Args:
+            membership: Cluster membership table. Enables :meth:`loop` when
+                provided.
+            node: Local node whose inventory is gossiped.
+            config: Cluster configuration.
+            directory: Fragment location registry shared with the cluster.
+            tombstones: Tombstone table to gossip and merge.
+            stop_event: Stop signal shared across all cluster loops.
+            running: Mutable bool flag.
+        """
         self.membership = membership
         self.node = node
         self.config = config
@@ -285,6 +308,9 @@ class Gossip:
         fragment. A purged tombstone (past ``until``) is skipped
         here because the local :class:`~membrane.gc.TombstoneTable`
         has already expired it.
+
+        Returns:
+            GossipState: Snapshot of this node's gossip state.
         """
         peers = [
             PeerEndpoint(node_id=p.node_id, host=p.host, port=p.port, healthy=p.healthy)
@@ -472,6 +498,10 @@ class Gossip:
         path for this work; this helper is the gossip-side
         nudge that fires immediately so the bytes flow on the
         next gossip round instead of waiting for the loop tick.
+
+        Args:
+            content_hash: Content hash of the fragment.
+            owner_node_id: Node believed to hold the fragment.
         """
         client = self.membership.get_client(owner_node_id)
         if client is None:

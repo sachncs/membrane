@@ -72,7 +72,14 @@ def client_store(
     api_key: str = typer.Option("", "--api-key"),
     is_primary: bool = typer.Option(False, "--primary/--no-primary"),
 ) -> None:
-    """POST a fragment to ``/store``."""
+    """POST a fragment to ``/store``.
+
+    Args:
+        body: Wire-format fragment dict as a JSON string.
+        base_url: Base URL of the Membrane node.
+        api_key: Bearer API key (optional).
+        is_primary: Whether this node owns the fragment's primary copy.
+    """
     import httpx
 
     try:
@@ -100,7 +107,13 @@ def client_retrieve(
     base_url: str = typer.Option("http://localhost:8080", "--base-url"),
     api_key: str = typer.Option("", "--api-key"),
 ) -> None:
-    """GET a fragment from ``/retrieve``."""
+    """GET a fragment from ``/retrieve``.
+
+    Args:
+        content_hash: Content hash to retrieve.
+        base_url: Base URL of the Membrane node.
+        api_key: Bearer API key (optional).
+    """
     import httpx
 
     client = MembraneClient(
@@ -121,7 +134,12 @@ def client_inventory(
     base_url: str = typer.Option("http://localhost:8080", "--base-url"),
     api_key: str = typer.Option("", "--api-key"),
 ) -> None:
-    """GET the inventory digest from ``/inventory``."""
+    """GET the inventory digest from ``/inventory``.
+
+    Args:
+        base_url: Base URL of the Membrane node.
+        api_key: Bearer API key (optional).
+    """
     import httpx
 
     client = MembraneClient(
@@ -148,7 +166,14 @@ def client_prefill(
     base_url: str = typer.Option("http://localhost:8080", "--base-url"),
     api_key: str = typer.Option("", "--api-key"),
 ) -> None:
-    """POST a prefill request to ``/prefill``."""
+    """POST a prefill request to ``/prefill``.
+
+    Args:
+        prompt_tokens: Whitespace-separated token ids (e.g. '1 2 3 4 5').
+        model_id: Model identifier.
+        base_url: Base URL of the Membrane node.
+        api_key: Bearer API key (optional).
+    """
     import httpx
 
     client = MembraneClient(

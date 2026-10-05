@@ -42,15 +42,35 @@ class MemoryPool(Protocol):
     """Abstract GPU / host memory pool."""
 
     def alloc(self, shape: tuple[int, ...], dtype: str) -> TensorHandle:
-        """Allocate a tensor with the given shape and dtype."""
+        """Allocate a tensor with the given shape and dtype.
+
+        Args:
+            shape: Tensor shape.
+            dtype: Element dtype name (e.g. ``float16``).
+
+        Returns:
+            TensorHandle: The allocated tensor.
+        """
         ...
 
     def copy_to(self, src: TensorHandle, dst: TensorHandle) -> None:
-        """Copy ``src`` into ``dst``."""
+        """Copy ``src`` into ``dst``.
+
+        Args:
+            src: Source tensor.
+            dst: Destination tensor.
+        """
         ...
 
     def pin_host(self, src: TensorHandle) -> TensorHandle:
-        """Pin ``src`` to host (page-locked) memory."""
+        """Pin ``src`` to host (page-locked) memory.
+
+        Args:
+            src: Source tensor.
+
+        Returns:
+            TensorHandle: The pinned copy.
+        """
         ...
 
     def close(self) -> None:
@@ -62,15 +82,28 @@ class TensorHandle:
     """Opaque handle to a tensor in a :class:`MemoryPool`."""
 
     def __init__(self, data: bytes, shape: tuple[int, ...], dtype: str) -> None:
+        """Wrap raw tensor bytes with their shape and dtype.
+
+        Args:
+            data: Raw tensor bytes.
+            shape: Tensor shape.
+            dtype: Element dtype name.
+        """
         self.data = data
         self.shape = shape
         self.dtype = dtype
 
     def tobytes(self) -> bytes:
+        """Return the tensor's raw bytes.
+
+        Returns:
+            bytes: The tensor's raw bytes.
+        """
         return self.data
 
     @property
     def size_bytes(self) -> int:
+        """Size of the tensor in bytes."""
         return len(self.data)
 
 
@@ -87,11 +120,25 @@ class CudaMemoryPool:
     """
 
     def __init__(self, device: str = "cuda:0") -> None:
+        """Create a pool for ``device``.
+
+        Args:
+            device: Device name, e.g. ``cuda:0``.
+        """
         self.device = device
         self.lock = threading.RLock()
         self.__closed = False
 
     def alloc(self, shape: tuple[int, ...], dtype: str) -> TensorHandle:
+        """Allocate a zeroed tensor of ``shape`` and ``dtype``.
+
+        Args:
+            shape: Tensor shape.
+            dtype: Element dtype name (e.g. ``float16``).
+
+        Returns:
+            TensorHandle: The allocated tensor.
+        """
         if self.__closed:
             raise RuntimeError("CudaMemoryPool is closed")
         size = 1
@@ -109,14 +156,29 @@ class CudaMemoryPool:
             return TensorHandle(bytes_payload, shape, dtype)
 
     def copy_to(self, src: TensorHandle, dst: TensorHandle) -> None:
+        """Copy ``src`` into ``dst``; their sizes must match.
+
+        Args:
+            src: Source tensor.
+            dst: Destination tensor.
+        """
         if len(dst.data) != len(src.data):
             raise ValueError("shape mismatch in copy_to")
         dst.data = src.data
 
     def pin_host(self, src: TensorHandle) -> TensorHandle:
+        """Return a host-pinned copy of ``src``.
+
+        Args:
+            src: Source tensor.
+
+        Returns:
+            TensorHandle: A host-pinned copy of ``src``.
+        """
         return TensorHandle(data=src.data, shape=src.shape, dtype=src.dtype)
 
     def close(self) -> None:
+        """Close the pool; later allocations fail."""
         with self.lock:
             self.__closed = True
 
@@ -136,27 +198,64 @@ class RdmaMemoryPool:
     """
 
     def __init__(self, device: str = "cuda:0") -> None:
+        """Create an RDMA-registered pool for ``device``.
+
+        Args:
+            device: Device name, e.g. ``cuda:0``.
+        """
         self.device = device
         self.__delegate = CudaMemoryPool(device=device)
         self.lock = threading.RLock()
         self.__closed = False
 
     def alloc(self, shape: tuple[int, ...], dtype: str) -> TensorHandle:
+        """Allocate a registered tensor of ``shape`` and ``dtype``.
+
+        Args:
+            shape: Tensor shape.
+            dtype: Element dtype name (e.g. ``float16``).
+
+        Returns:
+            TensorHandle: The allocated tensor.
+        """
         return self.__delegate.alloc(shape, dtype)
 
     def copy_to(self, src: TensorHandle, dst: TensorHandle) -> None:
+        """Copy ``src`` into ``dst``; their sizes must match.
+
+        Args:
+            src: Source tensor.
+            dst: Destination tensor.
+        """
         self.__delegate.copy_to(src, dst)
 
     def pin_host(self, src: TensorHandle) -> TensorHandle:
+        """Return a host-pinned copy of ``src``.
+
+        Args:
+            src: Source tensor.
+
+        Returns:
+            TensorHandle: A host-pinned copy of ``src``.
+        """
         return self.__delegate.pin_host(src)
 
     def close(self) -> None:
+        """Close the pool and release its registrations."""
         with self.lock:
             self.__closed = True
             self.__delegate.close()
 
     def rdma_send(self, src: TensorHandle, peer: str) -> int:
-        """Stub for a future NCCL-based cross-node send."""
+        """Stub for a future NCCL-based cross-node send.
+
+        Args:
+            src: Source tensor.
+            peer: Destination peer.
+
+        Returns:
+            int: Bytes sent.
+        """
         logger.debug("RdmaMemoryPool.rdma_send stub: peer=%s size=%d", peer, src.size_bytes)
         return src.size_bytes
 
@@ -279,6 +378,13 @@ class KVTransferEngine:
         transport: CompressionTransport | None = None,
         quantizer: Any | None = None,
     ) -> None:
+        """Create an engine over ``memory_pool``.
+
+        Args:
+            memory_pool: Pool tensors are allocated from on receive.
+            transport: Compression transport; deflate by default.
+            quantizer: Optional quantizer applied before compression.
+        """
         self.memory_pool = memory_pool
         self.transport = transport or CompressionTransport(method=CompressionTransport.METHOD_RAW)
         self.quantizer = quantizer
@@ -293,6 +399,13 @@ class KVTransferEngine:
         The transfer is wrapped in an OTel ``transfer.kv`` span
         when the tracer is configured; absent the tracer the
         function returns the envelope unchanged.
+
+        Args:
+            k_handle: Key tensor.
+            v_handle: Value tensor.
+
+        Returns:
+            TransferEnvelope: The compressed K/V pair ready for the wire.
         """
         from membrane.otel_tracer import membrane_span
 
@@ -323,7 +436,14 @@ class KVTransferEngine:
         self,
         envelope: TransferEnvelope,
     ) -> tuple[TensorHandle, TensorHandle]:
-        """Inverse of :func:`transfer_kv`."""
+        """Inverse of :func:`transfer_kv`.
+
+        Args:
+            envelope: Wire envelope produced by :meth:`transfer_kv`.
+
+        Returns:
+            tuple[TensorHandle, TensorHandle]: The key and value tensors.
+        """
         payload = self.transport.decompress(envelope.compressed)
         if not payload.startswith(b"MKVR"):
             raise ValueError(f"bad magic in transfer envelope: {payload[:4]!r}")
@@ -360,10 +480,26 @@ __all__ = [
 
 
 def numpy_dtype(name: str) -> Any:
+    """Return the NumPy dtype named ``name``.
+
+    Args:
+        name: Dtype name.
+
+    Returns:
+        Any: The NumPy dtype named ``name``.
+    """
     return np.dtype(name)
 
 
 def torch_dtype(name: str) -> Any:
+    """Return the PyTorch dtype named ``name``.
+
+    Args:
+        name: Dtype name.
+
+    Returns:
+        Any: The PyTorch dtype named ``name``.
+    """
     import torch
 
     return {
@@ -375,8 +511,26 @@ def torch_dtype(name: str) -> Any:
 
 
 def torch_to_bytes(tensor: Any) -> bytes:
+    """Return a tensor's raw bytes (moved to the CPU).
+
+    Args:
+        tensor: PyTorch tensor.
+
+    Returns:
+        bytes: A tensor's raw bytes (moved to the CPU).
+    """
     return tensor.detach().cpu().numpy().tobytes()
 
 
 def bytes_to_array(payload: bytes, shape: tuple[int, ...], dtype: str) -> Any:
+    """Interpret ``payload`` as a NumPy array of ``shape`` and ``dtype``.
+
+    Args:
+        payload: Raw bytes.
+        shape: Array shape.
+        dtype: Element dtype name.
+
+    Returns:
+        Any: A NumPy array view of ``payload``.
+    """
     return np.frombuffer(payload, dtype=np.dtype(dtype)).reshape(shape)

@@ -77,8 +77,7 @@ class HotTier:
 
 
 class WarmTier:
-    """Warm tier (e.g., a second FilesystemBlob instance on warm
-    spinning disks)."""
+    """Warm tier (e.g., a second FilesystemBlob on slower disks)."""
 
     def name(self) -> str:
         """Return the human-readable tier name.

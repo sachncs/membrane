@@ -15,7 +15,12 @@ def main(
     host: str = typer.Option("localhost", "--host", help="Server host"),
     port: int = typer.Option(8080, "--port", "-p", help="Server port"),
 ) -> None:
-    """Show active LLM backend status and model info."""
+    """Show active LLM backend status and model info.
+
+    Args:
+        host: Server host.
+        port: Server port.
+    """
     data = fetch_json(host, port, "/metrics.json")
     if not data:
         output.error(f"Could not fetch LLM status from http://{host}:{port}/metrics.json")

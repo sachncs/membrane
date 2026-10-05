@@ -39,6 +39,7 @@ class RemoteLLMBackend(Backend):
     base_url: str = ""
 
     def __init__(self) -> None:
+        """Initialize with no HTTP client; one is built on first use."""
         self.client: Any | None = None
 
     def build_client(

@@ -40,7 +40,14 @@ logger = logging.getLogger(__name__)
 
 
 def is_loopback_host(host: str) -> bool:
-    """Return True when ``host`` only accepts local connections."""
+    """Return True when ``host`` only accepts local connections.
+
+    Args:
+        host: Host name or IP address.
+
+    Returns:
+        bool: True when ``host`` only accepts local connections.
+    """
     if host == "localhost":
         return True
     try:
@@ -50,7 +57,15 @@ def is_loopback_host(host: str) -> bool:
 
 
 def read_secret(path: str, what: str) -> str:
-    """Read a secret file, exiting with a clear message on failure."""
+    """Read a secret file, exiting with a clear message on failure.
+
+    Args:
+        path: Path of the file to read.
+        what: Human-readable name of the file, used in error messages.
+
+    Returns:
+        str: The file's contents.
+    """
     try:
         return Path(path).read_text()
     except OSError as exc:
@@ -59,7 +74,14 @@ def read_secret(path: str, what: str) -> str:
 
 
 def split_list(values: list[str] | None) -> list[str]:
-    """Flatten repeatable options that may also carry comma-separated env values."""
+    """Flatten repeatable options that may also carry comma-separated env values.
+
+    Args:
+        values: Option values; each may hold several comma-separated items.
+
+    Returns:
+        list[str]: The individual, stripped items.
+    """
     result: list[str] = []
     for value in values or []:
         result.extend(item.strip() for item in value.split(",") if item.strip())
@@ -67,7 +89,19 @@ def split_list(values: list[str] | None) -> list[str]:
 
 
 def build_tls(cert: str, key: str, ca: str, allowed_cns: list[str], allow_any_cn: bool) -> MTLSConfig | None:
-    """Build the mTLS configuration from file paths, or ``None`` when unset."""
+    """Build the mTLS configuration from file paths, or ``None`` when unset.
+
+    Args:
+        cert: Path to the PEM certificate.
+        key: Path to the PEM private key.
+        ca: Path to the PEM CA bundle.
+        allowed_cns: Client certificate CNs to accept.
+        allow_any_cn: Accept any CN signed by the CA (development only).
+
+    Returns:
+        MTLSConfig | None: The mTLS configuration from file paths, or
+        ``None`` when unset.
+    """
     if not (cert or key or ca):
         return None
     if not (cert and key and ca):
@@ -237,6 +271,50 @@ def main(
     wizard is launched automatically. Pass ``--interactive`` explicitly
     to force the wizard; pass ``--daemon`` to run without the TUI
     dashboard.
+
+    Args:
+        node_id: Node identifier.
+        host: Bind address (0.0.0.0 for all interfaces).
+        port: Listen port.
+        transport: Transport (only 'http' is supported).
+        compute: Compute: cpu, gpu, ollama, openai, anthropic, transformers.
+        redis_url: Redis URL (e.g. redis://localhost:6379/0).
+        data_dir: Keep KV bytes on disk (encrypted) here so they survive
+            restarts.
+        data_key_file: 32-byte (or 64-hex) key for --data-dir; default:
+            generated into <data-dir>/master.key.
+        max_memory: Max memory bytes.
+        log_level: Logging level.
+        log_format: Diagnostics format: text or json (one object per line).
+        daemon: Run without the dashboard (implied when stdout is not a
+            TTY).
+        interactive: Interactive setup wizard.
+        peer: Destination peer.
+        advertise_host: Host peers use to reach this node (default: bind
+            host, or FQDN for 0.0.0.0).
+        peer_network: CIDR the cluster's peers live in, exempt from the SSRF
+            private-IP block (repeatable).
+        heartbeat_interval: Heartbeat interval seconds.
+        gossip_interval: Gossip interval seconds.
+        replica_count: Replicas per fragment.
+        failure_remove_threshold: Missed heartbeats before removing peer.
+        consistency: Default write consistency: strong, quorum or eventual.
+        quorum_count: Peer acks a strong/quorum write waits for (cluster
+            needs quorum_count + 1 nodes).
+        api_key_file: Inbound API keyfile; one '<key>:<subject>:<scope,...>'
+            per line.
+        peer_api_key_file: File holding the bearer key this node presents to
+            its peers (needs admin scope).
+        tls_cert: mTLS certificate PEM file.
+        tls_key: mTLS private key PEM file.
+        tls_ca: mTLS CA bundle PEM file.
+        tls_allowed_cn: Peer certificate CN to accept (repeatable).
+        tls_allow_any_cn: Accept any CN signed by the CA (development only).
+        allow_unauthenticated: Serve without authentication on a
+            non-loopback address (unsafe).
+        llm_url: Base URL for Ollama or custom OpenAI endpoint.
+        llm_model: Model name (e.g. llama3.2, gpt-4o-mini).
+        api_key: API key for the OpenAI / Anthropic compute backend.
     """
     # Decide whether to launch the interactive wizard.
     defaults_match = all(

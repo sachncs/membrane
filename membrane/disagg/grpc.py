@@ -301,6 +301,13 @@ class GrpcHandler:
     """
 
     def __init__(self, prefill: PrefillService, decode: DecodeService) -> None:
+        """Bind the gRPC servicer to the prefill and decode services.
+
+        Args:
+            prefill: The prefill service.
+            decode: Optional decode service. Defaults to a new
+                :class:`DecodeService`.
+        """
         self.__prefill = prefill
         self.__decode = decode
 

@@ -100,7 +100,17 @@ class Offload:
         local_node: Node,
         candidate_nodes: list[Node],
     ) -> OffloadResult:
-        """Select the best node for prefill computation."""
+        """Select the best node for prefill computation.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            local_node: Local :class:`Node`.
+            candidate_nodes: Remote candidates (used to decide whether the
+                fall-through applies).
+
+        Returns:
+            OffloadResult: The chosen node and the reason.
+        """
         length = len(prompt_tokens)
         cfg = self.config
         local_load = local_node.heartbeat()
@@ -174,6 +184,12 @@ class Offload:
 
         Lower score is better. Combines remote compute cost and
         memory headroom penalty.
+
+        Args:
+            length: Prompt length in tokens.
+
+        Returns:
+            object: Candidate scores.
         """
 
         def score_node(node: Node) -> float:

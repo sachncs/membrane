@@ -154,17 +154,38 @@ class InProcessBytes:
             self.__used_bytes = sum(len(b) for b in self.store.values())
 
     def get(self, key: str) -> bytes | None:
-        """Return the bytes stored under ``key`` or ``None``."""
+        """Return the bytes stored under ``key`` or ``None``.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bytes | None: The bytes stored under ``key`` or ``None``.
+        """
         with self.lock:
             return self.store.get(key)
 
     def has(self, key: str) -> bool:
-        """Return whether ``key`` is present."""
+        """Return whether ``key`` is present.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bool: Whether ``key`` is present.
+        """
         with self.lock:
             return key in self.store
 
     def delete(self, key: str) -> bool:
-        """Remove and return whether the removal actually happened."""
+        """Remove and return whether the removal actually happened.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bool: True when an entry was removed.
+        """
         with self.lock:
             if key in self.store:
                 del self.store[key]
@@ -173,12 +194,20 @@ class InProcessBytes:
             return False
 
     def size(self) -> int:
-        """Return total bytes currently held."""
+        """Return total bytes currently held.
+
+        Returns:
+            int: Total bytes currently held.
+        """
         with self.lock:
             return self.__used_bytes
 
     def __len__(self) -> int:
-        """Return the number of distinct entries held."""
+        """Return the number of distinct entries held.
+
+        Returns:
+            int: The number of distinct entries held.
+        """
         with self.lock:
             return len(self.store)
 
@@ -383,11 +412,25 @@ class FilesystemBlob:
             return None
 
     def has(self, key: str) -> bool:
-        """Return whether ``key`` is present on disk."""
+        """Return whether ``key`` is present on disk.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bool: Whether ``key`` is present on disk.
+        """
         return self.__path_for(key).exists()
 
     def delete(self, key: str) -> bool:
-        """Remove the blob at ``key``."""
+        """Remove the blob at ``key``.
+
+        Args:
+            key: Opaque key.
+
+        Returns:
+            bool: True when a blob file was removed.
+        """
         path = self.__path_for(key)
         with self.lock:
             try:
@@ -406,12 +449,20 @@ class FilesystemBlob:
                 return False
 
     def size(self) -> int:
-        """Sum the byte size of every ``*.blob`` under :attr:`root`."""
+        """Sum the byte size of every ``*.blob`` under :attr:`root`.
+
+        Returns:
+            int: Plaintext bytes written through this store.
+        """
         with self.lock:
             return self.__used_bytes
 
     def __walk_size(self) -> int:
-        """Walk the root and sum the size of every blob file."""
+        """Walk the root and sum the size of every blob file.
+
+        Returns:
+            int: Total size in bytes of the blob files on disk.
+        """
         total = 0
         for path in self.root.rglob("*.blob"):
             try:
@@ -421,7 +472,11 @@ class FilesystemBlob:
         return total
 
     def __len__(self) -> int:
-        """Return the number of blob files under :attr:`root`."""
+        """Return the number of blob files under :attr:`root`.
+
+        Returns:
+            int: The number of blob files under :attr:`root`.
+        """
         return sum(1 for _ in self.root.rglob("*.blob"))
 
 

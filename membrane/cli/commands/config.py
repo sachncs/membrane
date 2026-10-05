@@ -18,7 +18,11 @@ from membrane.cli.formatters import fmt_bytes
 def main(
     show: bool = typer.Option(True, "--show", help="Display current config"),
 ) -> None:
-    """Show Membrane configuration and environment."""
+    """Show Membrane configuration and environment.
+
+    Args:
+        show: Display current config.
+    """
     table = Table(title="Membrane Configuration", box=None)
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="magenta")

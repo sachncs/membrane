@@ -111,8 +111,12 @@ line-length = 120
 extend-exclude = ["membrane/transport/proto/", "membrane/wire/v3/wire_v3_pb2*.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF", "T20"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF", "T20", "D"]
 ignore = ["E501", "E402", "RUF002"]
+
+[tool.ruff.lint.pydocstyle]
+# Google-style docstrings (Args:, Returns:, Raises:).
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 # Generated gRPC stubs preserve the canonical PascalCase method names from
@@ -128,4 +132,6 @@ ignore = ["E501", "E402", "RUF002"]
 "membrane/disagg/transfer_pb2*.py" = ["N802"]
 # Test files may import modules purely for their side effects (fixtures)
 # and call callables whose return values are not always used.
-"tests/**" = ["F401", "N802", "B007", "B905", "E741"]
+"tests/**" = ["F401", "N802", "B007", "B905", "E741", "D"]
+# Generated protobuf modules.
+"membrane/**/*_pb2*.py" = ["D"]

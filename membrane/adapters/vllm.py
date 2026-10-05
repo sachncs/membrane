@@ -232,6 +232,7 @@ class InMemoryClusterClient(MembraneClusterClient):
     """
 
     def __init__(self) -> None:
+        """Create an empty in-memory KV store keyed by handle."""
         self.by_handle: dict[str, dict[int, bytes]] = {}
         self.lock = threading.RLock()
 
@@ -252,6 +253,16 @@ class InMemoryClusterClient(MembraneClusterClient):
         model_id: str,
         token_ids: tuple[int, ...],
     ) -> MatchedPrefix:
+        """Return the cached prefix of ``token_ids`` (always a miss in memory).
+
+        Args:
+            model_id: Model identifier.
+            token_ids: Sequence of token ids for the incoming request, in order.
+
+        Returns:
+            MatchedPrefix: The cached prefix of ``token_ids`` (always a miss in
+            memory).
+        """
         if not token_ids:
             return MatchedPrefix(0, "")
         handle = f"mem:{model_id}:{len(token_ids)}"
@@ -266,6 +277,17 @@ class InMemoryClusterClient(MembraneClusterClient):
         kv_handle: str,
         layer_indices: tuple[int, ...],
     ) -> tuple[LayerLoad, ...]:
+        """Start loading the requested layers of a cached K/V bundle.
+
+        Args:
+            kv_handle: Cluster-side handle returned by :func:`lookup_prefix`.
+            layer_indices: Inclusive list of layer indices the runner wants to
+                load.
+
+        Returns:
+            tuple[LayerLoad, ...]: One load handle per requested layer that is
+            cached.
+        """
         with self.lock:
             bundle = self.by_handle.get(kv_handle)
             if bundle is None:
@@ -280,6 +302,18 @@ class InMemoryClusterClient(MembraneClusterClient):
         shape: tuple[int, int, int, int],
         dtype: str,
     ) -> KVTensor:
+        """Return the K/V tensors of one layer started by :meth:`start_load`.
+
+        Args:
+            layer_load: In-flight layer descriptor from :func:`start_load`.
+            model_id: Model identifier.
+            shape: Per-layer tensor shape the runner expects.
+            dtype: Element dtype.
+
+        Returns:
+            KVTensor: The K/V tensors of one layer started by
+            :meth:`start_load`.
+        """
         with self.lock:
             bundle = self.by_handle.get(layer_load.kv_handle, {})
             raw = bundle.get(layer_load.layer_idx, b"")
@@ -307,6 +341,14 @@ class InMemoryClusterClient(MembraneClusterClient):
         model_id: str,
         token_span: tuple[int, int],
     ) -> None:
+        """Store one layer's K/V tensors for later lookups.
+
+        Args:
+            layer: The layer to push.
+            model_id: Model identifier.
+            token_span: Inclusive ``(start, end)`` of token positions this layer
+                covers.
+        """
         del model_id, token_span
         handle = f"mem:{layer.layer_idx}"
         payload = tensor_payload(layer.k)

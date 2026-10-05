@@ -103,7 +103,14 @@ class URLAllowlist:
     allowed_networks: frozenset[ipaddress.IPv4Network | ipaddress.IPv6Network] = field(default_factory=frozenset)
 
     def is_ip_allowed(self, ip: IPAddress) -> bool:
-        """Return True if ``ip`` is inside one of :attr:`allowed_networks`."""
+        """Return True if ``ip`` is inside one of :attr:`allowed_networks`.
+
+        Args:
+            ip: The resolved address to test.
+
+        Returns:
+            bool: True if ``ip`` is inside one of :attr:`allowed_networks`.
+        """
         return any(ip.version == net.version and ip in net for net in self.allowed_networks)
 
     def is_host_allowed(self, hostname: str) -> bool:

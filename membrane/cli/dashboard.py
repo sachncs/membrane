@@ -80,7 +80,14 @@ def fetch_json(host: str, port: int, path: str, timeout: float = 2.0) -> dict[st
 
 
 def header_panel_inproc(diag: ServerDiagnostics) -> Panel:
-    """Render the in-process dashboard header."""
+    """Render the in-process dashboard header.
+
+    Args:
+        diag: Current server diagnostics.
+
+    Returns:
+        Panel: The in-process dashboard header.
+    """
     status = "[green]HEALTHY[/green]" if diag.load < 0.9 else "[yellow]WARNING[/yellow]"
     text = Text.assemble(
         "Membrane Server  |  ",
@@ -92,7 +99,14 @@ def header_panel_inproc(diag: ServerDiagnostics) -> Panel:
 
 
 def header_panel_remote(data: dict[str, Any]) -> Panel:
-    """Render the remote-polling dashboard header."""
+    """Render the remote-polling dashboard header.
+
+    Args:
+        data: ``/metrics.json`` payload from the remote node.
+
+    Returns:
+        Panel: The remote-polling dashboard header.
+    """
     node_id = data.get("node_id", "unknown")
     healthy = data.get("healthy", False)
     status = "[green]HEALTHY[/green]" if healthy else "[red]UNHEALTHY[/red]"
@@ -105,7 +119,14 @@ def header_panel_remote(data: dict[str, Any]) -> Panel:
 
 
 def metrics_panel(diag: ServerDiagnostics) -> Panel:
-    """Render the metrics table from a ``ServerDiagnostics`` snapshot."""
+    """Render the metrics table from a ``ServerDiagnostics`` snapshot.
+
+    Args:
+        diag: Current server diagnostics.
+
+    Returns:
+        Panel: The metrics table from a ``ServerDiagnostics`` snapshot.
+    """
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column("Metric", style="cyan", no_wrap=True)
     table.add_column("Value", style="magenta", no_wrap=True)
@@ -122,7 +143,14 @@ def metrics_panel(diag: ServerDiagnostics) -> Panel:
 
 
 def metrics_panel_remote(data: dict[str, Any]) -> Panel:
-    """Render the metrics table from a remote heartbeat payload."""
+    """Render the metrics table from a remote heartbeat payload.
+
+    Args:
+        data: ``/metrics.json`` payload from the remote node.
+
+    Returns:
+        Panel: The metrics table from a remote heartbeat payload.
+    """
     table = Table(show_header=False, box=None)
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="magenta")
@@ -134,7 +162,14 @@ def metrics_panel_remote(data: dict[str, Any]) -> Panel:
 
 
 def peers_panel(server: Server) -> Panel:
-    """Render the connected-peers panel (in-process only)."""
+    """Render the connected-peers panel (in-process only).
+
+    Args:
+        server: The local server.
+
+    Returns:
+        Panel: The connected-peers panel (in-process only).
+    """
     if not server.connected_nodes:
         return Panel(
             "[dim]No peers connected[/dim]",
@@ -150,7 +185,14 @@ def peers_panel(server: Server) -> Panel:
 
 
 def events_panel(server: Server) -> Panel:
-    """Render the recent-events panel (in-process only)."""
+    """Render the recent-events panel (in-process only).
+
+    Args:
+        server: The local server.
+
+    Returns:
+        Panel: The recent-events panel (in-process only).
+    """
     events = server.recent_events(n=15)
     if not events:
         return Panel(
@@ -175,13 +217,21 @@ def events_panel(server: Server) -> Panel:
 
 
 def diagnostics_panel() -> Panel:
-    """Render the diagnostics placeholder panel (remote only)."""
+    """Render the diagnostics placeholder panel (remote only).
+
+    Returns:
+        Panel: The diagnostics placeholder panel (remote only).
+    """
     text = Text("Connect to a local server with 'membrane serve' for full diagnostics.")
     return Panel(text, title="[bold]Diagnostics[/bold]", border_style="yellow")
 
 
 def footer_inproc() -> Panel:
-    """Footer for the in-process dashboard."""
+    """Footer for the in-process dashboard.
+
+    Returns:
+        Panel: Footer for the in-process dashboard.
+    """
     return Panel(
         Align.center(Text("[Ctrl+C] Stop server  |  Live Dashboard", style="dim")),
         style="dim",
@@ -189,7 +239,11 @@ def footer_inproc() -> Panel:
 
 
 def footer_remote() -> Panel:
-    """Footer for the remote dashboard."""
+    """Footer for the remote dashboard.
+
+    Returns:
+        Panel: Footer for the remote dashboard.
+    """
     return Panel(
         Align.center(Text("[Q]uit  |  Refresh: ", style="dim")),
         style="dim",
@@ -208,6 +262,9 @@ def run_dashboard(server: Server) -> None:
     over HTTP), this variant reads :meth:`Server.diagnostics` and
     :meth:`Server.recent_events` directly. It is the default when
     ``membrane serve`` is invoked without ``--daemon``.
+
+    Args:
+        server: The running server to display.
     """
     layout = Layout()
     layout.split_column(

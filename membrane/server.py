@@ -178,7 +178,14 @@ def build_content_store(data_dir: str, key_file: str = "") -> Any:
 
 
 def resolves_to_loopback(host: str) -> bool:
-    """Return True when ``host`` resolves only to loopback addresses."""
+    """Return True when ``host`` resolves only to loopback addresses.
+
+    Args:
+        host: Host name or address to resolve.
+
+    Returns:
+        bool: True when ``host`` resolves only to loopback addresses.
+    """
     import ipaddress
     import socket
 
@@ -329,6 +336,15 @@ class Server:
             cluster_epoch: Live cluster epoch. Increment when
                 the cluster topology changes in ways that should
                 invalidate stale snapshots.
+            sweep_interval_sec: Seconds between TTL / tombstone sweeps.
+            authenticator: Optional :class:`~membrane.auth.Authenticator`. When
+                set, every route except ``/livez`` and ``/readyz`` authenticates
+                the caller and enforces its route scope.
+            peer_api_key: Bearer key this node presents to its peers (needs the
+                ``admin`` scope).
+            peer_networks: CIDR ranges of the peer network, exempt from the SSRF
+                private-address block.
+            tls: mTLS configuration; defaults to ``cluster_config.mtls``.
         """
         self.node = node
         self.transport_type = transport
@@ -423,6 +439,14 @@ class Server:
         self.checkpoint_thread: threading.Thread | None = None
 
     def build_persistence(self, redis_url: str) -> Any:
+        """Return Redis-backed persistence when reachable, otherwise in-memory.
+
+        Args:
+            redis_url: Redis URL for the persistence layer.
+
+        Returns:
+            Any: Redis-backed persistence when reachable, otherwise in-memory.
+        """
         from membrane.persistence.cache import CachingPersistence
 
         backend: Any = Memory()
@@ -440,7 +464,15 @@ class Server:
 
     @staticmethod
     def build_authenticator(mtls: MTLSConfig | None) -> Authenticator | None:
-        """Return an mTLS authenticator when client certs are required."""
+        """Return an mTLS authenticator when client certs are required.
+
+        Args:
+            mtls: mTLS configuration, or ``None`` when TLS is off.
+
+        Returns:
+            Authenticator | None: An mTLS authenticator when client certs are
+            required.
+        """
         if mtls is None or not mtls.require_client_cert:
             return None
         from membrane.auth.mtls import MTLSAuthenticator
@@ -458,6 +490,15 @@ class Server:
 
         Seed peer hosts are always allowed; ``peer_networks`` admits
         peers learned later through join responses and gossip.
+
+        Args:
+            cluster_config: Cluster configuration (its seed peers are allowed by
+                name).
+            mtls: mTLS configuration, or ``None`` when TLS is off.
+            peer_api_key: Bearer key this node presents to its peers (needs the
+                ``admin`` scope).
+            peer_networks: CIDR ranges of the peer network, exempt from the SSRF
+                private-address block.
         """
         from membrane.network.peer import PeerCredentials, set_default_peer_credentials
         from membrane.security.url_allowlist import configure as configure_allowlist
@@ -490,14 +531,29 @@ class Server:
             self.metrics_cluster.peers_healthy.set(float(sum(1 for p in peers if p.healthy)))
 
     def __persistence_is_durable(self) -> bool:
-        """True when fragments are written through to Redis."""
+        """True when fragments are written through to Redis.
+
+        Returns:
+            bool: True when fragments are written through to Redis.
+        """
         inner = getattr(self.persistence, "inner", None)
         return isinstance(inner, Redis)
 
     def __persist_fragment(self, fragment: Any, is_primary: bool) -> None:
+        """Write a newly stored fragment through to persistence.
+
+        Args:
+            fragment: The fragment.
+            is_primary: Whether this node owns the fragment's primary copy.
+        """
         self.persistence.store_fragment(fragment, self.node.node_id, is_primary)
 
     def __forget_fragment(self, content_hash: str) -> None:
+        """Drop a removed fragment from this node's persisted set.
+
+        Args:
+            content_hash: Content hash of the fragment.
+        """
         self.persistence.forget_on_node(content_hash, self.node.node_id)
 
     def restore_fragments(self) -> int:
@@ -530,6 +586,16 @@ class Server:
         return restored
 
     def build_transport(self, transport: str, host: str, port: int) -> Any:
+        """Build the HTTP transport with authentication, TLS, and quorum wiring.
+
+        Args:
+            transport: Transport name; only ``"http"`` is supported.
+            host: Bind address.
+            port: Listen port.
+
+        Returns:
+            Any: The HTTP transport with authentication, TLS, and quorum wiring.
+        """
         mtls = self.tls
         if transport != "http":
             raise ValueError(f"unsupported transport={transport!r}; v3.0.0 ships the http transport only")
@@ -918,6 +984,12 @@ class Server:
         Events are stored in a bounded buffer (the most recent
         10,000 events are kept; older entries are trimmed to
         the most recent 5,000).
+
+        Args:
+            level: Event level (``info``, ``warn``, ``error``).
+            message: Human-readable description.
+            node_id: Node identifier.
+            bytes_affected: Optional size in bytes associated with the event.
         """
         event = ServerEvent(
             timestamp=time.time(),
@@ -935,7 +1007,11 @@ class Server:
     # ------------------------------------------------------------------
 
     def diagnostics(self) -> ServerDiagnostics:
-        """Return a current snapshot of server health."""
+        """Return a current snapshot of server health.
+
+        Returns:
+            ServerDiagnostics: A current snapshot of server health.
+        """
         stats = self.node.get_stats()
         now = time.time()
         connected = len(self.connected_nodes)
@@ -959,7 +1035,14 @@ class Server:
         )
 
     def recent_events(self, n: int = 20) -> list[ServerEvent]:
-        """Return the last ``n`` events."""
+        """Return the last ``n`` events.
+
+        Args:
+            n: Number of events to return.
+
+        Returns:
+            list[ServerEvent]: The last ``n`` events.
+        """
         return self.events[-n:]
 
 

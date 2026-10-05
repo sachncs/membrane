@@ -44,7 +44,12 @@ class Ollama(RemoteLLMBackend):
     """
 
     def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.2") -> None:
-        """Initialize the backend."""
+        """Initialize the backend.
+
+        Args:
+            base_url: Ollama server URL.
+            model: Ollama model name.
+        """
         super().__init__()
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -160,7 +165,11 @@ class Ollama(RemoteLLMBackend):
 
     @override
     def available(self) -> bool:
-        """Return whether Ollama is reachable."""
+        """Return whether Ollama is reachable.
+
+        Returns:
+            bool: Whether Ollama is reachable.
+        """
         return self.probe("api/tags")
 
     @override
@@ -177,7 +186,15 @@ class Ollama(RemoteLLMBackend):
         prompt_tokens: list[int],
         model_id: str,
     ) -> list[Fragment]:
-        """Simulated prefill used when the API call is unavailable."""
+        """Simulated prefill used when the API call is unavailable.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            list[Fragment]: One simulated fragment per prompt window.
+        """
         window_size = Backend.SIMULATE_WINDOW_SIZE
         fragments: list[Fragment] = []
         for i in range(0, len(prompt_tokens), window_size):

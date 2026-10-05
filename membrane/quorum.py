@@ -80,7 +80,6 @@ def attempt_quorum_acks(
         QuorumResult: Status + counters. ``success=True`` means
         the cluster reached the configured write threshold.
     """
-
     peer_list = list(peers)
     if quorum_count <= 0:
         # Even when the caller asks for zero acks the function
@@ -144,12 +143,26 @@ def attempt_quorum_acks(
 
 
 def now() -> float:
+    """Return a monotonic timestamp in seconds.
+
+    Returns:
+        float: A monotonic timestamp in seconds.
+    """
     import time
 
     return time.monotonic()
 
 
 def post_replicate(peer: Peer, payload: dict) -> bool:
+    """Send one replica write to ``peer``.
+
+    Args:
+        peer: Destination peer.
+        payload: Store request body carrying the fragment.
+
+    Returns:
+        bool: True when the peer acknowledged.
+    """
     try:
         return peer.request_replicate(fragment_from(payload))
     except Exception as exc:  # pragma: no cover - propagation is the caller's job
@@ -165,8 +178,13 @@ def fragment_from(payload: dict) -> Fragment:
     same :func:`membrane.serialization.from_dict`. We import the
     fragment lazily to keep :mod:`membrane.quorum` independent
     of the serialization module's import cycle.
-    """
 
+    Args:
+        payload: Store request body carrying the fragment.
+
+    Returns:
+        Fragment: The fragment.
+    """
     from membrane.serialization import from_dict
 
     return from_dict(payload["fragment"])
@@ -179,6 +197,12 @@ def wire_dict_for(fragment: Fragment) -> dict:
     :func:`membrane.serialization.to_dict`. We delegate so a
     schema-version bump here does not require a corresponding
     bump in :mod:`membrane.quorum`.
+
+    Args:
+        fragment: The fragment.
+
+    Returns:
+        dict: The wire-format dict.
     """
     from membrane.serialization import to_dict
 

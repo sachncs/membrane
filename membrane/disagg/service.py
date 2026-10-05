@@ -72,6 +72,7 @@ class NoopPrefillBackend:
     """
 
     def __init__(self) -> None:
+        """Create a backend that records every prefill call."""
         self.calls: list[tuple[str, int]] = []
 
     def run_prefill(
@@ -180,6 +181,7 @@ class DecodeService:
     """
 
     def __init__(self) -> None:
+        """Create the decode service."""
         self.lock = threading.RLock()
 
     def decode(self, request: DecodeRequest) -> DecodeResponse:

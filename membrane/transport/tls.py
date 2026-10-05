@@ -71,6 +71,7 @@ class MTLSConfig:
         min_tls_version: Lowest TLS version to negotiate. Defaults
             to TLSv1_2; TLSv1_3 is encouraged but the config
             accepts older peers that only speak 1.2.
+
     Raises:
         ValueError: On missing paths or paths that do not exist.
     """
@@ -144,12 +145,30 @@ class AllowAll:
     """
 
     def __contains__(self, cn: object) -> bool:
+        """Accept every CN.
+
+        Args:
+            cn: Common name extracted from the peer cert.
+
+        Returns:
+            bool: Always True.
+        """
         return True
 
     def __iter__(self):
+        """Iterate over nothing: the allow-all marker lists no CNs.
+
+        Returns:
+            object: An empty iterator.
+        """
         return iter(())
 
     def __bool__(self) -> bool:
+        """Report the allow-list as non-empty.
+
+        Returns:
+            bool: Always True.
+        """
         return True
 
 
@@ -255,9 +274,7 @@ def peer_cn_allowed(config: MTLSConfig, cn: str) -> bool:
 
 
 def as_pem_path_or_bytes(value: str, kind: str) -> str:
-    """Treat ``value`` as either a file path (when the string is a real
-    filesystem path) or as PEM bytes for the in-memory loaders
-    used by tests.
+    """Return ``value`` as a PEM file path, writing PEM text to a temp file.
 
     The helper is intentionally tolerant: production callers
     write PEM to disk and pass the file path; tests pass raw
@@ -265,6 +282,13 @@ def as_pem_path_or_bytes(value: str, kind: str) -> str:
     by the caller) or via a small helper in
     :mod:`membrane.transport.tls.testing` that returns a
     file-backed config.
+
+    Args:
+        value: A path to a PEM file, or PEM text.
+        kind: What the PEM holds (for error messages and temp file names).
+
+    Returns:
+        str: A path to a PEM file holding ``value``.
     """
     if not isinstance(value, str):
         raise ValueError(f"{kind} must be a string")

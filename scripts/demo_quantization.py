@@ -63,6 +63,7 @@ def _make_fragment(content_hash: str, payload: bytes, fmt_name: str) -> Fragment
 
 
 def main() -> None:
+    """Quantize a sample tensor in every format and log the error and size."""
     logger.info("=" * 60)
     logger.info("Membrane Quantization Demo")
     logger.info("=" * 60)

@@ -54,7 +54,11 @@ class PeerCertH11Protocol(H11Protocol):
 
     @override
     def connection_made(self, transport: asyncio.Transport) -> None:  # type: ignore[override]
-        """Capture the peer CN once per connection and wrap the app."""
+        """Capture the peer CN once per connection and wrap the app.
+
+        Args:
+            transport: The connection's asyncio transport.
+        """
         super().connection_made(transport)
         peer_cn = peer_cn_from_transport(transport)
         inner_app = self.app

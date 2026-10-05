@@ -173,6 +173,10 @@ def merge(local: HLC, observed: int | HLC) -> HLC:
 def compare(a: int, b: int) -> int:
     """Total order over two HLC wire values.
 
+    Args:
+        a: First token sequence.
+        b: Second token sequence.
+
     Returns:
         int: ``-1`` if ``a`` precedes ``b``, ``1`` if ``a``
         follows ``b``, ``0`` if equal. Equal pairs are
@@ -211,22 +215,42 @@ class Clock:
         self.lock = threading.Lock()
 
     def current(self) -> HLC:
-        """Return the current clock state without advancing."""
+        """Return the current clock state without advancing.
+
+        Returns:
+            HLC: The current clock state without advancing.
+        """
         with self.lock:
             return self.__state
 
     def pack_current(self) -> int:
-        """Return the current packed HLC integer."""
+        """Return the current packed HLC integer.
+
+        Returns:
+            int: The current packed HLC integer.
+        """
         return pack(self.current())
 
     def tick(self) -> int:
-        """Advance the clock and return the new packed integer."""
+        """Advance the clock and return the new packed integer.
+
+        Returns:
+            int: The new packed HLC value.
+        """
         with self.lock:
             self.__state = tick(self.__state)
             return pack(self.__state)
 
     def merge(self, observed: int | HLC) -> int:
-        """Reconcile with the observed HLC and return the new packed integer."""
+        """Reconcile with the observed HLC and return the new packed integer.
+
+        Args:
+            observed: Either a wire-encoded integer or a decoded :class:`HLC`
+                from a peer.
+
+        Returns:
+            int: The new packed HLC value.
+        """
         with self.lock:
             self.__state = merge(self.__state, observed)
             return pack(self.__state)

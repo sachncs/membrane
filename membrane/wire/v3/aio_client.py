@@ -147,7 +147,11 @@ class AsyncWireClient:
     semaphore: asyncio.Semaphore | None = None
 
     async def ensure_semaphore(self) -> asyncio.Semaphore:
-        """Lazily create the bulkhead semaphore on first call."""
+        """Lazily create the bulkhead semaphore on first call.
+
+        Returns:
+            asyncio.Semaphore: The bulkhead semaphore.
+        """
         if self.semaphore is None:
             self.semaphore = asyncio.Semaphore(self.bulkhead.max_concurrent)
         return self.semaphore

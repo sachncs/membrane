@@ -66,8 +66,7 @@ class TierMigration:
         return tier
 
     def reset_seen(self) -> None:
-        """Reset the de-duplication set so a new eviction pass can
-        re-process the same fragment."""
+        """Reset the de-duplication set so a new pass can re-process fragments."""
         self.seen.clear()
 
 

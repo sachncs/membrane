@@ -166,6 +166,10 @@ class Redis:
 
         Other nodes may still hold the fragment, so the shared record
         is left to expire with its TTL.
+
+        Args:
+            content_hash: Content hash of the fragment.
+            node_id: Node identifier.
         """
         self.client.srem(self.key_for(f"node:{node_id}:fragments"), content_hash)
 

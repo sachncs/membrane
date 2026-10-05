@@ -92,6 +92,7 @@ class InMemorySGLangClient(SGLangClusterClient):
     """In-memory SGLang client used by tests + the v1 single-process path."""
 
     def __init__(self) -> None:
+        """Create an empty in-memory radix-cache pool."""
         self.by_handle: dict[tuple[str, str], tuple[SGLangKVEntry, ...]] = {}
         self.lock = threading.RLock()
 
@@ -108,11 +109,28 @@ class InMemorySGLangClient(SGLangClusterClient):
 
     @override
     def get(self, model_id: str, handle: str) -> tuple[SGLangKVEntry, ...]:
+        """Return the KV entries stored for ``(model_id, handle)``.
+
+        Args:
+            model_id: Model identifier.
+            handle: Cluster-side handle.
+
+        Returns:
+            tuple[SGLangKVEntry, ...]: The KV entries stored for ``(model_id,
+            handle)``.
+        """
         with self.lock:
             return self.by_handle.get((model_id, handle), ())
 
     @override
     def put(self, model_id: str, handle: str, entries: tuple[SGLangKVEntry, ...]) -> None:
+        """Store the KV entries for ``(model_id, handle)``.
+
+        Args:
+            model_id: Model identifier.
+            handle: Cluster-side handle.
+            entries: Token-indexed rows in order.
+        """
         with self.lock:
             self.by_handle[(model_id, handle)] = entries
 

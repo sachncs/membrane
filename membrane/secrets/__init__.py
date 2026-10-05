@@ -104,10 +104,24 @@ class LazyProxy:
     """
 
     def __init__(self, factory: type[SecretProvider]) -> None:
+        """Wrap a provider class that is instantiated on first use.
+
+        Args:
+            factory: Provider class instantiated on first use.
+        """
         self.__factory = factory
         self.__instance: SecretProvider | None = None
 
     def get(self, secret_name: str) -> str:
+        """Return a secret, creating the provider on first use.
+
+        Args:
+            secret_name: Backend-specific identifier (env var name, Vault path,
+                AWS arn, GCP resource).
+
+        Returns:
+            str: A secret, creating the provider on first use.
+        """
         if self.__instance is None:
             self.__instance = self.__factory()
         return self.__instance.get(secret_name)

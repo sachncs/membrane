@@ -64,6 +64,15 @@ class MembraneConnectionError(MembraneClientError):
 
 
 def connection_error(url: str, exc: Exception) -> MembraneConnectionError:
+    """Wrap a transport failure as :class:`MembraneConnectionError`.
+
+    Args:
+        url: Base URL that could not be reached.
+        exc: The underlying transport error.
+
+    Returns:
+        MembraneConnectionError: The error to raise.
+    """
     return MembraneConnectionError(f"cannot reach Membrane at {url}: {exc}")
 
 
@@ -197,21 +206,37 @@ class MembraneClient:
         return resp.json()
 
     def peers(self) -> dict[str, Any]:
-        """Call ``GET /peers``."""
+        """Call ``GET /peers``.
+
+        Returns:
+            dict[str, Any]: The node's peer list.
+        """
         resp = self.__call(self.__client.get, f"{self.base_url}/peers", headers=self.__headers)
         if resp.status_code >= 400:
             raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def heartbeat(self) -> dict[str, Any]:
-        """Call ``GET /heartbeat``."""
+        """Call ``GET /heartbeat``.
+
+        Returns:
+            dict[str, Any]: The node's health and load snapshot.
+        """
         resp = self.__call(self.__client.get, f"{self.base_url}/heartbeat", headers=self.__headers)
         if resp.status_code >= 400:
             raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def prefill(self, prompt_tokens: list[int], model_id: str = "default") -> dict[str, Any]:
-        """Call ``POST /prefill``."""
+        """Call ``POST /prefill``.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            dict[str, Any]: The created fragments.
+        """
         resp = self.__call(
             self.__client.post,
             f"{self.base_url}/prefill",
@@ -234,7 +259,16 @@ class MembraneClient:
         return resp.text
 
     def __call(self, method: Any, *args: Any, **kwargs: Any) -> Any:
-        """Issue a request, translating transport failures."""
+        """Issue a request, translating transport failures.
+
+        Args:
+            method: Bound HTTP client method (``get``/``post``).
+            *args: Positional arguments for ``method``.
+            **kwargs: Keyword arguments for ``method``.
+
+        Returns:
+            Any: The HTTP response.
+        """
         try:
             return method(*args, **kwargs)
         except httpx.TransportError as exc:
@@ -245,9 +279,19 @@ class MembraneClient:
         self.__client.close()
 
     def __enter__(self) -> MembraneClient:
+        """Return the client for use in a ``with`` block.
+
+        Returns:
+            MembraneClient: The client for use in a ``with`` block.
+        """
         return self
 
     def __exit__(self, *exc: object) -> None:
+        """Close the client when the ``with`` block exits.
+
+        Args:
+            *exc: Exception info from the ``with`` block (ignored).
+        """
         self.close()
 
 
@@ -283,6 +327,16 @@ class AsyncMembraneClient:
         return {}
 
     async def store(self, fragment_payload: dict[str, Any], is_primary: bool = False) -> dict[str, Any]:
+        """Call ``POST /store``.
+
+        Args:
+            fragment_payload: The :class:`FragmentPayload` body
+                (``serialization.to_dict`` round-trip).
+            is_primary: Whether this node owns the fragment's primary copy.
+
+        Returns:
+            dict[str, Any]: The server's response body.
+        """
         resp = await self.__acall(
             self.__client.post,
             f"{self.base_url}/store",
@@ -294,6 +348,14 @@ class AsyncMembraneClient:
         return resp.json()
 
     async def retrieve(self, content_hash: str) -> dict[str, Any] | None:
+        """Call ``GET /retrieve?content_hash=...``.
+
+        Args:
+            content_hash: Content hash of the fragment.
+
+        Returns:
+            dict[str, Any] | None: The response body, or ``None`` when absent.
+        """
         resp = await self.__acall(
             self.__client.get,
             f"{self.base_url}/retrieve",
@@ -308,6 +370,15 @@ class AsyncMembraneClient:
         return body
 
     async def prefill(self, prompt_tokens: list[int], model_id: str = "default") -> dict[str, Any]:
+        """Call ``POST /prefill``.
+
+        Args:
+            prompt_tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            dict[str, Any]: The created fragments.
+        """
         resp = await self.__acall(
             self.__client.post,
             f"{self.base_url}/prefill",
@@ -319,13 +390,27 @@ class AsyncMembraneClient:
         return resp.json()
 
     async def inventory(self) -> dict[str, Any]:
+        """Call ``GET /inventory``.
+
+        Returns:
+            dict[str, Any]: The node's inventory digest.
+        """
         resp = await self.__acall(self.__client.get, f"{self.base_url}/inventory", headers=self.__headers)
         if resp.status_code >= 400:
             raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     async def __acall(self, method: Any, *args: Any, **kwargs: Any) -> Any:
-        """Issue a request, translating transport failures."""
+        """Issue a request, translating transport failures.
+
+        Args:
+            method: Bound async HTTP client method (``get``/``post``).
+            *args: Positional arguments for ``method``.
+            **kwargs: Keyword arguments for ``method``.
+
+        Returns:
+            Any: The HTTP response.
+        """
         try:
             return await method(*args, **kwargs)
         except httpx.TransportError as exc:

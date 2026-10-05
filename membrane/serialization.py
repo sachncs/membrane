@@ -115,18 +115,40 @@ def from_dict(data: dict[str, Any]) -> Fragment:
 
 
 def to_bytes(fragment: Fragment) -> bytes:
-    """Serialize a Fragment to JSON bytes. Symmetric with :func:`from_bytes`."""
+    """Serialize a Fragment to JSON bytes. Symmetric with :func:`from_bytes`.
+
+    Args:
+        fragment: The fragment.
+
+    Returns:
+        bytes: UTF-8 JSON.
+    """
     return json.dumps(to_dict(fragment)).encode("utf-8")
 
 
 def from_bytes(data: bytes) -> Fragment:
-    """Deserialize a Fragment from JSON bytes produced by :func:`to_bytes`."""
+    """Deserialize a Fragment from JSON bytes produced by :func:`to_bytes`.
+
+    Args:
+        data: Bytes produced by :func:`to_bytes`.
+
+    Returns:
+        Fragment: The fragment.
+    """
     return from_dict(json.loads(data.decode("utf-8")))
 
 
 def asdict_shallow(fragment: Fragment) -> dict[str, Any]:
-    """Convenience wrapper that re-exports :func:`dataclasses.asdict` for callers that
-    only need a structural copy (without the schema_version discriminator).
+    """Return a structural copy of ``fragment`` via :func:`dataclasses.asdict`.
+
+    Unlike :func:`to_dict`, the result carries no ``schema_version``
+    discriminator.
+
+    Args:
+        fragment: The fragment.
+
+    Returns:
+        dict[str, Any]: The dataclass fields as a dict.
     """
     return asdict(fragment)
 
