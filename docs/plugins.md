@@ -1,7 +1,9 @@
 # Plugins
 
-Compute backends, authenticators, and content stores are looked up by
-name in registries (`membrane.runtime.plugins`). The built-ins are
+Compute backends, authenticators, content stores, persistence backends,
+eviction policies, and secret providers are looked up by name in
+registries (`membrane.runtime.plugins`). Hooks subscribe to server
+events. The built-ins are
 registered there. Any installed package can add more through a Python
 entry point, with no change to Membrane.
 
@@ -10,6 +12,10 @@ entry point, with no change to Membrane.
 | `membrane.compute` | `--compute NAME` | `(llm_url: str, llm_model: str, api_key: str) -> Backend` | `cpu`, `gpu`, `ollama`, `openai`, `anthropic`, `transformers` |
 | `membrane.authenticators` | `--authenticator NAME --auth-config PATH` | `(config_path: str) -> Authenticator` | `apikey` |
 | `membrane.content_stores` | `--content-store NAME` (with `--data-dir`) | `(location: str, key_file: str) -> ContentStore` | `filesystem`, `memory` |
+| `membrane.persistence` | `--persistence NAME` (URL from `--redis`) | `(url: str) -> backend` | `redis`, `memory` |
+| `membrane.eviction` | `--eviction NAME` | `() -> EvictionPolicy` | `weighted-lru`, `tinylfu` |
+| `membrane.secret_providers` | used to resolve secrets | `() -> SecretProvider` (reads its own environment) | `env`, `aws`, `gcp`, `vault` |
+| `membrane.hooks` | every installed hook runs (`--no-hooks` disables) | `(bus: EventBus, server: Server) -> None` | none |
 
 A built-in name always wins over an entry point with the same name, so
 an installed package cannot silently replace a built-in. An unknown
@@ -106,4 +112,56 @@ through an entry point:
 from membrane.runtime.plugins import COMPUTE_BACKENDS
 
 COMPUTE_BACKENDS.register("my-engine", make_backend)
+```
+
+## Writing a hook
+
+Hooks observe the server without changing it. Every installed
+`membrane.hooks` entry point is called once while the server is built,
+with the server's `EventBus` and the `Server` itself:
+
+```toml
+[project.entry-points."membrane.hooks"]
+audit-export = "my_package.hooks:install"
+```
+
+```python
+from membrane.runtime.events import FragmentStored, PeerLeft
+
+
+def install(bus, server):
+    bus.subscribe(FragmentStored, lambda event: ship(event.content_hash, event.tenant_id))
+    bus.subscribe(PeerLeft, lambda event: page_oncall(event.node_id))
+```
+
+| Event | Fields | Published when |
+|-------|--------|----------------|
+| `FragmentStored` | `content_hash`, `tenant_id`, `is_primary` | a fragment becomes resident |
+| `FragmentRemoved` | `content_hash` | a fragment leaves (eviction, expiry, delete, rollback) |
+| `PeerJoined` / `PeerLeft` | `node_id` | the membership table changes |
+| `DrainStarted` | `deadline_sec` | `SIGTERM` drain begins |
+| `DrainFinished` | `migrated`, `stragglers` | the drain's hand-offs are done |
+
+Events are delivered in order on one dispatcher thread, never on the
+request path. A handler that raises is logged and skipped, and when
+10,000 events are queued new ones are dropped, so keep handlers fast
+and hand slow work to your own queue.
+
+## Writing an eviction policy
+
+A policy orders eviction candidates; the node removes them until enough
+bytes are free (expired fragments always go first):
+
+```python
+class OldestFirst:
+    def order(self, candidates, access_times, now):
+        return [h for h, _ in sorted(candidates, key=lambda c: access_times.get(c[0], now))]
+
+    def touch(self, content_hash):
+        pass
+```
+
+```toml
+[project.entry-points."membrane.eviction"]
+oldest-first = "my_package.eviction:OldestFirst"
 ```

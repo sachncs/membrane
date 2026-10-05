@@ -38,10 +38,19 @@ from membrane.runtime.components import (
     is_durable,
     resolves_to_loopback,
 )
+from membrane.runtime.events import (
+    DrainFinished,
+    DrainStarted,
+    EventBus,
+    FragmentRemoved,
+    FragmentStored,
+    PeerJoined,
+    PeerLeft,
+)
 from membrane.runtime.lifecycle import PeriodicTask
 from membrane.runtime.observability import EventLog, ServerDiagnostics, ServerEvent
 from membrane.runtime.persistence_writer import PersistenceWriter
-from membrane.runtime.plugins import COMPUTE_BACKENDS
+from membrane.runtime.plugins import COMPUTE_BACKENDS, HOOKS
 from membrane.snapshot import SNAPSHOT_SCHEMA_VERSION, ClusterEpochGuard, Snapshot
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
@@ -107,6 +116,8 @@ class Server:
         peer_networks: tuple[str, ...] = (),
         tls: MTLSConfig | None = None,
         limits: TransportLimits | None = None,
+        persistence: str = "",
+        load_hooks: bool = True,
     ) -> None:
         """Initialize the server with all configured subsystems.
 
@@ -144,6 +155,9 @@ class Server:
             tls: mTLS configuration; defaults to ``cluster_config.mtls``.
             limits: HTTP capacity settings; defaults to
                 :class:`~membrane.transport.limits.TransportLimits`.
+            persistence: Persistence plugin name (``membrane.persistence``);
+                defaults to ``redis`` with a URL, else ``memory``.
+            load_hooks: Run every installed ``membrane.hooks`` entry point.
         """
         self.node = node
         self.limits = limits or TransportLimits()
@@ -179,11 +193,12 @@ class Server:
 
         # Redis writes happen on a background thread so the node's lock
         # never waits on a network round trip.
-        self.persistence = build_persistence(redis_url)
+        self.persistence = build_persistence(redis_url, persistence)
         self.durable = is_durable(self.persistence)
         self.persistence_writer = PersistenceWriter(self.persistence, node.node_id, self.metrics_persistence)
-        if self.durable:
-            self.node.set_persistence_hooks(self.persistence_writer.store, self.persistence_writer.forget)
+        # Node changes fan out to persistence and to event subscribers.
+        self.event_bus = EventBus()
+        self.node.set_persistence_hooks(self.on_fragment_stored, self.on_fragment_removed)
 
         # Tombstones are shared by the transport's delete path, the
         # cluster, and the sweeper, so all three converge on one set.
@@ -208,6 +223,9 @@ class Server:
             self.cluster_manager.transfer_service = self.transfer_service
             self.replicator = QuorumReplicator()
 
+        if self.cluster_manager is not None:
+            self.cluster_manager.membership.listeners.append(self.on_membership_change)
+
         self.transport = self.build_transport(transport, host, port)
         self.running = False
         self.thread: threading.Thread | None = None
@@ -226,6 +244,47 @@ class Server:
         self.epoch_guard = ClusterEpochGuard(current=cluster_epoch)
         self.checkpoint_task = PeriodicTask("membrane-checkpoint", self.checkpoint_interval_sec, self.checkpoint_state)
         self.sweeper_task = PeriodicTask("membrane-sweeper", self.sweep_interval_sec, self.sweep_once)
+        if load_hooks:
+            self.run_hooks()
+
+    def run_hooks(self) -> None:
+        """Call every installed ``membrane.hooks`` factory with ``(event_bus, self)``."""
+        for name, factory in HOOKS.load_all().items():
+            try:
+                factory(self.event_bus, self)
+                logger.info("hook %s installed", name)
+            except Exception:
+                logger.exception("hook %s failed to install", name)
+
+    def on_fragment_stored(self, fragment: Any, is_primary: bool) -> None:
+        """Persist and announce a newly stored fragment (node hook; runs under the node lock).
+
+        Args:
+            fragment: The fragment.
+            is_primary: Whether this node owns the primary copy.
+        """
+        if self.durable:
+            self.persistence_writer.store(fragment, is_primary)
+        self.event_bus.publish(FragmentStored(fragment.identity.payload_hash, fragment.tenant_id, is_primary))
+
+    def on_fragment_removed(self, content_hash: str) -> None:
+        """Forget and announce a fragment that left the node (node hook).
+
+        Args:
+            content_hash: Content hash.
+        """
+        if self.durable:
+            self.persistence_writer.forget(content_hash)
+        self.event_bus.publish(FragmentRemoved(content_hash))
+
+    def on_membership_change(self, change: str, node_id: str) -> None:
+        """Announce a peer joining or leaving.
+
+        Args:
+            change: ``"joined"`` or ``"left"``.
+            node_id: The peer.
+        """
+        self.event_bus.publish(PeerJoined(node_id) if change == "joined" else PeerLeft(node_id))
 
     def refresh_metrics(self) -> None:
         """Update point-in-time gauges; called on every ``/metrics`` scrape."""
@@ -366,6 +425,7 @@ class Server:
         if self.replicator is not None:
             self.replicator.shutdown()
         joined_cleanly = self.persistence_writer.stop(deadline_sec) and joined_cleanly
+        self.event_bus.close(timeout_sec=min(deadline_sec, 5.0))
         self.log_event("info", f"Server stopped (cleanly={joined_cleanly})")
         return joined_cleanly
 
@@ -391,6 +451,7 @@ class Server:
             "duration_sec": ...}`` for operator logs / metrics.
         """
         self.is_draining = True
+        self.event_bus.publish(DrainStarted(deadline_sec))
         self.log_event("info", f"Drain started with deadline={deadline_sec}s")
         start = time.time()
 
@@ -438,6 +499,7 @@ class Server:
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug("drain: leave_cluster raised: %s", exc)
 
+        self.event_bus.publish(DrainFinished(migrated, len(stragglers)))
         self.stop()
         return {
             "migrated": migrated,
