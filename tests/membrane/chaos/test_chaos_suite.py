@@ -19,6 +19,9 @@ import time
 
 import pytest
 
+# Selected by the CI chaos job via ``-m chaos``.
+pytestmark = pytest.mark.chaos
+
 TOXIPROXY_HOST: str = os.environ.get("MEMBRANE_TOXIPROXY_HOST", "")
 TOXIPROXY_PORT: int = int(os.environ.get("MEMBRANE_TOXIPROXY_PORT", "0") or 0)
 

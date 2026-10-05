@@ -69,3 +69,18 @@ class TestCLI:
         assert "--llm-url" in rendered
         assert "--llm-model" in rendered
         assert "--api-key" in rendered
+
+
+def test_client_and_admin_subcommands_are_reachable():
+    """`membrane client <cmd>` / `membrane admin <cmd>` must resolve to the sub-apps."""
+    from typer.testing import CliRunner
+
+    from membrane.cli import app
+
+    runner = CliRunner()
+    client_help = runner.invoke(app, ["client", "--help"]).output
+    admin_help = runner.invoke(app, ["admin", "--help"]).output
+    for cmd in ("store", "retrieve", "inventory", "prefill"):
+        assert cmd in client_help
+    for cmd in ("inspect", "placement", "evict", "repair", "policy"):
+        assert cmd in admin_help

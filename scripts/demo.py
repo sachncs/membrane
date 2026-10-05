@@ -27,9 +27,7 @@ def main():
     logger.info("\n[2] Running Membrane-PD simulation ...")
     result = simulator.run_membrane_pd(lengths)
     logger.info(f"    Threshold t          : {result.threshold:,} tokens")
-    logger.info(
-        f"    N_membrane / N_p / N_d : {result.num_membrane} / {result.num_pd_p} / {result.num_pd_d}"
-    )
+    logger.info(f"    N_membrane / N_p / N_d : {result.num_membrane} / {result.num_pd_p} / {result.num_pd_d}")
     logger.info(f"    Theta_membrane         : {result.theta_membrane:.2f} req/s")
     logger.info(f"    Theta_pd-p           : {result.theta_pd_p:.2f} req/s")
     logger.info(f"    Theta_pd-d           : {result.theta_pd_d:.2f} req/s")
@@ -63,12 +61,8 @@ def main():
     # Comparison
     logger.info("\n[5] Comparison vs. Homogeneous PD baseline")
     logger.info(f"    Throughput gain      : {result.lambda_max / hom.lambda_max:.2f}x")
-    logger.info(
-        f"    Mean TTFT reduction  : {(1 - result.mean_ttft / hom.mean_ttft) * 100:.0f}%"
-    )
-    logger.info(
-        f"    P90 TTFT reduction   : {(1 - result.p90_ttft / hom.p90_ttft) * 100:.0f}%"
-    )
+    logger.info(f"    Mean TTFT reduction  : {(1 - result.mean_ttft / hom.mean_ttft) * 100:.0f}%")
+    logger.info(f"    P90 TTFT reduction   : {(1 - result.p90_ttft / hom.p90_ttft) * 100:.0f}%")
 
     logger.info("\n" + "=" * 60)
     logger.info("Demo complete.")
@@ -76,4 +70,5 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

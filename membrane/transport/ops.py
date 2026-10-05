@@ -452,6 +452,13 @@ def op_prefill(
     backend = backend or CPU()
     fragments = backend.prefill(prompt_tokens, model_id)
     for frag in fragments:
+        # Simulated / remote backends never write KV bytes; store
+        # their placeholder payload so /retrieve can serve the
+        # fragment. Backends with real frames already wrote them.
+        if frag.payload_ref is not None and not node.content_store.has(frag.payload_ref):
+            payload = backend.simulated_payload(frag)
+            if payload is not None:
+                node.content_store.put(frag.payload_ref, payload)
         node.store(frag, is_primary=True)
     return _ok(
         {

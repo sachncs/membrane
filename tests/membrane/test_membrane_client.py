@@ -119,3 +119,15 @@ class TestErrorHierarchy:
         assert issubclass(MembraneNotFoundError, MembraneClientError)
         assert issubclass(MembraneUnauthorizedError, MembraneClientError)
         assert issubclass(MembraneServerError, MembraneClientError)
+
+
+def test_unreachable_server_raises_connection_error():
+    """Transport failures surface as MembraneConnectionError, not raw httpx errors."""
+    import pytest
+
+    from membrane.client import MembraneClient, MembraneConnectionError
+
+    client = MembraneClient("http://127.0.0.1:9", timeout=0.5)
+    with pytest.raises(MembraneConnectionError, match="cannot reach Membrane"):
+        client.inventory()
+    client.close()

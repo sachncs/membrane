@@ -327,6 +327,16 @@ class KVBackend(RemoteLLMBackend):
             )
         return fragments
 
+    def simulated_payload(self, fragment: Fragment) -> bytes | None:
+        """Return ``None`` for real frames, which are already in :attr:`content_store`.
+
+        Fragments from the :meth:`simulate_prefill` fallback (no
+        model loaded) get the base class placeholder bytes.
+        """
+        if fragment.payload_ref is not None and self.content_store.has(fragment.payload_ref):
+            return None
+        return super().simulated_payload(fragment)
+
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Stub text-generation entry point.
 

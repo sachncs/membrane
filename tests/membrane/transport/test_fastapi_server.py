@@ -149,3 +149,17 @@ class TestFastAPIServer:
         srv.stop()
         t.join(timeout=2)
         assert not t.is_alive()
+
+
+def test_prefill_then_retrieve_round_trips():
+    """The first-run path: fragments created by /prefill are retrievable."""
+    node = Node("n1", max_memory_bytes=1_000_000)
+    app = create_app(node=node, compute_backend=CPU(), transfer_service=TransferService(), cluster_manager=None)
+    client = TestClient(app)
+    frags = client.post("/prefill", json={"prompt_tokens": list(range(300)), "model_id": "m"}).json()["fragments"]
+    assert len(frags) == 3
+    for frag in frags:
+        content_hash = frag["identity"]["payload_hash"]
+        body = client.get(f"/retrieve?content_hash={content_hash}").json()
+        assert body["found"] is True
+        assert len(node.content_store.get(frag["payload_ref"])) == frag["payload_size"]

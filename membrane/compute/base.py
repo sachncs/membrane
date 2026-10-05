@@ -20,6 +20,7 @@ three copies and ensures the field defaults (``ttl``,
 backends.
 """
 
+import hashlib
 from abc import ABC, abstractmethod
 
 from membrane.compute._hash import token_hash
@@ -84,6 +85,35 @@ class Backend(ABC):
         Returns:
             str: Device name.
         """
+
+    def simulated_payload(self, fragment: Fragment) -> bytes | None:
+        """Return placeholder KV bytes for a fragment this backend produced.
+
+        Backends that cannot observe real KV tensors (the CPU
+        simulator, and remote LLM APIs) emit fragments whose
+        ``payload_ref`` points at bytes nobody wrote. The node
+        stores these deterministic placeholder bytes under the
+        ref so the fragment is retrievable end to end. Backends
+        that persist real KV frames themselves override this to
+        return ``None``.
+
+        Args:
+            fragment: A fragment returned by :meth:`prefill`.
+
+        Returns:
+            bytes | None: ``fragment.payload_size`` deterministic
+            bytes derived from the content hash, or ``None`` when
+            the fragment is metadata-only.
+        """
+        if fragment.payload_ref is None:
+            return None
+        seed = fragment.identity.payload_hash.encode("utf-8")
+        out = bytearray()
+        counter = 0
+        while len(out) < fragment.payload_size:
+            out += hashlib.sha256(seed + counter.to_bytes(8, "big")).digest()
+            counter += 1
+        return bytes(out[: fragment.payload_size])
 
     @staticmethod
     def simulate_prefill_fragment(

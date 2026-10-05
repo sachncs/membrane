@@ -13,6 +13,8 @@ Exceptions:
 * :class:`MembraneNotFoundError` -- 404.
 * :class:`MembraneUnauthorizedError` -- 401 / 403.
 * :class:`MembraneServerError` -- 5xx.
+* :class:`MembraneConnectionError` -- the server could not be reached
+  (connection refused, DNS failure, timeout).
 * :class:`MembraneCorruptPayloadError` -- server reported a
   tampered / encrypted-but-undecryptable blob (added in 3.0.1
   to distinguish from a benign miss).
@@ -57,6 +59,14 @@ class MembraneCorruptPayloadError(MembraneClientError):
     so the client can distinguish a benign miss from a
     storage-side corruption event.
     """
+
+
+class MembraneConnectionError(MembraneClientError):
+    """The server could not be reached (refused, DNS failure, timeout)."""
+
+
+def _connection_error(url: str, exc: Exception) -> MembraneConnectionError:
+    return MembraneConnectionError(f"cannot reach Membrane at {url}: {exc}")
 
 
 def _raise_for_status(status_code: int, body: Any) -> None:
@@ -137,7 +147,8 @@ class MembraneClient:
         Raises:
             MembraneClientError: subclass as appropriate.
         """
-        resp = self._client.post(
+        resp = self._call(
+            self._client.post,
             f"{self.base_url}/store",
             json={"fragment": fragment_payload, "is_primary": is_primary},
             headers=self._headers,
@@ -163,7 +174,8 @@ class MembraneClient:
             MembraneCorruptPayloadError: When the server reports
                 ``"corrupt": True`` for the requested hash.
         """
-        resp = self._client.get(
+        resp = self._call(
+            self._client.get,
             f"{self.base_url}/retrieve",
             params={"content_hash": content_hash},
             headers=self._headers,
@@ -181,28 +193,29 @@ class MembraneClient:
         Returns:
             dict: ``{"node_id": ..., "digest": {...}}``.
         """
-        resp = self._client.get(f"{self.base_url}/inventory", headers=self._headers)
+        resp = self._call(self._client.get, f"{self.base_url}/inventory", headers=self._headers)
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def peers(self) -> dict[str, Any]:
         """Call ``GET /peers``."""
-        resp = self._client.get(f"{self.base_url}/peers", headers=self._headers)
+        resp = self._call(self._client.get, f"{self.base_url}/peers", headers=self._headers)
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def heartbeat(self) -> dict[str, Any]:
         """Call ``GET /heartbeat``."""
-        resp = self._client.get(f"{self.base_url}/heartbeat", headers=self._headers)
+        resp = self._call(self._client.get, f"{self.base_url}/heartbeat", headers=self._headers)
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def prefill(self, prompt_tokens: list[int], model_id: str = "default") -> dict[str, Any]:
         """Call ``POST /prefill``."""
-        resp = self._client.post(
+        resp = self._call(
+            self._client.post,
             f"{self.base_url}/prefill",
             json={"prompt_tokens": prompt_tokens, "model_id": model_id},
             headers=self._headers,
@@ -217,10 +230,17 @@ class MembraneClient:
         Returns:
             str: Prometheus text exposition.
         """
-        resp = self._client.get(f"{self.base_url}/metrics", headers=self._headers)
+        resp = self._call(self._client.get, f"{self.base_url}/metrics", headers=self._headers)
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
         return resp.text
+
+    def _call(self, method: Any, *args: Any, **kwargs: Any) -> Any:
+        """Issue a request, translating transport failures."""
+        try:
+            return method(*args, **kwargs)
+        except httpx.TransportError as exc:
+            raise _connection_error(self.base_url, exc) from exc
 
     def close(self) -> None:
         """Close the underlying :class:`httpx.Client`."""
@@ -265,7 +285,8 @@ class AsyncMembraneClient:
         return {}
 
     async def store(self, fragment_payload: dict[str, Any], is_primary: bool = False) -> dict[str, Any]:
-        resp = await self._client.post(
+        resp = await self._acall(
+            self._client.post,
             f"{self.base_url}/store",
             json={"fragment": fragment_payload, "is_primary": is_primary},
             headers=self._headers,
@@ -275,7 +296,8 @@ class AsyncMembraneClient:
         return resp.json()
 
     async def retrieve(self, content_hash: str) -> dict[str, Any] | None:
-        resp = await self._client.get(
+        resp = await self._acall(
+            self._client.get,
             f"{self.base_url}/retrieve",
             params={"content_hash": content_hash},
             headers=self._headers,
@@ -288,7 +310,8 @@ class AsyncMembraneClient:
         return body
 
     async def prefill(self, prompt_tokens: list[int], model_id: str = "default") -> dict[str, Any]:
-        resp = await self._client.post(
+        resp = await self._acall(
+            self._client.post,
             f"{self.base_url}/prefill",
             json={"prompt_tokens": prompt_tokens, "model_id": model_id},
             headers=self._headers,
@@ -298,10 +321,17 @@ class AsyncMembraneClient:
         return resp.json()
 
     async def inventory(self) -> dict[str, Any]:
-        resp = await self._client.get(f"{self.base_url}/inventory", headers=self._headers)
+        resp = await self._acall(self._client.get, f"{self.base_url}/inventory", headers=self._headers)
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
         return resp.json()
+
+    async def _acall(self, method: Any, *args: Any, **kwargs: Any) -> Any:
+        """Issue a request, translating transport failures."""
+        try:
+            return await method(*args, **kwargs)
+        except httpx.TransportError as exc:
+            raise _connection_error(self.base_url, exc) from exc
 
     async def close(self) -> None:
         """Close the underlying :class:`httpx.AsyncClient`."""
@@ -312,6 +342,7 @@ __all__ = [
     "AsyncMembraneClient",
     "MembraneClient",
     "MembraneClientError",
+    "MembraneConnectionError",
     "MembraneCorruptPayloadError",
     "MembraneNotFoundError",
     "MembraneServerError",
