@@ -295,9 +295,7 @@ class BaseAdapter:
         # :class:`MembraneValidator` can re-verify on import.
         import hashlib
 
-        digest = hashlib.sha256(
-            tensor.fingerprint.compatibility_hash().encode("utf-8")
-        ).digest()[:16]
+        digest = hashlib.sha256(tensor.fingerprint.compatibility_hash().encode("utf-8")).digest()[:16]
         return body + digest
 
     def deserialize(
@@ -334,8 +332,8 @@ class BaseAdapter:
                 fingerprint=_placeholder_fingerprint(),
             )
         offset += 4
-        lstart, lend, hstart, hend, tstart, tend, shape0, shape1, shape2 = (
-            struct.unpack_from("<iiiiiiIII", payload, offset)
+        lstart, lend, hstart, hend, tstart, tend, shape0, shape1, shape2 = struct.unpack_from(
+            "<iiiiiiIII", payload, offset
         )
         offset += 32
         element_size = 2
@@ -347,9 +345,7 @@ class BaseAdapter:
             offset += per_layer_bytes
             v_bytes = payload[offset : offset + per_layer_bytes]
             offset += per_layer_bytes
-            layers.append(
-                _safe_layer(k_bytes, v_bytes, len(layers), (hstart, hend))
-            )
+            layers.append(_safe_layer(k_bytes, v_bytes, len(layers), (hstart, hend)))
         # Fingerprint digest at the tail; recompute via the
         # adapter's :class:`MembraneValidator` once the bundle is
         # installed.
@@ -426,9 +422,7 @@ __all__ = [
 ]
 
 
-def _safe_layer(
-    k_bytes: bytes, v_bytes: bytes, layer_idx: int, head_range: tuple[int, int]
-) -> LayerKV:
+def _safe_layer(k_bytes: bytes, v_bytes: bytes, layer_idx: int, head_range: tuple[int, int]) -> LayerKV:
     """Construct a :class:`LayerKV` from raw bytes.
 
     Used by the deserializer. The tensor field is a
@@ -526,9 +520,7 @@ class MembraneAdapter(BaseAdapter, KVAdapter):
                 head_range=head_range,
                 token_span=token_span,
                 shape=(self.kv_backend.n_heads or 1, 1, 1, 64),
-                fingerprint=compat_hash(
-                    model_id=self.kv_backend.model_id, dtype=self.kv_backend.dtype
-                ),
+                fingerprint=compat_hash(model_id=self.kv_backend.model_id, dtype=self.kv_backend.dtype),
             )
         from membrane.compat import compat_hash, compute_config_hash
 

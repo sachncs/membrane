@@ -19,7 +19,9 @@ spec:
       labels:
         app: membrane
     spec:
-      # Don't run on the same node as Redis.
+      # Covers the server's graceful shutdown on SIGTERM.
+      terminationGracePeriodSeconds: 45
+      # Spread replicas across nodes.
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -43,21 +45,28 @@ spec:
           ports:
             - name: http
               containerPort: 8080
-            - name: grpc
-              containerPort: 50051
+          envFrom:
+            - configMapRef:
+                name: membrane-config
           env:
             - name: MEMBRANE_NODE_ID
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: MEMBRANE_PORT
-              value: "8080"
-            - name: MEMBRANE_TRANSPORT
-              value: "http"
-            - name: MEMBRANE_LOG_LEVEL
-              value: "INFO"
-            - name: MEMBRANE_REDIS_URL
-              value: "redis://membrane-redis:6379/0"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # Address peers dial; the bind address 0.0.0.0 is not routable.
+            - name: MEMBRANE_ADVERTISE_HOST
+              value: "$(MEMBRANE_NODE_ID).membrane-headless.$(POD_NAMESPACE).svc.cluster.local"
+            - name: MEMBRANE_API_KEY_FILE
+              value: /run/secrets/membrane/api-keys
+            - name: MEMBRANE_PEER_API_KEY_FILE
+              value: /run/secrets/membrane/peer-api-key
+            # KV bytes persist on the pod's PVC; metadata in Redis.
+            - name: MEMBRANE_DATA_DIR
+              value: /var/lib/membrane
           resources:
             requests:
               cpu: "1"
@@ -95,8 +104,28 @@ spec:
               drop:
                 - ALL
           volumeMounts:
-            - name: logs
-              mountPath: /var/log/membrane
+            - name: secrets
+              mountPath: /run/secrets/membrane
+              readOnly: true
+            # readOnlyRootFilesystem: the TLS listener writes its PEMs here.
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/membrane
       volumes:
-        - name: logs
-          emptyDir: {}
+        - name: secrets
+          secret:
+            secretName: membrane-secrets
+            defaultMode: 0440
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

@@ -59,9 +59,7 @@ class TestSecretProviderE2E:
                 return self._store[secret_name]
 
         # 1. Vault / AWS / GCP analog: a dict-backed provider.
-        secrets = BackendSecretProvider(
-            {"mem_master_key": "00" * 32, "mem_tenant_salt": "abcd"}
-        )
+        secrets = BackendSecretProvider({"mem_master_key": "00" * 32, "mem_tenant_salt": "abcd"})
         master_hex = secrets.get("mem_master_key")
         assert master_hex == "00" * 32
 

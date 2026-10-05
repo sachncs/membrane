@@ -57,18 +57,18 @@ def to_dict(fragment: Fragment) -> dict[str, Any]:
         v3.0+ ``tenant_id`` field.
     """
     return {
-            "schema_version": SCHEMA_VERSION,
-            "tenant_id": fragment.tenant_id,
-            "identity": fragment.identity.to_dict(),
-            "payload_ref": fragment.payload_ref,
-            "payload_size": fragment.payload_size,
-            "ttl": fragment.ttl,
-            "reuse_score": fragment.reuse_score,
-            "version_id": fragment.version_id,
-            "consistency": fragment.consistency,
-            "hlc": fragment.hlc,
-            "fingerprint_compat": fragment.fingerprint_compat,
-        }
+        "schema_version": SCHEMA_VERSION,
+        "tenant_id": fragment.tenant_id,
+        "identity": fragment.identity.to_dict(),
+        "payload_ref": fragment.payload_ref,
+        "payload_size": fragment.payload_size,
+        "ttl": fragment.ttl,
+        "reuse_score": fragment.reuse_score,
+        "version_id": fragment.version_id,
+        "consistency": fragment.consistency,
+        "hlc": fragment.hlc,
+        "fingerprint_compat": fragment.fingerprint_compat,
+    }
 
 
 def from_dict(data: dict[str, Any]) -> Fragment:
@@ -89,9 +89,7 @@ def from_dict(data: dict[str, Any]) -> Fragment:
     if "schema_version" not in data:
         raise SchemaError("serialized fragment missing schema_version")
     if data["schema_version"] != SCHEMA_VERSION:
-        raise SchemaError(
-            f"incompatible schema_version={data['schema_version']}; expected {SCHEMA_VERSION}"
-        )
+        raise SchemaError(f"incompatible schema_version={data['schema_version']}; expected {SCHEMA_VERSION}")
     try:
         identity_obj: dict[str, Any] = data["identity"]
         identity = PayloadIdentity.from_dict(identity_obj)

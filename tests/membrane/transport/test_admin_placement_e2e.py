@@ -22,6 +22,7 @@ class TestAdminPlacementOverride:
 
         shard = Shard()
         app = FastAPI()
+
         # The admin route reads ``app.state.cluster_manager.shard_manager``
         # so build a tiny stub that exposes the right shape.
         class _StubCluster:
@@ -108,9 +109,7 @@ class TestAdminPlacementOverride:
         audit = client.get("/admin/audit").json()
         # Both actions are present in order.
         actions = [e["action"] for e in audit["entries"]]
-        assert actions.index("admin.placement.override") < actions.index(
-            "admin.policy.update"
-        )
+        assert actions.index("admin.placement.override") < actions.index("admin.policy.update")
         # The chain verifies.
         from membrane.audit import verify_chain
 

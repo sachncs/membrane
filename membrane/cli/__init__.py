@@ -30,6 +30,24 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+
+def _version_callback(value: bool) -> None:
+    if value:
+        from membrane import __version__
+
+        typer.echo(f"membrane {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False, "--version", "-V", callback=_version_callback, is_eager=True, help="Show the version and exit."
+    ),
+) -> None:
+    """Membrane — Global Contextual Memory Fabric CLI."""
+
+
 # Register subcommands. Each is a typer.command function from
 # ``membrane.cli.commands.*`` exposed as ``main`` for uniformity.
 app.command(name="serve", help="Start a Membrane production server.")(serve.main)
@@ -37,8 +55,10 @@ app.command(name="dashboard", help="Open a live TUI dashboard against a remote s
 app.command(name="cluster-status", help="Show cluster membership and peer health.")(cluster.main)
 app.command(name="llm-status", help="Show active LLM backend status and model info.")(llm.main)
 app.command(name="config", help="Show Membrane configuration and environment.")(config.main)
-app.command(name="admin", help="Admin operations against a running Membrane node.")(admin.main)
-app.command(name="client", help="One-off interactions with a running Membrane server.")(client.main)
+# admin and client are command groups; registering their ``main``
+# as a plain command would hide every subcommand.
+app.add_typer(admin.admin_app, name="admin", help="Admin operations against a running Membrane node.")
+app.add_typer(client.client_app, name="client", help="One-off interactions with a running Membrane server.")
 
 
 def main() -> None:

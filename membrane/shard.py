@@ -229,9 +229,7 @@ class Shard:
 
         # Pick the primary. Honor ``primary_region`` if specified
         # and at least one node in that region is registered.
-        if primary_region is not None and any(
-            _region(n) == primary_region for n in all_nodes
-        ):
+        if primary_region is not None and any(_region(n) == primary_region for n in all_nodes):
             primary = min(
                 (n for n in all_nodes if _region(n) == primary_region),
                 key=_bandwidth,
@@ -243,17 +241,9 @@ class Shard:
         # Replica set: the first slot prefers a different region
         # for HA; the rest stay close to the primary for read
         # latency.
-        cross_region = [
-            n for n in all_nodes
-            if n != primary and _region(n) != primary_region_actual
-        ]
-        same_region = [
-            n for n in all_nodes
-            if n != primary and _region(n) == primary_region_actual
-        ]
-        ordered = sorted(cross_region, key=_bandwidth) + sorted(
-            same_region, key=_bandwidth
-        )
+        cross_region = [n for n in all_nodes if n != primary and _region(n) != primary_region_actual]
+        same_region = [n for n in all_nodes if n != primary and _region(n) == primary_region_actual]
+        ordered = sorted(cross_region, key=_bandwidth) + sorted(same_region, key=_bandwidth)
         return primary, ordered[: self.replica_count]
 
     # ------------------------------------------------------------------
@@ -410,12 +400,7 @@ class Shard:
         self.primary_map[content_hash] = local_node_id
         if node is not None and content_hash in node.fragments:
             node.primary_hashes.add(content_hash)
-        if (
-            pull_fn is None
-            and transfer_service is not None
-            and node is not None
-            and node.node_id == local_node_id
-        ):
+        if pull_fn is None and transfer_service is not None and node is not None and node.node_id == local_node_id:
             # Legacy in-memory push path: only used when the
             # caller has not wired pull_fn. Production
             # deployments at 2.0+ always use pull_fn.

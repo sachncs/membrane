@@ -303,9 +303,7 @@ class TransferService:
                 content_hash,
             )
         # isinstance(tgt_endpoint, _RemoteEndpoint)  (mypy narrowing)
-        if not isinstance(src_endpoint, _LocalEndpoint) or not isinstance(
-            tgt_endpoint, _RemoteEndpoint
-        ):
+        if not isinstance(src_endpoint, _LocalEndpoint) or not isinstance(tgt_endpoint, _RemoteEndpoint):
             return False
         return self.transfer_remote_target(
             src_endpoint,
@@ -336,9 +334,7 @@ class TransferService:
         missing = self.compare_inventories(tgt_digest, src_digest)
         transferred: list[str] = []
         for h in missing:
-            if isinstance(src_endpoint, _LocalEndpoint) and isinstance(
-                tgt_endpoint, _LocalEndpoint
-            ):
+            if isinstance(src_endpoint, _LocalEndpoint) and isinstance(tgt_endpoint, _LocalEndpoint):
                 ok: bool = self.transfer_local_endpoint(src_endpoint, tgt_endpoint, h)
             elif isinstance(src_endpoint, _RemoteEndpoint):
                 ok = self.transfer_remote_source(
@@ -381,9 +377,7 @@ class TransferService:
         :meth:`transfer_local_endpoint` for callers that pass
         :class:`Node` instances directly.
         """
-        return self.transfer_local_endpoint(
-            _LocalEndpoint(source), _LocalEndpoint(target), content_hash
-        )
+        return self.transfer_local_endpoint(_LocalEndpoint(source), _LocalEndpoint(target), content_hash)
 
     def pull_from_remote(
         self,

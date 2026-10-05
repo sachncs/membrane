@@ -23,10 +23,10 @@ class TestMembraneClientRetry:
         from fastapi.testclient import TestClient
 
         from membrane.client import (
-    MembraneClient,
-    MembraneClientError,
-    MembraneServerError,
-)
+            MembraneClient,
+            MembraneClientError,
+            MembraneServerError,
+        )
 
         # Stub /store that returns 500 with a payload.
         def post_store() -> JSONResponse:

@@ -137,9 +137,7 @@ class KVBackend(RemoteLLMBackend):
             from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore[import-not-found]
 
             self.torch = torch
-            self.actual_device = (
-                "cuda" if self.device == "auto" and torch.cuda.is_available() else self.device
-            )
+            self.actual_device = "cuda" if self.device == "auto" and torch.cuda.is_available() else self.device
             logger.info("KVBackend: loading %s on %s", self.model_id, self.actual_device)
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.tokenizer_name, revision=self.tokenizer_revision or None
@@ -328,6 +326,16 @@ class KVBackend(RemoteLLMBackend):
                 )
             )
         return fragments
+
+    def simulated_payload(self, fragment: Fragment) -> bytes | None:
+        """Return ``None`` for real frames, which are already in :attr:`content_store`.
+
+        Fragments from the :meth:`simulate_prefill` fallback (no
+        model loaded) get the base class placeholder bytes.
+        """
+        if fragment.payload_ref is not None and self.content_store.has(fragment.payload_ref):
+            return None
+        return super().simulated_payload(fragment)
 
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Stub text-generation entry point.

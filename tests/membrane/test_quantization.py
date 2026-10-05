@@ -32,18 +32,14 @@ class TestInt8Quantizer:
     def test_round_trip_preserves_shape(self):
         q = Int8PerChannelQuantizer()
         tensor = _make_array()
-        out = q.dequantize(
-            q.quantize(tensor), "float32", tensor.shape
-        )
+        out = q.dequantize(q.quantize(tensor), "float32", tensor.shape)
         assert out.shape == tensor.shape
         assert out.dtype == np.float32
 
     def test_zero_row_does_not_divide_by_zero(self):
         q = Int8PerChannelQuantizer()
         tensor = np.zeros((2, 4), dtype="float32")
-        out = q.dequantize(
-            q.quantize(tensor), "float32", tensor.shape
-        )
+        out = q.dequantize(q.quantize(tensor), "float32", tensor.shape)
         assert np.allclose(out, tensor)
 
     def test_quantize_then_frame(self):
@@ -71,18 +67,14 @@ class TestFP8E4M3Quantizer:
     def test_round_trip_preserves_shape(self):
         q = FP8E4M3Quantizer()
         tensor = _make_array()
-        out = q.dequantize(
-            q.quantize(tensor), "float32", tensor.shape
-        )
+        out = q.dequantize(q.quantize(tensor), "float32", tensor.shape)
         assert out.shape == tensor.shape
         assert out.dtype == np.float32
 
     def test_zero_row_safe(self):
         q = FP8E4M3Quantizer()
         tensor = np.zeros((1, 8), dtype="float32")
-        out = q.dequantize(
-            q.quantize(tensor), "float32", tensor.shape
-        )
+        out = q.dequantize(q.quantize(tensor), "float32", tensor.shape)
         assert np.allclose(out, tensor)
 
 
@@ -90,9 +82,7 @@ class TestFP8E5M2Quantizer:
     def test_round_trip_preserves_shape(self):
         q = FP8E5M2Quantizer()
         tensor = _make_array()
-        out = q.dequantize(
-            q.quantize(tensor), "float32", tensor.shape
-        )
+        out = q.dequantize(q.quantize(tensor), "float32", tensor.shape)
         assert out.shape == tensor.shape
         assert out.dtype == np.float32
 
@@ -101,34 +91,26 @@ class TestNF4Quantizer:
     def test_round_trip_4bit_preserves_shape(self):
         q = NF4Quantizer()
         tensor = _make_array()
-        out = q.dequantize(
-            q.quantize(tensor), "float32", tensor.shape
-        )
+        out = q.dequantize(q.quantize(tensor), "float32", tensor.shape)
         assert out.shape == tensor.shape
         assert out.dtype == np.float32
 
     def test_zero_row_safe(self):
         q = NF4Quantizer()
         tensor = np.zeros((1, 8), dtype="float32")
-        out = q.dequantize(
-            q.quantize(tensor), "float32", tensor.shape
-        )
+        out = q.dequantize(q.quantize(tensor), "float32", tensor.shape)
         assert np.allclose(out, tensor)
 
     def test_odd_column_count(self):
         q = NF4Quantizer()
         tensor = _make_array(rows=2, cols=9)
-        out = q.dequantize(
-            q.quantize(tensor), "float32", tensor.shape
-        )
+        out = q.dequantize(q.quantize(tensor), "float32", tensor.shape)
         assert out.shape == tensor.shape
 
     def test_3d_original_shape_round_trip(self):
         q = NF4Quantizer()
         tensor = _make_array(rows=2, cols=8)
-        out = q.dequantize(
-            q.quantize(tensor), "float32", (2, 8, 1)
-        )
+        out = q.dequantize(q.quantize(tensor), "float32", (2, 8, 1))
         assert out.shape == (2, 8, 1)
 
 
@@ -175,7 +157,7 @@ class TestQuantizeFunction:
         tensor = _make_array()
         frame = quantize(tensor, "int8")
         with pytest.raises(ValueError, match="quantized frame too short"):
-            QuantizedFrame.from_bytes(frame.to_bytes()[: 30])
+            QuantizedFrame.from_bytes(frame.to_bytes()[:30])
 
     def test_dispatch_by_id(self):
         tensor = _make_array()

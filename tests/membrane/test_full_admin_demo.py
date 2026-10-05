@@ -34,9 +34,7 @@ class TestFullAdminDemo:
         # TierMigration: each demote appends to the list.
         migration = TierMigration(
             policy=TierPolicy(),
-            on_demote=lambda frag, tier: migrations.append(
-                (frag.identity.payload_hash, tier)
-            ),
+            on_demote=lambda frag, tier: migrations.append((frag.identity.payload_hash, tier)),
         )
         node.add_eviction_callback(migration.on_evict)
 

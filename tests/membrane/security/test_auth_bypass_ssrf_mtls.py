@@ -285,14 +285,34 @@ class TestSchemaStrictness:
         from membrane.serialization import from_dict
 
         with pytest.raises(SchemaError, match="incompatible schema_version=4"):
-            from_dict({"schema_version": 4, "identity": {}, "payload_ref": None, "payload_size": 0, "ttl": 0, "reuse_score": 0, "version_id": 1})
+            from_dict(
+                {
+                    "schema_version": 4,
+                    "identity": {},
+                    "payload_ref": None,
+                    "payload_size": 0,
+                    "ttl": 0,
+                    "reuse_score": 0,
+                    "version_id": 1,
+                }
+            )
 
     def test_v3_wire_dict_rejected(self):
         from membrane.errors import SchemaError
         from membrane.serialization import from_dict
 
         with pytest.raises(SchemaError, match="incompatible schema_version=3"):
-            from_dict({"schema_version": 3, "identity": {}, "payload_ref": None, "payload_size": 0, "ttl": 0, "reuse_score": 0, "version_id": 1})
+            from_dict(
+                {
+                    "schema_version": 3,
+                    "identity": {},
+                    "payload_ref": None,
+                    "payload_size": 0,
+                    "ttl": 0,
+                    "reuse_score": 0,
+                    "version_id": 1,
+                }
+            )
 
 
 # ---------------------------------------------------------------------------

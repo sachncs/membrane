@@ -264,8 +264,7 @@ class Reconstructor:
                 # model — different models produce
                 # incompatible KV tensors.
                 if frag.identity.model_id == model_id and (
-                    best is None
-                    or i > (best.identity.token_span[1] - best.identity.token_span[0] + 1)
+                    best is None or i > (best.identity.token_span[1] - best.identity.token_span[0] + 1)
                 ):
                     best = frag
         return best

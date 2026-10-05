@@ -131,21 +131,14 @@ class TestNodeStore:
     def test_store_other_tenant_admin_allowed(self):
         node = Node(node_id="n1", max_memory_bytes=1024)
         frag = self._frag(tenant="acme")
-        assert (
-            node.store(
-                frag, caller_tenant="ops", caller_scopes=frozenset({"admin"})
-            )
-            is True
-        )
+        assert node.store(frag, caller_tenant="ops", caller_scopes=frozenset({"admin"})) is True
 
     def test_store_public_requires_admin(self):
         node = Node(node_id="n1", max_memory_bytes=1024)
         # A non-admin caller cannot write a fragment in the system tenant.
         frag = self._frag(tenant=SYSTEM_TENANT)
         with pytest.raises(TenantScopeError):
-            node.store(
-                frag, caller_tenant="acme", caller_scopes=frozenset({"write"})
-            )
+            node.store(frag, caller_tenant="acme", caller_scopes=frozenset({"write"}))
 
     def test_store_no_caller_bypasses(self):
         """A caller with no tenant id bypasses the check (single-node / test)."""

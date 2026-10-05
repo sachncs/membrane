@@ -1,9 +1,8 @@
 """Shared HTTP operation logic.
 
 This module holds the *business* logic that backs each Membrane HTTP
-endpoint. Both the stdlib :mod:`membrane.transport.routes` module
-and the FastAPI binding :mod:`membrane.transport.routes_fastapi`
-delegate to these functions so the actual store / retrieve / sync
+endpoint. The FastAPI binding :mod:`membrane.transport.routes_fastapi`
+delegates to these functions so the actual store / retrieve / sync
 logic lives in exactly one place.
 
 Each function takes plain domain objects (``Node``,
@@ -255,7 +254,9 @@ def op_store(
 
     Returns:
         tuple[int, JsonDict]: ``(200, {"success": True, ...})``
-        on success, ``(503, {"error": "quorum timeout", ...})``
+        on success, ``(422, {"error": ...})`` when the fragment's
+        ``payload_ref`` is not in the content store,
+        ``(503, {"error": "quorum timeout", ...})``
         on timeout, ``(200, {"error": ...})`` on user input
         failure.
     """
@@ -271,21 +272,32 @@ def op_store(
     consistency = frag.consistency
     if cluster is not None:
         cfg_default = getattr(cluster.config, "default_consistency", "strong")
-        if (
-            consistency == "strong"
-            and cfg_default in {"quorum", "eventual"}
-        ):
+        if consistency == "strong" and cfg_default in {"quorum", "eventual"}:
             consistency = cfg_default
             # Fragment is frozen; rebuild a copy with the
             # downgraded level so the quorum attempt sees the
             # new value.
             frag = frag.with_consistency(consistency)
 
+    # Payload bytes reach the content store out of band, before the
+    # metadata is published. Accepting a fragment whose bytes are
+    # absent would report success for a write that /retrieve then
+    # reports as missing, so reject it up front.
+    if frag.payload_ref is not None and not _payload_present(node, frag.payload_ref):
+        return 422, {
+            "error": "payload_ref not found in content store",
+            "payload_ref": frag.payload_ref,
+            "content_hash": frag.identity.payload_hash,
+        }
+
     # Local write always happens first so the cluster keeps a
     # single, source-of-truth copy at the primary even if quorum
     # is later achieved asynchronously.
     caller_tenant = auth_context.subject if auth_context is not None else ""
     caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
+    # A failed quorum only rolls back a copy this call created; an
+    # idempotent re-store must not delete an already-acknowledged one.
+    existed_before = frag.identity.payload_hash in node.fragments
     try:
         ok = node.store(
             frag,
@@ -311,17 +323,32 @@ def op_store(
     if quorum_attempt is None or cluster is None:
         return _ok({"success": True, "content_hash": frag.identity.payload_hash})
 
+    # ``quorum_count`` is the number of copies that must exist before
+    # the write is acknowledged, the local copy included, so the
+    # fan-out waits for ``quorum_count - 1`` peer acks. It is sent to
+    # every replica so one slow peer does not fail the write.
     quorum_count = int(getattr(cluster.config, "quorum_count", 2))
     timeout_sec = float(getattr(cluster.config, "cluster_quorum_timeout_sec", 9.0))
-    if quorum_count <= 1:
+    required_peer_acks = quorum_count - 1
+    if required_peer_acks <= 0:
         return _ok({"success": True, "content_hash": frag.identity.payload_hash})
 
-    replica_peers = list(_replica_peers(cluster, frag.identity.payload_hash, quorum_count))
-    if not replica_peers:
-        return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+    fan_out = max(required_peer_acks, int(getattr(cluster.config, "replica_count", required_peer_acks)))
+    replica_peers = list(_replica_peers(cluster, frag.identity.payload_hash, fan_out))
+    if len(replica_peers) < required_peer_acks:
+        # Fail closed: an isolated node must not acknowledge a strong
+        # write it cannot replicate.
+        _rollback_local_write(node, frag.identity.payload_hash, existed_before)
+        return 503, {
+            "error": "quorum not met",
+            "detail": "not enough healthy peers",
+            "ack_count": 0,
+            "required": quorum_count,
+            "Retry-After": 1,
+        }
 
     try:
-        result = quorum_attempt(frag, replica_peers, quorum_count, timeout_sec)  # type: ignore[operator]
+        result = quorum_attempt(frag, replica_peers, required_peer_acks, timeout_sec)  # type: ignore[operator]
     except Exception as exc:
         logger.warning("op_store quorum_attempt failed: %s", exc)
         return 503, {"error": "quorum_attempt failed", "detail": str(exc)}
@@ -333,10 +360,7 @@ def op_store(
         # Roll back the local write so gossip does not propagate
         # a fragment that the cluster never acked. This is the
         # fail-closed contract.
-        try:
-            node.remove_fragment(frag.identity.payload_hash)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("failed to roll back local fragment: %s", exc)
+        _rollback_local_write(node, frag.identity.payload_hash, existed_before)
         return (
             503,
             {
@@ -347,6 +371,30 @@ def op_store(
             },
         )
     return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+
+
+def _payload_present(node: Node, payload_ref: str) -> bool:
+    """Whether ``payload_ref`` is in the node's content store.
+
+    A ref the store cannot address at all (e.g. too short for the
+    on-disk layout) counts as absent rather than a server error.
+    """
+    try:
+        return bool(node.content_store.has(payload_ref))
+    except ValueError:
+        return False
+
+
+def _rollback_local_write(node: Node, content_hash: str, existed_before: bool) -> None:
+    """Undo a local write whose quorum failed, unless the copy pre-existed."""
+    if existed_before:
+        return
+    try:
+        node.remove_fragment(content_hash)
+    except KeyError:
+        pass  # Already evicted or removed concurrently.
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("failed to roll back local fragment: %s", exc)
 
 
 def _replica_peers(cluster: Cluster, content_hash: str, count: int) -> list[Peer]:
@@ -414,9 +462,25 @@ def op_prefill(
     if node is None:
         return _ok({"error": "no node"})
     backend = backend or CPU()
+    caller_tenant = auth_context.subject if auth_context is not None else ""
+    caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
     fragments = backend.prefill(prompt_tokens, model_id)
+    # Fragments belong to the authenticated caller's tenant; without
+    # this every tenant's prefill would land in the public tenant.
+    if caller_tenant:
+        fragments = [frag.with_tenant(caller_tenant) for frag in fragments]
     for frag in fragments:
-        node.store(frag, is_primary=True)
+        # Simulated / remote backends never write KV bytes; store
+        # their placeholder payload so /retrieve can serve the
+        # fragment. Backends with real frames already wrote them.
+        if frag.payload_ref is not None and not _payload_present(node, frag.payload_ref):
+            payload = backend.simulated_payload(frag)
+            if payload is not None:
+                node.content_store.put(frag.payload_ref, payload)
+        try:
+            node.store(frag, is_primary=True, caller_tenant=caller_tenant, caller_scopes=caller_scopes)
+        except TenantScopeError as exc:
+            return 403, {"error": "tenant scope", "detail": str(exc)}
     return _ok(
         {
             "success": True,

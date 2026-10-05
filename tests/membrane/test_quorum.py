@@ -68,9 +68,11 @@ class _FakePeer:
 
 def _make_fragment_with_consistency(consistency: str, hlc: int = 0) -> Fragment:
     base = make_fragment("hash-q")
+    # Metadata-only: these tests exercise the quorum path, not the
+    # payload bytes, and op_store rejects refs absent from the store.
     return Fragment(
         identity=base.identity,
-        payload_ref=base.payload_ref,
+        payload_ref=None,
         payload_size=base.payload_size,
         ttl=base.ttl,
         reuse_score=base.reuse_score,
@@ -210,9 +212,7 @@ class TestOpStoreConsistency:
             quorum_count=2,
             cluster_quorum_timeout_sec=1.0,
         )
-        cluster.membership.healthy.return_value = [
-            type("PeerLike", (), {"node_id": f"peer-{i}"})() for i in range(2)
-        ]
+        cluster.membership.healthy.return_value = [type("PeerLike", (), {"node_id": f"peer-{i}"})() for i in range(2)]
         cluster.membership.get_client.side_effect = lambda nid: _FakePeer(ok=True)
 
         def _attempt(
@@ -247,9 +247,7 @@ class TestOpStoreConsistency:
             quorum_count=2,
             cluster_quorum_timeout_sec=1.0,
         )
-        cluster.membership.healthy.return_value = [
-            type("PeerLike", (), {"node_id": f"peer-{i}"})() for i in range(2)
-        ]
+        cluster.membership.healthy.return_value = [type("PeerLike", (), {"node_id": f"peer-{i}"})() for i in range(2)]
         cluster.membership.get_client.side_effect = lambda nid: _FakePeer(ok=False)
 
         def _attempt(
@@ -265,27 +263,8 @@ class TestOpStoreConsistency:
                 replica_count=len(peers),
             )
 
-        # Use a unique content_hash so the rollback is observable.
-        # (Fragment.consistency = strong so the wire ships with the
-        # new field which the dict has.)
         primary_payload = to_dict(_make_fragment_with_consistency("strong"))
         content_hash = primary_payload["identity"]["payload_hash"]
-        assert node.store(
-            Fragment(
-                identity=__import__(
-                    "membrane.identity", fromlist=["PayloadIdentity"]
-                ).PayloadIdentity.from_dict(primary_payload["identity"]),
-                payload_ref=primary_payload["payload_ref"],
-                payload_size=primary_payload["payload_size"],
-                ttl=primary_payload["ttl"],
-                reuse_score=primary_payload["reuse_score"],
-                version_id=primary_payload["version_id"],
-                consistency="strong",
-                hlc=primary_payload["hlc"],
-            ),
-            is_primary=True,
-        ) is True
-        assert content_hash in node.fragments
 
         status, body = op_store(
             node,
@@ -296,8 +275,15 @@ class TestOpStoreConsistency:
         )
         assert status == 503
         assert "quorum" in body["error"]
-        # Local rollback must have removed the fragment.
+        # Local rollback must have removed the copy this write created.
         assert content_hash not in node.fragments
+
+        # A copy that existed before the failed write was already
+        # acknowledged; the rollback must leave it in place.
+        assert node.store(_make_fragment_with_consistency("strong"), is_primary=True) is True
+        status, _ = op_store(node, primary_payload, is_primary=True, cluster=cluster, quorum_attempt=_attempt)
+        assert status == 503
+        assert content_hash in node.fragments
 
     def test_strong_default_honors_cluster_quorum(self):
         node = Node("self", max_memory_bytes=10_000)
@@ -306,9 +292,7 @@ class TestOpStoreConsistency:
             default_consistency="quorum",
             quorum_count=2,
         )
-        cluster.membership.healthy.return_value = [
-            type("PeerLike", (), {"node_id": f"peer-{i}"})() for i in range(2)
-        ]
+        cluster.membership.healthy.return_value = [type("PeerLike", (), {"node_id": f"peer-{i}"})() for i in range(2)]
         cluster.membership.get_client.side_effect = lambda nid: _FakePeer(ok=True)
 
         captured: dict[str, Any] = {}
@@ -352,9 +336,7 @@ class TestOpStoreConsistency:
             default_consistency="strong",
             quorum_count=2,
         )
-        cluster.membership.healthy.return_value = [
-            type("PeerLike", (), {"node_id": f"peer-{i}"})() for i in range(2)
-        ]
+        cluster.membership.healthy.return_value = [type("PeerLike", (), {"node_id": f"peer-{i}"})() for i in range(2)]
         # eventual on the wire trumps the cluster default; the
         # quorum attempt must NOT run.
         attempted = []
@@ -384,3 +366,37 @@ class TestOpStoreConsistency:
         )
         assert status == 200
         assert body["success"] is True
+
+    def test_quorum_count_includes_local_copy(self):
+        """quorum_count=2 waits for one peer ack, fanned out to every replica."""
+        node = Node("self", max_memory_bytes=10_000)
+        cluster = MagicMock()
+        cluster.node_id = "self"
+        cluster.config = _FakeClusterConfig(quorum_count=2)
+        cluster.config.replica_count = 2
+        cluster.membership.healthy.return_value = [type("PeerLike", (), {"node_id": f"peer-{i}"})() for i in range(3)]
+        cluster.membership.get_client.side_effect = lambda nid: _FakePeer()
+        seen: dict[str, int] = {}
+
+        def _attempt(fragment, peers, required, timeout_sec):
+            seen["peers"], seen["required"] = len(peers), required
+            return QuorumResult(success=True, ack_count=required, timed_out=False, replica_count=len(peers))
+
+        frag = _make_fragment_with_consistency("strong")
+        status, _ = op_store(node, to_dict(frag), is_primary=True, cluster=cluster, quorum_attempt=_attempt)
+        assert status == 200
+        assert seen == {"peers": 2, "required": 1}
+
+    def test_isolated_node_fails_strong_write_closed(self):
+        """With no healthy peers a strong write is a 503, not a silent local-only ack."""
+        node = Node("self", max_memory_bytes=10_000)
+        cluster = MagicMock()
+        cluster.node_id = "self"
+        cluster.config = _FakeClusterConfig(quorum_count=2)
+        cluster.membership.healthy.return_value = []
+
+        frag = _make_fragment_with_consistency("strong")
+        status, body = op_store(node, to_dict(frag), is_primary=True, cluster=cluster, quorum_attempt=lambda *a: None)
+        assert status == 503
+        assert body["detail"] == "not enough healthy peers"
+        assert frag.identity.payload_hash not in node.fragments

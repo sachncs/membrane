@@ -37,11 +37,11 @@ def main():
     # Store fragments on node-0 (primary) and node-1 (replica)
     for f in frags:
         node0.store(f, is_primary=True)
-        directory.record_fragment_location(f.content_hash, node0.node_id)
+        directory.record_fragment_location(f.identity.payload_hash, node0.node_id)
 
     for f in frags[:4]:
         node1.store(f, is_primary=False)
-        directory.record_fragment_location(f.content_hash, node1.node_id)
+        directory.record_fragment_location(f.identity.payload_hash, node1.node_id)
 
     logger.info("Node-0 stores %s fragments", len(node0.fragments))
     logger.info("Node-1 stores %s fragments", len(node1.fragments))
@@ -55,6 +55,7 @@ def main():
     # Reconstruct the prompt from node-2
     adapter = Adapter()
     from membrane.reconstructor import ReconstructorConfig
+
     recon = Reconstructor(
         Index(),
         adapter,
@@ -67,17 +68,16 @@ def main():
     logger.info("Missing segments: %s", len(result.missing_segments))
 
     # Check directory
-    locations = directory.locate_fragment(frags[0].content_hash)
+    locations = directory.locate_fragment(frags[0].identity.payload_hash)
     logger.info("Fragment 0 located on nodes: %s", locations)
 
     # Optimal nodes for reconstruction
-    optimal = directory.best_nodes(
-        prompt_tokens, model_id="kimi-linear-1t", k=2
-    )
+    optimal = directory.best_nodes(prompt_tokens, model_id="kimi-linear-1t", k=2)
     logger.info("Optimal nodes for reconstruction: %s", optimal)
 
     logger.info("=== Demo Complete ===")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

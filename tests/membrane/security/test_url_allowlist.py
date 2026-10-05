@@ -21,9 +21,7 @@ class TestSchemeCheck:
         url = validate_outbound_url(f"{scheme}://example.com/path", allowlist=policy)
         assert url.startswith(scheme)
 
-    @pytest.mark.parametrize(
-        "scheme", ["file", "gopher", "ftp", "ldap", "javascript", "data"]
-    )
+    @pytest.mark.parametrize("scheme", ["file", "gopher", "ftp", "ldap", "javascript", "data"])
     def test_blocked_schemes_raise(self, scheme):
         policy = URLAllowlist(block_private=False)
         with pytest.raises(SSRFError, match="scheme not allowed"):
@@ -155,36 +153,26 @@ class TestPeerTransportIntegration:
         assert result is None
 
     def test_transport_allows_allowlisted_host(self):
+        from membrane.errors import NetworkError
         from membrane.network.peer import HTTPTransport
 
         configure(allowlist=["internal.svc.cluster"], block_private=True)
         transport = HTTPTransport()
-        # The request will fail to actually open (no server), but
-        # the SSRF check should not have rejected it. The
-        # transport returns ``None`` on any failure (including
-        # connection errors), so we only assert that the call
-        # doesn't short-circuit on the SSRF check.
-        import socket
-
-        old_socket = socket.socket
-        try:
-            # Patch out the connect call so we never actually
-            # open a socket to the fake host.
-            def boom(*args, **kwargs):
-                raise OSError("blocked by test")
-
-            socket.socket = boom  # type: ignore[assignment]
-            result = transport.request(
+        # An SSRF rejection returns ``None`` without touching the
+        # network. An allow-listed host gets past the check and
+        # then fails to connect (the host does not exist), which
+        # the transport surfaces as NetworkError.
+        with pytest.raises(NetworkError):
+            transport.request(
                 method="GET",
                 url="http://internal.svc.cluster/x",
                 body=None,
                 headers={},
                 timeout_sec=1.0,
             )
-        finally:
-            socket.socket = old_socket  # type: ignore[assignment]
-        # The call returned ``None`` from a connection error, not
-        # from the SSRF check. There's no easy way to assert
-        # this without a mock, so the test mainly ensures the
-        # allow-listed host doesn't raise SSRFError.
-        assert result is None
+
+    def test_transport_allows_configured_peer_network(self):
+        configure(allowed_networks=["127.0.0.0/8"])
+        assert validate_outbound_url("http://127.0.0.1:8080/x") == "http://127.0.0.1:8080/x"
+        with pytest.raises(SSRFError):
+            validate_outbound_url("http://169.254.169.254/latest/meta-data")

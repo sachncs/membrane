@@ -83,31 +83,23 @@ class TestEnforceRouteScope:
         assert ctx.subject == ""
 
     def test_admin_scope_accepted_for_admin_holder(self):
-        auth = _StubAuthenticator(
-            AuthContext(subject="root", scopes=frozenset({"admin"}))
-        )
+        auth = _StubAuthenticator(AuthContext(subject="root", scopes=frozenset({"admin"})))
         ctx = enforce_route_scope(auth, "POST", "/delete", headers={})
         assert ctx.subject == "root"
 
     def test_read_scope_rejected_for_write_holder(self):
-        auth = _StubAuthenticator(
-            AuthContext(subject="reader", scopes=frozenset({"read"}))
-        )
+        auth = _StubAuthenticator(AuthContext(subject="reader", scopes=frozenset({"read"})))
         with pytest.raises(AuthBackendError, match="missing required scope"):
             enforce_route_scope(auth, "POST", "/store", headers={})
 
     def test_admin_scope_required_for_admin_endpoint(self):
-        auth = _StubAuthenticator(
-            AuthContext(subject="writer", scopes=frozenset({"read", "write"}))
-        )
+        auth = _StubAuthenticator(AuthContext(subject="writer", scopes=frozenset({"read", "write"})))
         with pytest.raises(AuthBackendError, match="missing required scope"):
             enforce_route_scope(auth, "POST", "/delete", headers={})
 
     def test_hierarchical_scope_expansion(self):
         """An admin holder passes a read check via the SCOPES hierarchy."""
-        auth = _StubAuthenticator(
-            AuthContext(subject="root", scopes=frozenset({"admin"}))
-        )
+        auth = _StubAuthenticator(AuthContext(subject="root", scopes=frozenset({"admin"})))
         ctx = enforce_route_scope(auth, "GET", "/retrieve", headers={})
         assert ctx.subject == "root"
 
@@ -115,24 +107,16 @@ class TestEnforceRouteScope:
 class TestApiKeyAuthenticatorIntegration:
     def test_api_key_holder_passes_write_check(self):
         """APIKeyAuthenticator grants the key's scopes; integration test."""
-        auth = APIKeyAuthenticator(
-            keyfile_text="test-key:reader1:read\nadmin-key:admin1:admin\n"
-        )
-        ctx_read = enforce_route_scope(
-            auth, "GET", "/retrieve", headers={"authorization": "Bearer test-key"}
-        )
+        auth = APIKeyAuthenticator(keyfile_text="test-key:reader1:read\nadmin-key:admin1:admin\n")
+        ctx_read = enforce_route_scope(auth, "GET", "/retrieve", headers={"authorization": "Bearer test-key"})
         assert "read" in ctx_read.scopes
-        ctx_admin = enforce_route_scope(
-            auth, "POST", "/delete", headers={"authorization": "Bearer admin-key"}
-        )
+        ctx_admin = enforce_route_scope(auth, "POST", "/delete", headers={"authorization": "Bearer admin-key"})
         assert "admin" in ctx_admin.scopes
 
     def test_api_key_holder_rejected_for_admin_when_read_only(self):
         auth = APIKeyAuthenticator(keyfile_text="ro-key:reader1:read\n")
         with pytest.raises(AuthBackendError):
-            enforce_route_scope(
-                auth, "POST", "/delete", headers={"authorization": "Bearer ro-key"}
-            )
+            enforce_route_scope(auth, "POST", "/delete", headers={"authorization": "Bearer ro-key"})
 
     def test_api_key_missing_header_rejected(self):
         auth = APIKeyAuthenticator(keyfile_text="k:s:r\n")
@@ -142,9 +126,7 @@ class TestApiKeyAuthenticatorIntegration:
     def test_api_key_unknown_key_rejected(self):
         auth = APIKeyAuthenticator(keyfile_text="known-key:s:r\n")
         with pytest.raises(AuthBackendError, match="unauthorized"):
-            enforce_route_scope(
-                auth, "GET", "/retrieve", headers={"authorization": "Bearer unknown-key"}
-            )
+            enforce_route_scope(auth, "GET", "/retrieve", headers={"authorization": "Bearer unknown-key"})
 
 
 class TestNoopAuthenticator:
@@ -158,15 +140,11 @@ class TestNoopAuthenticator:
         than ``NoopAuthenticator()`` (which exercises the check
         and finds the caller is missing every scope).
         """
-        ctx = NoopAuthenticator().authenticate(
-            AuthRequest(method="GET", path="/retrieve", headers={}, client="")
-        )
+        ctx = NoopAuthenticator().authenticate(AuthRequest(method="GET", path="/retrieve", headers={}, client=""))
         assert ctx.subject == ""
         assert ctx.scopes == frozenset()
 
     def test_noop_authenticator_fails_scope_check(self):
         """A NoopAuthenticator explicitly wired in fails the scope check."""
         with pytest.raises(AuthBackendError, match="missing required scope"):
-            enforce_route_scope(
-                NoopAuthenticator(), "POST", "/store", headers={}
-            )
+            enforce_route_scope(NoopAuthenticator(), "POST", "/store", headers={})

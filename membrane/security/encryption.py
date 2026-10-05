@@ -41,6 +41,7 @@ class DecryptError(Exception):
     to a missing one; callers that need the typed failure
     surface call :func:`decrypt_payload` directly.
     """
+
     """Raised when ciphertext decryption fails.
 
     The v3.0.0 release keeps the typed failure surface narrow:
@@ -137,9 +138,7 @@ def encrypt_payload(plaintext: bytes, key: bytes) -> bytes:
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     except ImportError as exc:  # pragma: no cover - import guard
-        raise RuntimeError(
-            "encryption at rest requires 'cryptography'; install membrane[secrets-aws|gcp|vault]"
-        ) from exc
+        raise RuntimeError("encryption at rest requires 'cryptography'; install membrane[server]") from exc
     aes = AESGCM(key)
     nonce = os.urandom(NONCE_SIZE)
     ciphertext = aes.encrypt(nonce, plaintext, None)
@@ -163,9 +162,7 @@ def decrypt_payload(blob: bytes, key: bytes) -> bytes:
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     except ImportError as exc:  # pragma: no cover - import guard
-        raise RuntimeError(
-            "encryption at rest requires 'cryptography'; install membrane[secrets-aws|gcp|vault]"
-        ) from exc
+        raise RuntimeError("encryption at rest requires 'cryptography'; install membrane[server]") from exc
     if len(blob) < NONCE_SIZE + TAG_SIZE:
         raise DecryptError(f"encrypted blob too short ({len(blob)} bytes)")
     nonce = blob[:NONCE_SIZE]

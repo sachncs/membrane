@@ -107,9 +107,7 @@ class TestClientInventory:
             instance = MagicMock()
             instance.inventory.return_value = {"digest": {"a": 1}}
             cls.return_value = instance
-            result = runner.invoke(
-                client_app, ["inventory", "--base-url", "http://n1"]
-            )
+            result = runner.invoke(client_app, ["inventory", "--base-url", "http://n1"])
         assert result.exit_code == 0
         body = json.loads(result.stdout)
         assert body == {"digest": {"a": 1}}

@@ -4,14 +4,14 @@ const cases = [
     audience: 'LLM serving teams',
     title: 'Cut TTFT without re-architecting inference.',
     body:
-      'Drop Membrane alongside vLLM, TGI, or any custom stack. Cache fragments at the cluster edge, reconstruct on the hot path, fall back to a single prefill when coverage is incomplete.',
+      'Run Membrane alongside vLLM, SGLang, or TensorRT-LLM through the bundled adapters. Cache fragments across the cluster, reconstruct on the hot path, and fall back to a single prefill when coverage is incomplete.',
     accent: 'violet',
   },
   {
     audience: 'Multi-tenant platforms',
     title: 'Share prefill safely across customers.',
     body:
-      'Content-addressed dedup plus per-tenant policies means one canonical store, with hard isolation. Tenants inherit the hit-rate without seeing each other\'s data.',
+      'Content-addressed fragments carry a tenant, and reads are authorized per tenant: a cross-tenant read is indistinguishable from a miss.',
     accent: 'cyan',
   },
   {

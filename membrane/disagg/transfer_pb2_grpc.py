@@ -5,29 +5,29 @@ import grpc
 
 from membrane.disagg import transfer_pb2 as membrane_dot_disagg_dot_transfer__pb2
 
-GRPC_GENERATED_VERSION = '1.83.1'
+GRPC_GENERATED_VERSION = "1.83.1"
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
 try:
     from grpc._utilities import first_version_is_lower
+
     _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
 except ImportError:
     _version_not_supported = True
 
 if _version_not_supported:
     raise RuntimeError(
-        f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in membrane/disagg/transfer_pb2_grpc.py depends on'
-        + f' grpcio>={GRPC_GENERATED_VERSION}.'
-        + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
-        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
+        f"The grpc package installed is at version {GRPC_VERSION},"
+        + " but the generated code in membrane/disagg/transfer_pb2_grpc.py depends on"
+        + f" grpcio>={GRPC_GENERATED_VERSION}."
+        + f" Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}"
+        + f" or downgrade your generated code using grpcio-tools<={GRPC_VERSION}."
     )
 
 
 class TransferStub:
-    """Service definition.
-    """
+    """Service definition."""
 
     def __init__(self, channel):
         """Constructor.
@@ -36,89 +36,91 @@ class TransferStub:
             channel: A grpc.Channel.
         """
         self.Prefill = channel.unary_unary(
-                '/membrane.disagg.Transfer/Prefill',
-                request_serializer=membrane_dot_disagg_dot_transfer__pb2.PrefillRequest.SerializeToString,
-                response_deserializer=membrane_dot_disagg_dot_transfer__pb2.PrefillResponse.FromString,
-                _registered_method=True)
+            "/membrane.disagg.Transfer/Prefill",
+            request_serializer=membrane_dot_disagg_dot_transfer__pb2.PrefillRequest.SerializeToString,
+            response_deserializer=membrane_dot_disagg_dot_transfer__pb2.PrefillResponse.FromString,
+            _registered_method=True,
+        )
         self.BatchPrefill = channel.unary_unary(
-                '/membrane.disagg.Transfer/BatchPrefill',
-                request_serializer=membrane_dot_disagg_dot_transfer__pb2.BatchPrefillRequest.SerializeToString,
-                response_deserializer=membrane_dot_disagg_dot_transfer__pb2.BatchPrefillResponse.FromString,
-                _registered_method=True)
+            "/membrane.disagg.Transfer/BatchPrefill",
+            request_serializer=membrane_dot_disagg_dot_transfer__pb2.BatchPrefillRequest.SerializeToString,
+            response_deserializer=membrane_dot_disagg_dot_transfer__pb2.BatchPrefillResponse.FromString,
+            _registered_method=True,
+        )
         self.Decode = channel.unary_unary(
-                '/membrane.disagg.Transfer/Decode',
-                request_serializer=membrane_dot_disagg_dot_transfer__pb2.DecodeRequest.SerializeToString,
-                response_deserializer=membrane_dot_disagg_dot_transfer__pb2.DecodeResponse.FromString,
-                _registered_method=True)
+            "/membrane.disagg.Transfer/Decode",
+            request_serializer=membrane_dot_disagg_dot_transfer__pb2.DecodeRequest.SerializeToString,
+            response_deserializer=membrane_dot_disagg_dot_transfer__pb2.DecodeResponse.FromString,
+            _registered_method=True,
+        )
 
 
 class TransferServicer:
-    """Service definition.
-    """
+    """Service definition."""
 
     def Prefill(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def BatchPrefill(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
     def Decode(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
 
 
 def add_TransferServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'Prefill': grpc.unary_unary_rpc_method_handler(
-                    servicer.Prefill,
-                    request_deserializer=membrane_dot_disagg_dot_transfer__pb2.PrefillRequest.FromString,
-                    response_serializer=membrane_dot_disagg_dot_transfer__pb2.PrefillResponse.SerializeToString,
-            ),
-            'BatchPrefill': grpc.unary_unary_rpc_method_handler(
-                    servicer.BatchPrefill,
-                    request_deserializer=membrane_dot_disagg_dot_transfer__pb2.BatchPrefillRequest.FromString,
-                    response_serializer=membrane_dot_disagg_dot_transfer__pb2.BatchPrefillResponse.SerializeToString,
-            ),
-            'Decode': grpc.unary_unary_rpc_method_handler(
-                    servicer.Decode,
-                    request_deserializer=membrane_dot_disagg_dot_transfer__pb2.DecodeRequest.FromString,
-                    response_serializer=membrane_dot_disagg_dot_transfer__pb2.DecodeResponse.SerializeToString,
-            ),
+        "Prefill": grpc.unary_unary_rpc_method_handler(
+            servicer.Prefill,
+            request_deserializer=membrane_dot_disagg_dot_transfer__pb2.PrefillRequest.FromString,
+            response_serializer=membrane_dot_disagg_dot_transfer__pb2.PrefillResponse.SerializeToString,
+        ),
+        "BatchPrefill": grpc.unary_unary_rpc_method_handler(
+            servicer.BatchPrefill,
+            request_deserializer=membrane_dot_disagg_dot_transfer__pb2.BatchPrefillRequest.FromString,
+            response_serializer=membrane_dot_disagg_dot_transfer__pb2.BatchPrefillResponse.SerializeToString,
+        ),
+        "Decode": grpc.unary_unary_rpc_method_handler(
+            servicer.Decode,
+            request_deserializer=membrane_dot_disagg_dot_transfer__pb2.DecodeRequest.FromString,
+            response_serializer=membrane_dot_disagg_dot_transfer__pb2.DecodeResponse.SerializeToString,
+        ),
     }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'membrane.disagg.Transfer', rpc_method_handlers)
+    generic_handler = grpc.method_handlers_generic_handler("membrane.disagg.Transfer", rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('membrane.disagg.Transfer', rpc_method_handlers)
+    server.add_registered_method_handlers("membrane.disagg.Transfer", rpc_method_handlers)
 
 
- # This class is part of an EXPERIMENTAL API.
+# This class is part of an EXPERIMENTAL API.
 class Transfer:
-    """Service definition.
-    """
+    """Service definition."""
 
     @staticmethod
-    def Prefill(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def Prefill(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/membrane.disagg.Transfer/Prefill',
+            "/membrane.disagg.Transfer/Prefill",
             membrane_dot_disagg_dot_transfer__pb2.PrefillRequest.SerializeToString,
             membrane_dot_disagg_dot_transfer__pb2.PrefillResponse.FromString,
             options,
@@ -129,23 +131,26 @@ class Transfer:
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )
 
     @staticmethod
-    def BatchPrefill(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def BatchPrefill(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/membrane.disagg.Transfer/BatchPrefill',
+            "/membrane.disagg.Transfer/BatchPrefill",
             membrane_dot_disagg_dot_transfer__pb2.BatchPrefillRequest.SerializeToString,
             membrane_dot_disagg_dot_transfer__pb2.BatchPrefillResponse.FromString,
             options,
@@ -156,23 +161,26 @@ class Transfer:
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )
 
     @staticmethod
-    def Decode(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+    def Decode(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/membrane.disagg.Transfer/Decode',
+            "/membrane.disagg.Transfer/Decode",
             membrane_dot_disagg_dot_transfer__pb2.DecodeRequest.SerializeToString,
             membrane_dot_disagg_dot_transfer__pb2.DecodeResponse.FromString,
             options,
@@ -183,4 +191,5 @@ class Transfer:
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=True,
+        )

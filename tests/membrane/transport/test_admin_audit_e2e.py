@@ -58,9 +58,7 @@ class TestAdminAuditEndToEnd:
         # admin router writes the audit entry as 'admin.evict'
         # attributed to the (empty) caller subject; the
         # test asserts the entry is present.
-        resp = client.post(
-            "/admin/evict", json={"content_hash": ident.payload_hash}
-        )
+        resp = client.post("/admin/evict", json={"content_hash": ident.payload_hash})
         assert resp.status_code == 200
 
         # 4. Query /admin/audit and verify the entry was recorded.

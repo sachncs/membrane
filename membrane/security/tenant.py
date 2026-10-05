@@ -135,9 +135,7 @@ def can_read_tenant(
     """
     if not fragment_tenant or not caller_tenant:
         return False
-    return fragment_tenant == caller_tenant or (
-        public_readable and fragment_tenant == SYSTEM_TENANT
-    )
+    return fragment_tenant == caller_tenant or (public_readable and fragment_tenant == SYSTEM_TENANT)
 
 
 def can_write_tenant(
@@ -158,9 +156,7 @@ def can_write_tenant(
     """
     if not fragment_tenant or not caller_tenant:
         return False
-    return fragment_tenant == caller_tenant or (
-        public_writable and fragment_tenant == SYSTEM_TENANT
-    )
+    return fragment_tenant == caller_tenant or (public_writable and fragment_tenant == SYSTEM_TENANT)
 
 
 __all__ = [

@@ -53,9 +53,7 @@ def _fragment(payload_size: int) -> Fragment:
     )
 
 
-@pytest.mark.skipif(
-    not _BENCHMARK_AVAILABLE, reason="pytest-benchmark plugin not installed"
-)
+@pytest.mark.skipif(not _BENCHMARK_AVAILABLE, reason="pytest-benchmark plugin not installed")
 def test_store_and_retrieve_small(benchmark):
     """Benchmark a 64-byte store / retrieve cycle."""
     from membrane.node import Node
@@ -70,9 +68,7 @@ def test_store_and_retrieve_small(benchmark):
     benchmark(cycle)
 
 
-@pytest.mark.skipif(
-    not _BENCHMARK_AVAILABLE, reason="pytest-benchmark plugin not installed"
-)
+@pytest.mark.skipif(not _BENCHMARK_AVAILABLE, reason="pytest-benchmark plugin not installed")
 def test_hash_chain_append(benchmark):
     """Benchmark 100 audit-log appends."""
     from membrane.audit import AuditLog
@@ -86,9 +82,7 @@ def test_hash_chain_append(benchmark):
     benchmark(cycle)
 
 
-@pytest.mark.skipif(
-    not _BENCHMARK_AVAILABLE, reason="pytest-benchmark plugin not installed"
-)
+@pytest.mark.skipif(not _BENCHMARK_AVAILABLE, reason="pytest-benchmark plugin not installed")
 def test_chunk_manifest_round_trip(benchmark):
     """Benchmark chunk-manifest build + verify on a 16 KiB payload."""
     from membrane.wire.v3 import ChunkManifest
@@ -104,4 +98,3 @@ def test_chunk_manifest_round_trip(benchmark):
         manifest.verify_chunk(0, payload[:4096])
 
     benchmark(cycle)
-

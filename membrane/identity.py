@@ -102,13 +102,9 @@ class PayloadIdentity:
             ValueError: On any malformed field.
         """
         if not isinstance(self.payload_hash, str) or not self.payload_hash:
-            raise ValueError(
-                f"payload_hash must be a non-empty string, got {self.payload_hash!r}"
-            )
+            raise ValueError(f"payload_hash must be a non-empty string, got {self.payload_hash!r}")
         if self.dtype not in _DTYPE_VALUES:
-            raise ValueError(
-                f"dtype must be one of {sorted(_DTYPE_VALUES)}, got {self.dtype!r}"
-            )
+            raise ValueError(f"dtype must be one of {sorted(_DTYPE_VALUES)}, got {self.dtype!r}")
         for name, value in (
             ("layer_range", self.layer_range),
             ("token_span", self.token_span),
@@ -119,9 +115,7 @@ class PayloadIdentity:
             if start < 0 or end < 0:
                 raise ValueError(f"{name} bounds must be non-negative, got {value}")
             if start > end:
-                raise ValueError(
-                    f"{name} start must be <= end, got start={start}, end={end}"
-                )
+                raise ValueError(f"{name} start must be <= end, got start={start}, end={end}")
         head = self.head_range
         if not isinstance(head, tuple) or len(head) != 2:
             raise ValueError(f"head_range must be a 2-tuple, got {head!r}")
@@ -130,13 +124,9 @@ class PayloadIdentity:
             if start < 0 or end < 0:
                 raise ValueError(f"head_range bounds must be non-negative, got {head}")
             if start > end:
-                raise ValueError(
-                    f"head_range start must be <= end, got start={start}, end={end}"
-                )
+                raise ValueError(f"head_range start must be <= end, got start={start}, end={end}")
         if self.head_range == (-1, -1) and not self.shape:
-            raise ValueError(
-                "shape must be non-empty when head_range is the all-heads sentinel"
-            )
+            raise ValueError("shape must be non-empty when head_range is the all-heads sentinel")
         if not self.shape:
             raise ValueError("shape must be a non-empty tuple of ints")
 

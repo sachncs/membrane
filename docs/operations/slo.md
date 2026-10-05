@@ -1,50 +1,80 @@
 # SLOs and Error Budget
 
-This document defines Membrane's service-level objectives (SLOs) and the
-error-budget policy that follows from them. These targets are based on
-the throughput model in `membrane/model/throughput.py` and the
-observability surfaced via `/metrics` (Prometheus text exposition).
+Suggested service-level objectives for a Membrane deployment, and the
+Prometheus queries that measure them. Tune the targets to your workload;
+the queries are what matter.
 
-## Latency SLOs
+`/metrics` serves Prometheus text and requires a key with the `read`
+scope (the Kubernetes `ServiceMonitor` passes one).
 
-| Operation | Target | Measurement |
-|---|---|---|
-| `GET /retrieve` (cache hit) | p50 < 10 ms, p99 < 50 ms | histogram `membrane_request_duration_seconds{endpoint="/retrieve"}` |
-| `POST /store` (write through) | p50 < 25 ms, p99 < 100 ms | histogram `membrane_request_duration_seconds{endpoint="/store"}` |
-| `POST /prefill` (compute) | p50 < 500 ms, p99 < 2 s | histogram `membrane_request_duration_seconds{endpoint="/prefill"}` |
-| `GET /livez` | p99 < 5 ms | histogram `membrane_request_duration_seconds{endpoint="/livez"}` |
+## Metrics used
 
-## Availability SLO
+| Metric | Labels | Meaning |
+|--------|--------|---------|
+| `membrane_requests_total` | `endpoint`, `method`, `status` | Requests handled |
+| `membrane_errors_total` | `endpoint`, `exception` | Requests that raised |
+| `membrane_request_duration_seconds` | `endpoint` | Latency histogram |
+| `membrane_memory_used_bytes` / `membrane_memory_limit_bytes` | | Node memory |
+| `membrane_evictions_total` | `reason` | Evictions (`expired`, `lru`, …) |
+| `membrane_peers_healthy` / `membrane_peers_total` | | Cluster membership |
+| `membrane_replication_lag_seconds` | | Replication lag |
 
-* **Target**: 99.9 % of `/retrieve` requests return < 500 ms over a rolling
-  30-day window.
-* **Error budget**: 43.2 minutes of downtime per 30-day window.
+`endpoint` is the operation name: `store`, `retrieve`, `prefill`,
+`replicate`, `inventory`, `heartbeat`, `gossip`, and so on.
 
-## Error-rate SLO
+## Latency
 
-* **Target**: < 0.1 % of requests return 5xx over a rolling 30-day window.
-* **Error budget**: 2,160 failed requests per million.
+| Operation | Target |
+|-----------|--------|
+| `retrieve` | p99 < 50 ms |
+| `store` (`eventual`) | p99 < 100 ms |
+| `store` (`strong`) | p99 < 500 ms (includes one replica round trip) |
 
-## Capacity SLO
+```promql
+histogram_quantile(0.99,
+  sum by (le) (rate(membrane_request_duration_seconds_bucket{endpoint="retrieve"}[5m])))
+```
 
-* **Memory**: `membrane_memory_used_bytes / membrane_memory_limit_bytes < 0.9`
-* **Fragment count**: bounded by `max_count` config; `/readyz` returns 503
-  when capacity is exhausted.
+## Availability
+
+Target: 99.9 % of requests over 30 days do not return 5xx.
+
+```promql
+1 - (
+  sum(rate(membrane_requests_total{status=~"5.."}[30d]))
+  / sum(rate(membrane_requests_total[30d]))
+)
+```
+
+A `503` from a `strong` write that could not reach quorum counts against
+this budget: it means the cluster lacked healthy replicas.
+
+## Capacity
+
+A full node is normal: `store` evicts expired and then least-valuable
+fragments to make room, and `/readyz` stays ready. Watch the eviction
+mix instead:
+
+```promql
+sum by (reason) (rate(membrane_evictions_total[15m]))
+```
+
+Sustained `lru` evictions of fragments that are later requested again
+mean the node is undersized (see [Capacity planning](capacity.md)).
 
 ## Burn-rate alerts
 
+For a 99.9 % objective (error budget 0.1 %):
+
 | Severity | Condition |
-|---|---|
-| Page | Error budget burning at > 14.4x for 1 h (consumes 2 % per hour) |
-| Page | Error budget burning at > 6x for 6 h |
-| Ticket | Error budget burning at > 1x for 24 h |
+|----------|-----------|
+| Page | 5xx ratio > 14.4 × 0.1 % over 1 h **and** over 5 m |
+| Page | 5xx ratio > 6 × 0.1 % over 6 h **and** over 30 m |
+| Ticket | 5xx ratio > 1 × 0.1 % over 3 d |
 
-## Reporting
-
-The SLO dashboard consumes `/metrics` and `/metrics.json` directly. No
-external reporting tool is required.
+Also alert when `membrane_peers_healthy < membrane_peers_total` for
+more than 2 minutes.
 
 ## References
 
-* Google SRE workbook: https://sre.google/workbook/table-contents/
-* Prometheus SLO recording rules: https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#recording-rules
+- Google SRE workbook, *Alerting on SLOs*: https://sre.google/workbook/alerting-on-slos/

@@ -325,9 +325,7 @@ class Gossip:
             holders = self.directory.locate_fragment(h)
             owner = sorted(holders)[0] if holders else self.node.node_id
             owners_for_pair[h] = owner
-        ordered_pairs = sorted(
-            (h, owners_for_pair[h]) for h, _ in pairs
-        )
+        ordered_pairs = sorted((h, owners_for_pair[h]) for h, _ in pairs)
         tree = MerkleTree.from_inventory(ordered_pairs)
 
         # Surface every active tombstone to peers. There is no
@@ -370,17 +368,11 @@ class Gossip:
                     if resp:
                         self.handle(resp)
                 except NetworkError as exc:
-                    logger.warning(
-                        "gossip to %s failed (network): %s", target.node_id, exc
-                    )
+                    logger.warning("gossip to %s failed (network): %s", target.node_id, exc)
                 except (SchemaError, AuthError) as exc:
-                    logger.warning(
-                        "gossip to %s rejected (typed): %s", target.node_id, exc
-                    )
+                    logger.warning("gossip to %s rejected (typed): %s", target.node_id, exc)
                 except Exception as exc:  # pragma: no cover - defensive
-                    logger.exception(
-                        "gossip to %s failed (unexpected): %s", target.node_id, exc
-                    )
+                    logger.exception("gossip to %s failed (unexpected): %s", target.node_id, exc)
             self.stop_event.wait(timeout=self.config.gossip_interval_sec)
 
     def handle(self, data: JsonDict) -> JsonDict:

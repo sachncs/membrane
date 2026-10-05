@@ -49,7 +49,8 @@ class TestKVTensor:
             k = KVTensor(
                 layers=(
                     LayerKV(
-                        layer_idx=0, k=memoryview(b"\x00" * 16),
+                        layer_idx=0,
+                        k=memoryview(b"\x00" * 16),
                         v=memoryview(b"\x00" * 16),
                         head_range=(0, 1),
                         dtype=dtype,

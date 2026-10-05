@@ -270,11 +270,7 @@ class InMemoryClusterClient(MembraneClusterClient):
             bundle = self._by_handle.get(kv_handle)
             if bundle is None:
                 return ()
-            return tuple(
-                LayerLoad(layer_idx=i, kv_handle=kv_handle)
-                for i in layer_indices
-                if i in bundle
-            )
+            return tuple(LayerLoad(layer_idx=i, kv_handle=kv_handle) for i in layer_indices if i in bundle)
 
     def fetch_layer(
         self,

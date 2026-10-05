@@ -82,9 +82,7 @@ class MerkleTree:
         if not items:
             return cls(items=(), root=_internal_hash(b"", b""))
         ordered = tuple(sorted((str(h), str(n)) for h, n in items))
-        levels: list[list[bytes]] = [
-            [_leaf_hash(payload_hash, owner) for payload_hash, owner in ordered]
-        ]
+        levels: list[list[bytes]] = [[_leaf_hash(payload_hash, owner) for payload_hash, owner in ordered]]
         while len(levels[-1]) > 1:
             current = levels[-1]
             nxt: list[bytes] = []

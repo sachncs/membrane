@@ -82,9 +82,7 @@ class Exacts:
             locations: Set of node IDs holding the fragment. The
                 set is converted to a ``frozenset`` for immutability.
         """
-        self.entries[fragment.identity.payload_hash] = IndexEntry(
-            fragment=fragment, locations=frozenset(locations)
-        )
+        self.entries[fragment.identity.payload_hash] = IndexEntry(fragment=fragment, locations=frozenset(locations))
 
     def lookup(self, content_hash: str) -> IndexEntry | None:
         """Look up a fragment by its payload hash.

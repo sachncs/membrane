@@ -1,9 +1,9 @@
-# Membrane compatibility matrix (Phase 3.6.6)
+# Compatibility matrix
 
 The v3.0.0 release drops the v0.8 + 1.0.x compat shims. The
 matrix below is the single source of truth for which versions
 of the supported runtimes, models, and GPUs are known to
-work with the v3.0.0 series.
+work with the 3.x series.
 
 ## Python
 
@@ -11,51 +11,50 @@ work with the v3.0.0 series.
 |--------|--------|
 | 3.10   | supported |
 | 3.11   | supported |
-| 3.12   | supported (CI smoke) |
-| 3.13   | supported (primary CI) |
+| 3.12   | supported |
+| 3.13   | supported |
+
+All four versions run the full test suite in CI.
 
 ## Optional runtime deps
 
 | Package              | Optional dep group      | Required by                |
 |----------------------|-------------------------|---------------------------|
-| ``cryptography``      | (always required at 3.0+)| encryption at rest        |
+| ``cryptography``      | ``membrane[server]``     | TLS, encryption at rest   |
+| ``numpy`` / ``lz4`` / ``zstandard`` | ``membrane[transfer]`` | KV transfer engine, quantization |
 | ``lmcache>=0.5,<0.6``| ``membrane[lmcache]``    | LMCache backend storage    |
 | ``vllm>=0.10,<0.12`` | ``membrane[vllm]``       | vLLM KVConnector v1 backend |
 | ``sglang>=0.4,<0.6`` | ``membrane[sglang]``     | SGLang radix-cache backend |
 | ``tensorrt-llm>=0.20,<0.22`` | ``membrane[trtllm]`` | TensorRT-LLM backend |
-| ``fastapi`` / ``uvicorn`` / ``grpcio`` | ``membrane[server]`` | FastAPI + gRPC transport |
+| ``fastapi`` / ``uvicorn`` / ``httpx`` | ``membrane[server]`` | HTTP transport and clients |
+| ``grpcio`` | ``membrane[disagg]`` | Disaggregation gRPC surface |
 | ``redis>=8.1.0``     | ``membrane[server]``     | Redis persistence backend  |
 | ``torch>=2.13.0``    | ``membrane[gpu]``        | GPU compute backend        |
 | ``transformers`` / ``tokenizers`` / ``sentencepiece`` / ``protobuf`` | ``membrane[local-llm]`` | HuggingFace local LLM backend |
-| ``opentelemetry-sdk``| (always available)      | OTel tracer                |
-| ``opentelemetry-exporter-otlp-proto-grpc`` | (always available) | OTel OTLP exporter |
+| ``opentelemetry-*``  | ``membrane[otel]``       | OpenTelemetry tracing      |
+| ``boto3`` / ``google-cloud-secret-manager`` / ``hvac`` | ``membrane[secrets-aws]`` / ``[secrets-gcp]`` / ``[secrets-vault]`` | Secret backends |
 
 > Production deployments pin each of the optional deps to the
 > exact version that ships with the deployment image. The
 > CI matrix exercises a single canonical version of each
 > optional dep and reports drift in the smoke logs.
 
-The historical ``[secrets-aws]``, ``[secrets-gcp]``, and
-``[secrets-vault]`` extras have been folded into
-``[server]`` at 3.0.0; the ``membrane.secrets`` backend
-imports ``boto3`` / ``google-cloud-secret-manager`` /
-``hvac`` lazily so the runtime dep is only required when
-the corresponding backend is configured.
-
 ## Engines
 
 | Engine      | Version          | Plugin                                |
 |-------------|------------------|---------------------------------------|
-| vLLM        | 0.10.x – 0.11.x  | ``membrane.adapters.vllm`` (Phase 5)  |
-| SGLang      | 0.4.x – 0.5.x    | ``membrane.adapters.sglang`` (Phase 6)|
-| TensorRT-LLM | 0.20.x – 0.21.x| ``membrane.adapters.trtllm`` (Phase 6)|
+| vLLM        | 0.10.x – 0.11.x  | ``membrane.adapters.vllm``   |
+| SGLang      | 0.4.x – 0.5.x    | ``membrane.adapters.sglang`` |
+| TensorRT-LLM | 0.20.x – 0.21.x | ``membrane.adapters.trtllm`` |
+
+CI exercises the adapters against their in-memory clients; the engines
+themselves are not installed in CI.
 
 ## Transports
 
 | Transport     | Version | Notes                                  |
 |---------------|---------|----------------------------------------|
-| FastAPI HTTP  | 0.110+  | The v3.0.0 production transport         |
-| gRPC          | n/a     | Removed wholesale in 3.0.0; new gRPC ships in a 3.0.1 release |
+| HTTP (FastAPI) | 0.141+ | The only ``membrane serve`` transport; HTTPS with mTLS optional |
 
 ## Wire schema
 

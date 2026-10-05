@@ -224,18 +224,14 @@ class CompressionTransport:
             try:
                 import zstandard
             except ImportError as exc:
-                raise RuntimeError(
-                    "zstd compression requires the zstandard package"
-                ) from exc
+                raise RuntimeError("zstd compression requires the zstandard package") from exc
             compressor = zstandard.ZstdCompressor(level=self.level)
             body = compressor.compress(payload)
         else:  # lz4
             try:
                 import lz4.block
             except ImportError as exc:
-                raise RuntimeError(
-                    "lz4 compression requires the lz4 package"
-                ) from exc
+                raise RuntimeError("lz4 compression requires the lz4 package") from exc
             body = lz4.block.compress(payload)
         return struct.pack("<BI", self._METHOD_IDS[self.method], len(body)) + body
 
@@ -265,17 +261,13 @@ class CompressionTransport:
             try:
                 import zstandard
             except ImportError as exc:
-                raise RuntimeError(
-                    "zstd decompression requires the zstandard package"
-                ) from exc
+                raise RuntimeError("zstd decompression requires the zstandard package") from exc
             return zstandard.ZstdDecompressor().decompress(body)
         if method_id == 4:
             try:
                 import lz4.block
             except ImportError as exc:
-                raise RuntimeError(
-                    "lz4 decompression requires the lz4 package"
-                ) from exc
+                raise RuntimeError("lz4 decompression requires the lz4 package") from exc
             return lz4.block.decompress(body)
         raise ValueError(f"unknown compression method id: {method_id}")
 
@@ -295,9 +287,7 @@ class KVTransferEngine:
         quantizer: Any | None = None,
     ) -> None:
         self.memory_pool = memory_pool
-        self.transport = transport or CompressionTransport(
-            method=CompressionTransport.METHOD_RAW
-        )
+        self.transport = transport or CompressionTransport(method=CompressionTransport.METHOD_RAW)
         self.quantizer = quantizer
 
     def transfer_kv(
@@ -316,21 +306,11 @@ class KVTransferEngine:
         raw_k = k_handle.tobytes()
         raw_v = v_handle.tobytes()
         if self.quantizer is not None:
-            k_frame = self.quantizer.quantize(
-                _bytes_to_array(raw_k, k_handle.shape, k_handle.dtype)
-            )
-            v_frame = self.quantizer.quantize(
-                _bytes_to_array(raw_v, v_handle.shape, v_handle.dtype)
-            )
+            k_frame = self.quantizer.quantize(_bytes_to_array(raw_k, k_handle.shape, k_handle.dtype))
+            v_frame = self.quantizer.quantize(_bytes_to_array(raw_v, v_handle.shape, v_handle.dtype))
             raw_k = k_frame.to_bytes() if hasattr(k_frame, "to_bytes") else k_frame
             raw_v = v_frame.to_bytes() if hasattr(v_frame, "to_bytes") else v_frame
-        payload = (
-            b"MKVR"
-            + struct.pack("<I", len(raw_k))
-            + struct.pack("<I", len(raw_v))
-            + raw_k
-            + raw_v
-        )
+        payload = b"MKVR" + struct.pack("<I", len(raw_k)) + struct.pack("<I", len(raw_v)) + raw_k + raw_v
         with membrane_span(
             "transfer.kv",
             kv_bytes=str(len(payload)),
@@ -353,21 +333,15 @@ class KVTransferEngine:
         """Inverse of :func:`transfer_kv`."""
         payload = self.transport.decompress(envelope.compressed)
         if not payload.startswith(b"MKVR"):
-            raise ValueError(
-                f"bad magic in transfer envelope: {payload[:4]!r}"
-            )
+            raise ValueError(f"bad magic in transfer envelope: {payload[:4]!r}")
         offset = 4
         k_len = struct.unpack_from("<I", payload, offset)[0]
         offset += 4
         v_len = struct.unpack_from("<I", payload, offset)[0]
         offset += 4
-        k_handle = TensorHandle(
-            payload[offset : offset + k_len], envelope.shape, envelope.dtype
-        )
+        k_handle = TensorHandle(payload[offset : offset + k_len], envelope.shape, envelope.dtype)
         offset += k_len
-        v_handle = TensorHandle(
-            payload[offset : offset + v_len], envelope.shape, envelope.dtype
-        )
+        v_handle = TensorHandle(payload[offset : offset + v_len], envelope.shape, envelope.dtype)
         return k_handle, v_handle
 
 

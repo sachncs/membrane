@@ -281,9 +281,7 @@ def _read_block(manager: Any, layer: int, kind: str, block_indices: tuple[int, .
         bytes: Concatenated block bytes.
     """
     if hasattr(manager, "get_block_bytes"):
-        return bytes(
-            b"".join(manager.get_block_bytes(layer=layer, kind=kind, block_id=b) for b in block_indices)
-        )
+        return bytes(b"".join(manager.get_block_bytes(layer=layer, kind=kind, block_id=b) for b in block_indices))
     if hasattr(manager, "k_cache") and hasattr(manager, "v_cache"):
         buf = manager.k_cache if kind == "k" else manager.v_cache
         if isinstance(buf, dict):

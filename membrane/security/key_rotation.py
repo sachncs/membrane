@@ -61,9 +61,7 @@ class RotatingKeyProvider(KeyProvider):
             ValueError: When ``initial_key`` is not 32 bytes.
         """
         if len(initial_key) != 32:
-            raise ValueError(
-                f"initial_key must be 32 bytes, got {len(initial_key)}"
-            )
+            raise ValueError(f"initial_key must be 32 bytes, got {len(initial_key)}")
         self._lock = threading.RLock()
         self._versions: list[KeyVersion] = [KeyVersion(version=1, key=initial_key)]
         self._active: bytes = initial_key
@@ -91,9 +89,7 @@ class RotatingKeyProvider(KeyProvider):
             ValueError: When ``new_key`` is not 32 bytes.
         """
         if len(new_key) != 32:
-            raise ValueError(
-                f"new_key must be 32 bytes, got {len(new_key)}"
-            )
+            raise ValueError(f"new_key must be 32 bytes, got {len(new_key)}")
         with self._lock:
             new_version = self._versions[-1].version + 1
             self._versions.append(KeyVersion(version=new_version, key=new_key))

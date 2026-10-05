@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from membrane.transfer_engine import (
@@ -88,14 +90,13 @@ class TestCompressionTransport:
 
     def test_truncated_payload_raises(self):
         with pytest.raises(ValueError, match="too short"):
-            CompressionTransport(method=CompressionTransport.METHOD_DEFLATE).decompress(
-                b"deflate\x00"
-            )
+            CompressionTransport(method=CompressionTransport.METHOD_DEFLATE).decompress(b"deflate\x00")
 
-    def test_zstd_requires_optional_dependency(self):
+    def test_zstd_requires_optional_dependency(self, monkeypatch):
         # The zstd path raises a clear error when zstandard is
-        # missing; tests run without the optional package so the
-        # branch is exercised here.
+        # missing. A None entry in sys.modules makes the import
+        # fail even when the package is installed.
+        monkeypatch.setitem(sys.modules, "zstandard", None)
         t = CompressionTransport(method=CompressionTransport.METHOD_ZSTD)
         with pytest.raises(RuntimeError, match="zstandard"):
             t.compress(b"x")
@@ -129,7 +130,7 @@ class TestKVTransferEngine:
         pool = CudaMemoryPool()
         engine = KVTransferEngine(memory_pool=pool)
         envelope = TransferEnvelope(
-                    compressed=bytes.fromhex("01" + (12).to_bytes(4, "little").hex() + b"badmagicdata".hex()),
+            compressed=bytes.fromhex("01" + (12).to_bytes(4, "little").hex() + b"badmagicdata".hex()),
             compression="raw",
             shape=(2, 2),
             dtype="float32",

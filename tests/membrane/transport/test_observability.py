@@ -40,8 +40,12 @@ def test_readyz_returns_ready(client):
     assert resp.json()["status"] == "ready"
 
 
-def test_readyz_returns_503_when_over_capacity():
-    """``GET /readyz`` returns 503 when the node's memory budget is exhausted."""
+def test_readyz_stays_ready_when_memory_is_full():
+    """A full node is a warm cache, not an unhealthy one: ``/readyz`` stays 200.
+
+    ``Node.store`` evicts to make room, so failing readiness on a full
+    budget would pull every pod of a busy cluster out of rotation.
+    """
     from tests.conftest import make_fragment
 
     node = Node("n1", max_memory_bytes=10)
@@ -63,7 +67,7 @@ def test_readyz_returns_503_when_over_capacity():
     node.memory_usage = node.max_memory_bytes
     test_client = TestClient(app)
     resp = test_client.get("/readyz")
-    assert resp.status_code == 503
+    assert resp.status_code == 200
 
 
 def test_metrics_returns_prometheus_text(client):

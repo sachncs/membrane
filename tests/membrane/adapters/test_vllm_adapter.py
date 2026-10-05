@@ -133,6 +133,7 @@ class TestMembraneVLLMConnector:
         if VLLM_AVAILABLE:
             connector = _build_connector()
             from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorBase
+
             assert isinstance(connector, KVConnectorBase)
         else:
             assert MembraneVLLMConnector is not None

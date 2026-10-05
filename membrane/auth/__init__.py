@@ -57,7 +57,17 @@ class AuthRequest:
 
 
 class AuthBackendError(Exception):
-    """Raised by authenticators when the request is rejected."""
+    """Raised by authenticators when the request is rejected.
+
+    Transports translate this to ``401 Unauthorized``.
+    """
+
+
+class AuthForbiddenError(AuthBackendError):
+    """Raised when an authenticated caller lacks the required scope.
+
+    Transports translate this to ``403 Forbidden``.
+    """
 
 
 @runtime_checkable
@@ -113,13 +123,14 @@ def require_scope(context: AuthContext, scope: str) -> None:
     for granted in context.scopes:
         if scope in SCOPES.get(granted, frozenset()):
             return
-    raise AuthBackendError(f"missing required scope: {scope}")
+    raise AuthForbiddenError(f"missing required scope: {scope}")
 
 
 __all__ = [
     "SCOPES",
     "AuthBackendError",
     "AuthContext",
+    "AuthForbiddenError",
     "AuthRequest",
     "Authenticator",
     "require_scope",

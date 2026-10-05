@@ -111,6 +111,7 @@ class TestMerkleTree:
 
 def _cfg(node_id: str = "local"):
     from membrane.network.config import ClusterConfig
+
     return ClusterConfig(
         node_id=node_id,
         peers=[],

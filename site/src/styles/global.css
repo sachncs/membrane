@@ -95,6 +95,20 @@
     color-scheme: dark;
   }
 
+  /* Decorative glows are wider than small screens; never let them
+     create a horizontal scrollbar. */
+  html,
+  body {
+    overflow-x: clip;
+  }
+
+  /* Inline-code styling must not leak into fenced code blocks. */
+  .prose pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+  }
+
   *,
   *::before,
   *::after {

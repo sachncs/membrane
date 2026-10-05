@@ -57,6 +57,11 @@ def parse_keyfile(text: str) -> dict[str, APIKey]:
         key = parts[0].strip()
         subject = parts[1].strip()
         scopes = frozenset(s.strip() for s in parts[2].split(",") if s.strip())
+        # An empty subject would read as "unauthenticated" downstream and
+        # bypass the per-tenant read check, so such lines are rejected.
+        if not key or not subject:
+            logger.warning("ignoring keyfile line with empty key or subject: %r", raw_line)
+            continue
         result[key] = APIKey(key=key, subject=subject, scopes=scopes)
     return result
 

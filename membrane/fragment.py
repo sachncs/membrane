@@ -71,7 +71,7 @@ def _validate_tenant_id(tenant_id: str) -> None:
         raise ValueError("tenant_id must be a non-empty string")
     if len(tenant_id) > 128:
         raise ValueError(f"tenant_id must be <= 128 chars, got {len(tenant_id)}")
-    forbidden = set(" :/\\\"\n\t\r")
+    forbidden = set(' :/\\"\n\t\r')
     if any(ch in forbidden for ch in tenant_id):
         raise ValueError(f"tenant_id contains forbidden character in {tenant_id!r}")
 
@@ -175,16 +175,11 @@ class Fragment:
         if self.ttl < 0:
             raise ValueError(f"Fragment ttl must be >= 0, got {self.ttl}")
         if not 0.0 <= self.reuse_score <= 1.0:
-            raise ValueError(
-                f"Fragment reuse_score must be in [0, 1], got {self.reuse_score}"
-            )
+            raise ValueError(f"Fragment reuse_score must be in [0, 1], got {self.reuse_score}")
         if self.version_id < 1:
             raise ValueError(f"Fragment version_id must be >= 1, got {self.version_id}")
         if self.consistency not in _CONSISTENCY_LEVELS:
-            raise ValueError(
-                f"Fragment consistency must be one of {_CONSISTENCY_LEVELS}, "
-                f"got {self.consistency!r}"
-            )
+            raise ValueError(f"Fragment consistency must be one of {_CONSISTENCY_LEVELS}, got {self.consistency!r}")
         _validate_tenant_id(self.tenant_id)
         if self.hlc < 0:
             raise ValueError(f"Fragment hlc must be >= 0, got {self.hlc}")
@@ -192,12 +187,10 @@ class Fragment:
         # (legacy / tests) or a 64-character hex digest. Anything
         # else indicates a wire-side bug.
         if self.fingerprint_compat and (
-            len(self.fingerprint_compat) != 64
-            or not all(c in "0123456789abcdef" for c in self.fingerprint_compat)
+            len(self.fingerprint_compat) != 64 or not all(c in "0123456789abcdef" for c in self.fingerprint_compat)
         ):
             raise ValueError(
-                "fingerprint_compat must be the empty string or a 64-char hex digest, "
-                f"got {self.fingerprint_compat!r}"
+                f"fingerprint_compat must be the empty string or a 64-char hex digest, got {self.fingerprint_compat!r}"
             )
 
     def hlc_state(self) -> HLC:
@@ -221,10 +214,7 @@ class Fragment:
             Fragment: New instance with the updated field.
         """
         if level not in _CONSISTENCY_LEVELS:
-            raise ValueError(
-                f"Fragment consistency must be one of {_CONSISTENCY_LEVELS}, "
-                f"got {level!r}"
-            )
+            raise ValueError(f"Fragment consistency must be one of {_CONSISTENCY_LEVELS}, got {level!r}")
         return Fragment(
             identity=self.identity,
             payload_ref=self.payload_ref,
@@ -307,13 +297,9 @@ class Fragment:
                 ``other.tenant_id != self.tenant_id``.
         """
         if other.identity != self.identity:
-            raise ValueError(
-                f"cannot merge fragments with different identity: {self.identity} vs {other.identity}"
-            )
+            raise ValueError(f"cannot merge fragments with different identity: {self.identity} vs {other.identity}")
         if other.tenant_id != self.tenant_id:
-            raise ValueError(
-                f"cannot merge fragments across tenants: {self.tenant_id} vs {other.tenant_id}"
-            )
+            raise ValueError(f"cannot merge fragments across tenants: {self.tenant_id} vs {other.tenant_id}")
         if self.hlc >= other.hlc:
             return self
         return Fragment(

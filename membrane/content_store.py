@@ -151,9 +151,7 @@ class InProcessBytes:
         """
         with self._lock:
             if self.capacity_bytes is not None and len(data) > self.capacity_bytes:
-                raise ValueError(
-                    f"payload {len(data)} bytes exceeds capacity_bytes {self.capacity_bytes}"
-                )
+                raise ValueError(f"payload {len(data)} bytes exceeds capacity_bytes {self.capacity_bytes}")
             self._store[key] = data
             self._used_bytes = sum(len(b) for b in self._store.values())
 
@@ -328,14 +326,8 @@ class FilesystemBlob:
             ) as tmp:
                 tmp_path = tmp.name
             src_size = os.path.getsize(source_path)
-            if (
-                platform.system() == "Linux"
-                and hasattr(os, "sendfile")
-                and src_size > 0
-            ):
-                with open(tmp_path, "wb") as dst, open(
-                    source_path, "rb"
-                ) as src:
+            if platform.system() == "Linux" and hasattr(os, "sendfile") and src_size > 0:
+                with open(tmp_path, "wb") as dst, open(source_path, "rb") as src:
                     os.sendfile(dst.fileno(), src.fileno(), 0, src_size)
             else:
                 shutil.copyfile(source_path, tmp_path)
@@ -381,9 +373,7 @@ class FilesystemBlob:
 
         version_keys = getattr(self._key_provider, "version_keys", None)
         if version_keys is not None:
-            tenant_keys = tuple(
-                derive_tenant_key(k, self.tenant_id, key) for k in version_keys()
-            )
+            tenant_keys = tuple(derive_tenant_key(k, self.tenant_id, key) for k in version_keys())
             try:
                 return decrypt_payload_with_versions(blob, tenant_keys)
             except RuntimeError:

@@ -44,9 +44,7 @@ class TestV3Integration:
         # 1. Build the storage with a RotatingKeyProvider so the
         # post-test rotation proves legacy reads survive.
         rotation = RotatingKeyProvider(initial_key=b"\x00" * 32)
-        store = EncryptedInProcessBytes(
-            tenant_id="acme", key_provider=rotation
-        )
+        store = EncryptedInProcessBytes(tenant_id="acme", key_provider=rotation)
         node = Node(
             node_id="v3-demo",
             max_memory_bytes=10_000,
@@ -56,9 +54,7 @@ class TestV3Integration:
         demoted: list[tuple[str, str]] = []
         migration = TierMigration(
             policy=TierPolicy(),
-            on_demote=lambda frag, tier: demoted.append(
-                (frag.identity.payload_hash, tier)
-            ),
+            on_demote=lambda frag, tier: demoted.append((frag.identity.payload_hash, tier)),
         )
         node.add_eviction_callback(migration.on_evict)
         log = AuditLog()
@@ -88,9 +84,7 @@ class TestV3Integration:
             app.state.audit_log = log
             app.include_router(create_admin_router())
             client2 = TestClient(app)
-            client2.post(
-                "/admin/policy", json={"min_reuse_score": 0.5, "demand_threshold": 2}
-            )
+            client2.post("/admin/policy", json={"min_reuse_score": 0.5, "demand_threshold": 2})
             log.record(
                 actor="ops",
                 action="admin.policy.update",

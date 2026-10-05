@@ -53,5 +53,5 @@ def test_store_and_retrieve_smoke():
         node.store(frag, is_primary=True)
         node.retrieve(frag.identity.payload_hash)
     elapsed = time.perf_counter() - start
-    print(f"\n[bench] 100x store+retrieve: {elapsed*1000:.1f} ms")
+    print(f"\n[bench] 100x store+retrieve: {elapsed * 1000:.1f} ms")
     assert elapsed < 5.0

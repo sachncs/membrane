@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import json
 import logging
+import ssl
 import time
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from membrane.errors import NetworkError
@@ -34,6 +36,51 @@ logger = logging.getLogger(__name__)
 
 #: A JSON object (used for every Membrane wire payload).
 JsonDict = dict[str, Any]
+
+
+@dataclass(frozen=True)
+class PeerCredentials:
+    """How this node reaches and authenticates to its peers.
+
+    Attributes:
+        scheme: ``"http"`` or ``"https"`` for peer URLs built from
+            a bare ``host:port``.
+        bearer_token: API key sent as ``Authorization: Bearer``
+            on every peer request. Empty to send none.
+        ssl_context: Client TLS context (CA bundle plus, for mTLS,
+            this node's client certificate). ``None`` uses the
+            system trust store.
+    """
+
+    scheme: str = "http"
+    bearer_token: str = ""
+    ssl_context: ssl.SSLContext | None = None
+
+
+_DEFAULT_CREDENTIALS = PeerCredentials()
+
+
+def get_default_peer_credentials() -> PeerCredentials:
+    """Return the process-wide :class:`PeerCredentials`."""
+    return _DEFAULT_CREDENTIALS
+
+
+def set_default_peer_credentials(credentials: PeerCredentials) -> None:
+    """Install the process-wide :class:`PeerCredentials`.
+
+    :class:`~membrane.server.Server` calls this at startup so every
+    :class:`Peer` the cluster layer creates uses the same scheme and
+    credentials.
+    """
+    global _DEFAULT_CREDENTIALS
+    _DEFAULT_CREDENTIALS = credentials
+
+
+def peer_url(host_port: str) -> str:
+    """Return the base URL for a bare ``host:port`` peer address."""
+    if "://" in host_port:
+        return host_port
+    return f"{get_default_peer_credentials().scheme}://{host_port}"
 
 
 @runtime_checkable
@@ -90,8 +137,9 @@ class HTTPTransport:
       costs do not dominate the cluster's p50 latency.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, ssl_context: ssl.SSLContext | None = None) -> None:
         self._client: Any | None = None
+        self.ssl_context = ssl_context
 
     def _get_client(self) -> Any:
         if self._client is None:
@@ -106,6 +154,7 @@ class HTTPTransport:
                     timeout=httpx.Timeout(60.0),
                     limits=limits,
                     follow_redirects=False,
+                    verify=self.ssl_context if self.ssl_context is not None else True,
                 )
             except ImportError:
                 logger.warning("HTTPTransport: httpx not installed; falling back to None")
@@ -139,12 +188,9 @@ class HTTPTransport:
 
         parsed = urlparse(url)
         pinned_ip: str | None = None
+        extensions: dict[str, Any] = {}
         policy = get_default_allowlist()
-        if (
-            policy.block_private
-            and parsed.hostname
-            and not policy.is_host_allowed(parsed.hostname.lower())
-        ):
+        if policy.block_private and parsed.hostname and not policy.is_host_allowed(parsed.hostname.lower()):
             try:
                 addresses = _resolve_addresses(parsed.hostname)
             except OSError:
@@ -160,6 +206,9 @@ class HTTPTransport:
                 netloc = pinned_ip if port is None else f"{pinned_ip}:{port}"
                 url = parsed._replace(netloc=netloc).geturl()
                 headers = {**headers, "Host": host_header}
+                # Without this, TLS would verify the certificate
+                # against the pinned IP instead of the hostname.
+                extensions["sni_hostname"] = host_header
 
         try:
             resp = client.request(
@@ -168,21 +217,17 @@ class HTTPTransport:
                 content=body,
                 headers=headers,
                 timeout=timeout_sec,
+                extensions=extensions or None,
             )
         except Exception as exc:
-            raise NetworkError(
-                f"transport failure on {method} {parsed.hostname or url}: {exc}"
-            ) from exc
+            raise NetworkError(f"transport failure on {method} {parsed.hostname or url}: {exc}") from exc
 
         if 300 <= resp.status_code < 400:
             raise NetworkError(
-                f"redirect not followed ({resp.status_code}) on {method} {url}; "
-                "re-validate the target before retrying"
+                f"redirect not followed ({resp.status_code}) on {method} {url}; re-validate the target before retrying"
             )
         if resp.status_code >= 400:
-            raise NetworkError(
-                f"HTTP {resp.status_code} from {method} {url}"
-            )
+            raise NetworkError(f"HTTP {resp.status_code} from {method} {url}")
         raw = resp.text
         return json.loads(raw) if raw else {}
 
@@ -207,6 +252,7 @@ class Peer:
         max_retries: int = 3,
         retry_delay_sec: float = 1.0,
         local_peer_cn: str = "",
+        credentials: PeerCredentials | None = None,
     ) -> None:
         """Initialize the client.
 
@@ -226,9 +272,13 @@ class Peer:
                 :class:`~membrane.network.membership.Membership`
                 records and validates the caller's identity at
                 the membership layer.
+            credentials: Scheme / bearer token / TLS context for
+                this peer. Defaults to
+                :func:`get_default_peer_credentials`.
         """
-        self.base_url = base_url.rstrip("/")
-        self.transport = transport or HTTPTransport()
+        self.credentials = credentials or get_default_peer_credentials()
+        self.base_url = peer_url(base_url).rstrip("/")
+        self.transport = transport or HTTPTransport(ssl_context=self.credentials.ssl_context)
         self.timeout_sec = timeout_sec
         self.max_retries = max_retries
         self.retry_delay_sec = retry_delay_sec
@@ -247,6 +297,8 @@ class Peer:
         headers = {"User-Agent": "membrane-peer/2.0"}
         if self.local_peer_cn:
             headers["X-Local-Peer-CN"] = self.local_peer_cn
+        if self.credentials.bearer_token:
+            headers["Authorization"] = f"Bearer {self.credentials.bearer_token}"
         return headers
 
     # ------------------------------------------------------------------
@@ -260,9 +312,7 @@ class Peer:
             JsonDict | None: Parsed JSON response, or ``None`` on
             failure.
         """
-        return self.request_with_retry(
-            "GET", "/heartbeat", extra_headers=self.base_headers
-        )
+        return self.request_with_retry("GET", "/heartbeat", extra_headers=self.base_headers)
 
     def get_inventory(self) -> JsonDict | None:
         """Send ``GET /inventory`` to the peer."""
@@ -417,7 +467,9 @@ class Peer:
         """
         url = f"{self.base_url}{path}"
         data = json.dumps(payload).encode() if payload else None
-        headers = {"Content-Type": "application/json"} if payload else {}
+        headers = dict(self.base_headers)
+        if payload:
+            headers["Content-Type"] = "application/json"
         if extra_headers:
             headers.update(extra_headers)
         last_error: Exception | None = None

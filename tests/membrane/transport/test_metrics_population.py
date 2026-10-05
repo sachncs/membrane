@@ -213,3 +213,50 @@ class TestFastAPIIntegration:
         # when no traffic has hit the server. Either way the
         # endpoint answered 200.
         assert resp.headers["content-type"].startswith("text/plain")
+
+
+def test_labeled_series_are_exported_separately():
+    """Labels used to be dropped, collapsing every endpoint into one number."""
+    from membrane.metrics import MetricsCollector, TransportMetrics
+
+    registry = MetricsCollector()
+    metrics = TransportMetrics(registry)
+    metrics.requests.inc(endpoint="store", method="POST", status="200")
+    metrics.requests.inc(endpoint="store", method="POST", status="503")
+    metrics.requests.inc(endpoint="retrieve", method="GET", status="200")
+    metrics.duration.observe(0.02, endpoint="store")
+
+    text = registry.render()
+    assert 'membrane_requests_total{endpoint="store",method="POST",status="503"} 1.0' in text
+    assert 'membrane_requests_total{endpoint="retrieve",method="GET",status="200"} 1.0' in text
+    assert 'membrane_request_duration_seconds_bucket{endpoint="store",le="0.025"} 1' in text
+    assert 'membrane_request_duration_seconds_count{endpoint="store"} 1' in text
+    assert metrics.requests.value == 3.0
+    assert metrics.requests.get(endpoint="store", method="POST", status="503") == 1.0
+
+
+def test_label_values_are_escaped():
+    from membrane.metrics import MetricsCollector
+
+    registry = MetricsCollector()
+    registry.counter("membrane_test_total", "t", labels=("tenant",)).inc(tenant='a"b\\c')
+    assert 'membrane_test_total{tenant="a\\"b\\\\c"} 1.0' in registry.render()
+
+
+def test_server_scrape_reports_live_node_state():
+    """A running Server exports node gauges and labeled eviction counts on /metrics."""
+    from fastapi.testclient import TestClient
+
+    from membrane.node import Node
+    from membrane.server import Server
+
+    server = Server(node=Node("m1", max_memory_bytes=2000), host="127.0.0.1", port=0)
+    client = TestClient(server.transport.app)
+    for i in range(6):
+        client.post("/prefill", json={"prompt_tokens": [i, 2, 3, 4, 5, 6, 7, 8, 9, 10], "model_id": "m"})
+    text = client.get("/metrics").text
+    fragments = len(server.node.fragments)
+    assert f"membrane_fragments_total {float(fragments)}" in text
+    assert 'membrane_evictions_total{reason="capacity"}' in text
+    assert 'membrane_requests_total{endpoint="prefill",method="POST",status="200"} 6.0' in text
+    assert f'membrane_tenant_fragments{{tenant="public"}} {float(fragments)}' in text

@@ -65,9 +65,7 @@ class TestPrefillService:
         service = PrefillService(backend=backend)
         request = PrefillRequest(request_id="r1", model_id="m", token_ids=(1, 2, 3))
         service.prefill(request)
-        second = service.prefill(
-            PrefillRequest(request_id="r2", model_id="m", token_ids=(1, 2, 3))
-        )
+        second = service.prefill(PrefillRequest(request_id="r2", model_id="m", token_ids=(1, 2, 3)))
         assert second.cached_prefix_len == 3
         assert backend.calls == [("r1", 0), ("r2", 3)]
 
@@ -75,9 +73,7 @@ class TestPrefillService:
         backend = NoopPrefillBackend()
         service = PrefillService(backend=backend)
         service.prefill(PrefillRequest(request_id="r1", model_id="m", token_ids=(1, 2, 3)))
-        second = service.prefill(
-            PrefillRequest(request_id="r2", model_id="m", token_ids=(1, 2, 3, 4))
-        )
+        second = service.prefill(PrefillRequest(request_id="r2", model_id="m", token_ids=(1, 2, 3, 4)))
         assert second.cached_prefix_len == 3
 
 
@@ -94,10 +90,7 @@ class TestBatchPrefill:
     def test_batch_preserves_order(self):
         backend = NoopPrefillBackend()
         service = PrefillService(backend=backend)
-        requests = [
-            PrefillRequest(request_id=f"r{i}", model_id="m", token_ids=(i, i + 1))
-            for i in range(5)
-        ]
+        requests = [PrefillRequest(request_id=f"r{i}", model_id="m", token_ids=(i, i + 1)) for i in range(5)]
         result = batch_prefill(service, requests)
         assert isinstance(result, BatchPrefillResult)
         assert [r.request_id for r in result.responses] == [f"r{i}" for i in range(5)]

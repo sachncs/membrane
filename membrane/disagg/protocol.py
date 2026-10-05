@@ -79,11 +79,7 @@ class PrefillRequest:
             request_id=payload["request_id"],
             model_id=payload["model_id"],
             token_ids=tuple(payload.get("token_ids", ())),
-            token_type_ids=(
-                tuple(payload["token_type_ids"])
-                if payload.get("token_type_ids") is not None
-                else None
-            ),
+            token_type_ids=(tuple(payload["token_type_ids"]) if payload.get("token_type_ids") is not None else None),
             max_decode_tokens=int(payload.get("max_decode_tokens", 256)),
             fingerprint=payload.get("fingerprint", ""),
         )

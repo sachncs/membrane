@@ -4,7 +4,6 @@
 import logging
 
 from membrane.analytical import Isolation, Tenant, Workload
-from membrane.canonical import Canonical
 from membrane.delta import DeltaEncoder
 from membrane.economic import Economic
 from membrane.fragment import Fragment
@@ -58,9 +57,7 @@ def main():
     frag = make_fragment("demo-1")
     cache.store_kv("prefix-1", [frag])
     hit = cache.lookup_kv("demo-1")
-    logger.info(
-        f"  Cache hit: {hit is not None}, hit_rate={cache.get_hit_rate():.2f}\n"
-    )
+    logger.info(f"  Cache hit: {hit is not None}, hit_rate={cache.get_hit_rate():.2f}\n")
 
     # Phase 2: Regional Replication
     logger.info("[Phase 2] Origin → Replica Promotion")
@@ -85,9 +82,7 @@ def main():
     new = (*tuple(range(10)), 99, 100)
     delta = enc.encode(base, new)
     reconstructed = enc.decode(base, delta)
-    logger.info(
-        f"  Delta appended={delta.appended_tokens}, decode_ok={reconstructed == new}\n"
-    )
+    logger.info(f"  Delta appended={delta.appended_tokens}, decode_ok={reconstructed == new}\n")
 
     # Phase 6: Context Graph
     logger.info("[Phase 6] Weighted Graph + Cluster Replication")
@@ -128,14 +123,10 @@ def main():
     logger.info(f"  Best node for high-value fragment: {best}\n")
 
     # Phase 9: Multi-Tenant Deduplication
-    logger.info("[Phase 9] Tenant Isolation + Canonical Store")
+    logger.info("[Phase 9] Tenant Isolation")
     ti = Isolation(policy=Tenant(allow_tool_traces=True))
     sharedmake_fragment = make_fragment("shared", reuse_score=0.9)
     logger.info(f"  Can share across tenants: {ti.can_share(sharedmake_fragment, 't1', 't2')}")
-    cs = Canonical()
-    cs.store_canonical(sharedmake_fragment, "t1")
-    cs.store_canonical(sharedmake_fragment, "t2")
-    logger.info(f"  Shared fragments for t1: {len(cs.get_shared_fragments('t1'))}\n")
 
     # Phase 10: Compute-Memory Convergence
     logger.info("[Phase 10] Dynamic Role + Joint Optimization")
@@ -147,15 +138,12 @@ def main():
     role = mgr.evaluate_role(node, state)
     logger.info(f"  Node role: {role.value}")
     opt = Joint()
-    decision = opt.optimize(
-        sharedmake_fragment, [node], {"n1": Telemetry("n1", 10.0, 0.0, 0.0, 0.0)}
-    )
-    logger.info(
-        f"  Placement: compute={decision.compute_node_id}, memory={decision.memory_node_id}"
-    )
+    decision = opt.optimize(sharedmake_fragment, [node], {"n1": Telemetry("n1", 10.0, 0.0, 0.0, 0.0)})
+    logger.info(f"  Placement: compute={decision.compute_node_id}, memory={decision.memory_node_id}")
 
     logger.info("\n=== Demo Complete ===")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

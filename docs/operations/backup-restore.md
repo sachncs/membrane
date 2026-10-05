@@ -1,150 +1,65 @@
 # Backup and Restore
 
-Membrane v3.0.0 stores fragment payloads in a **dual-store**
-architecture: Redis carries metadata (frame magic, identity
-sub-dict, lifecycle counters) and the canonical payload
-bytes live in the **encrypted FilesystemBlob** store at the
-local filesystem root configured by ``FilesystemBlob(root=...)``
-(``membrane/content_store.py:FilesystemBlob``). A disaster
-recovery procedure that backs up only the Redis RDB will
-silently lose every fragment because the bytes are not in
-the Redis snapshot.
+Membrane is a cache: every fragment can be recomputed by running
+prefill again. Backups therefore protect warm-cache performance, not
+correctness. Decide first whether a cold start after a disaster is
+acceptable; if it is, you only need replicas.
 
-This document covers backup, restore, integrity check, and
-disaster recovery for both halves of the store.
+## What holds state
+
+| State | Where | Needed to restore a node |
+|-------|-------|--------------------------|
+| Fragment metadata | Redis (`--redis`), keys prefixed `membrane:` | yes |
+| KV bytes | `<data-dir>/blobs` on the node's volume (`--data-dir`), AES-256-GCM encrypted | yes |
+| Data key | `<data-dir>/master.key`, or the file given with `--data-key-file` | yes; without it the blobs are unreadable |
+| API keys, TLS material | your secret store | yes |
+
+Without `--redis` and `--data-dir` a node keeps everything in memory
+and restarts empty; peers still hold their replicas.
+
+On startup a node with `--redis` reloads the fragments listed for its
+node id, keeping those that are metadata-only or whose bytes are still
+in its data directory. It drops the rest from its index.
 
 ## Backup
 
-Both halves of the dual-store must be backed up:
-
-### Redis metadata snapshot
-
-Redis snapshots are the canonical metadata backup
-mechanism. Membrane uses Redis's RDB persistence
-(`SAVE` / `BGSAVE`) for point-in-time snapshots.
-
-```cron
-# /etc/cron.d/membrane-backup
-0 */6 * * * membrane /usr/local/bin/membrane-backup.sh
-```
-
-`membrane-backup.sh`:
+**Redis.** Use Redis persistence (AOF or RDB) and copy the dump files
+off the host on a schedule, for example:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-REDIS_HOST="${MEMBRANE_REDIS_HOST:-redis}"
-REDIS_PORT="${MEMBRANE_REDIS_PORT:-6379}"
-BUCKET="${MEMBRANE_BACKUP_BUCKET:-s3://membrane-backups/redis}"
-TS="$(date -u +%Y%m%dT%H%M%SZ)"
-
-redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" BGSAVE
-sleep 5
-redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --rdb /tmp/membrane-${TS}.rdb
-aws s3 cp /tmp/membrane-${TS}.rdb "${BUCKET}/${TS}.rdb"
-rm /tmp/membrane-${TS}.rdb
+redis-cli -h "$REDIS_HOST" BGSAVE
+# wait for LASTSAVE to change, then copy dump.rdb to object storage
 ```
 
-### Filesystem blob snapshot
+**Data directory.** Snapshot each node's volume. In Kubernetes these
+are the `data-membrane-N` PersistentVolumeClaims created by the
+StatefulSet; use `VolumeSnapshot` objects or your storage provider's
+snapshots. Under Docker Compose it is the `membrane-data` volume.
 
-The encrypted blob store lives under the directory passed
-to ``FilesystemBlob(root=...)``; the v3.0.0 production default
-is ``/var/lib/membrane/blobs`` on each node. Operators that
-run Membrane as a Kubernetes StatefulSet should snapshot the
-PVC named ``membrane-data-membrane-N`` for each pod; operators
-that run it under docker-compose should snapshot the
-``membrane-blobs`` bind mount.
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-BLOB_ROOT="${MEMBRANE_BLOB_ROOT:-/var/lib/membrane/blobs}"
-BUCKET="${MEMBRANE_BACKUP_BUCKET:-s3://membrane-backups/blobs}"
-TS="$(date -u +%Y%m%dT%H%M%SZ)"
-
-# Per-node incremental snapshot. Each node's blob root is
-# independent because content-addressing makes the bytes
-# dedup-able across the cluster; the snapshot tool should
-# gzip the tarball to keep S3 costs low.
-tar -C "$BLOB_ROOT" -czf "/tmp/membrane-blobs-${TS}.tar.gz" .
-aws s3 cp "/tmp/membrane-blobs-${TS}.tar.gz" \
-    "${BUCKET}/${TS}/blobs.tar.gz"
-rm "/tmp/membrane-blobs-${TS}.tar.gz"
-```
-
-### Retention
-
-Keep hourly snapshots for 24 h, daily snapshots for 30 d,
-weekly snapshots for 1 y. A small script can prune older
-files via S3 lifecycle policies.
+**Data key.** If the key was generated into the data directory, the
+volume snapshot contains it, so protect snapshots like the key itself.
+Production deployments should instead keep the key in a secret manager
+and mount it with `--data-key-file` / `MEMBRANE_DATA_KEY_FILE`.
 
 ## Restore
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
+1. Stop the nodes (`kubectl scale statefulset membrane --replicas=0`).
+2. Restore Redis from its dump and wait for `redis-cli ping`.
+3. Restore each node's data volume from its snapshot, matching the
+   node id (`membrane-0` gets `data-membrane-0`).
+4. Start the nodes. Each logs `Restored N fragments for <node> from Redis`.
+5. Check with an admin key:
 
-SNAPSHOT="${1:?usage: $0 <rdb-path> <blobs-tarball>}"
-BLOB_TARBALL="${2:?usage: $0 <rdb-path> <blobs-tarball>}"
-REDIS_HOST="${MEMBRANE_REDIS_HOST:-redis}"
-REDIS_PORT="${MEMBRANE_REDIS_PORT:-6379}"
-BLOB_ROOT="${MEMBRANE_BLOB_ROOT:-/var/lib/membrane/blobs}"
+   ```bash
+   membrane client inventory --base-url https://membrane-0... --api-key "$ADMIN_KEY"
+   ```
 
-# Stop Membrane so nothing writes during restore.
-kubectl scale statefulset membrane --replicas=0 -n membrane
+## Disaster scenarios
 
-# Restore Redis metadata.
-redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SHUTDOWN NOSAVE || true
-sleep 2
-cp "$SNAPSHOT" /var/lib/redis/dump.rdb
-chown redis:redis /var/lib/redis/dump.rdb
-redis-server /etc/redis/redis.conf &
-
-# Restore the encrypted blob root.
-rm -rf "$BLOB_ROOT"
-mkdir -p "$BLOB_ROOT"
-tar -C "$BLOB_ROOT" -xzf "$BLOB_TARBALL"
-
-# Wait for Redis to come back.
-until redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping; do sleep 1; done
-
-# Bring Membrane back.
-kubectl scale statefulset membrane --replicas=3 -n membrane
-```
-
-## Integrity check
-
-After restore, run:
-
-```python
-from membrane.persistence.redis import Redis
-from membrane.content_store import FilesystemBlob
-
-r = Redis("redis://redis:6379/0")
-blobs = FilesystemBlob("/var/lib/membrane/blobs")
-digest = r.inventory_digest()
-assert len(digest) > 0, "no fragments restored"
-missing = [h for h in digest if blobs.get(h) is None]
-assert not missing, f"{len(missing)} metadata entries have no blob"
-print(f"Restored {len(digest)} fragments ({len(missing)} missing blobs)")
-```
-
-## Disaster recovery
-
-| Scenario | Recovery |
-|----------|----------|
-| Redis data lost, blobs intact | Restore Redis RDB only; cluster picks up where it left off. |
-| Redis intact, blob root lost | Re-create the blob root; cluster will surface `CorruptPayloadError` for any metadata entry whose payload_ref is unreadable. Re-ingest those fragments from source. |
-| Redis data lost, last snapshot > 24 h old | Restore both Redis and blobs from snapshot; expect data loss for the gap. |
-| Redis corrupted on disk | Replace pod with `redis-data` PVC intact; otherwise restore Redis from snapshot. |
-| Blob root corrupted on disk | Restore the blob tarball; ``corrupt_payloads_total`` will spike during the restore as the integrity check walks every payload. |
-| Full cluster lost | Provision fresh Redis + Membrane StatefulSet; restore Redis snapshot **and** blob tarball before re-attaching nodes. |
-
-## References
-
-* Redis persistence: https://redis.io/docs/management/persistence/
-* Filesystem blob store: `membrane/content_store.py:FilesystemBlob`
-* S3 lifecycle policies: https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html
-* `docs/operations/upgrade.md` — version-bump procedure
+| Scenario | Effect | Recovery |
+|----------|--------|----------|
+| One node lost | Its fragments are still on replicas | Replace the pod; it rejoins and fills up again |
+| Redis lost, volumes intact | Nodes start empty (no metadata to reload) | Restore Redis, or accept a cold cache |
+| Volume lost, Redis intact | Fragments without bytes are skipped at startup | Nothing; they are recomputed on demand |
+| Data key lost | Blobs unreadable; `/retrieve` reports them `corrupt` | Delete the data directory and start cold |
+| Whole cluster lost | Cold cache | Redeploy; optionally restore Redis and volumes first |

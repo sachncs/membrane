@@ -23,6 +23,7 @@ def _make_async_transport(routes: dict[tuple[str, str], tuple[int, dict | str]])
     Returns:
         httpx.MockTransport: Bound handler.
     """
+
     def handler(request: httpx.Request) -> httpx.Response:
         key = (request.method, request.url.path)
         if key not in routes:
@@ -31,6 +32,7 @@ def _make_async_transport(routes: dict[tuple[str, str], tuple[int, dict | str]])
         if isinstance(body, dict):
             return httpx.Response(status, json=body)
         return httpx.Response(status, text=body)
+
     return httpx.MockTransport(handler)
 
 

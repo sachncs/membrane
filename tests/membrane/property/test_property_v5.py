@@ -33,9 +33,7 @@ from membrane.identity import PayloadIdentity
 from membrane.serialization import SCHEMA_VERSION, from_dict, to_dict
 
 
-@pytest.mark.skipif(
-    not _HYPOTHESIS_AVAILABLE, reason="hypothesis plugin not installed"
-)
+@pytest.mark.skipif(not _HYPOTHESIS_AVAILABLE, reason="hypothesis plugin not installed")
 class TestCanonicalFrameV5:
     """The v5 canonical frame is the only one the v3.0.0 reader accepts."""
 
@@ -84,16 +82,12 @@ class TestCanonicalFrameV5:
         assert parsed == payload
 
 
-@pytest.mark.skipif(
-    not _HYPOTHESIS_AVAILABLE, reason="hypothesis plugin not installed"
-)
+@pytest.mark.skipif(not _HYPOTHESIS_AVAILABLE, reason="hypothesis plugin not installed")
 class TestFragmentSerialization:
     """``to_dict`` / ``from_dict`` round-trip preserves every field, including tenant_id."""
 
     @given(
-        tenant_id=st.sampled_from(
-            ["public", "acme", "globex", "tenant-with-dashes"]
-        ),
+        tenant_id=st.sampled_from(["public", "acme", "globex", "tenant-with-dashes"]),
         reuse_score=st.floats(min_value=0.0, max_value=1.0, allow_nan=False),
         ttl=st.floats(min_value=0.0, max_value=3600.0, allow_nan=False),
         payload_size=st.integers(min_value=0, max_value=10_000),
@@ -131,9 +125,7 @@ class TestFragmentSerialization:
         assert rebuilt.consistency == consistency
 
 
-@pytest.mark.skipif(
-    not _HYPOTHESIS_AVAILABLE, reason="hypothesis plugin not installed"
-)
+@pytest.mark.skipif(not _HYPOTHESIS_AVAILABLE, reason="hypothesis plugin not installed")
 class TestSchemaBump:
     """``from_dict`` rejects any schema_version other than 5."""
 

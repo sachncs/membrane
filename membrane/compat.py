@@ -122,6 +122,7 @@ class ModelCompatibilityFingerprint:
             ModelCompatibilityFingerprint: The reconstructed
             fingerprint.
         """
+
         def _coerce_int(value: object, default: int) -> int:
             try:
                 return int(value)  # type: ignore[call-overload]
@@ -131,14 +132,10 @@ class ModelCompatibilityFingerprint:
         return cls(
             model_id=str(data["model_id"]),
             model_revision=str(data.get("model_revision", "")),
-            model_layout_version=_coerce_int(
-                data.get("model_layout_version", 0), 0
-            ),
+            model_layout_version=_coerce_int(data.get("model_layout_version", 0), 0),
             tokenizer_name=str(data.get("tokenizer_name", data["model_id"])),
             tokenizer_revision=str(data.get("tokenizer_revision", "")),
-            tokenizer_layout_version=_coerce_int(
-                data.get("tokenizer_layout_version", 0), 0
-            ),
+            tokenizer_layout_version=_coerce_int(data.get("tokenizer_layout_version", 0), 0),
             dtype=str(data["dtype"]),
             config_hash=str(data.get("config_hash", "")),
         )
@@ -153,9 +150,7 @@ class ModelCompatibilityFingerprint:
         Returns:
             str: 64-character hex digest.
         """
-        canonical = json.dumps(
-            self.to_dict(), sort_keys=True, separators=(",", ":")
-        )
+        canonical = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -223,9 +218,7 @@ def compute_config_hash(model_config: dict[str, object] | object) -> str:
     else:
         to_dict = getattr(model_config, "to_dict", None)
         if not callable(to_dict):
-            raise TypeError(
-                "model_config must be a dict or expose to_dict()"
-            )
+            raise TypeError("model_config must be a dict or expose to_dict()")
         config_dict = to_dict()
     canonical = json.dumps(config_dict, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -301,6 +294,5 @@ class MembraneValidator:
             )
         if stored != self._hash:
             raise MembraneIncompatibleError(
-                f"fragment.fingerprint_compat={stored!r} disagrees with the live "
-                f"engine fingerprint {self._hash!r}"
+                f"fragment.fingerprint_compat={stored!r} disagrees with the live engine fingerprint {self._hash!r}"
             )

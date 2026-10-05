@@ -19,6 +19,9 @@ import time
 
 import pytest
 
+# Selected by the CI chaos job via ``-m chaos``.
+pytestmark = pytest.mark.chaos
+
 TOXIPROXY_HOST: str = os.environ.get("MEMBRANE_TOXIPROXY_HOST", "")
 TOXIPROXY_PORT: int = int(os.environ.get("MEMBRANE_TOXIPROXY_PORT", "0") or 0)
 
@@ -123,9 +126,7 @@ class TestDuplicateMessages:
         assert transfer.all_chunks_received()
 
 
-@pytest.mark.skipif(
-    not TOXIPROXY_HOST, reason="toxiproxy host not configured"
-)
+@pytest.mark.skipif(not TOXIPROXY_HOST, reason="toxiproxy host not configured")
 class TestToxiproxyIntegration:
     """Real toxiproxy integration tests; skip when no proxy configured."""
 

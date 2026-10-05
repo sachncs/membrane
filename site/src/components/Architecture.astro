@@ -2,7 +2,7 @@
 const layers = [
   {
     title: 'Client surface',
-    items: ['Python SDK', 'FastAPI · gRPC · stdlib HTTP', 'OpenAPI v3', 'CLI · TUI'],
+    items: ['Python SDK (sync + async)', 'HTTP · mTLS', 'OpenAPI v3', 'CLI · TUI'],
   },
   {
     title: 'Routing plane',
@@ -18,7 +18,7 @@ const layers = [
   },
   {
     title: 'Storage',
-    items: ['In-memory shards', 'Redis durability', 'LRU + TTL', 'Encrypted blobs'],
+    items: ['In-memory node store', 'Redis persistence', 'TTL sweep + weighted LRU', 'AES-GCM blob store'],
   },
 ];
 ---

@@ -108,9 +108,7 @@ def parse_canonical(buf: bytes) -> tuple[PayloadIdentity, bytes]:
         raise SchemaError(f"bad magic in canonical frame: {buf[:4]!r}")
     schema = struct.unpack_from("<H", buf, 4)[0]
     if schema != CANONICAL_SCHEMA_VERSION:
-        raise SchemaError(
-            f"canonical schema version mismatch: {schema} vs {CANONICAL_SCHEMA_VERSION}"
-        )
+        raise SchemaError(f"canonical schema version mismatch: {schema} vs {CANONICAL_SCHEMA_VERSION}")
     identity_len = struct.unpack_from("<I", buf, 10)[0]
     identity_end = HEADER_LEN + identity_len
     if identity_end + 8 > len(buf):
@@ -126,7 +124,7 @@ def parse_canonical(buf: bytes) -> tuple[PayloadIdentity, bytes]:
         raise CorruptPayloadError("payload length extends past frame")
     payload = bytes(buf[payload_start:payload_end])
     expected = hashlib.sha256(payload).digest()[:TRAILER_LEN]
-    actual = bytes(buf[payload_end:payload_end + TRAILER_LEN])
+    actual = bytes(buf[payload_end : payload_end + TRAILER_LEN])
     if expected != actual:
         _record_corrupt()
         raise CorruptPayloadError("canonical frame trailer mismatch")

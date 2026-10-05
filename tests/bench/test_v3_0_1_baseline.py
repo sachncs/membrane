@@ -32,4 +32,5 @@ class TestBenchmarkBaseline:
         # developer / CI boxes that have pytest-benchmark
         # installed.
         import importlib
+
         importlib.import_module("tests.bench.test_phase37_bench")

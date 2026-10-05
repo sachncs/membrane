@@ -1,65 +1,90 @@
-"""RAG pipeline end-to-end example (Phase 3.6.3).
+"""Prompt-cache loop against a running Membrane node.
 
-This script wires the :class:`membrane.client.MembraneClient`
-into a small Retrieval-Augmented Generation loop: the user
-emits a prompt; the script checks the local Membrane node for
-a cached answer to the same prompt; on a hit the script prints
-the cached fragment, on a miss it stores the placeholder
-and proceeds. The example is intentionally a single file
-that runs end-to-end on a fresh ``python -m membrane.demo``
-or against any reachable Membrane server.
+A RAG service checks Membrane before paying for a prefill: each prompt
+is content-addressed (SHA-256 of model + prompt), looked up with
+``GET /retrieve``, and published with ``POST /store`` on a miss. The
+script makes two passes over the same prompts, so the first pass
+misses and stores and the second pass hits.
+
+Start a node first, then run the example::
+
+    membrane serve --daemon &
+    python examples/rag_pipeline.py
+
+For a secured node set ``MEMBRANE_URL`` and ``MEMBRANE_API_KEY`` (a key
+with the ``write`` scope).
+
+The fragments here are metadata-only (``payload_ref=None``): the KV
+bytes of a real engine reach the node's content store through an engine
+adapter such as ``membrane.adapters.vllm``, not through this API.
 """
 
 from __future__ import annotations
 
+import hashlib
+import os
 import sys
 
-from membrane.client import MembraneClient
+from membrane.client import MembraneClient, MembraneClientError, MembraneConnectionError
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
+from membrane.serialization import to_dict
+
+MODEL_ID = "rag-demo"
+PROMPTS = ["What colors are in the flag of France?", "Who wrote Hamlet?"]
 
 
-def _make_fragment(prompt: str) -> Fragment:
+def content_hash(prompt: str) -> str:
+    """Stable content address for a prompt under :data:`MODEL_ID`."""
+    return hashlib.sha256(f"{MODEL_ID}\0{prompt}".encode()).hexdigest()
+
+
+def make_fragment(prompt: str) -> Fragment:
+    """Describe the cached prefill for ``prompt`` as a fragment."""
     return Fragment(
         identity=PayloadIdentity(
-            payload_hash=str(abs(hash(prompt))),
-            model_id="rag-demo",
+            payload_hash=content_hash(prompt),
+            model_id=MODEL_ID,
             model_revision="",
-            tokenizer_name="rag",
+            tokenizer_name=MODEL_ID,
             tokenizer_revision="",
             layer_range=(0, 1),
             head_range=(-1, -1),
-            token_span=(0, len(prompt)),
+            token_span=(0, len(prompt.split())),
             dtype="float16",
             shape=(1, 1, 1, 8, 64),
         ),
         payload_ref=None,
         payload_size=len(prompt),
-        ttl=60.0,
+        ttl=600.0,
         reuse_score=1.0,
         version_id=1,
-        tenant_id="public",
     )
 
 
-def main(argv: list[str]) -> int:
-    base_url = argv[1] if len(argv) > 1 else "http://localhost:8080"
-    client = MembraneClient(base_url)
-    prompts = ["What colors are in the flag of France?", "Who wrote Hamlet?"]
-    for prompt in prompts:
-        frag = _make_fragment(prompt)
-        result = client.retrieve(frag.identity.payload_hash)
-        if result and result.get("found"):
-            print(f"hit  | {prompt}")
-        else:
-            payload = frag.to_wire_dict() if hasattr(frag, "to_wire_dict") else None
-            print(f"miss | {prompt}")
-            if payload is not None:
-                # Defer real body until v3.0.1.
-                client.store(frag.to_wire_dict() if hasattr(frag, "to_wire_dict") else {"schema_version": 5, "tenant_id": "public"})
-    client.close()
+def main() -> int:
+    base_url = os.environ.get("MEMBRANE_URL", "http://localhost:8080")
+    client = MembraneClient(base_url, api_key=os.environ.get("MEMBRANE_API_KEY", ""))
+    try:
+        for attempt in (1, 2):
+            print(f"pass {attempt}")
+            for prompt in PROMPTS:
+                result = client.retrieve(content_hash(prompt))
+                if result and result.get("found"):
+                    print(f"  hit  | {prompt}")
+                else:
+                    client.store(to_dict(make_fragment(prompt)), is_primary=True)
+                    print(f"  miss | {prompt} (stored)")
+    except MembraneConnectionError as exc:
+        print(f"error: {exc}\nStart a node first: membrane serve --daemon", file=sys.stderr)
+        return 1
+    except MembraneClientError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        client.close()
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main())

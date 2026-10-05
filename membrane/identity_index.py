@@ -94,8 +94,7 @@ class IdentityIndex:
         """
         if identity.payload_hash != content_hash:
             raise ValueError(
-                f"identity.payload_hash={identity.payload_hash} disagrees with "
-                f"supplied content_hash={content_hash}"
+                f"identity.payload_hash={identity.payload_hash} disagrees with supplied content_hash={content_hash}"
             )
         with self.lock:
             fp = identity.fingerprint()
@@ -136,10 +135,7 @@ class IdentityIndex:
             has been bound.
         """
         with self.lock:
-            return [
-                self.forward[fp]
-                for fp in sorted(self.reverse.get(content_hash, set()))
-            ]
+            return [self.forward[fp] for fp in sorted(self.reverse.get(content_hash, set()))]
 
     def remove(self, identity: PayloadIdentity) -> bool:
         """Remove the binding for ``identity``.

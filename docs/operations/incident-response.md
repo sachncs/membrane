@@ -1,99 +1,99 @@
 # Incident Response Playbook
 
-This document covers the steps the on-call engineer takes when an alert
-fires or an issue is reported. Pair with `slo.md` (alert thresholds) and
-`backup-restore.md` (recovery actions).
+Steps for the on-call engineer when a Membrane alert fires. Pair with
+[SLOs](slo.md) for the alert definitions and
+[Backup & restore](backup-restore.md) for recovery.
 
 ## Severity levels
 
 | Level | Definition | Response time |
-|---|---|---|
-| SEV-1 | Complete outage; data loss risk | < 15 min |
-| SEV-2 | Major degradation; error budget burning | < 1 h |
-| SEV-3 | Minor degradation; no error budget impact | < 4 h |
-
-## On-call checklist
-
-1. **Acknowledge** the alert within the response time for its severity.
-2. **Page** the secondary if you cannot acknowledge within 5 min.
-3. **Open** an incident ticket in the issue tracker with severity, summary,
-   and start time.
-4. **Communicate** in `#incidents`: post the ticket link + severity + first
-   observations within 10 min.
+|-------|------------|---------------|
+| SEV-1 | Cluster unavailable, or data exposed across tenants | < 15 min |
+| SEV-2 | Error budget burning fast; strong writes failing | < 1 h |
+| SEV-3 | Degradation without budget impact | < 4 h |
 
 ## Triage
 
-Run through these checks in order:
+All routes except the probes need a key; use one with `read` scope
+(`admin` for `/admin/*`).
 
 ```bash
-# 1. Process alive?
-curl -fsS https://membrane.internal/livez
-
-# 2. Capacity OK?
-curl -fsS https://membrane.internal/readyz
-
-# 3. Resource pressure?
-curl -fsS https://membrane.internal/metrics | grep membrane_
-
-# 4. Cluster health?
-curl -fsS https://membrane.internal/peers
+H="Authorization: Bearer $MEMBRANE_API_KEY"
+curl -fsS https://membrane.example/livez                     # process up?
+curl -fsS https://membrane.example/readyz                    # serving?
+curl -fsS -H "$H" https://membrane.example/peers             # cluster view
+curl -fsS -H "$H" https://membrane.example/metrics | grep -v '^#'
 ```
 
-If `/livez` fails, the process is down. Check `kubectl get pods`,
-`journalctl`, and the Docker logs.
+Or from a workstation: `MEMBRANE_API_KEY=… membrane cluster-status --host <node>`.
 
-If `/readyz` returns 503, the node is over capacity. Check
-`membrane_memory_used_bytes` against `membrane_memory_limit_bytes`.
+`/readyz` returns `503` only when the node object is missing; a full
+node is ready. If `/livez` fails, the process is down: check
+`kubectl get pods`, `kubectl logs`, or `journalctl -u membrane`.
 
 ## Common scenarios
 
-### Redis unreachable
+### Strong writes return 503 (`quorum not met`)
 
-1. Verify Redis: `kubectl exec redis-0 -- redis-cli ping`.
-2. If Redis is down, restore from snapshot (see `backup-restore.md`).
-3. Membrane falls back to the in-memory cache; check
-   `membrane_persistence_operations_total{outcome="failure"}` for rate.
+The node could not get `quorum_count - 1` peer acknowledgements.
 
-### Memory exhaustion
+1. `GET /peers`: are peers healthy? Compare `membrane_peers_healthy`
+   with `membrane_peers_total`.
+2. Peer calls failing with `401` / `403` in the logs: the peer API key
+   is missing, wrong, or lacks `admin`.
+3. `rejected by SSRF policy` in the logs: the peer's address is outside
+   `MEMBRANE_PEER_NETWORKS`.
+4. To keep accepting writes during the incident, temporarily set
+   `MEMBRANE_CONSISTENCY=eventual` and roll the pods.
 
-1. Check `membrane_evictions_total{reason=...}` — see which eviction
-   reason dominates.
-2. If capacity grew due to `expired`, tune TTLs.
-3. If `lru` dominates, increase memory budget or shard the cluster.
+### Node will not start
 
-### Cluster split-brain
+The process exits with code 2 and prints the reason. Common ones:
 
-1. Confirm with `/peers` — count healthy peers.
-2. Look at `membrane_gossip_failures_total` for partition symptoms.
-3. Use `kubectl cordon` to isolate a misbehaving node before fixing it.
-4. The AP merge policy (`Fragment.merge` with `max(version_id)`) prevents
-   stale reads after a heal; verify with `/metrics`.
+- `Refusing to serve unauthenticated`: no API keyfile or TLS configured.
+- `Cannot read API keyfile` / `contains no valid keys`: secret not
+  mounted, or empty.
+- `Redis at … is unreachable`: Redis down or wrong `MEMBRANE_REDIS_URL`.
+- `Cannot open data directory`: volume not writable by UID 1000, or a
+  bad `MEMBRANE_DATA_KEY_FILE`.
 
-## Comms templates
+### Callers get 401 / 403
 
-### Initial incident post
+`401`: unknown or missing key. `403`: valid key without the route's
+scope. Check the caller's key against the keyfile's scopes; see
+[Security](../security.md).
 
-```
+### Memory pressure
+
+`membrane_evictions_total{reason="capacity"}` rising while hit rates
+fall means the working set does not fit. Raise `--max-memory`, add
+nodes, or shorten fragment TTLs.
+
+### Cluster partition
+
+`/peers` on different nodes disagree, and
+`membrane_gossip_failures_total` climbs. Strong writes fail closed on
+the minority side, so no acknowledged write is lost. Fix the network;
+nodes re-converge through heartbeats and gossip without intervention.
+
+## Communication templates
+
+```text
 [SEV-X] <one-line summary>
 Started: <UTC timestamp>
 Impact: <user-facing impact>
 Lead: <on-call name>
-Ticket: <link>
 Updates: every 15 min in this thread.
 ```
 
-### Resolution post
-
-```
+```text
 [SEV-X RESOLVED] <one-line summary>
-Duration: <start> -> <end> (Xh Ym)
+Duration: <start> -> <end>
 Root cause: <one paragraph>
-Mitigation: <what stopped the bleeding>
-Followups: <links to action items>
+Follow-ups: <links>
 ```
 
-## Post-incident review
+## After the incident
 
-Within 5 business days, file a post-incident review in `docs/postmortems/`
-with: timeline, root cause, contributing factors, what went well, what to
-improve, and 3-5 specific action items with owners and dates.
+Within 5 business days write a review covering the timeline, root
+cause, contributing factors, and 3–5 action items with owners.

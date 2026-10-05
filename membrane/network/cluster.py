@@ -24,6 +24,7 @@ Threading:
 from __future__ import annotations
 
 import logging
+import socket
 import threading
 
 from membrane.gc import TombstoneTable
@@ -82,7 +83,8 @@ class Cluster:
         hash_ring: Ring | None = None,
         shard_manager: Shard | None = None,
         failure_detector: FailureDetector | None = None,
-        migrator: Migrator | None = None, server: object | None = None,
+        migrator: Migrator | None = None,
+        server: object | None = None,
         tombstones: TombstoneTable | None = None,
     ) -> None:
         self.node_id = node_id
@@ -216,9 +218,7 @@ class Cluster:
         for t in self.threads:
             t.join(timeout=deadline_sec)
             if t.is_alive():
-                logger.warning(
-                    "cluster thread %s did not exit within %.1fs", t.name, deadline_sec
-                )
+                logger.warning("cluster thread %s did not exit within %.1fs", t.name, deadline_sec)
                 joined_cleanly = False
         logger.info("Cluster stopped (cleanly=%s)", joined_cleanly)
         return joined_cleanly
@@ -227,14 +227,43 @@ class Cluster:
         """Block until :meth:`stop` is called."""
         self.stop_event.wait()
 
+    @property
+    def advertise_host(self) -> str:
+        """Address peers use to reach this node.
+
+        ``config.advertise_host`` when set; otherwise the bind host,
+        unless that is a wildcard address (``0.0.0.0`` / ``::``),
+        which peers cannot dial, in which case the FQDN is used.
+        """
+        if self.config.advertise_host:
+            return self.config.advertise_host
+        if self.host in ("", "0.0.0.0", "::"):
+            return socket.getfqdn()
+        return self.host
+
     def bootstrap_loop(self) -> None:
-        """One-shot bootstrap wrapper for the daemon thread."""
-        self.membership.join_seeds(
-            list(self.config.peers),
-            local_node_id=self.node_id,
-            host=self.host,
-            port=self.port,
-        )
+        """Join a seed peer, retrying with capped backoff until one answers.
+
+        Seeds commonly start at the same time (StatefulSet,
+        compose), so a single attempt would leave a node
+        permanently isolated when its seeds are not up yet.
+        """
+        seeds = list(self.config.peers)
+        if not seeds:
+            return
+        delay = 1.0
+        while not self.stop_event.is_set():
+            if self.membership.join_seeds(
+                seeds,
+                local_node_id=self.node_id,
+                host=self.advertise_host,
+                port=self.port,
+            ):
+                return
+            logger.warning("No seed peer reachable yet; retrying in %.0fs", delay)
+            if self.stop_event.wait(delay):
+                return
+            delay = min(delay * 2, 30.0)
 
     def on_peer_leave_rehome(self, content_hash: str, leaving_peer: str) -> None:
         """Default ``Migrator.transfer_fn`` that delegates to :meth:`Shard.migrate_primary`.

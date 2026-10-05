@@ -50,9 +50,7 @@ class TestBanditE2E:
         ]
         cfg = apply_bandit_to_weights(Bandit(arms=arms), EconomicRouterConfigWeights())
         # Sum should be normalized.
-        total = (
-            cfg.latency_ms + cfg.bandwidth_cost + cfg.gpu_load + cfg.memory_pressure
-        )
+        total = cfg.latency_ms + cfg.bandwidth_cost + cfg.gpu_load + cfg.memory_pressure
         assert total == pytest.approx(1.0)
 
     def test_pull_count_tracks_pulls(self):
@@ -69,9 +67,7 @@ class TestBanditE2E:
     def test_no_bandit_returns_base_unchanged(self):
         from membrane.tiers import EconomicRouterConfigWeights
 
-        cfg = EconomicRouterConfigWeights(
-            latency_ms=0.4, bandwidth_cost=0.3, gpu_load=0.2, memory_pressure=0.1
-        )
+        cfg = EconomicRouterConfigWeights(latency_ms=0.4, bandwidth_cost=0.3, gpu_load=0.2, memory_pressure=0.1)
         result = apply_bandit_to_weights(None, cfg)
         assert result is cfg
 

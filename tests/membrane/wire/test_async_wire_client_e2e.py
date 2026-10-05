@@ -32,12 +32,14 @@ def _make_async_transport(routes: dict[tuple[str, str], tuple[int, bytes]]):
     Returns:
         httpx.MockTransport: Bound handler.
     """
+
     def handler(request: httpx.Request) -> httpx.Response:
         key = (request.method, request.url.path)
         if key not in routes:
             return httpx.Response(404, content=b"")
         status, body = routes[key]
         return httpx.Response(status, content=body)
+
     return httpx.MockTransport(handler)
 
 
@@ -74,6 +76,7 @@ class TestAsyncWireClientE2E:
                 yield captured_client
             finally:
                 httpx.AsyncClient = original  # type: ignore[assignment]
+
         return patcher()
 
     def test_request_2xx_returns_body(self):
@@ -98,14 +101,10 @@ class TestAsyncWireClientE2E:
                 client = AsyncWireClient(
                     base_url="http://x",
                     timeout_sec=1.0,
-                    retry=RetryPolicy(
-                        max_attempts=2, base_delay=0.0, max_delay=0.0
-                    ),
+                    retry=RetryPolicy(max_attempts=2, base_delay=0.0, max_delay=0.0),
                     bulkhead=WireBulkhead(max_concurrent=2),
                 )
-                client.breaker["http://x"] = CircuitBreakerPolicy(
-                    failure_threshold=2, cool_down=60.0
-                )
+                client.breaker["http://x"] = CircuitBreakerPolicy(failure_threshold=2, cool_down=60.0)
                 with pytest.raises(RuntimeError, match="server returned"):
                     await client.request("GET", "/x")
                 # The breaker recorded 2 failures.
@@ -124,12 +123,8 @@ class TestAsyncWireClientE2E:
         async def run() -> bytes:
             transport = _make_async_transport(routes)
             with self._patch_async_client(transport) as _:
-                client = AsyncWireClient(
-                    base_url="http://y", timeout_sec=1.0
-                )
-                client.breaker["http://y"] = CircuitBreakerPolicy(
-                    failure_threshold=1, cool_down=60.0
-                )
+                client = AsyncWireClient(base_url="http://y", timeout_sec=1.0)
+                client.breaker["http://y"] = CircuitBreakerPolicy(failure_threshold=1, cool_down=60.0)
                 return await client.request("GET", "/y")
 
         # 4xx is a successful response; the breaker is untouched.
@@ -140,9 +135,7 @@ class TestAsyncWireClientE2E:
         """A cancelled token short-circuits the request with CancelledError."""
 
         async def run() -> None:
-            transport = _make_async_transport(
-                {("GET", "/slow"): (200, b"hi")}
-            )
+            transport = _make_async_transport({("GET", "/slow"): (200, b"hi")})
             with self._patch_async_client(transport) as _:
                 client = AsyncWireClient(base_url="http://t", timeout_sec=5.0)
                 from membrane.wire.v3.aio_client import CancellationToken

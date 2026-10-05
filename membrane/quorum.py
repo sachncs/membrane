@@ -96,18 +96,14 @@ def attempt_quorum_acks(
             replica_count=len(peer_list),
         )
     if not peer_list:
-        return QuorumResult(
-            success=False, ack_count=0, timed_out=True, replica_count=0
-        )
+        return QuorumResult(success=False, ack_count=0, timed_out=True, replica_count=0)
 
     payload = {"fragment": _wire_dict_for(fragment), "is_primary": False}
     submitted: list[concurrent.futures.Future[bool]] = []
     ack_count = 0
     timed_out = False
 
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=max(1, min(quorum_count, len(peer_list)))
-    ) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(quorum_count, len(peer_list)))) as pool:
         for peer in peer_list:
             submitted.append(pool.submit(_post_replicate, peer, payload))
 

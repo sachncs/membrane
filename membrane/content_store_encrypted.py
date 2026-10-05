@@ -133,9 +133,7 @@ class EncryptedInProcessBytes(ContentStore):
 
         version_keys = getattr(self._provider, "version_keys", None)
         if version_keys is not None:
-            tenant_keys = tuple(
-                derive_tenant_key(k, self.tenant_id, key) for k in version_keys()
-            )
+            tenant_keys = tuple(derive_tenant_key(k, self.tenant_id, key) for k in version_keys())
             try:
                 return decrypt_payload_with_versions(blob, tenant_keys)
             except RuntimeError:

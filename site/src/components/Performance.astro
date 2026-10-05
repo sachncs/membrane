@@ -1,95 +1,68 @@
 ---
+import { REPO_URL } from '../lib/site';
+
+// Output of `python scripts/demo.py`: the analytical model on the paper's
+// Section 4 case study (20,000 requests, mean input 27.5K tokens).
+// Update these when the model changes; the demo is run in CI.
 const metrics = [
-  {
-    value: 41,
-    suffix: '%',
-    label: 'Lower P50 TTFT',
-    detail: 'Median time-to-first-token across the dual-timescale scheduler.',
-    decimals: 0,
-  },
-  {
-    value: 2.3,
-    suffix: '×',
-    label: 'Throughput gain',
-    detail: 'End-to-end tokens/sec vs. single-node prefill baseline.',
-    decimals: 1,
-  },
-  {
-    value: 94.7,
-    suffix: '%',
-    label: 'Fragment hit-rate',
-    detail: 'Reconstruction served from fragments — no prefill required.',
-    decimals: 1,
-  },
-  {
-    value: 6,
-    suffix: 'ms',
-    label: 'Index lookup',
-    detail: 'Worst-case across exact, semantic, positional, co-access.',
-    decimals: 0,
-  },
+  { value: 1.39, suffix: '×', decimals: 2, label: 'Max sustainable request rate', detail: '3.12 vs 2.25 req/s against homogeneous PD.' },
+  { value: 42, suffix: '%', decimals: 0, label: 'Lower mean TTFT', detail: '2.31 s vs 4.00 s against homogeneous PD.' },
+  { value: 10, suffix: '%', decimals: 0, label: 'Lower P90 TTFT', detail: '3.62 s vs 4.00 s against homogeneous PD.' },
+  { value: 4.8, suffix: 'Gbps', decimals: 1, label: 'Average egress', detail: 'Cross-datacenter KV traffic the routing threshold induces.' },
 ];
+
+const configs = [
+  { name: 'Homogeneous PD', lambda: 2.25, ttft: 4.0 },
+  { name: 'Naive heterogeneous PD', lambda: 2.5, ttft: 1.65 },
+  { name: 'Membrane-PD', lambda: 3.12, ttft: 2.31, highlight: true },
+];
+const maxLambda = Math.max(...configs.map((c) => c.lambda));
+const maxTtft = Math.max(...configs.map((c) => c.ttft));
 ---
 
 <section id="performance" class="relative py-24 sm:py-32 lg:py-40">
   <div class="container-page">
     <div class="grid items-start gap-16 lg:grid-cols-12 lg:gap-12">
-      <div class="lg:col-span-5">
-        <span data-reveal class="eyebrow">Performance</span>
+      <div class="min-w-0 lg:col-span-5">
+        <span data-reveal class="eyebrow">Performance model</span>
         <h2
           data-reveal
           data-reveal-delay="1"
           class="mt-4 text-balance font-display text-display-lg font-semibold tracking-tighter text-white"
         >
-          Numbers from the <br />
-          <span class="gradient-text-static">paper, reproduced.</span>
+          The paper's case study, <br />
+          <span class="gradient-text-static">reproduced in one command.</span>
         </h2>
         <p
           data-reveal
           data-reveal-delay="2"
           class="mt-5 max-w-md text-pretty text-[1.0625rem] leading-relaxed text-ink-200"
         >
-          The analytical model in <code class="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[0.85em] text-ink-100">model/throughput_model.py</code>
-          reproduces Eqs. (1)–(6) from the Prefill-as-a-Service paper with a
-          piecewise-linear Table-5 fit — verified end-to-end against the simulator.
+          <code class="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[0.85em] text-ink-100">membrane/model/throughput.py</code>
+          implements Eqs. (1)–(6) of the Prefill-as-a-Service paper with a
+          piecewise-linear Table-5 fit. These numbers are the model's output for
+          the paper's Section 4 workload, not a benchmark of a live cluster.
         </p>
+        <div data-reveal data-reveal-delay="3" class="mt-6 overflow-hidden rounded-xl border border-white/[0.08] bg-ink-950/60">
+          <pre class="code-block overflow-x-auto px-4 py-3 text-[0.82rem] text-ink-100"><span class="text-accent-mint">$</span> python scripts/demo.py</pre>
+        </div>
 
-        <div data-reveal data-reveal-delay="3" class="mt-8 flex flex-wrap gap-3">
-          <a
-            href="https://arxiv.org/abs/2604.15039"
-            target="_blank"
-            rel="noreferrer noopener"
-            class="btn-secondary"
-          >
-            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm0 1.2A5.3 5.3 0 1 1 8 13.3 5.3 5.3 0 0 1 8 2.7Zm-.6 2.5v3.6l2.8 1.7.6-1-2.2-1.3V5.2Z"/>
-            </svg>
+        <div data-reveal data-reveal-delay="3" class="mt-6 flex flex-wrap gap-3">
+          <a href="https://arxiv.org/abs/2604.15039" target="_blank" rel="noreferrer noopener" class="btn-secondary">
             Read the paper
           </a>
-          <a
-            href="https://github.com/sachncs/membrane/tree/master/scripts"
-            target="_blank"
-            rel="noreferrer noopener"
-            class="btn-ghost"
-          >
-            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M5 3v10M5 3 2 6M5 3l3 3M11 13V3M11 13l3-3M11 13l-3-3"/>
-            </svg>
-            Run the demos
+          <a href={`${REPO_URL}/blob/master/scripts/demo.py`} target="_blank" rel="noreferrer noopener" class="btn-ghost">
+            View the script
           </a>
         </div>
       </div>
 
-      <div class="lg:col-span-7">
+      <div class="min-w-0 lg:col-span-7">
         <div class="grid gap-3 sm:grid-cols-2">
           {
             metrics.map((m, i) => (
-              <div
-                data-reveal
-                data-reveal-delay={i + 1}
-                class="card relative overflow-hidden p-7"
-              >
-                <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gradient-to-br from-accent-violet/20 to-transparent blur-2xl" aria-hidden="true"/>
+              <div data-reveal data-reveal-delay={i + 1} class="card relative overflow-hidden p-7">
+                <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gradient-to-br from-accent-violet/20 to-transparent blur-2xl" aria-hidden="true" />
                 <div class="relative">
                   <div class="flex items-baseline gap-1.5">
                     <span
@@ -97,7 +70,7 @@ const metrics = [
                       data-counter={m.value}
                       data-decimals={m.decimals}
                     >
-                      0
+                      {m.value.toFixed(m.decimals)}
                     </span>
                     <span class="font-display text-2xl font-semibold text-ink-300">{m.suffix}</span>
                   </div>
@@ -109,57 +82,48 @@ const metrics = [
           }
         </div>
 
-        <!-- Throughput curve chart -->
         <div data-reveal data-reveal-delay="3" class="card mt-3 p-6 sm:p-8">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-[0.78rem] font-medium text-ink-300">Aggregate tokens/sec · request rate sweep</div>
-              <div class="mt-1 text-[0.7rem] text-ink-400">dual-timescale scheduler vs. single-node prefill</div>
-            </div>
-            <div class="flex items-center gap-4 text-[0.7rem] text-ink-300">
-              <span class="inline-flex items-center gap-1.5">
-                <span class="h-1.5 w-3 rounded-full bg-accent-cyan"></span>
-                Membrane
-              </span>
-              <span class="inline-flex items-center gap-1.5">
-                <span class="h-1.5 w-3 rounded-full bg-white/20"></span>
-                Baseline
-              </span>
-            </div>
+          <div class="text-[0.78rem] font-medium text-ink-300">Configurations compared by the model</div>
+          <div class="mt-4 overflow-x-auto">
+          <table class="w-full min-w-[420px] text-left text-[0.82rem]">
+            <thead class="text-ink-400">
+              <tr>
+                <th class="pb-2 font-medium">Configuration</th>
+                <th class="pb-2 font-medium">Max rate (req/s)</th>
+                <th class="pb-2 font-medium">Mean TTFT (s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                configs.map((c) => (
+                  <tr class="border-t border-white/[0.06]">
+                    <td class={`py-2.5 pr-4 ${c.highlight ? 'font-medium text-white' : 'text-ink-200'}`}>{c.name}</td>
+                    <td class="py-2.5 pr-4">
+                      <div class="flex items-center gap-2">
+                        <div class="h-1.5 w-24 rounded-full bg-white/[0.06]">
+                          <div class={`h-1.5 rounded-full ${c.highlight ? 'bg-accent-cyan' : 'bg-white/25'}`} style={`width: ${(c.lambda / maxLambda) * 100}%`} />
+                        </div>
+                        <span class="font-mono text-ink-100">{c.lambda.toFixed(2)}</span>
+                      </div>
+                    </td>
+                    <td class="py-2.5">
+                      <div class="flex items-center gap-2">
+                        <div class="h-1.5 w-24 rounded-full bg-white/[0.06]">
+                          <div class={`h-1.5 rounded-full ${c.highlight ? 'bg-accent-violet' : 'bg-white/25'}`} style={`width: ${(c.ttft / maxTtft) * 100}%`} />
+                        </div>
+                        <span class="font-mono text-ink-100">{c.ttft.toFixed(2)}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
           </div>
-          <svg viewBox="0 0 400 160" class="mt-5 h-44 w-full" aria-hidden="true">
-            <defs>
-              <linearGradient id="fill-m" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#22d3ee" stop-opacity="0.32"/>
-                <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
-              </linearGradient>
-            </defs>
-            <!-- Grid lines -->
-            <g stroke="rgba(255,255,255,0.05)" stroke-width="1">
-              <line x1="0" y1="32" x2="400" y2="32"/>
-              <line x1="0" y1="64" x2="400" y2="64"/>
-              <line x1="0" y1="96" x2="400" y2="96"/>
-              <line x1="0" y1="128" x2="400" y2="128"/>
-            </g>
-            <!-- Baseline -->
-            <path d="M0 140 C 60 132, 120 120, 180 108 S 300 84, 400 72"
-              fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.4" stroke-dasharray="3 3" stroke-linecap="round"/>
-            <!-- Membrane -->
-            <path d="M0 138 C 60 118, 120 92, 180 70 S 300 36, 400 18 L400 160 L0 160 Z"
-              fill="url(#fill-m)"/>
-            <path d="M0 138 C 60 118, 120 92, 180 70 S 300 36, 400 18"
-              fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <!-- Highlight last point -->
-            <circle cx="400" cy="18" r="4" fill="#22d3ee"/>
-            <circle cx="400" cy="18" r="9" fill="#22d3ee" opacity="0.25"/>
-          </svg>
-          <div class="mt-3 flex justify-between text-[0.65rem] font-mono text-ink-500">
-            <span>50 rps</span>
-            <span>200 rps</span>
-            <span>400 rps</span>
-            <span>800 rps</span>
-            <span>1.6k rps</span>
-          </div>
+          <p class="mt-4 text-[0.75rem] leading-relaxed text-ink-400">
+            Naive heterogeneous PD has the lowest TTFT but saturates at 2.50 req/s; Membrane-PD's
+            length-threshold routing trades some latency for the highest sustainable rate.
+          </p>
         </div>
       </div>
     </div>

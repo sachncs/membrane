@@ -70,10 +70,7 @@ def main() -> int:
             logger.info("stored slot=%s", slot)
 
     stats = node.get_stats()
-    print(
-        f"demo: stored {stats.fragment_count} fragments,"
-        f" memory_used_bytes={stats.memory_used_bytes}"
-    )
+    print(f"demo: stored {stats.fragment_count} fragments, memory_used_bytes={stats.memory_used_bytes}")
     return 0
 
 

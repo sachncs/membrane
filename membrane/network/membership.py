@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from membrane.network.peer import Peer
+from membrane.network.peer import Peer, peer_url
 from membrane.registry import Registry
 from membrane.ring import Ring
 from membrane.shard import Shard
@@ -149,7 +149,7 @@ class Membership:
                 last_heartbeat=time.time(),
                 peer_cn=peer_cn,
             )
-            self.clients[node_id] = Peer(f"http://{host}:{port}")
+            self.clients[node_id] = Peer(f"{host}:{port}")
             self.ring.add_node(node_id)
             self.shard.add_node(node_id)
             logger.info("Added peer %s at %s:%s (cn=%s)", node_id, host, port, peer_cn)
@@ -183,10 +183,10 @@ class Membership:
             return self.clients.get(node_id)
 
     def get_url(self, node_id: str) -> str | None:
-        """Return ``http://<host>:<port>`` for a peer, or None."""
+        """Return ``<scheme>://<host>:<port>`` for a peer, or None."""
         with self.lock:
             p = self.peers.get(node_id)
-            return f"http://{p.host}:{p.port}" if p else None
+            return peer_url(f"{p.host}:{p.port}") if p else None
 
     def healthy(self) -> list[PeerInfo]:
         """Return the list of currently healthy peers."""
@@ -291,12 +291,7 @@ class Membership:
         flagged: list[str] = []
         with self.lock:
             for peer_id, peer in self.peers.items():
-                if (
-                    peer.lease_until > 0
-                    and peer.healthy
-                    and now > peer.lease_until
-                    and self.mark_suspect(peer_id)
-                ):
+                if peer.lease_until > 0 and peer.healthy and now > peer.lease_until and self.mark_suspect(peer_id):
                     flagged.append(peer_id)
         return flagged
 
@@ -398,18 +393,25 @@ class Membership:
             port: Local port.
 
         Returns:
-            bool: ``True`` when at least one seed accepted the join.
+            bool: ``True`` when a seed accepted the join and reported
+            at least one node other than this one.
         """
         for seed in seeds:
             try:
-                client = Peer(f"http://{seed}")
+                client = Peer(seed)
                 result = client.join_cluster(local_node_id, host, port)
             except Exception as exc:
                 logger.warning("Bootstrap failed for seed %s: %s", seed, exc)
                 continue
             if result and result.get("success"):
-                for peer in result.get("peers", []):
+                others = [p for p in result.get("peers", []) if p["node_id"] != local_node_id]
+                for peer in others:
                     self.add(peer["node_id"], peer["host"], peer["port"])
+                # A seed list usually includes this node's own address;
+                # joining ourselves teaches us nothing, so keep going.
+                if not others:
+                    logger.debug("Seed %s knew no other peers (likely ourselves)", seed)
+                    continue
                 logger.info("Bootstrap successful via %s", seed)
                 return True
         return False

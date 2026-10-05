@@ -91,9 +91,7 @@ class TestBandit:
 
 class TestEconomicRouterConfigWeights:
     def test_normalisation(self):
-        cfg = EconomicRouterConfigWeights(
-            latency_ms=1.0, bandwidth_cost=1.0, gpu_load=1.0, memory_pressure=1.0
-        )
+        cfg = EconomicRouterConfigWeights(latency_ms=1.0, bandwidth_cost=1.0, gpu_load=1.0, memory_pressure=1.0)
         w = cfg.normalised()
         assert math.isclose(sum(w), 1.0)
 

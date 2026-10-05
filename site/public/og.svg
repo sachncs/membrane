@@ -49,8 +49,8 @@
 
   <!-- Headline -->
   <text x="80" y="370" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="600" fill="#ffffff" letter-spacing="-2.5">Distributed KV-cache,</text>
-  <text x="80" y="450" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="600" letter-spacing="-2.5">
-    <tspan>content-</tspan><tspan fill="url(#brand)">addressed</tspan><tspan>, ready to ship.</tspan>
+  <text x="80" y="450" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="600" fill="#ffffff" letter-spacing="-2.5">
+    <tspan>content-</tspan><tspan fill="url(#brand)">addressed</tspan><tspan>, shared.</tspan>
   </text>
 
   <!-- Sub -->
@@ -58,9 +58,9 @@
 
   <!-- Bottom row -->
   <g transform="translate(80 560)">
-    <rect width="180" height="36" rx="18" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+    <rect width="250" height="36" rx="18" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
     <text x="22" y="23" font-family="JetBrains Mono, monospace" font-size="14" fill="#5eead4">$</text>
-    <text x="40" y="23" font-family="JetBrains Mono, monospace" font-size="14" fill="rgba(255,255,255,0.85)">pip install membrane</text>
+    <text x="40" y="23" font-family="JetBrains Mono, monospace" font-size="14" fill="rgba(255,255,255,0.85)">membrane serve --daemon</text>
   </g>
-  <text x="290" y="583" font-family="Inter, system-ui, sans-serif" font-size="14" fill="rgba(255,255,255,0.4)">github.com/sachncs/membrane</text>
+  <text x="360" y="583" font-family="Inter, system-ui, sans-serif" font-size="14" fill="rgba(255,255,255,0.4)">github.com/sachncs/membrane</text>
 </svg>

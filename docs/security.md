@@ -1,62 +1,89 @@
 # Security & authentication model
 
-Membrane's authentication and authorisation model is split
-across four modules; this page is the single landing page
-that ties them together.
+This page describes how Membrane authenticates callers, authorizes
+them, isolates tenants, and protects data at rest.
 
 ## Module map
 
-| Concern | Module | Notes |
-|---------|--------|-------|
-| mTLS / TLS configuration | `membrane.transport.tls` | `MTLSConfig`, `TLSConfig`, peer-CN allow-list. |
-| Per-op authorisation (tenant scopes) | `membrane.transport.authz` | `AuthContext`, `require_scopes` decorators. |
-| Per-tenant fragment policy | `membrane.security.tenant` | `TenantAuthorizer`, `TenantPolicy`. |
-| Outbound URL allow-list (SSRF) | `membrane.security.url_allowlist` | `URLAllowlist`, `validate_outbound_url`. |
-| Secrets vault (AWS / GCP / Vault / in-process) | `membrane.secrets` | Backend-agnostic secret fetch. |
-| Encryption at rest | `membrane.security.encryption` | AES-256-GCM, `DecryptError`. |
-| Key rotation | `membrane.security.key_rotation` | Master-key envelope rotation. |
-| Append-only audit log | `membrane.audit` | Hash-chained `AuditRecord`. |
-| Authentication protocol | `membrane.auth` | `Authenticator` + `APIKeyAuthenticator`. |
+| Concern | Module | Key names |
+|---------|--------|-----------|
+| Authentication protocol | `membrane.auth` | `Authenticator`, `AuthContext`, `require_scope` |
+| API keys | `membrane.auth.apikey` | `APIKeyAuthenticator` |
+| mTLS | `membrane.auth.mtls`, `membrane.transport.tls`, `membrane.transport.tls_protocol` | `MTLSAuthenticator`, `MTLSConfig`, `PeerCertH11Protocol` |
+| Route scopes | `membrane.transport.authz` | `ROUTE_SCOPES`, `enforce_route_scope` |
+| Tenant isolation | `membrane.security.tenant` | `TenantAuthorizer` |
+| Outbound URL guard (SSRF) | `membrane.security.url_allowlist` | `URLAllowlist`, `validate_outbound_url` |
+| Encryption at rest | `membrane.security.encryption`, `membrane.content_store` | `encrypt_payload`, `FilesystemBlob`, `DecryptError` |
+| Key rotation | `membrane.security.key_rotation` | versioned master keys |
+| Secret backends | `membrane.secrets` | AWS, GCP, Vault |
+| Audit log | `membrane.audit` | `AuditLog`, `verify_chain` |
 
 ## Authentication
 
-The runtime accepts two authentication modes:
+`membrane serve` refuses to listen on a non-loopback address unless
+one of these modes is configured (or `--allow-unauthenticated` is
+passed explicitly):
 
-* **API key** — `APIKeyAuthenticator`
-  (`membrane.auth.apikey`) checks the `X-Membrane-API-Key`
-  header against the configured key set. Suitable for
-  service-to-service calls where the caller is already
-  inside a trusted boundary.
-* **mTLS** — `MTLSConfig`
-  (`membrane.transport.tls`) gates inbound HTTP at the
-  TLS handshake. Every peer must present a certificate
-  signed by the cluster CA, and the certificate's CN must
-  appear in `MTLSConfig.allowed_cns`. Production
-  multi-node clusters must supply an `MTLSConfig`; the
-  v3.0.0 release treats the single-node deployment as
-  the only path that may run with `mtls=None`.
+* **API key**: `APIKeyAuthenticator` (`membrane.auth.apikey`),
+  enabled with `--api-key-file`. Clients send
+  `Authorization: Bearer <key>`. Keyfile lines are
+  `<key>:<subject>:<scope,...>`; lines with an empty key or subject
+  are ignored, because an empty subject would bypass the tenant check.
+* **mTLS**: `MTLSConfig` (`membrane.transport.tls`), enabled with
+  `--tls-cert/--tls-key/--tls-ca`. Every connection must present a
+  certificate signed by the CA bundle, and `MTLSAuthenticator` admits
+  only CNs in `allowed_cns`. The CN is read from the **verified peer
+  certificate** of the TLS handshake
+  (`membrane.transport.tls_protocol`); a client-supplied
+  `X-SSL-Client-CN` header is always discarded. Scopes come from the CN
+  prefix (`admin-`, `write-`, `read-`). On `/join` the CN must equal
+  the joining node id, optionally with a role prefix.
 
-The two modes are not mutually exclusive: a single
-deployment can require both an API key on the inbound
-request and a valid client certificate on the TLS layer.
+Authentication failures return `401` with `WWW-Authenticate: Bearer`;
+a valid caller without the required scope gets `403`.
 
 ## Authorisation
 
-`membrane.transport.authz` exposes `AuthContext` (the
-parsed identity of the caller) and a `require_scopes`
-decorator that enforces per-route scope checks:
+`membrane.transport.authz.ROUTE_SCOPES` maps every route to a scope,
+and `enforce_route_scope` runs it at the top of every handler:
 
-* `fragment:read` — read access to `op_get`,
-  `op_inventory`, and the public retrieve HTTP route.
-* `fragment:write` — write access to `op_store` and the
-  public store HTTP route.
-* `cluster:admin` — access to the admin endpoints
-  (`/admin/snapshot`, `/admin/rotate-keys`, etc.).
+| Scope | Routes |
+|-------|--------|
+| public | `GET /livez`, `GET /readyz` |
+| `read` | `GET /retrieve`, `/inventory`, `/peers`, `/heartbeat`, `/metrics`, `/metrics.json` |
+| `write` | `POST /store`, `/replicate`, `/prefill`, `/sync`, `/gossip`, `/join`, `/leave` |
+| `admin` | `POST /delete`, `/tombstone`, `/purge`, `/verify`, and everything under `/admin/` |
 
-`TenantAuthorizer` (`membrane.security.tenant`) layers a
-second check: a fragment carrying `tenant_id="acme"` is
-readable only by callers whose `AuthContext.subject`
-matches `acme` or who carry an explicit `tenant:acme` scope.
+`admin` implies `write` implies `read`. Unlisted routes default to
+`read`, so a new route fails closed.
+
+`TenantAuthorizer` (`membrane.security.tenant`) layers a second
+check: a fragment carrying `tenant_id="acme"` is readable only by
+callers whose `AuthContext.subject` matches `acme`, who carry an
+explicit `tenant:acme` scope, or who hold `admin`. A cross-tenant read
+is indistinguishable from a miss.
+
+### Peer-to-peer calls
+
+Nodes call each other's routes for join, heartbeat, gossip,
+replication, and delete propagation, so they authenticate like any
+client: with the mTLS client certificate, or in API-key clusters with
+the key from `--peer-api-key-file`, which must carry `admin`.
+
+### Prefill and tenants
+
+`POST /prefill` stamps the caller's tenant (the key's subject or the
+certificate CN) on every fragment it creates, so one tenant's prefill
+is not readable by another.
+
+### Known limitation: identical content across tenants
+
+A node keys fragments by content hash alone. When two tenants store or
+prefill byte-identical content, the node keeps the first tenant's copy;
+the second tenant's write succeeds but its reads miss, exactly as if the
+fragment were absent. Nothing is exposed across tenants, but the second
+tenant gets no cache benefit for that content. Tenant-scoped fragment
+keys are planned.
 
 ## SSRF / outbound URL guard
 
@@ -78,39 +105,45 @@ The outbound client disables redirect-following; every
 3xx response is surfaced to the caller as an explicit
 redirect that must be re-validated.
 
+Cluster peers usually live on private addresses. Seed hosts given
+with `--peer` are allowed by name, and `--peer-network` (or
+`MEMBRANE_PEER_NETWORKS`) admits a CIDR such as the Kubernetes pod
+network for peers learned later. A host passes only when every address
+it resolves to is inside an allowed network. Keep the range as narrow
+as the deployment allows and never include `169.254.0.0/16`.
+
 ## Encryption at rest
 
-`membrane.security.encryption` provides AES-256-GCM
-authenticated encryption for the canonical payload bytes.
-The `Encryption` class is constructed from a master key
-(or a `SecretsBackend` that produces one); every payload
-is encrypted with a per-record IV and carries a 16-byte
-GCM tag.
+With `--data-dir`, KV bytes are stored by `FilesystemBlob`: each blob
+is encrypted with AES-256-GCM under a key derived from the node's
+master key and the blob's content hash, and written atomically
+(temp file, `fsync`, rename). The master key comes from
+`--data-key-file` or is generated once into `<data-dir>/master.key`
+with mode 0600. Keep the key outside the volume in production; a
+snapshot that contains both the blobs and the key protects nothing.
 
-The storage layer raises `DecryptError` (typed) when the
-GCM tag fails to verify; the storage layer's
-`EncryptedInProcessBytes.get` and `FilesystemBlob.get`
-propagate the error as a typed signal (added in 3.0.1)
-so corruption is not silently conflated with a miss.
+A blob that fails authentication (tampering, or the wrong key) is
+never returned: `/retrieve` reports it as `found: false`, and the
+in-memory encrypted store (`EncryptedInProcessBytes`) raises
+`DecryptError`, which `/retrieve` reports as `"corrupt": true`.
+
+Without `--data-dir`, KV bytes live only in process memory.
 
 ## Key rotation
 
-`membrane.security.key_rotation` provides envelope
-encryption with key versioning: every encrypted payload
-carries the key version that produced it, and the
-rotation path reads the new master key from the
-configured `SecretsBackend` without re-encrypting
-existing payloads in place. Old payloads decrypt with
-the prior key version until they age out.
+`membrane.security.key_rotation` supports versioned master keys: a key
+provider that exposes `version_keys()` lets `FilesystemBlob` decrypt
+blobs written under older keys while new writes use the current key.
+`membrane serve` currently takes a single key; rotation requires a
+custom key provider through the Python API.
 
 ## Audit log
 
-`membrane.audit` writes every privileged operation
-(`op_store`, `op_delete`, key-rotation events, admin
-endpoints) to an append-only, hash-chained `AuditRecord`.
-The chain is verifiable end-to-end: the operator can
-walk the chain from any point and confirm the digest
-matches the prior record's `prev_hash`.
+Every `/admin/*` operation (inspect, placement, evict, repair, policy
+changes) is appended to a hash-chained `AuditLog`, which admins can
+read with `GET /admin/audit`; `membrane.audit.verify_chain` detects
+tampering. The log is held in memory and resets when the node
+restarts; ship it to durable storage if you need a retained trail.
 
 ## See also
 

@@ -194,13 +194,15 @@ class Node:
         # (or any other tenant-aware store), the Node
         # threads ``tenant_id`` into the put / get calls so the
         # store can derive its per-tenant key.
-        self._store_uses_tenant = bool(
-            hasattr(content_store, "tenant_id") or content_store is None
-        )
+        self._store_uses_tenant = bool(hasattr(content_store, "tenant_id") or content_store is None)
 
         self.fragments: dict[str, Fragment] = {}
         self.primary_hashes: set[str] = set()
         self._eviction_callbacks: list[Callable[[object], None]] = []
+        # Durability hooks (see :meth:`set_persistence_hooks`).
+        self._on_store: Callable[[Fragment, bool], None] | None = None
+        self._on_remove: Callable[[str], None] | None = None
+        self._eviction_counter: Callable[[str, int], None] | None = None
         self.access_times: dict[str, float] = {}
         self.insertion_times: dict[str, float] = {}
         self.memory_usage: int = 0
@@ -252,9 +254,7 @@ class Node:
                 scopes=caller_scopes,
             )
             authorizer.authorize_write(fragment.tenant_id)
-        if self.admission_policy is not None and not self.admission_policy.should_admit(
-            fragment.reuse_score
-        ):
+        if self.admission_policy is not None and not self.admission_policy.should_admit(fragment.reuse_score):
             logger.debug(
                 "Node %s rejected %s: reuse_score=%.3f below threshold",
                 self.node_id,
@@ -272,9 +272,7 @@ class Node:
             )
             return False
         if self.tier_policy is not None:
-            self._selected_tiers[fragment.identity.payload_hash] = select_tier(
-                self.tier_policy, fragment
-            )
+            self._selected_tiers[fragment.identity.payload_hash] = select_tier(self.tier_policy, fragment)
         if fragment.payload_size > self.max_memory_bytes:
             logger.warning(
                 "Fragment %s size %s exceeds node %s limit %s",
@@ -328,6 +326,7 @@ class Node:
                         fragment.payload_ref,
                     )
                 logger.debug("Stored fragment %s on %s", content_hash, self.node_id)
+                self._notify(self._on_store, fragment, is_primary)
                 if self.metrics is not None:
                     self.metrics.tenant.bump_fragment(fragment.tenant_id, 1)
 
@@ -408,6 +407,7 @@ class Node:
         """
         with self.lock:
             frag = self.fragments.pop(content_hash)
+            self._notify(self._on_remove, content_hash)
             self.memory_usage -= frag.payload_size
             self.primary_hashes.discard(content_hash)
             self.access_times.pop(content_hash, None)
@@ -498,10 +498,7 @@ class Node:
             evicted: list[str] = []
             evicted_fragments: list[Fragment] = []
             freed = 0
-            expired = [
-                h for h, frag in self.fragments.items()
-                if now - self.insertion_times.get(h, now) > frag.ttl
-            ]
+            expired = [h for h, frag in self.fragments.items() if now - self.insertion_times.get(h, now) > frag.ttl]
             for h in expired:
                 if freed >= target_bytes:
                     break
@@ -640,9 +637,7 @@ class Node:
 
             # Phase 2: LRU weighted by reuse_score.
             already_evicted = set(evicted_hashes)
-            lru_evicted, lru_fragments, lru_freed = self.evict_lru(
-                target_bytes - freed, now, already_evicted
-            )
+            lru_evicted, lru_fragments, lru_freed = self.evict_lru(target_bytes - freed, now, already_evicted)
             evicted_hashes.extend(lru_evicted)
             evicted_fragments.extend(lru_fragments)
             freed += lru_freed
@@ -661,6 +656,49 @@ class Node:
             self._fire_eviction_callbacks(evicted_fragments)
             return evicted_hashes
 
+    def sweep_expired(self, current_time: float | None = None) -> list[str]:
+        """Evict every fragment past its TTL, and nothing else.
+
+        The periodic sweeper uses this instead of :meth:`evict`, whose
+        LRU and graph phases would remove live fragments on a timer.
+
+        Args:
+            current_time: Optional timestamp for deterministic testing.
+
+        Returns:
+            list[str]: The evicted content hashes.
+        """
+        with self.lock:
+            now = current_time if current_time is not None else time.time()
+            evicted_hashes, evicted_fragments, _freed = self.evict_expired(self.memory_usage + 1, now)
+            self._fire_eviction_callbacks(list(evicted_fragments), reason="expired")
+            return evicted_hashes
+
+    def set_persistence_hooks(
+        self,
+        on_store: Callable[[Fragment, bool], None] | None,
+        on_remove: Callable[[str], None] | None,
+    ) -> None:
+        """Install write-through durability hooks.
+
+        ``on_store(fragment, is_primary)`` runs once per newly stored
+        fragment and ``on_remove(content_hash)`` whenever a fragment
+        leaves the node (eviction, TTL expiry, delete, or rollback).
+        Hook failures are logged and never fail the node operation:
+        the in-memory node stays authoritative.
+        """
+        with self.lock:
+            self._on_store = on_store
+            self._on_remove = on_remove
+
+    def _notify(self, hook: Callable[..., None] | None, *args: object) -> None:
+        if hook is None:
+            return
+        try:
+            hook(*args)
+        except Exception as exc:
+            logger.warning("persistence hook failed on %s: %s", self.node_id, exc)
+
     def add_eviction_callback(self, callback: Callable[[object], None]) -> None:
         """Register a callback invoked on every evicted fragment.
 
@@ -675,12 +713,23 @@ class Node:
         with self.lock:
             self._eviction_callbacks.append(callback)
 
-    def _fire_eviction_callbacks(self, evicted_fragments: list[object]) -> None:
+    def set_eviction_counter(self, counter: Callable[[str, int], None] | None) -> None:
+        """Install ``counter(reason, count)``, called after each eviction batch.
+
+        ``reason`` is ``"expired"`` for TTL sweeps and ``"capacity"``
+        when fragments were evicted to make room.
+        """
+        self._eviction_counter = counter
+
+    def _fire_eviction_callbacks(self, evicted_fragments: list[object], reason: str = "capacity") -> None:
         """Snapshot the fragments and run the registered callbacks.
 
         Args:
             evicted_fragments: Fragments just evicted.
+            reason: Why they were evicted (for metrics).
         """
+        if evicted_fragments:
+            self._notify(self._eviction_counter, reason, len(evicted_fragments))
         if not self._eviction_callbacks or not evicted_fragments:
             return
         callbacks = list(self._eviction_callbacks)

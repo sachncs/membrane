@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import urllib.request
 from typing import Any
@@ -65,8 +66,13 @@ def fetch_json(host: str, port: int, path: str, timeout: float = 2.0) -> dict[st
         (network failure, non-JSON response).
     """
     url = f"http://{host}:{port}{path}"
+    request = urllib.request.Request(url)
+    # Secured nodes reject unauthenticated reads.
+    api_key = os.environ.get("MEMBRANE_API_KEY", "")
+    if api_key:
+        request.add_header("Authorization", f"Bearer {api_key}")
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
             return json.loads(resp.read().decode())
     except Exception:
         return {}

@@ -85,8 +85,7 @@ class LMCacheContentStore:
             from lmcache.v1.storage_backend.local_cpu_backend import LocalCPUBackend
         except ImportError as exc:
             raise ImportError(
-                "LMCache is required for LMCacheContentStore; install "
-                "with `pip install membrane[lmcache]`."
+                "LMCache is required for LMCacheContentStore; install with `pip install membrane[lmcache]`."
             ) from exc
 
         self.config = config or {}
@@ -102,9 +101,7 @@ class LMCacheContentStore:
                 kv_dtype="fp16",
                 kv_shape=(32, 1, 1, 128, 64),
             )
-            self._backend = LocalCPUBackend(
-                config=engine_config, metadata=metadata
-            )
+            self._backend = LocalCPUBackend(config=engine_config, metadata=metadata)
         except Exception as exc:
             raise RuntimeError(f"failed to initialise LMCache backend: {exc}") from exc
         self._keys: dict[int, str] = {}
@@ -132,9 +129,7 @@ class LMCacheContentStore:
         if not data:
             tensor = torch.zeros((1, 1, 1, 1), dtype=torch.uint8)
         else:
-            tensor = torch.frombuffer(
-                bytearray(data), dtype=torch.uint8
-            ).reshape(1, 1, 1, -1)
+            tensor = torch.frombuffer(bytearray(data), dtype=torch.uint8).reshape(1, 1, 1, -1)
         meta = MemoryObjMetadata(
             shape=tensor.shape,
             dtype=tensor.dtype,
@@ -150,9 +145,7 @@ class LMCacheContentStore:
         # arguments; the shape/dtype are inferred from the
         # last ``allocate`` call).
         parent_allocator = self._backend.get_memory_allocator()
-        return TensorMemoryObj(
-            raw_data=tensor, metadata=meta, parent_allocator=parent_allocator
-        )
+        return TensorMemoryObj(raw_data=tensor, metadata=meta, parent_allocator=parent_allocator)
 
     def _read_object(self, memory_obj: Any) -> bytes:
         """Read a ``MemoryObj`` back into raw bytes.
@@ -181,9 +174,7 @@ class LMCacheContentStore:
             # ``LocalCPUBackend.submit_put_task`` returns a future;
             # we block on it so the ``ContentStore`` contract stays
             # synchronous.
-            future = self._backend.submit_put_task(
-                key=lmcache_key, memory_obj=memory_obj
-            )
+            future = self._backend.submit_put_task(key=lmcache_key, memory_obj=memory_obj)
             if future is not None:
                 future.result(timeout=30.0)
             self._objects[lmcache_key] = memory_obj
