@@ -24,7 +24,7 @@ COPY membrane/ membrane/
 RUN pip install --upgrade pip build \
  && python -m build --wheel --outdir /dist \
  && pip install "$(ls /dist/membrane-*.whl)[server]" \
- && pip uninstall -y build
+ && pip uninstall -y build pip
 
 
 FROM ${PYTHON_IMAGE}
@@ -43,9 +43,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # tini reaps zombies and forwards SIGTERM so `membrane serve` can shut
 # down gracefully; curl backs the HEALTHCHECK.
+# Apply Debian security updates, and drop the base image's pip: the
+# runtime never installs packages, and pip's vendored libraries are
+# what scanners flag.
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends curl tini ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -rf /usr/local/lib/python3*/site-packages/pip /usr/local/lib/python3*/site-packages/pip-* /usr/local/bin/pip*
 
 # Non-root user with explicit UID so read-only filesystems can map it.
 RUN groupadd -r --gid 1000 membrane \
