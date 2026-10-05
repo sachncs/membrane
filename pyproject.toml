@@ -42,20 +42,20 @@ dev = [
     "pytest-cov>=7.1.0",
     "mypy>=2.3.1",
     "redis>=8.1.0",
-    "ruff>=0.16.5",
+    "ruff>=0.16.10",
     # Server extras are needed at test-collection time because the
     # compute-backend tests import httpx and the integration /
     # transport tests import fastapi and grpcio.
-    "grpcio>=1.83.1",
+    "grpcio>=1.84.0",
     "grpcio-tools>=1.83.1",
     "fastapi>=0.142.2",
     "uvicorn[standard]>=0.52.4",
     "httpx>=0.28.1",
     "pydantic>=2.13.5",
 ]
-server = ["grpcio>=1.83.1", "grpcio-tools>=1.83.1", "redis>=8.1.0", "fastapi>=0.142.2", "uvicorn[standard]>=0.52.4", "httpx>=0.28.1", "pydantic>=2.13.5"]
+server = ["grpcio>=1.84.0", "grpcio-tools>=1.83.1", "redis>=8.1.0", "fastapi>=0.141.1", "uvicorn[standard]>=0.52.4", "httpx>=0.28.1", "pydantic>=2.13.5"]
 gpu = ["torch>=2.13.0"]
-local-llm = ["transformers>=5.16.1", "tokenizers>=0.23.1", "torch>=2.13.0", "sentencepiece>=0.2.2", "protobuf>=7.36.0"]
+local-llm = ["transformers>=5.18.0", "tokenizers>=0.23.1", "torch>=2.13.0", "sentencepiece>=0.2.2", "protobuf>=7.36.0"]
 # LMCache is the v2.0+ canonical KV substrate. Optional install;
 # operators opt in via `pip install membrane[lmcache]`. The exact
 # pin is left to the deployment image so the protobuf <-> grpcio
@@ -68,7 +68,7 @@ lmcache = ["lmcache>=0.5,<0.6"]
 # and the TensorRT-LLM runtime; operators pin the exact
 # version in their deployment image.
 vllm = ["vllm>=0.10,<0.12"]
-sglang = ["sglang>=0.4,<0.6"]
+sglang = ["sglang>=0.5.21,<0.6"]
 trtllm = ["tensorrt-llm>=0.20,<0.22"]
 # Prefill / decode disaggregation surface (Phase 8). The
 # REST surface is FastAPI-only; the gRPC surface additionally
