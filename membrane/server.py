@@ -128,6 +128,55 @@ def _try_import(class_name: str) -> Any:
 _register_compute_backends()
 
 
+def build_content_store(data_dir: str, key_file: str = "") -> Any:
+    """Return an encrypted on-disk content store rooted at ``data_dir``.
+
+    KV bytes live in ``{data_dir}/blobs`` (AES-256-GCM,
+    :class:`~membrane.content_store.FilesystemBlob`), so they survive a
+    restart. The 32-byte master key comes from ``key_file`` when given
+    (mount it from a secret manager in production); otherwise it is
+    generated once into ``{data_dir}/master.key`` with mode 0600.
+
+    Args:
+        data_dir: Node data directory; created when missing.
+        key_file: Optional path to a file holding the raw 32-byte key
+            or its 64-character hex encoding.
+
+    Returns:
+        FilesystemBlob: The content store.
+
+    Raises:
+        ValueError: When the key file does not hold a 32-byte key.
+    """
+    import os
+    import secrets
+    from pathlib import Path
+
+    from membrane.content_store import FilesystemBlob
+    from membrane.security.encryption import StaticKeyProvider
+
+    root = Path(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    key_path = Path(key_file) if key_file else root / "master.key"
+    if not key_path.exists():
+        if key_file:
+            raise ValueError(f"data key file {key_file!r} does not exist")
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(secrets.token_bytes(32))
+    raw = key_path.read_bytes()
+    if len(raw) == 32:
+        key = raw  # raw key bytes: never strip, they may look like whitespace
+    else:
+        try:
+            key = bytes.fromhex(raw.decode("ascii").strip())
+        except (UnicodeDecodeError, ValueError):
+            key = b""
+    if len(key) != 32:
+        raise ValueError(f"data key in {str(key_path)!r} must be 32 bytes (or 64 hex characters)")
+    return FilesystemBlob(root / "blobs", tenant_id="membrane", key_provider=StaticKeyProvider(key=key))
+
+
 def _resolves_to_loopback(host: str) -> bool:
     """Return True when ``host`` resolves only to loopback addresses."""
     import ipaddress
@@ -303,6 +352,7 @@ class Server:
         self.metrics_cluster = ClusterMetrics(self.metrics_registry)
         self.metrics_persistence = PersistenceMetrics(self.metrics_registry)
         self.metrics_node = NodeMetrics(self.metrics_registry)
+        self.node.set_eviction_counter(lambda reason, count: self.metrics_node.evictions.inc(count, reason=reason))
 
         if isinstance(compute, Backend):
             self.compute_backend = compute
@@ -315,6 +365,9 @@ class Server:
             self.compute_backend = factory(llm_url, llm_model, api_key)
 
         self.persistence = self.build_persistence(redis_url)
+        self.durable = self._persistence_is_durable()
+        if self.durable:
+            self.node.set_persistence_hooks(self._persist_fragment, self._forget_fragment)
 
         self.cluster_manager: Cluster | None = None
         # GC plumbing: tombstones + periodic sweeper. Single
@@ -426,6 +479,56 @@ class Server:
             networks += ["127.0.0.0/8", "::1/128"]
         configure_allowlist(allowlist=seed_hosts, allowed_networks=networks)
 
+    def refresh_metrics(self) -> None:
+        """Update point-in-time gauges; called on every ``/metrics`` scrape."""
+        from membrane.transport.metrics import sync_node_metrics
+
+        sync_node_metrics(self.node, self.metrics_node)
+        if self.cluster_manager is not None:
+            peers = self.cluster_manager.membership.snapshot()
+            self.metrics_cluster.peers_total.set(float(len(peers)))
+            self.metrics_cluster.peers_healthy.set(float(sum(1 for p in peers if p.healthy)))
+
+    def _persistence_is_durable(self) -> bool:
+        """True when fragments are written through to Redis."""
+        inner = getattr(self.persistence, "inner", None)
+        return isinstance(inner, Redis)
+
+    def _persist_fragment(self, fragment: Any, is_primary: bool) -> None:
+        self.persistence.store_fragment(fragment, self.node.node_id, is_primary)
+
+    def _forget_fragment(self, content_hash: str) -> None:
+        self.persistence.forget_on_node(content_hash, self.node.node_id)
+
+    def restore_fragments(self) -> int:
+        """Reload this node's fragments from Redis after a restart.
+
+        A fragment is restored only when it is metadata-only or its KV
+        bytes are still in the node's content store (``--data-dir``);
+        expired or byte-less entries are dropped from the node's set.
+
+        Returns:
+            int: Number of fragments restored.
+        """
+        if not self.durable:
+            return 0
+        node_id = self.node.node_id
+        restored = 0
+        for content_hash in sorted(self.persistence.list_node_fragments(node_id)):
+            fragment = self.persistence.retrieve_fragment(content_hash)
+            usable = fragment is not None and (
+                fragment.payload_ref is None or self.node.content_store.has(fragment.payload_ref)
+            )
+            if not usable:
+                self._forget_fragment(content_hash)
+                continue
+            primary = self.persistence.get_primary(content_hash) == node_id
+            if self.node.store(fragment, is_primary=primary):
+                restored += 1
+        if restored:
+            logger.info("Restored %s fragments for %s from Redis", restored, node_id)
+        return restored
+
     def build_transport(self, transport: str, host: str, port: int) -> Any:
         mtls = self.tls
         if transport != "http":
@@ -446,6 +549,7 @@ class Server:
         # writes block on replica acks instead of degrading to
         # local-only.
         server.app.state.server = self
+        server.app.state.refresh_metrics = self.refresh_metrics
         if self.cluster_manager is not None:
             from membrane.quorum import attempt_quorum_acks
 
@@ -462,6 +566,7 @@ class Server:
         # cluster manager, snapshot, and transfer service are
         # populated atomically with respect to live traffic.
         self.restore_state()
+        self.restore_fragments()
         self.running = True
         if self.cluster_manager:
             self.cluster_manager.start()

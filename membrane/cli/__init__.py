@@ -30,6 +30,24 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+
+def _version_callback(value: bool) -> None:
+    if value:
+        from membrane import __version__
+
+        typer.echo(f"membrane {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False, "--version", "-V", callback=_version_callback, is_eager=True, help="Show the version and exit."
+    ),
+) -> None:
+    """Membrane — Global Contextual Memory Fabric CLI."""
+
+
 # Register subcommands. Each is a typer.command function from
 # ``membrane.cli.commands.*`` exposed as ``main`` for uniformity.
 app.command(name="serve", help="Start a Membrane production server.")(serve.main)

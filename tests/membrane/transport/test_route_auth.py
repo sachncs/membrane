@@ -232,3 +232,11 @@ def test_serve_rejects_empty_keyfile(tmp_path) -> None:
     result = CliRunner().invoke(app, ["serve", "--daemon", "--api-key-file", str(keyfile)])
     assert result.exit_code == 2
     assert "no valid keys" in result.output
+
+
+def test_prefill_fragments_belong_to_caller_tenant(client: TestClient) -> None:
+    resp = client.post("/prefill", json={"prompt_tokens": [7, 8, 9], "model_id": "m"}, headers=_bearer("writer-key"))
+    frag = resp.json()["fragments"][0]
+    assert frag["tenant_id"] == "acme"
+    content_hash = frag["identity"]["payload_hash"]
+    assert client.get(f"/retrieve?content_hash={content_hash}", headers=_bearer("other-key")).json()["found"] is False

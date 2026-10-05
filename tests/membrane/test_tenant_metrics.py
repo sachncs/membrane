@@ -146,6 +146,9 @@ class TestClusterMetricsTenantOps:
         metrics = NodeMetrics(registry=registry)
         metrics.tenant.bump_fragment("acme", 3)
         metrics.tenant.bump_fragment("globex", 1)
-        # The sync method should not raise; it's a no-op for the
-        # current Counter primitive.
         metrics.sync_tenant_fragment_gauges()
+        assert metrics.tenant_fragments.get(tenant="acme") == 3.0
+        assert metrics.tenant_fragments.get(tenant="globex") == 1.0
+        # Repeated syncs must not accumulate.
+        metrics.sync_tenant_fragment_gauges()
+        assert metrics.tenant_fragments.value == 4.0

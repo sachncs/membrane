@@ -64,6 +64,9 @@ spec:
               value: /run/secrets/membrane/api-keys
             - name: MEMBRANE_PEER_API_KEY_FILE
               value: /run/secrets/membrane/peer-api-key
+            # KV bytes persist on the pod's PVC; metadata in Redis.
+            - name: MEMBRANE_DATA_DIR
+              value: /var/lib/membrane
           resources:
             requests:
               cpu: "1"
@@ -107,6 +110,8 @@ spec:
             # readOnlyRootFilesystem: the TLS listener writes its PEMs here.
             - name: tmp
               mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/membrane
       volumes:
         - name: secrets
           secret:
@@ -116,3 +121,11 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 16Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

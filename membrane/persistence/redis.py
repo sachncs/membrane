@@ -29,6 +29,7 @@ Security:
 """
 
 import logging
+import math
 import time
 from typing import Any, cast
 
@@ -112,6 +113,10 @@ class Redis:
         # The cast to the broader Mapping type satisfies mypy without
         # changing the wire format.
         pipe.hset(self.key_for(f"frag:{h}"), mapping=cast(Any, data))
+        # The record is shared by every node holding the fragment, so
+        # it expires with the fragment's TTL instead of being deleted
+        # when one node evicts its copy.
+        pipe.expire(self.key_for(f"frag:{h}"), max(1, math.ceil(fragment.ttl)))
         pipe.sadd(self.key_for(f"node:{node_id}:fragments"), h)
         if is_primary:
             pipe.set(self.key_for(f"primary:{h}"), node_id)
@@ -155,6 +160,14 @@ class Redis:
         pipe.execute()
         logger.debug("Deleted fragment %s", content_hash)
         return True
+
+    def forget_on_node(self, content_hash: str, node_id: str) -> None:
+        """Drop ``content_hash`` from ``node_id``'s fragment set only.
+
+        Other nodes may still hold the fragment, so the shared record
+        is left to expire with its TTL.
+        """
+        self.client.srem(self.key_for(f"node:{node_id}:fragments"), content_hash)
 
     # ------------------------------------------------------------------
     # Inventory
@@ -311,6 +324,12 @@ class Redis:
             "ttl": str(fragment.ttl),
             "reuse_score": str(fragment.reuse_score),
             "version_id": str(fragment.version_id),
+            # Without these a restored fragment would fall back to the
+            # public tenant and default consistency.
+            "tenant_id": fragment.tenant_id,
+            "consistency": fragment.consistency,
+            "hlc": str(fragment.hlc),
+            "fingerprint_compat": fragment.fingerprint_compat,
         }
 
     @staticmethod
@@ -348,4 +367,8 @@ class Redis:
             ttl=float(data["ttl"]),
             reuse_score=float(data["reuse_score"]),
             version_id=int(data["version_id"]),
+            tenant_id=data.get("tenant_id") or "public",
+            consistency=data.get("consistency") or "strong",
+            hlc=int(data.get("hlc") or 0),
+            fingerprint_compat=data.get("fingerprint_compat", ""),
         )

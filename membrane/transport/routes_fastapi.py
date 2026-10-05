@@ -406,6 +406,9 @@ def _heartbeat(app: FastAPI, request: Request):
 
 def _metrics(app: FastAPI):
     """``GET /metrics`` — Prometheus text or legacy JSON."""
+    refresh = getattr(app.state, "refresh_metrics", None)
+    if refresh is not None:
+        refresh()
     status, payload = op_metrics(app.state.node, app.state.metrics_registry)
     if status == 200 and isinstance(payload, tuple):
         text, headers = payload

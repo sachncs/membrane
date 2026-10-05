@@ -283,7 +283,7 @@ def op_store(
     # metadata is published. Accepting a fragment whose bytes are
     # absent would report success for a write that /retrieve then
     # reports as missing, so reject it up front.
-    if frag.payload_ref is not None and not node.content_store.has(frag.payload_ref):
+    if frag.payload_ref is not None and not _payload_present(node, frag.payload_ref):
         return 422, {
             "error": "payload_ref not found in content store",
             "payload_ref": frag.payload_ref,
@@ -373,6 +373,18 @@ def op_store(
     return _ok({"success": True, "content_hash": frag.identity.payload_hash})
 
 
+def _payload_present(node: Node, payload_ref: str) -> bool:
+    """Whether ``payload_ref`` is in the node's content store.
+
+    A ref the store cannot address at all (e.g. too short for the
+    on-disk layout) counts as absent rather than a server error.
+    """
+    try:
+        return bool(node.content_store.has(payload_ref))
+    except ValueError:
+        return False
+
+
 def _rollback_local_write(node: Node, content_hash: str, existed_before: bool) -> None:
     """Undo a local write whose quorum failed, unless the copy pre-existed."""
     if existed_before:
@@ -450,16 +462,25 @@ def op_prefill(
     if node is None:
         return _ok({"error": "no node"})
     backend = backend or CPU()
+    caller_tenant = auth_context.subject if auth_context is not None else ""
+    caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
     fragments = backend.prefill(prompt_tokens, model_id)
+    # Fragments belong to the authenticated caller's tenant; without
+    # this every tenant's prefill would land in the public tenant.
+    if caller_tenant:
+        fragments = [frag.with_tenant(caller_tenant) for frag in fragments]
     for frag in fragments:
         # Simulated / remote backends never write KV bytes; store
         # their placeholder payload so /retrieve can serve the
         # fragment. Backends with real frames already wrote them.
-        if frag.payload_ref is not None and not node.content_store.has(frag.payload_ref):
+        if frag.payload_ref is not None and not _payload_present(node, frag.payload_ref):
             payload = backend.simulated_payload(frag)
             if payload is not None:
                 node.content_store.put(frag.payload_ref, payload)
-        node.store(frag, is_primary=True)
+        try:
+            node.store(frag, is_primary=True, caller_tenant=caller_tenant, caller_scopes=caller_scopes)
+        except TenantScopeError as exc:
+            return 403, {"error": "tenant scope", "detail": str(exc)}
     return _ok(
         {
             "success": True,

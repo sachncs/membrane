@@ -52,6 +52,10 @@ services:
       MEMBRANE_COMPUTE: ${MEMBRANE_COMPUTE:-cpu}
       MEMBRANE_REDIS_URL: redis://redis:6379/0
       MEMBRANE_API_KEY_FILE: /run/secrets/membrane_api_keys
+      # KV bytes on disk + fragment metadata in Redis: survives restarts.
+      MEMBRANE_DATA_DIR: /var/lib/membrane
+    volumes:
+      - membrane-data:/var/lib/membrane
     secrets:
       - membrane_api_keys
     read_only: true
@@ -99,6 +103,7 @@ secrets:
 
 volumes:
   redis-data:
+  membrane-data:
 
 networks:
   # No route to the outside world: Redis is reachable only from membrane.

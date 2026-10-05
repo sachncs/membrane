@@ -118,6 +118,18 @@ def main(
     redis_url: str = typer.Option(
         "", "--redis", "-r", envvar="MEMBRANE_REDIS_URL", help="Redis URL (e.g. redis://localhost:6379/0)"
     ),
+    data_dir: str = typer.Option(
+        "",
+        "--data-dir",
+        envvar="MEMBRANE_DATA_DIR",
+        help="Keep KV bytes on disk (encrypted) here so they survive restarts",
+    ),
+    data_key_file: str = typer.Option(
+        "",
+        "--data-key-file",
+        envvar="MEMBRANE_DATA_KEY_FILE",
+        help="32-byte (or 64-hex) key for --data-dir; default: generated into <data-dir>/master.key",
+    ),
     max_memory: int = typer.Option(
         1 << 30, "--max-memory", "-m", envvar="MEMBRANE_MAX_MEMORY", help="Max memory bytes"
     ),
@@ -319,7 +331,16 @@ def main(
             quorum_count=quorum_count,
         )
 
-    node = Node(node_id=node_id, max_memory_bytes=max_memory)
+    content_store = None
+    if data_dir:
+        from membrane.server import build_content_store
+
+        try:
+            content_store = build_content_store(data_dir, data_key_file)
+        except (OSError, ValueError) as exc:
+            console.print(f"[bold red]Cannot open data directory {data_dir!r}: {exc}[/bold red]")
+            raise typer.Exit(2) from exc
+    node = Node(node_id=node_id, max_memory_bytes=max_memory, content_store=content_store)
     server = Server(
         node=node,
         transport=transport,
@@ -337,8 +358,19 @@ def main(
         tls=tls,
     )
 
+    if redis_url and not server.durable:
+        console.print(
+            f"[bold red]Redis at {redis_url} is unreachable; refusing to start without the requested durability.[/bold red]"
+        )
+        raise typer.Exit(2)
+
     server.start()
-    auth_mode = "mTLS" if tls is not None else ("API key" if authenticator is not None else "NONE")
+    if tls is not None:
+        auth_mode = "mTLS"
+    elif authenticator is not None:
+        auth_mode = "API key"
+    else:
+        auth_mode = "none (loopback only)" if _is_loopback(host) else "NONE (--allow-unauthenticated)"
     console.print(f"[bold green]Membrane server started[/bold green] on {host}:{port}")
     console.print(f"  Node ID : {node_id}")
     console.print(f"  Transport: {transport}")
@@ -347,6 +379,7 @@ def main(
     console.print(f"  LLM URL  : {llm_url or 'default'}")
     console.print(f"  LLM Model: {llm_model or 'default'}")
     console.print(f"  Redis    : {redis_url or 'disabled (in-memory)'}")
+    console.print(f"  Data dir : {data_dir or 'none (KV bytes in memory)'}")
     console.print(f"  Peers    : {', '.join(peer_list) if peer_list else 'none'}")
     console.print(f"  Max Mem  : {fmt_bytes(max_memory)}")
 

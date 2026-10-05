@@ -84,3 +84,14 @@ def test_client_and_admin_subcommands_are_reachable():
         assert cmd in client_help
     for cmd in ("inspect", "placement", "evict", "repair", "policy"):
         assert cmd in admin_help
+
+
+def test_version_flag():
+    from typer.testing import CliRunner
+
+    import membrane
+    from membrane.cli import app
+
+    result = CliRunner().invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert result.output.strip() == f"membrane {membrane.__version__}"

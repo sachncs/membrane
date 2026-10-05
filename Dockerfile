@@ -49,7 +49,8 @@ RUN apt-get update \
 
 # Non-root user with explicit UID so read-only filesystems can map it.
 RUN groupadd -r --gid 1000 membrane \
- && useradd  -r --uid 1000 --gid 1000 --home-dir /app --shell /usr/sbin/nologin membrane
+ && useradd  -r --uid 1000 --gid 1000 --home-dir /app --shell /usr/sbin/nologin membrane \
+ && install -d -o membrane -g membrane -m 0750 /var/lib/membrane
 
 COPY --from=builder /opt/venv /opt/venv
 
@@ -57,6 +58,9 @@ WORKDIR /app
 USER membrane
 
 EXPOSE 8080
+# Mount a volume here and set MEMBRANE_DATA_DIR=/var/lib/membrane to keep
+# KV bytes across restarts (pair with MEMBRANE_REDIS_URL for metadata).
+VOLUME ["/var/lib/membrane"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD curl -fsS "http://localhost:${MEMBRANE_PORT}/livez" || exit 1

@@ -55,10 +55,10 @@ def record_transport(
         status, body = fn()
     except Exception as exc:  # pragma: no cover - ops don't raise
         metrics.errors.inc(endpoint=endpoint, exception=type(exc).__name__)
-        metrics.duration.observe(time.monotonic() - start)
+        metrics.duration.observe(time.monotonic() - start, endpoint=endpoint)
         raise
     metrics.requests.inc(endpoint=endpoint, method=method, status=str(status))
-    metrics.duration.observe(time.monotonic() - start)
+    metrics.duration.observe(time.monotonic() - start, endpoint=endpoint)
     return status, body
 
 
@@ -117,11 +117,12 @@ def sync_node_metrics(node: Any, metrics: NodeMetrics) -> None:
     metrics.fragments.set(float(stats.fragment_count))
     metrics.memory_used_bytes.set(float(stats.memory_used_bytes))
     metrics.memory_limit_bytes.set(float(stats.memory_limit_bytes))
-    metrics.tenant.fragment_count = dict(metrics.tenant.fragment_count)
-    # The fragment_count gauge total lives on TenantMetrics
-    # for finer-grained access; the running aggregate is
-    # available via the helpers below.
-    metrics.sync_tenant_fragment_gauges()
+    with node.lock:
+        tenants = [fragment.tenant_id for fragment in node.fragments.values()]
+    counts: dict[str, int] = {}
+    for tenant in tenants:
+        counts[tenant] = counts.get(tenant, 0) + 1
+    metrics.sync_tenant_fragment_gauges(counts)
 
 
 __all__ = [
