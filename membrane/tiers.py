@@ -180,7 +180,7 @@ class Bandit:
         """
         self.arms = list(arms)
         self.epsilon = epsilon
-        self._lock = threading.RLock()
+        self.lock = threading.RLock()
 
     def select_arm(self) -> BanditArm:
         """Return an arm via ε-greedy selection.
@@ -188,10 +188,10 @@ class Bandit:
         Returns:
             BanditArm: The selected arm.
         """
-        with self._lock:
+        with self.lock:
             if random.random() < self.epsilon:
                 return random.choice(self.arms)
-            return max(self.arms, key=lambda arm: self._estimated_reward(arm))
+            return max(self.arms, key=lambda arm: self.estimated_reward(arm))
 
     def update(self, arm: BanditArm, reward: float) -> None:
         """Record reward for ``arm`` and update estimated reward.
@@ -201,13 +201,13 @@ class Bandit:
             reward: Observed reward (e.g., the hit rate observed
                 at the routed store / retrieve op).
         """
-        with self._lock:
+        with self.lock:
             arm.pulls += 1
             arm.reward_sum += reward
             # Recompute the weight as the running average.
             arm.weight = arm.reward_sum / max(1, arm.pulls)
 
-    def _estimated_reward(self, arm: BanditArm) -> float:
+    def estimated_reward(self, arm: BanditArm) -> float:
         """Return the running average reward for ``arm``.
 
         Args:

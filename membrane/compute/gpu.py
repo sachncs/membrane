@@ -147,3 +147,8 @@ class GPU(Backend):
         if self.fallback is not None:
             return f"gpu_fallback({self.fallback.device_name()})"
         return str(self.gpu_device)
+
+
+__all__ = [
+    "GPU",
+]

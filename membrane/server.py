@@ -52,42 +52,42 @@ type ComputeBackendFactory = Callable[[str, str, str], Backend]
 COMPUTE_BACKENDS: dict[str, ComputeBackendFactory] = {}
 
 
-def _register_compute_backends() -> None:
+def register_compute_backends() -> None:
     """Populate the COMPUTE_BACKENDS registry from optional-backend imports."""
     from membrane.compute.cpu import CPU
 
     COMPUTE_BACKENDS["cpu"] = lambda _url, _model, _key: CPU()
-    COMPUTE_BACKENDS["gpu"] = lambda _url, _model, _key: _try_import("GPU")()
+    COMPUTE_BACKENDS["gpu"] = lambda _url, _model, _key: try_import("GPU")()
     COMPUTE_BACKENDS["ollama"] = lambda url, model, _key: cast(
         Backend,
-        _try_import("Ollama")(
+        try_import("Ollama")(
             base_url=url or "http://localhost:11434",
             model=model or "llama3.2",
         ),
     )
     COMPUTE_BACKENDS["openai"] = lambda _url, model, key: cast(
         Backend,
-        _try_import("OpenAI")(
+        try_import("OpenAI")(
             model=model or "gpt-4o-mini",
             api_key=key,
         ),
     )
     COMPUTE_BACKENDS["anthropic"] = lambda _url, model, key: cast(
         Backend,
-        _try_import("Anthropic")(
+        try_import("Anthropic")(
             model=model or "claude-3-sonnet-20240229",
             api_key=key,
         ),
     )
     COMPUTE_BACKENDS["transformers"] = lambda _url, model, _key: cast(
         Backend,
-        _try_import("Transformers")(
+        try_import("Transformers")(
             model_id=model or "gpt2",
         ),
     )
 
 
-def _try_import(class_name: str) -> Any:
+def try_import(class_name: str) -> Any:
     """Import an optional backend class by name.
 
     Returns the class object so callers can construct an
@@ -125,7 +125,7 @@ def _try_import(class_name: str) -> Any:
     return getattr(module, class_name)
 
 
-_register_compute_backends()
+register_compute_backends()
 
 
 def build_content_store(data_dir: str, key_file: str = "") -> Any:
@@ -177,7 +177,7 @@ def build_content_store(data_dir: str, key_file: str = "") -> Any:
     return FilesystemBlob(root / "blobs", tenant_id="membrane", key_provider=StaticKeyProvider(key=key))
 
 
-def _resolves_to_loopback(host: str) -> bool:
+def resolves_to_loopback(host: str) -> bool:
     """Return True when ``host`` resolves only to loopback addresses."""
     import ipaddress
     import socket
@@ -365,9 +365,9 @@ class Server:
             self.compute_backend = factory(llm_url, llm_model, api_key)
 
         self.persistence = self.build_persistence(redis_url)
-        self.durable = self._persistence_is_durable()
+        self.durable = self.__persistence_is_durable()
         if self.durable:
-            self.node.set_persistence_hooks(self._persist_fragment, self._forget_fragment)
+            self.node.set_persistence_hooks(self.__persist_fragment, self.__forget_fragment)
 
         self.cluster_manager: Cluster | None = None
         # GC plumbing: tombstones + periodic sweeper. Single
@@ -475,7 +475,7 @@ class Server:
         # A local (loopback) cluster advertises 127.0.0.1 / ::1 rather
         # than the seed hostnames, so admit loopback peers when the
         # operator seeded the cluster with loopback addresses.
-        if any(_resolves_to_loopback(host) for host in seed_hosts):
+        if any(resolves_to_loopback(host) for host in seed_hosts):
             networks += ["127.0.0.0/8", "::1/128"]
         configure_allowlist(allowlist=seed_hosts, allowed_networks=networks)
 
@@ -489,15 +489,15 @@ class Server:
             self.metrics_cluster.peers_total.set(float(len(peers)))
             self.metrics_cluster.peers_healthy.set(float(sum(1 for p in peers if p.healthy)))
 
-    def _persistence_is_durable(self) -> bool:
+    def __persistence_is_durable(self) -> bool:
         """True when fragments are written through to Redis."""
         inner = getattr(self.persistence, "inner", None)
         return isinstance(inner, Redis)
 
-    def _persist_fragment(self, fragment: Any, is_primary: bool) -> None:
+    def __persist_fragment(self, fragment: Any, is_primary: bool) -> None:
         self.persistence.store_fragment(fragment, self.node.node_id, is_primary)
 
-    def _forget_fragment(self, content_hash: str) -> None:
+    def __forget_fragment(self, content_hash: str) -> None:
         self.persistence.forget_on_node(content_hash, self.node.node_id)
 
     def restore_fragments(self) -> int:
@@ -520,7 +520,7 @@ class Server:
                 fragment.payload_ref is None or self.node.content_store.has(fragment.payload_ref)
             )
             if not usable:
-                self._forget_fragment(content_hash)
+                self.__forget_fragment(content_hash)
                 continue
             primary = self.persistence.get_primary(content_hash) == node_id
             if self.node.store(fragment, is_primary=primary):
@@ -575,7 +575,7 @@ class Server:
         if self.cluster_manager is not None and self.checkpoint_interval_sec > 0:
             self.checkpoint_stop_event = threading.Event()
             self.checkpoint_thread = threading.Thread(
-                target=self._checkpoint_loop,
+                target=self.__checkpoint_loop,
                 daemon=True,
                 name="membrane-checkpoint",
             )
@@ -593,7 +593,7 @@ class Server:
 
                 self.sweeper.on_post_sweep = _forget
             self.sweeper_thread = threading.Thread(
-                target=self._sweeper_loop,
+                target=self.__sweeper_loop,
                 daemon=True,
                 name="membrane-sweeper",
             )
@@ -669,7 +669,7 @@ class Server:
         """
         import time
 
-        from membrane.transport.ops import _replica_peers  # noqa: F401  -- re-use
+        from membrane.transport.ops import select_replica_peers  # noqa: F401  -- re-use
 
         self.is_draining = True
         self.log_event("info", f"Drain started with deadline={deadline_sec}s")
@@ -765,7 +765,7 @@ class Server:
             "duration_sec": duration,
         }
 
-    def _checkpoint_loop(self) -> None:
+    def __checkpoint_loop(self) -> None:
         """Background loop writing snapshots every ``checkpoint_interval_sec``."""
         while self.running and self.checkpoint_stop_event is not None:
             if self.checkpoint_stop_event.wait(self.checkpoint_interval_sec):
@@ -775,7 +775,7 @@ class Server:
             except Exception as exc:  # pragma: no cover - background safety
                 logger.warning("Checkpoint failed: %s", exc)
 
-    def _sweeper_loop(self) -> None:
+    def __sweeper_loop(self) -> None:
         """Background loop sweeping TTL + tombstones every ``sweep_interval_sec``.
 
         Uses :meth:`Node.sweep_expired` (TTL only) for the eviction phase and
@@ -961,3 +961,16 @@ class Server:
     def recent_events(self, n: int = 20) -> list[ServerEvent]:
         """Return the last ``n`` events."""
         return self.events[-n:]
+
+
+__all__ = [
+    "COMPUTE_BACKENDS",
+    "ComputeBackendFactory",
+    "Server",
+    "ServerDiagnostics",
+    "ServerEvent",
+    "build_content_store",
+    "register_compute_backends",
+    "resolves_to_loopback",
+    "try_import",
+]

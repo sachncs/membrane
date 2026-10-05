@@ -475,3 +475,9 @@ class Tree:
             cls.find_adjacent_recursive(node.left, position, max_gap, results)
         if node.start <= position + max_gap:
             cls.find_adjacent_recursive(node.right, position, max_gap, results)
+
+
+__all__ = [
+    "IntervalNode",
+    "Tree",
+]

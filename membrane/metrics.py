@@ -17,16 +17,16 @@ type LabelKey = tuple[str, ...]
 INF_LABEL = 'le="+Inf"'
 
 
-def _label_key(names: tuple[str, ...], labels: Mapping[str, str]) -> LabelKey:
+def label_key(names: tuple[str, ...], labels: Mapping[str, str]) -> LabelKey:
     return tuple(str(labels.get(name, "")) for name in names)
 
 
-def _escape(value: str) -> str:
+def escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
 
-def _render_labels(names: tuple[str, ...], key: LabelKey, extra: str = "") -> str:
-    parts = [f'{n}="{_escape(v)}"' for n, v in zip(names, key, strict=True)]
+def render_labels(names: tuple[str, ...], key: LabelKey, extra: str = "") -> str:
+    parts = [f'{n}="{escape(v)}"' for n, v in zip(names, key, strict=True)]
     if extra:
         parts.append(extra)
     return "{" + ",".join(parts) + "}" if parts else ""
@@ -44,7 +44,7 @@ class Counter:
     help_text: str
     labels: tuple[str, ...] = ()
     series: dict[LabelKey, float] = field(default_factory=dict)
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def inc(self, amount: float = 1.0, **labels: str) -> None:
         """Increment the series selected by ``labels``.
@@ -53,20 +53,20 @@ class Counter:
             amount: How much to add. Defaults to 1.
             **labels: Label values keyed by label name.
         """
-        key = _label_key(self.labels, labels)
-        with self._lock:
+        key = label_key(self.labels, labels)
+        with self.lock:
             self.series[key] = self.series.get(key, 0.0) + amount
 
     @property
     def value(self) -> float:
         """Total across every series."""
-        with self._lock:
+        with self.lock:
             return sum(self.series.values())
 
     def get(self, **labels: str) -> float:
         """Value of one series."""
-        with self._lock:
-            return self.series.get(_label_key(self.labels, labels), 0.0)
+        with self.lock:
+            return self.series.get(label_key(self.labels, labels), 0.0)
 
 
 @dataclass
@@ -77,28 +77,28 @@ class Gauge:
     help_text: str
     labels: tuple[str, ...] = ()
     series: dict[LabelKey, float] = field(default_factory=dict)
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def set(self, value: float, **labels: str) -> None:
         """Set the series selected by ``labels`` to ``value``."""
-        key = _label_key(self.labels, labels)
-        with self._lock:
+        key = label_key(self.labels, labels)
+        with self.lock:
             self.series[key] = value
 
     @property
     def value(self) -> float:
         """The unlabeled value, or the sum across labeled series."""
-        with self._lock:
+        with self.lock:
             return sum(self.series.values())
 
     def get(self, **labels: str) -> float:
         """Value of one series."""
-        with self._lock:
-            return self.series.get(_label_key(self.labels, labels), 0.0)
+        with self.lock:
+            return self.series.get(label_key(self.labels, labels), 0.0)
 
 
 @dataclass
-class _HistogramSeries:
+class HistogramSeries:
     counts: dict[float, int] = field(default_factory=dict)
     total: int = 0
     sum_: float = 0.0
@@ -112,14 +112,14 @@ class Histogram:
     help_text: str
     buckets: tuple[float, ...] = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
     labels: tuple[str, ...] = ()
-    series: dict[LabelKey, _HistogramSeries] = field(default_factory=dict)
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    series: dict[LabelKey, HistogramSeries] = field(default_factory=dict)
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def observe(self, value: float, **labels: str) -> None:
         """Record ``value`` in the series selected by ``labels``."""
-        key = _label_key(self.labels, labels)
-        with self._lock:
-            series = self.series.setdefault(key, _HistogramSeries())
+        key = label_key(self.labels, labels)
+        with self.lock:
+            series = self.series.setdefault(key, HistogramSeries())
             series.total += 1
             series.sum_ += value
             for b in self.buckets:
@@ -129,7 +129,7 @@ class Histogram:
     @property
     def total(self) -> int:
         """Observation count across every series."""
-        with self._lock:
+        with self.lock:
             return sum(s.total for s in self.series.values())
 
 
@@ -184,32 +184,32 @@ class MetricsCollector:
         for c in list(self.counters.values()):
             lines.append(f"# HELP {c.name} {c.help_text}")
             lines.append(f"# TYPE {c.name} counter")
-            with c._lock:
+            with c.lock:
                 series = dict(c.series) or ({} if c.labels else {(): 0.0})
             for key, value in sorted(series.items()):
-                lines.append(f"{c.name}{_render_labels(c.labels, key)} {value}")
+                lines.append(f"{c.name}{render_labels(c.labels, key)} {value}")
         for g in list(self.gauges.values()):
             lines.append(f"# HELP {g.name} {g.help_text}")
             lines.append(f"# TYPE {g.name} gauge")
-            with g._lock:
+            with g.lock:
                 series = dict(g.series) or ({} if g.labels else {(): 0.0})
             for key, value in sorted(series.items()):
-                lines.append(f"{g.name}{_render_labels(g.labels, key)} {value}")
+                lines.append(f"{g.name}{render_labels(g.labels, key)} {value}")
         for h in list(self.histograms.values()):
             lines.append(f"# HELP {h.name} {h.help_text}")
             lines.append(f"# TYPE {h.name} histogram")
-            with h._lock:
-                hseries = {k: _HistogramSeries(dict(v.counts), v.total, v.sum_) for k, v in h.series.items()}
+            with h.lock:
+                hseries = {k: HistogramSeries(dict(v.counts), v.total, v.sum_) for k, v in h.series.items()}
             if not hseries and not h.labels:
-                hseries = {(): _HistogramSeries()}
+                hseries = {(): HistogramSeries()}
             for key, hs in sorted(hseries.items(), key=lambda item: item[0]):
                 for b in h.buckets:
-                    le = _render_labels(h.labels, key, f'le="{b}"')
+                    le = render_labels(h.labels, key, f'le="{b}"')
                     lines.append(f"{h.name}_bucket{le} {hs.counts.get(b, 0)}")
-                inf = _render_labels(h.labels, key, INF_LABEL)
+                inf = render_labels(h.labels, key, INF_LABEL)
                 lines.append(f"{h.name}_bucket{inf} {hs.total}")
-                lines.append(f"{h.name}_sum{_render_labels(h.labels, key)} {hs.sum_}")
-                lines.append(f"{h.name}_count{_render_labels(h.labels, key)} {hs.total}")
+                lines.append(f"{h.name}_sum{render_labels(h.labels, key)} {hs.sum_}")
+                lines.append(f"{h.name}_count{render_labels(h.labels, key)} {hs.total}")
         return "\n".join(lines) + "\n"
 
 
@@ -244,7 +244,7 @@ class TransportMetrics:
         )
 
 
-def _default_tenant_metrics() -> TenantMetrics:
+def default_tenant_metrics() -> TenantMetrics:
     return TenantMetrics()
 
 
@@ -253,7 +253,7 @@ class ClusterMetrics:
     """Typed collector for cluster membership and replication."""
 
     registry: MetricsCollector
-    tenant: TenantMetrics = field(default_factory=lambda: _default_tenant_metrics())
+    tenant: TenantMetrics = field(default_factory=lambda: default_tenant_metrics())
 
     @property
     def peers_total(self) -> Gauge:
@@ -381,7 +381,7 @@ class NodeMetrics:
         """
         current = dict(counts if counts is not None else self.tenant.fragment_count)
         gauge = self.tenant_fragments
-        with gauge._lock:
+        with gauge.lock:
             # Tenants that dropped to zero disappear from the export.
             gauge.series = {(tenant,): float(n) for tenant, n in current.items() if n > 0}
 

@@ -33,16 +33,16 @@ from membrane.disagg.service import (
 logger = logging.getLogger(__name__)
 
 
-_GRPC_AVAILABLE: bool = False
+GRPC_IMPORTED: bool = False
 try:
     import grpc  # type: ignore[import-not-found]
 
-    _GRPC_AVAILABLE = True
+    GRPC_IMPORTED = True
 except ImportError:  # pragma: no cover - import guard
     grpc = None  # type: ignore[assignment]
 
 
-GRPC_AVAILABLE: bool = _GRPC_AVAILABLE
+GRPC_AVAILABLE: bool = GRPC_IMPORTED
 
 
 # ---------------------------------------------------------------------------
@@ -50,23 +50,23 @@ GRPC_AVAILABLE: bool = _GRPC_AVAILABLE
 # ---------------------------------------------------------------------------
 
 
-def _empty_message() -> Any:
+def empty_message() -> Any:
     """Return a generic proto message stub.
 
     Returns:
         A minimal stand-in for the generated proto messages
         when grpcio is unavailable. Tests that need a real
-        message can call :func:`_build_prefill_request_message`
+        message can call :func:`build_prefill_request_message`
         to get a generated stub.
     """
-    if not _GRPC_AVAILABLE:  # pragma: no cover - import guard
+    if not GRPC_IMPORTED:  # pragma: no cover - import guard
         raise RuntimeError("grpcio is required for the gRPC surface")
     from google.protobuf import struct_pb2  # type: ignore[import-not-found]
 
     return struct_pb2.Struct()
 
 
-def _build_prefill_request_message(request: PrefillRequest) -> Any:
+def build_prefill_request_message(request: PrefillRequest) -> Any:
     """Build a generated proto message for ``request``.
 
     Args:
@@ -75,7 +75,7 @@ def _build_prefill_request_message(request: PrefillRequest) -> Any:
     Returns:
         A generated proto message.
     """
-    if not _GRPC_AVAILABLE:  # pragma: no cover - import guard
+    if not GRPC_IMPORTED:  # pragma: no cover - import guard
         raise RuntimeError("grpcio is required for the gRPC surface")
     from membrane.disagg import transfer_pb2
 
@@ -89,7 +89,7 @@ def _build_prefill_request_message(request: PrefillRequest) -> Any:
     )
 
 
-def _build_prefill_response_message(response: PrefillResponse) -> Any:
+def build_prefill_response_message(response: PrefillResponse) -> Any:
     """Build a generated proto message for ``response``.
 
     Args:
@@ -98,7 +98,7 @@ def _build_prefill_response_message(response: PrefillResponse) -> Any:
     Returns:
         A generated proto message.
     """
-    if not _GRPC_AVAILABLE:  # pragma: no cover - import guard
+    if not GRPC_IMPORTED:  # pragma: no cover - import guard
         raise RuntimeError("grpcio is required for the gRPC surface")
     from membrane.disagg import transfer_pb2
 
@@ -111,7 +111,7 @@ def _build_prefill_response_message(response: PrefillResponse) -> Any:
     )
 
 
-def _build_decode_request_message(request: DecodeRequest) -> Any:
+def build_decode_request_message(request: DecodeRequest) -> Any:
     """Build a generated proto message for ``request``.
 
     Args:
@@ -120,7 +120,7 @@ def _build_decode_request_message(request: DecodeRequest) -> Any:
     Returns:
         A generated proto message.
     """
-    if not _GRPC_AVAILABLE:  # pragma: no cover - import guard
+    if not GRPC_IMPORTED:  # pragma: no cover - import guard
         raise RuntimeError("grpcio is required for the gRPC surface")
     from membrane.disagg import transfer_pb2
 
@@ -132,7 +132,7 @@ def _build_decode_request_message(request: DecodeRequest) -> Any:
     )
 
 
-def _build_decode_response_message(response: DecodeResponse) -> Any:
+def build_decode_response_message(response: DecodeResponse) -> Any:
     """Build a generated proto message for ``response``.
 
     Args:
@@ -141,7 +141,7 @@ def _build_decode_response_message(response: DecodeResponse) -> Any:
     Returns:
         A generated proto message.
     """
-    if not _GRPC_AVAILABLE:  # pragma: no cover - import guard
+    if not GRPC_IMPORTED:  # pragma: no cover - import guard
         raise RuntimeError("grpcio is required for the gRPC surface")
     from membrane.disagg import transfer_pb2
 
@@ -152,7 +152,7 @@ def _build_decode_response_message(response: DecodeResponse) -> Any:
     )
 
 
-def _request_from_message(message: Any) -> PrefillRequest:
+def request_from_message(message: Any) -> PrefillRequest:
     """Convert a generated proto message into a :class:`PrefillRequest`.
 
     Args:
@@ -171,7 +171,7 @@ def _request_from_message(message: Any) -> PrefillRequest:
     )
 
 
-def _response_from_message(message: Any) -> PrefillResponse:
+def response_from_message(message: Any) -> PrefillResponse:
     """Convert a generated proto message into a :class:`PrefillResponse`.
 
     Args:
@@ -189,7 +189,7 @@ def _response_from_message(message: Any) -> PrefillResponse:
     )
 
 
-def _decode_request_from_message(message: Any) -> DecodeRequest:
+def decode_request_from_message(message: Any) -> DecodeRequest:
     """Convert a generated proto message into a :class:`DecodeRequest`.
 
     Args:
@@ -206,7 +206,7 @@ def _decode_request_from_message(message: Any) -> DecodeRequest:
     )
 
 
-def _decode_response_from_message(message: Any) -> DecodeResponse:
+def decode_response_from_message(message: Any) -> DecodeResponse:
     """Convert a generated proto message into a :class:`DecodeResponse`.
 
     Args:
@@ -243,12 +243,12 @@ def add_to_server(
     Returns:
         The :class:`grpc.Server` instance.
     """
-    if not _GRPC_AVAILABLE:  # pragma: no cover - import guard
+    if not GRPC_IMPORTED:  # pragma: no cover - import guard
         raise RuntimeError("grpcio is required for the gRPC surface")
     from membrane.disagg import transfer_pb2_grpc
 
     decode_service = decode or DecodeService()
-    handler = _GrpcHandler(prefill=prefill, decode=decode_service)
+    handler = GrpcHandler(prefill=prefill, decode=decode_service)
     transfer_pb2_grpc.add_TransferServicer_to_server(  # type: ignore[attr-defined]
         handler, server
     )
@@ -265,7 +265,7 @@ def make_channel(target: str) -> Any:
         A :class:`grpc.Channel` ready to use with
         :func:`make_stub`.
     """
-    if not _GRPC_AVAILABLE:  # pragma: no cover - import guard
+    if not GRPC_IMPORTED:  # pragma: no cover - import guard
         raise RuntimeError("grpcio is required for the gRPC surface")
     return grpc.insecure_channel(target)
 
@@ -279,7 +279,7 @@ def make_stub(channel: Any) -> Any:
     Returns:
         TransferStub: A client stub.
     """
-    if not _GRPC_AVAILABLE:  # pragma: no cover - import guard
+    if not GRPC_IMPORTED:  # pragma: no cover - import guard
         raise RuntimeError("grpcio is required for the gRPC surface")
     from membrane.disagg import transfer_pb2_grpc
 
@@ -291,7 +291,7 @@ def make_stub(channel: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-class _GrpcHandler:
+class GrpcHandler:
     """Servicer that bridges gRPC calls to the in-process services.
 
     The v1 implementation is intentionally small: it builds
@@ -301,8 +301,8 @@ class _GrpcHandler:
     """
 
     def __init__(self, prefill: PrefillService, decode: DecodeService) -> None:
-        self._prefill = prefill
-        self._decode = decode
+        self.__prefill = prefill
+        self.__decode = decode
 
     def Prefill(self, request: Any, context: Any) -> Any:
         """Handle a :class:`PrefillRequest` RPC.
@@ -314,9 +314,9 @@ class _GrpcHandler:
         Returns:
             Generated ``PrefillResponse`` message.
         """
-        decoded = _request_from_message(request)
-        response = self._prefill.prefill(decoded)
-        return _build_prefill_response_message(response)
+        decoded = request_from_message(request)
+        response = self.__prefill.prefill(decoded)
+        return build_prefill_response_message(response)
 
     def BatchPrefill(self, request: Any, context: Any) -> Any:
         """Handle a batch prefill RPC.
@@ -328,12 +328,12 @@ class _GrpcHandler:
         Returns:
             Generated ``BatchPrefillResponse`` message.
         """
-        requests = [_request_from_message(item) for item in request.requests]
-        result = batch_prefill(self._prefill, requests)
+        requests = [request_from_message(item) for item in request.requests]
+        result = batch_prefill(self.__prefill, requests)
         from membrane.disagg import transfer_pb2
 
         return transfer_pb2.BatchPrefillResponse(  # type: ignore[attr-defined]
-            responses=[_build_prefill_response_message(r) for r in result.responses],
+            responses=[build_prefill_response_message(r) for r in result.responses],
             elapsed_ms=result.elapsed_ms,
         )
 
@@ -347,9 +347,9 @@ class _GrpcHandler:
         Returns:
             Generated ``DecodeResponse`` message.
         """
-        decoded = _decode_request_from_message(request)
-        response = self._decode.decode(decoded)
-        return _build_decode_response_message(response)
+        decoded = decode_request_from_message(request)
+        response = self.__decode.decode(decoded)
+        return build_decode_response_message(response)
 
 
 __all__ = [

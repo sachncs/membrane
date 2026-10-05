@@ -29,8 +29,8 @@ of the underlying model's hidden size.
 import logging
 from typing import Any, override
 
-from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
+from membrane.compute.hashing import token_hash
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 
@@ -268,3 +268,8 @@ class Transformers(Backend):
                 )
             )
         return fragments
+
+
+__all__ = [
+    "Transformers",
+]

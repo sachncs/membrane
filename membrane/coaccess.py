@@ -120,3 +120,8 @@ class Coaccess:
         for i in range(len(unique)):
             for j in range(i + 1, len(unique)):
                 self.record_access(unique[i], unique[j])
+
+
+__all__ = [
+    "Coaccess",
+]

@@ -40,7 +40,7 @@ from membrane.identity import PayloadIdentity
 logger = logging.getLogger(__name__)
 
 
-_DTYPE_BYTES: dict[str, int] = {
+DTYPE_BYTES: dict[str, int] = {
     "float16": 2,
     "bfloat16": 2,
     "float32": 4,
@@ -99,8 +99,8 @@ class KVBackend(RemoteLLMBackend):
                 :data:`Backend.SIMULATE_WINDOW_SIZE` default.
         """
         super().__init__()
-        if dtype not in _DTYPE_BYTES:
-            raise ValueError(f"dtype must be one of {sorted(_DTYPE_BYTES)}, got {dtype!r}")
+        if dtype not in DTYPE_BYTES:
+            raise ValueError(f"dtype must be one of {sorted(DTYPE_BYTES)}, got {dtype!r}")
         self.content_store = content_store
         self.model_id = model_id
         self.model_revision = model_revision
@@ -206,8 +206,8 @@ class KVBackend(RemoteLLMBackend):
             logger.warning("KVBackend forward pass failed (%s); falling back to simulation", exc)
             return self.simulate_prefill(prompt_tokens, model_id)
 
-        element_size = _DTYPE_BYTES[self.dtype]
-        fragment_kv = self._frames_for_windows(pkv, seq_len, model_id)
+        element_size = DTYPE_BYTES[self.dtype]
+        fragment_kv = self.frames_for_windows(pkv, seq_len, model_id)
         fragments: list[Fragment] = []
         for ident, frame in fragment_kv:
             self.content_store.put(ident.payload_hash, frame)
@@ -226,7 +226,7 @@ class KVBackend(RemoteLLMBackend):
         del element_size
         return fragments
 
-    def _frames_for_windows(
+    def frames_for_windows(
         self,
         pkv: Any,
         seq_len: int,
@@ -245,7 +245,7 @@ class KVBackend(RemoteLLMBackend):
         """
         torch = self.torch
         window_size = self.window_size
-        element_size = _DTYPE_BYTES[self.dtype]
+        element_size = DTYPE_BYTES[self.dtype]
         # Per-layer view: each entry is a (K, V) tensor.
         # Newer transformers return DynamicCache where iteration
         # yields the per-layer tuples.

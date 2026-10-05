@@ -119,3 +119,8 @@ class CacheMetrics:
         if self.misses == 0:
             return 0.0
         return self.total_kv_size_bytes / self.misses
+
+
+__all__ = [
+    "CacheMetrics",
+]

@@ -139,4 +139,4 @@ class TestNodeRecordHit:
         node.store(frag)
         node.record_hit(frag.identity.payload_hash)
         # The TinyLFU sketch bucket should now be incremented.
-        assert cache._estimate(frag.identity.payload_hash) >= 1
+        assert cache.estimate(frag.identity.payload_hash) >= 1

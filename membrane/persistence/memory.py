@@ -314,3 +314,8 @@ class Memory:
             reuse_score=float(data["reuse_score"]),
             version_id=int(data["version_id"]),
         )
+
+
+__all__ = [
+    "Memory",
+]

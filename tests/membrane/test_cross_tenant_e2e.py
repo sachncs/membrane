@@ -55,7 +55,7 @@ class TestCrossTenantEncryption:
         store_a.put("k", b"acme-secret")
 
         # Inspect the on-disk ciphertext from A.
-        ciphertext = store_a._store["k"]  # type: ignore[attr-defined]
+        ciphertext = store_a.store["k"]  # type: ignore[attr-defined]
         # Tenant B can read the bytes from its dict (since this
         # is a single-process test the dicts are separate) but
         # cannot decrypt them: the derived key differs.
@@ -87,7 +87,7 @@ class TestCrossTenantEncryption:
         )
 
         k = derive_tenant_key(b"\x00" * 32, "acme", "k")
-        ciphertext = store_a._store["k"]  # type: ignore[attr-defined]
+        ciphertext = store_a.store["k"]  # type: ignore[attr-defined]
         assert decrypt_payload(ciphertext, k) == b"acme-data"
 
     def test_master_key_rotation_preserves_tenant_isolation(self):

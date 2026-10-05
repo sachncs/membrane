@@ -40,12 +40,12 @@ MAX_BODY_BYTES: int = 100 << 20
 # ---------------------------------------------------------------------------
 
 
-def _err(status: int, message: str) -> tuple[int, JsonDict]:
+def err(status: int, message: str) -> tuple[int, JsonDict]:
     """Build a uniform ``(status, body)`` error tuple."""
     return status, cast(JsonDict, {"error": message})
 
 
-def _ok(body: Any) -> tuple[int, JsonDict]:
+def ok_response(body: Any) -> tuple[int, JsonDict]:
     """Build a uniform ``(status, body)`` success tuple.
 
     Accepts any JSON-serializable mapping; the helper widens to
@@ -83,13 +83,13 @@ def op_heartbeat(
     FastAPI route is expected to have already enforced that).
     """
     if node is None:
-        return _ok({"error": "no node"})
+        return ok_response({"error": "no node"})
     stats = node.get_stats()
     if cluster is not None and headers is not None:
         cn = headers.get("x-local-peer-cn") or headers.get("X-Local-Peer-CN")
         if cn:
             cluster.membership.record_peer_cn(node.node_id, cn)
-    return _ok(
+    return ok_response(
         {
             "node_id": node.node_id,
             "load": node.heartbeat(),
@@ -120,9 +120,9 @@ def op_metrics(
             {"media_type": "text/plain; version=0.0.4"},
         )
     if node is None:
-        return _ok({"error": "no node"})
+        return ok_response({"error": "no node"})
     stats = node.get_stats()
-    return _ok(
+    return ok_response(
         {
             "node_id": node.node_id,
             "memory_used_bytes": stats.memory_used_bytes,
@@ -137,16 +137,16 @@ def op_metrics(
 def op_inventory(node: Node | None, auth_context: AuthContext | None = None) -> tuple[int, JsonDict]:
     """``GET /inventory`` — node's inventory digest."""
     if node is None:
-        return _ok({"node_id": "", "digest": {}})
+        return ok_response({"node_id": "", "digest": {}})
     digest = {h: frag.version_id for h, frag in node.fragments.items()}
-    return _ok({"node_id": node.node_id, "digest": digest})
+    return ok_response({"node_id": node.node_id, "digest": digest})
 
 
 def op_peers(cluster: Cluster | None, auth_context: AuthContext | None = None) -> tuple[int, JsonDict]:
     """``GET /peers`` — cluster membership view."""
     if cluster is None:
-        return _ok({"error": "cluster manager not enabled"})
-    return _ok({"peers": cluster.membership.to_json()})
+        return ok_response({"error": "cluster manager not enabled"})
+    return ok_response({"peers": cluster.membership.to_json()})
 
 
 def op_retrieve(
@@ -167,7 +167,7 @@ def op_retrieve(
       from a simple miss).
     """
     if node is None:
-        return _ok({"found": False, "fragment": None})
+        return ok_response({"found": False, "fragment": None})
     caller_tenant = auth_context.subject if auth_context is not None else ""
     caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
     frag = node.retrieve(
@@ -176,7 +176,7 @@ def op_retrieve(
         caller_scopes=caller_scopes,
     )
     if not frag:
-        return _ok({"found": False, "fragment": None})
+        return ok_response({"found": False, "fragment": None})
 
     # Probe the bytes: if the fragment's payload_ref points
     # at a blob that fails decryption, surface that as
@@ -195,7 +195,7 @@ def op_retrieve(
                     payload_ref,
                     exc,
                 )
-                return _ok(
+                return ok_response(
                     {
                         "found": False,
                         "fragment": None,
@@ -205,9 +205,9 @@ def op_retrieve(
                 )
             raise
         if blob is None:
-            return _ok({"found": False, "fragment": None})
+            return ok_response({"found": False, "fragment": None})
 
-    return _ok({"found": True, "fragment": to_dict(frag)})
+    return ok_response({"found": True, "fragment": to_dict(frag)})
 
 
 def op_store(
@@ -259,7 +259,7 @@ def op_store(
         failure.
     """
     if node is None:
-        return _ok({"error": "no node"})
+        return ok_response({"error": "no node"})
     if draining:
         return 503, {"error": "node draining", "Retry-After": 1}
     frag = from_dict(fragment_payload)
@@ -281,7 +281,7 @@ def op_store(
     # metadata is published. Accepting a fragment whose bytes are
     # absent would report success for a write that /retrieve then
     # reports as missing, so reject it up front.
-    if frag.payload_ref is not None and not _payload_present(node, frag.payload_ref):
+    if frag.payload_ref is not None and not payload_present(node, frag.payload_ref):
         return 422, {
             "error": "payload_ref not found in content store",
             "payload_ref": frag.payload_ref,
@@ -306,12 +306,12 @@ def op_store(
     except TenantScopeError as exc:
         return 403, {"error": "tenant scope", "detail": str(exc)}
     if not ok:
-        return _ok({"success": False, "content_hash": frag.identity.payload_hash})
+        return ok_response({"success": False, "content_hash": frag.identity.payload_hash})
     if cluster_metrics is not None and hasattr(cluster_metrics, "tenant"):
         cluster_metrics.tenant.bump_operation(frag.tenant_id, 1)
 
     if consistency == "eventual":
-        return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+        return ok_response({"success": True, "content_hash": frag.identity.payload_hash})
 
     # Strong / quorum paths block on a quorum fan-out. The
     # ``quorum_attempt`` callable is wired by Server from a
@@ -319,7 +319,7 @@ def op_store(
     # when it is absent we degrade to local-only success (the
     # production deployment path).
     if quorum_attempt is None or cluster is None:
-        return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+        return ok_response({"success": True, "content_hash": frag.identity.payload_hash})
 
     # ``quorum_count`` is the number of copies that must exist before
     # the write is acknowledged, the local copy included, so the
@@ -329,14 +329,14 @@ def op_store(
     timeout_sec = float(getattr(cluster.config, "cluster_quorum_timeout_sec", 9.0))
     required_peer_acks = quorum_count - 1
     if required_peer_acks <= 0:
-        return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+        return ok_response({"success": True, "content_hash": frag.identity.payload_hash})
 
     fan_out = max(required_peer_acks, int(getattr(cluster.config, "replica_count", required_peer_acks)))
-    replica_peers = list(_replica_peers(cluster, frag.identity.payload_hash, fan_out))
+    replica_peers = list(select_replica_peers(cluster, frag.identity.payload_hash, fan_out))
     if len(replica_peers) < required_peer_acks:
         # Fail closed: an isolated node must not acknowledge a strong
         # write it cannot replicate.
-        _rollback_local_write(node, frag.identity.payload_hash, existed_before)
+        rollback_local_write(node, frag.identity.payload_hash, existed_before)
         return 503, {
             "error": "quorum not met",
             "detail": "not enough healthy peers",
@@ -358,7 +358,7 @@ def op_store(
         # Roll back the local write so gossip does not propagate
         # a fragment that the cluster never acked. This is the
         # fail-closed contract.
-        _rollback_local_write(node, frag.identity.payload_hash, existed_before)
+        rollback_local_write(node, frag.identity.payload_hash, existed_before)
         return (
             503,
             {
@@ -368,10 +368,10 @@ def op_store(
                 "Retry-After": 1,
             },
         )
-    return _ok({"success": True, "content_hash": frag.identity.payload_hash})
+    return ok_response({"success": True, "content_hash": frag.identity.payload_hash})
 
 
-def _payload_present(node: Node, payload_ref: str) -> bool:
+def payload_present(node: Node, payload_ref: str) -> bool:
     """Whether ``payload_ref`` is in the node's content store.
 
     A ref the store cannot address at all (e.g. too short for the
@@ -383,7 +383,7 @@ def _payload_present(node: Node, payload_ref: str) -> bool:
         return False
 
 
-def _rollback_local_write(node: Node, content_hash: str, existed_before: bool) -> None:
+def rollback_local_write(node: Node, content_hash: str, existed_before: bool) -> None:
     """Undo a local write whose quorum failed, unless the copy pre-existed."""
     if existed_before:
         return
@@ -395,7 +395,7 @@ def _rollback_local_write(node: Node, content_hash: str, existed_before: bool) -
         logger.warning("failed to roll back local fragment: %s", exc)
 
 
-def _replica_peers(cluster: Cluster, content_hash: str, count: int) -> list[Peer]:
+def select_replica_peers(cluster: Cluster, content_hash: str, count: int) -> list[Peer]:
     """Pick up to ``count`` replica peers from the cluster membership.
 
     Iteration order is the membership's natural snapshot order;
@@ -433,7 +433,7 @@ def op_replicate(
 ) -> tuple[int, JsonDict]:
     """``POST /replicate`` — store a fragment as a non-primary replica."""
     if node is None:
-        return _ok({"error": "no node"})
+        return ok_response({"error": "no node"})
     frag = from_dict(fragment_payload)
     caller_tenant = auth_context.subject if auth_context is not None else ""
     caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
@@ -446,7 +446,7 @@ def op_replicate(
         )
     except TenantScopeError as exc:
         return 403, {"error": "tenant scope", "detail": str(exc)}
-    return _ok({"success": ok, "content_hash": frag.identity.payload_hash})
+    return ok_response({"success": ok, "content_hash": frag.identity.payload_hash})
 
 
 def op_prefill(
@@ -458,7 +458,7 @@ def op_prefill(
 ) -> tuple[int, JsonDict]:
     """``POST /prefill`` — run prefill and store fragments as primary."""
     if node is None:
-        return _ok({"error": "no node"})
+        return ok_response({"error": "no node"})
     backend = backend or CPU()
     caller_tenant = auth_context.subject if auth_context is not None else ""
     caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
@@ -471,7 +471,7 @@ def op_prefill(
         # Simulated / remote backends never write KV bytes; store
         # their placeholder payload so /retrieve can serve the
         # fragment. Backends with real frames already wrote them.
-        if frag.payload_ref is not None and not _payload_present(node, frag.payload_ref):
+        if frag.payload_ref is not None and not payload_present(node, frag.payload_ref):
             payload = backend.simulated_payload(frag)
             if payload is not None:
                 node.content_store.put(frag.payload_ref, payload)
@@ -479,7 +479,7 @@ def op_prefill(
             node.store(frag, is_primary=True, caller_tenant=caller_tenant, caller_scopes=caller_scopes)
         except TenantScopeError as exc:
             return 403, {"error": "tenant scope", "detail": str(exc)}
-    return _ok(
+    return ok_response(
         {
             "success": True,
             "fragments": [to_dict(f) for f in fragments],

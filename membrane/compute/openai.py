@@ -31,8 +31,8 @@ from typing import override
 
 import httpx
 
-from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
+from membrane.compute.hashing import token_hash
 from membrane.compute.remote import RemoteLLMBackend
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
@@ -61,7 +61,7 @@ class OpenAI(RemoteLLMBackend):
     ) -> None:
         """Initialize the backend."""
         super().__init__()
-        self._api_key = api_key
+        self.__api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.embedding_model = embedding_model
@@ -73,7 +73,7 @@ class OpenAI(RemoteLLMBackend):
     @property
     def api_key(self) -> str:
         """Return the configured API key (redacted when logged)."""
-        return self._api_key
+        return self.__api_key
 
     @override
     def __repr__(self) -> str:
@@ -234,3 +234,8 @@ class OpenAI(RemoteLLMBackend):
                 )
             )
         return fragments
+
+
+__all__ = [
+    "OpenAI",
+]

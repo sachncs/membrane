@@ -63,11 +63,11 @@ class EncryptedInProcessBytes(ContentStore):
             raise ValueError("capacity_bytes must be non-negative")
         self.tenant_id = tenant_id
         self.capacity_bytes = capacity_bytes
-        self._provider = key_provider or StaticKeyProvider()
-        self._master_key = self._provider.master_key()
-        self._store: dict[str, bytes] = {}
-        self._used_bytes = 0
-        self._lock = threading.RLock()
+        self.__provider = key_provider or StaticKeyProvider()
+        self.__master_key = self.__provider.master_key()
+        self.store: dict[str, bytes] = {}
+        self.__used_bytes = 0
+        self.lock = threading.RLock()
 
     @override
     def put(self, key: str, data: bytes) -> None:
@@ -81,16 +81,16 @@ class EncryptedInProcessBytes(ContentStore):
             ValueError: When the store would exceed its
                 capacity cap.
         """
-        per_key = derive_tenant_key(self._master_key, self.tenant_id, key)
+        per_key = derive_tenant_key(self.__master_key, self.tenant_id, key)
         blob = encrypt_payload(data, per_key)
-        with self._lock:
-            if self.capacity_bytes is not None and self._used_bytes + len(blob) > self.capacity_bytes:
+        with self.lock:
+            if self.capacity_bytes is not None and self.__used_bytes + len(blob) > self.capacity_bytes:
                 raise ValueError("capacity exceeded")
-            self._store[key] = blob
-            # ``_used_bytes`` tracks the plaintext size so the
+            self.store[key] = blob
+            # ``__used_bytes`` tracks the plaintext size so the
             # operator-visible accounting matches
             # FilesystemBlob's surface (Phase 3.4.6 + 3.4.7).
-            self._used_bytes += len(data)
+            self.__used_bytes += len(data)
 
     @override
     def delete(self, key: str) -> bool:
@@ -102,13 +102,13 @@ class EncryptedInProcessBytes(ContentStore):
         Returns:
             bool: True when the key was present.
         """
-        with self._lock:
-            existing = self._store.pop(key, None)
+        with self.lock:
+            existing = self.store.pop(key, None)
             if existing is None:
                 return False
             # We did not store the plaintext length separately;
             # remove the same blob size from the running total.
-            self._used_bytes = max(0, self._used_bytes - (len(existing) - 28))
+            self.__used_bytes = max(0, self.__used_bytes - (len(existing) - 28))
             return True
 
     @override
@@ -123,8 +123,8 @@ class EncryptedInProcessBytes(ContentStore):
             key is absent or the decryption fails (the latter
             looks identical to an absent key for the caller).
         """
-        with self._lock:
-            blob = self._store.get(key)
+        with self.lock:
+            blob = self.store.get(key)
         if blob is None:
             return None
         # Try the active key first, then walk older version keys
@@ -133,14 +133,14 @@ class EncryptedInProcessBytes(ContentStore):
             decrypt_payload_with_versions,
         )
 
-        version_keys = getattr(self._provider, "version_keys", None)
+        version_keys = getattr(self.__provider, "version_keys", None)
         if version_keys is not None:
             tenant_keys = tuple(derive_tenant_key(k, self.tenant_id, key) for k in version_keys())
             try:
                 return decrypt_payload_with_versions(blob, tenant_keys)
             except RuntimeError:
                 return None
-        per_key = derive_tenant_key(self._master_key, self.tenant_id, key)
+        per_key = derive_tenant_key(self.__master_key, self.tenant_id, key)
         try:
             return decrypt_payload(blob, per_key)
         except Exception:
@@ -156,8 +156,8 @@ class EncryptedInProcessBytes(ContentStore):
         Returns:
             bool: Presence flag.
         """
-        with self._lock:
-            return key in self._store
+        with self.lock:
+            return key in self.store
 
     @override
     def size(self) -> int:
@@ -166,17 +166,17 @@ class EncryptedInProcessBytes(ContentStore):
         Returns:
             int: Sum of decrypted plaintext sizes.
         """
-        with self._lock:
-            return self._used_bytes
+        with self.lock:
+            return self.__used_bytes
 
     def __len__(self) -> int:
         """Return the entry count.
 
         Returns:
-            int: ``len(self._store)``.
+            int: ``len(self.__store)``.
         """
-        with self._lock:
-            return len(self._store)
+        with self.lock:
+            return len(self.store)
 
     def __iter__(self) -> Iterator[str]:
         """Iterate over stored keys.
@@ -184,8 +184,8 @@ class EncryptedInProcessBytes(ContentStore):
         Returns:
             Iterator[str]: Keys in insertion order.
         """
-        with self._lock:
-            return iter(list(self._store.keys()))
+        with self.lock:
+            return iter(list(self.store.keys()))
 
 
 __all__ = ["EncryptedInProcessBytes"]

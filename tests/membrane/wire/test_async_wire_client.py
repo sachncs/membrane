@@ -56,7 +56,7 @@ class TestAsyncWireClient:
                 # Drive the bulkhead + breaker surface directly;
                 # the full request() call is exercised in the
                 # e2e test.
-                sem = await client._ensure_semaphore()  # type: ignore[attr-defined]
+                sem = await client.ensure_semaphore()  # type: ignore[attr-defined]
                 async with sem:
                     resp = await shared.request("GET", "http://t/foo")
                     return resp.content
@@ -91,7 +91,7 @@ class TestAsyncWireClient:
 
     def test_wire_bulkhead_clamps_concurrency(self):
         # The bulkhead only stores the cap; the actual semaphore
-        # is built lazily in _ensure_semaphore. Asserting that
+        # is built lazily in ensure_semaphore. Asserting that
         # the cap matches is sufficient for the unit test.
         b = WireBulkhead(max_concurrent=4)
         assert b.max_concurrent == 4

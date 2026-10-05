@@ -203,3 +203,8 @@ class Registry:
 
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         return [node_id for node_id, score in ranked[:k] if score > 0]
+
+
+__all__ = [
+    "Registry",
+]

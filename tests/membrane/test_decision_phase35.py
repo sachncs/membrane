@@ -90,7 +90,7 @@ class TestTinyLFU:
         cache.touch("alpha")
         # The sketch's hash bucket for "alpha" should have a
         # non-zero count.
-        assert cache._estimate("alpha") >= 3
+        assert cache.estimate("alpha") >= 3
 
 
 class TestTenantQuota:

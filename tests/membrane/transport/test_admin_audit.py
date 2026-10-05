@@ -58,14 +58,14 @@ class TestAdminAuditEndpoint:
         log.record(actor="alice", action="admin.fragment.inspect", payload={"h": "x"})
         # Tamper with the recorded entries by replacing one of
         # them with a different actor.
-        log._entries[0] = AuditEntry(
+        log.entries[0] = AuditEntry(
             index=0,
-            timestamp=log._entries[0].timestamp,
+            timestamp=log.entries[0].timestamp,
             actor="mallory",
             action="admin.fragment.inspect",
             payload={"h": "x"},
-            prev_hash=log._entries[0].prev_hash,
-            entry_hash=log._entries[0].entry_hash,
+            prev_hash=log.entries[0].prev_hash,
+            entry_hash=log.entries[0].entry_hash,
         )
         app = FastAPI()
         app.state.audit_log = log

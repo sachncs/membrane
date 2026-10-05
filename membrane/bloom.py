@@ -16,7 +16,7 @@ and platforms because :class:`hashlib.sha256` is.
 import hashlib
 import math
 
-_BLOOM_MAGIC: bytes = b"MBF1"  # Marker; 2.x peers ignore filters without it.
+BLOOM_MAGIC: bytes = b"MBF1"  # Marker; 2.x peers ignore filters without it.
 
 
 class BloomFilter:
@@ -58,7 +58,7 @@ class BloomFilter:
         """
         if not isinstance(item, bytes):
             item = str(item).encode("utf-8")
-        return all(_get_bit(self.bits, idx) for idx in self._indices(item))
+        return all(get_bit(self.bits, idx) for idx in self.__indices(item))
 
     def add(self, item: str | bytes) -> BloomFilter:
         """Return a new filter with ``item`` inserted.
@@ -70,11 +70,11 @@ class BloomFilter:
         if not isinstance(item, bytes):
             item = str(item).encode("utf-8")
         bits = bytearray(self.bits)
-        for idx in self._indices(item):
-            _set_bit(bits, idx)
+        for idx in self.__indices(item):
+            set_bit(bits, idx)
         return BloomFilter(self.m_bits, self.k_hashes, bytes(bits))
 
-    def _indices(self, item: bytes) -> list[int]:
+    def __indices(self, item: bytes) -> list[int]:
         """Compute the k bit positions for ``item``.
 
         Uses two independent SHA-256 streams so the k-th
@@ -82,8 +82,8 @@ class BloomFilter:
         XORed with a counter-salted prefix, keeping the
         function deterministic.
         """
-        primary = hashlib.sha256(_BLOOM_MAGIC + item).digest()
-        secondary = hashlib.sha256(_BLOOM_MAGIC + b"-" + item).digest()
+        primary = hashlib.sha256(BLOOM_MAGIC + item).digest()
+        secondary = hashlib.sha256(BLOOM_MAGIC + b"-" + item).digest()
         out: list[int] = []
         for k in range(self.k_hashes):
             offset = (k * 8) % 64
@@ -96,7 +96,7 @@ class BloomFilter:
 
     def serialize(self) -> bytes:
         """Encode as a self-describing byte string for the wire."""
-        return _BLOOM_MAGIC + self.m_bits.to_bytes(4, "big") + self.k_hashes.to_bytes(2, "big") + self.bits
+        return BLOOM_MAGIC + self.m_bits.to_bytes(4, "big") + self.k_hashes.to_bytes(2, "big") + self.bits
 
     @classmethod
     def deserialize(cls, payload: bytes) -> BloomFilter:
@@ -108,7 +108,7 @@ class BloomFilter:
         Raises:
             ValueError: On a malformed header.
         """
-        if not payload.startswith(_BLOOM_MAGIC):
+        if not payload.startswith(BLOOM_MAGIC):
             raise ValueError("Bloom filter wire payload missing magic prefix")
         m_bits = int.from_bytes(payload[4:8], "big")
         k_hashes = int.from_bytes(payload[8:10], "big")
@@ -150,11 +150,11 @@ class BloomFilter:
         return cls(m_bits=m, k_hashes=k, bits=bits)
 
 
-def _get_bit(buf: bytes, idx: int) -> bool:
+def get_bit(buf: bytes, idx: int) -> bool:
     return bool(buf[idx // 8] & (1 << (idx % 8)))
 
 
-def _set_bit(buf: bytearray, idx: int) -> None:
+def set_bit(buf: bytearray, idx: int) -> None:
     buf[idx // 8] |= 1 << (idx % 8)
 
 

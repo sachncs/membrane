@@ -45,9 +45,9 @@ import threading
 import time
 from dataclasses import dataclass
 
-_PHYSICAL_SHIFT: int = 16
-_LOGICAL_MAX: int = (1 << 16) - 1
-_PHYSICAL_MAX: int = (1 << 48) - 1
+PHYSICAL_SHIFT: int = 16
+LOGICAL_MAX: int = (1 << 16) - 1
+PHYSICAL_MAX: int = (1 << 48) - 1
 
 
 @dataclass(frozen=True)
@@ -74,8 +74,8 @@ def unpack(value: int) -> HLC:
     Returns:
         HLC: The decoded clock state.
     """
-    physical = (value >> _PHYSICAL_SHIFT) & _PHYSICAL_MAX
-    logical = value & _LOGICAL_MAX
+    physical = (value >> PHYSICAL_SHIFT) & PHYSICAL_MAX
+    logical = value & LOGICAL_MAX
     return HLC(physical_ms=physical, logical=logical)
 
 
@@ -88,7 +88,7 @@ def pack(clock: HLC) -> int:
     Returns:
         int: 64-bit integer wire representation.
     """
-    return (clock.physical_ms << _PHYSICAL_SHIFT) | (clock.logical & _LOGICAL_MAX)
+    return (clock.physical_ms << PHYSICAL_SHIFT) | (clock.logical & LOGICAL_MAX)
 
 
 def tick(previous: HLC) -> HLC:
@@ -108,7 +108,7 @@ def tick(previous: HLC) -> HLC:
     now_ms = int(time.time() * 1000)
     if now_ms > previous.physical_ms:
         return HLC(physical_ms=now_ms, logical=0)
-    if previous.logical < _LOGICAL_MAX:
+    if previous.logical < LOGICAL_MAX:
         return HLC(physical_ms=previous.physical_ms, logical=previous.logical + 1)
     # Logical overflow at the same physical millisecond: roll
     # into the next millisecond. The real-world chance of
@@ -158,14 +158,14 @@ def merge(local: HLC, observed: int | HLC) -> HLC:
         # saturation). Deterministic: ``tick()`` here would
         # advance to wall-clock time which would change the
         # HLC ordering across re-runs.
-        if local.logical < _LOGICAL_MAX:
+        if local.logical < LOGICAL_MAX:
             return HLC(physical_ms=local.physical_ms, logical=local.logical + 1)
         return HLC(physical_ms=local.physical_ms + 1, logical=0)
     # Same physical ms — pick the maximum logical counter plus
     # one. Ties on the counter (i.e., equal observed and local)
     # still produce a strictly newer clock because we add 1.
     new_logical = max(local.logical, other.logical) + 1
-    if new_logical > _LOGICAL_MAX:
+    if new_logical > LOGICAL_MAX:
         return HLC(physical_ms=local.physical_ms + 1, logical=0)
     return HLC(physical_ms=local.physical_ms, logical=new_logical)
 
@@ -207,13 +207,13 @@ class Clock:
         """
         if seed is None:
             seed = HLC(physical_ms=int(time.time() * 1000), logical=0)
-        self._state = seed
-        self._lock = threading.Lock()
+        self.__state = seed
+        self.lock = threading.Lock()
 
     def current(self) -> HLC:
         """Return the current clock state without advancing."""
-        with self._lock:
-            return self._state
+        with self.lock:
+            return self.__state
 
     def pack_current(self) -> int:
         """Return the current packed HLC integer."""
@@ -221,15 +221,15 @@ class Clock:
 
     def tick(self) -> int:
         """Advance the clock and return the new packed integer."""
-        with self._lock:
-            self._state = tick(self._state)
-            return pack(self._state)
+        with self.lock:
+            self.__state = tick(self.__state)
+            return pack(self.__state)
 
     def merge(self, observed: int | HLC) -> int:
         """Reconcile with the observed HLC and return the new packed integer."""
-        with self._lock:
-            self._state = merge(self._state, observed)
-            return pack(self._state)
+        with self.lock:
+            self.__state = merge(self.__state, observed)
+            return pack(self.__state)
 
 
 __all__ = [

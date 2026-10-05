@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _load_vllm_base() -> type[Any] | None:
+def load_vllm_base() -> type[Any] | None:
     """Import vLLM's :class:`KVConnectorBase` if vLLM is installed.
 
     Returns:
@@ -72,7 +72,7 @@ def _load_vllm_base() -> type[Any] | None:
     return KVConnectorBase
 
 
-_VLLM_BASE: type[Any] | None = _load_vllm_base()
+VLLM_BASE: type[Any] | None = load_vllm_base()
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ class MembraneClusterClient:
 
 
 @dataclass
-class _RequestState:
+class RequestState:
     """Per-request bookkeeping kept by the connector.
 
     Attributes:
@@ -232,8 +232,8 @@ class InMemoryClusterClient(MembraneClusterClient):
     """
 
     def __init__(self) -> None:
-        self._by_handle: dict[str, dict[int, bytes]] = {}
-        self._lock = threading.RLock()
+        self.by_handle: dict[str, dict[int, bytes]] = {}
+        self.lock = threading.RLock()
 
     def seed(self, kv_handle: str, layers: dict[int, bytes]) -> None:
         """Pre-populate a K/V bundle for tests.
@@ -243,8 +243,8 @@ class InMemoryClusterClient(MembraneClusterClient):
             layers: Per-layer raw bytes (caller decides the
                 format; the v1 of this client just stores them).
         """
-        with self._lock:
-            self._by_handle[kv_handle] = dict(layers)
+        with self.lock:
+            self.by_handle[kv_handle] = dict(layers)
 
     @override
     def lookup_prefix(
@@ -255,8 +255,8 @@ class InMemoryClusterClient(MembraneClusterClient):
         if not token_ids:
             return MatchedPrefix(0, "")
         handle = f"mem:{model_id}:{len(token_ids)}"
-        with self._lock:
-            if handle in self._by_handle:
+        with self.lock:
+            if handle in self.by_handle:
                 return MatchedPrefix(len(token_ids), handle)
         return MatchedPrefix(0, "")
 
@@ -266,8 +266,8 @@ class InMemoryClusterClient(MembraneClusterClient):
         kv_handle: str,
         layer_indices: tuple[int, ...],
     ) -> tuple[LayerLoad, ...]:
-        with self._lock:
-            bundle = self._by_handle.get(kv_handle)
+        with self.lock:
+            bundle = self.by_handle.get(kv_handle)
             if bundle is None:
                 return ()
             return tuple(LayerLoad(layer_idx=i, kv_handle=kv_handle) for i in layer_indices if i in bundle)
@@ -280,8 +280,8 @@ class InMemoryClusterClient(MembraneClusterClient):
         shape: tuple[int, int, int, int],
         dtype: str,
     ) -> KVTensor:
-        with self._lock:
-            bundle = self._by_handle.get(layer_load.kv_handle, {})
+        with self.lock:
+            bundle = self.by_handle.get(layer_load.kv_handle, {})
             raw = bundle.get(layer_load.layer_idx, b"")
         return KVTensor(
             layers=(
@@ -297,7 +297,7 @@ class InMemoryClusterClient(MembraneClusterClient):
             head_range=(-1, -1),
             token_span=(0, 0),
             shape=shape,
-            fingerprint=_placeholder_fingerprint(model_id, dtype),
+            fingerprint=placeholder_fingerprint(model_id, dtype),
         )
 
     @override
@@ -309,12 +309,12 @@ class InMemoryClusterClient(MembraneClusterClient):
     ) -> None:
         del model_id, token_span
         handle = f"mem:{layer.layer_idx}"
-        payload = _tensor_payload(layer.k)
-        with self._lock:
-            self._by_handle.setdefault(handle, {})[layer.layer_idx] = payload
+        payload = tensor_payload(layer.k)
+        with self.lock:
+            self.by_handle.setdefault(handle, {})[layer.layer_idx] = payload
 
 
-def _placeholder_fingerprint(model_id: str, dtype: str) -> Any:
+def placeholder_fingerprint(model_id: str, dtype: str) -> Any:
     """Build a placeholder fingerprint for the in-memory client.
 
     Args:
@@ -329,7 +329,7 @@ def _placeholder_fingerprint(model_id: str, dtype: str) -> Any:
     return compat_hash(model_id=model_id, dtype=dtype)
 
 
-def _tensor_payload(tensor: Any) -> bytes:
+def tensor_payload(tensor: Any) -> bytes:
     """Coerce a tensor-like object into raw bytes.
 
     Args:
@@ -356,7 +356,7 @@ def _tensor_payload(tensor: Any) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
+def build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
     """Build a vLLM-compatible connector class.
 
     When vLLM is installed, the connector is a real subclass of
@@ -442,8 +442,8 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
             self.n_layers = n_layers
             self.model_id = model_id
             self.dtype = dtype
-            self._requests: dict[str, _RequestState] = {}
-            self._lock = threading.RLock()
+            self.__requests: dict[str, RequestState] = {}
+            self.lock = threading.RLock()
 
         # ----- vLLM connector surface -----
 
@@ -462,9 +462,9 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
             Returns:
                 int: Number of cached tokens, ``0`` on miss.
             """
-            state = self._register(request)
+            state = self.__register(request)
             matched = self.client.lookup_prefix(state.model_id, state.token_ids)
-            with self._lock:
+            with self.lock:
                 state.matched = matched
             return matched.prefix_len
 
@@ -482,9 +482,9 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
                 pages: Block pages vLLM just allocated.
                 page_attn_params: vLLM page-attention parameters.
             """
-            state = self._register(request)
-            block_table = self._extract_block_table(pages)
-            with self._lock:
+            state = self.__register(request)
+            block_table = self.__extract_block_table(pages)
+            with self.lock:
                 state.block_table = block_table
 
         @override
@@ -497,13 +497,13 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
             Returns:
                 dict: Per-request connector metadata.
             """
-            with self._lock:
+            with self.lock:
                 return {
                     req_id: {
                         "matched_prefix": state.matched.prefix_len,
                         "block_table": list(state.block_table),
                     }
-                    for req_id, state in self._requests.items()
+                    for req_id, state in self.__requests.items()
                 }
 
         @override
@@ -513,14 +513,14 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
             Args:
                 request: vLLM request object.
             """
-            state = self._register(request)
+            state = self.__register(request)
             if not state.matched.kv_handle:
                 return
             loads = self.client.start_load(
                 state.matched.kv_handle,
                 tuple(range(self.n_layers)),
             )
-            with self._lock:
+            with self.lock:
                 state.loads = {load.layer_idx: load for load in loads}
 
         @override
@@ -531,8 +531,8 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
                 layer: Layer index the runner is about to use.
                 request: vLLM request object.
             """
-            state = self._register(request)
-            with self._lock:
+            state = self.__register(request)
+            with self.lock:
                 load = state.loads.pop(layer, None)
             if load is None:
                 return
@@ -557,7 +557,7 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
                 kv_caches: Engine-resident K/V tensors.
                 attn_metadata: vLLM attention metadata.
             """
-            k_tensor, v_tensor = self._split_kv(kv_caches, layer)
+            k_tensor, v_tensor = self.__split_kv(kv_caches, layer)
             for tensor in (k_tensor, v_tensor):
                 layer_kv = LayerKV(
                     layer_idx=layer,
@@ -570,25 +570,25 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
 
         # ----- internal helpers -----
 
-        def _register(self, request: Any) -> _RequestState:
+        def __register(self, request: Any) -> RequestState:
             request_id = getattr(request, "request_id", None) or str(id(request))
-            with self._lock:
-                state = self._requests.get(request_id)
+            with self.lock:
+                state = self.__requests.get(request_id)
                 if state is not None:
                     return state
             token_ids = tuple(getattr(request, "token_ids", ()) or ())
             model_id = getattr(request, "model_id", None) or self.model_id
-            state = _RequestState(
+            state = RequestState(
                 request_id=request_id,
                 model_id=model_id,
                 token_ids=token_ids,
             )
-            with self._lock:
-                self._requests[request_id] = state
+            with self.lock:
+                self.__requests[request_id] = state
             return state
 
         @staticmethod
-        def _extract_block_table(pages: Any) -> tuple[int, ...]:
+        def __extract_block_table(pages: Any) -> tuple[int, ...]:
             """Normalize vLLM's page list into a tuple of block ids.
 
             Args:
@@ -612,7 +612,7 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
             return ()
 
         @staticmethod
-        def _split_kv(kv_caches: list[Any], layer: int) -> tuple[Any, Any]:
+        def __split_kv(kv_caches: list[Any], layer: int) -> tuple[Any, Any]:
             """Extract the K and V tensors for ``layer``.
 
             vLLM keeps K and V in a single tensor of shape
@@ -660,7 +660,7 @@ class MembraneVLLMAdapter(BaseAdapter):  # type: ignore[misc]
                 ``None`` for the vLLM-only path.
         """
         self.kv_backend = kv_backend
-        self._connector_cls = _build_connector(MembraneVLLMAdapter, _VLLM_BASE)
+        self.__connector_cls = build_connector(MembraneVLLMAdapter, VLLM_BASE)
 
     def make_connector(
         self,
@@ -681,7 +681,7 @@ class MembraneVLLMAdapter(BaseAdapter):  # type: ignore[misc]
             A :class:`MembraneVLLMConnector` instance ready to
             be installed in vLLM's KV-transfer config.
         """
-        return self._connector_cls(
+        return self.__connector_cls(
             client=client,
             n_layers=n_layers,
             model_id=model_id,
@@ -766,5 +766,5 @@ __all__ = [
 ]
 
 
-VLLM_AVAILABLE: bool = _VLLM_BASE is not None
-MembraneVLLMConnector: type[Any] = _build_connector(MembraneVLLMAdapter, _VLLM_BASE)
+VLLM_AVAILABLE: bool = VLLM_BASE is not None
+MembraneVLLMConnector: type[Any] = build_connector(MembraneVLLMAdapter, VLLM_BASE)

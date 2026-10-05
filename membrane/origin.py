@@ -101,3 +101,8 @@ class Origin(Node):
             if self.transfer_service.transfer_fragment(self, replica, h):
                 transferred.append(h)
         return transferred
+
+
+__all__ = [
+    "Origin",
+]

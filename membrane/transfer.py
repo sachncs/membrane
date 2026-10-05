@@ -95,7 +95,7 @@ class RemoteEndpoint(Protocol):
         ...
 
 
-class _LocalEndpoint:
+class NodeEndpoint:
     """Adapter that promotes a :class:`Node` to a :class:`LocalEndpoint`."""
 
     __slots__ = ("node",)
@@ -113,17 +113,17 @@ class _LocalEndpoint:
         return self.node.store(fragment, is_primary=is_primary)
 
 
-class _RemoteEndpoint:
+class ClusterPeerEndpoint:
     """Adapter that promotes a peer node-id + cluster to a :class:`RemoteEndpoint`."""
 
-    __slots__ = ("_cluster", "node_id")
+    __slots__ = ("cluster", "node_id")
 
     def __init__(self, node_id: str, cluster: Cluster) -> None:
         self.node_id = node_id
-        self._cluster = cluster
+        self.cluster = cluster
 
     def client_for(self) -> Peer | None:
-        return self._cluster.membership.get_client(self.node_id)
+        return self.cluster.membership.get_client(self.node_id)
 
     def inventory(self) -> dict[str, int] | None:
         client = self.client_for()
@@ -147,14 +147,14 @@ class _RemoteEndpoint:
         return client.request_replicate(fragment)
 
 
-def _resolve(node_or_id: Node | str, cluster: Cluster | None) -> LocalEndpoint | RemoteEndpoint:
+def resolve_endpoint(node_or_id: Node | str, cluster: Cluster | None) -> LocalEndpoint | RemoteEndpoint:
     """Promote a ``Node`` or remote node-id to the matching endpoint."""
     if isinstance(node_or_id, Node):
-        return _LocalEndpoint(node_or_id)
+        return NodeEndpoint(node_or_id)
     if cluster is None:
         msg = f"remote endpoint {node_or_id!r} requested but no cluster is configured"
         raise ValueError(msg)
-    return _RemoteEndpoint(node_or_id, cluster)
+    return ClusterPeerEndpoint(node_or_id, cluster)
 
 
 class TransferService:
@@ -180,7 +180,7 @@ class TransferService:
         self.local_node = local_node
 
     def resolve_endpoint(self, node_or_id: Node | str) -> LocalEndpoint | RemoteEndpoint:
-        return _resolve(node_or_id, self.cluster_manager)
+        return resolve_endpoint(node_or_id, self.cluster_manager)
 
     # ------------------------------------------------------------------
     # Dispatch table — three concrete transfer operations, each
@@ -292,16 +292,16 @@ class TransferService:
         except ValueError:
             return False
 
-        if isinstance(src_endpoint, _LocalEndpoint) and isinstance(tgt_endpoint, _LocalEndpoint):
+        if isinstance(src_endpoint, NodeEndpoint) and isinstance(tgt_endpoint, NodeEndpoint):
             return self.transfer_local_endpoint(src_endpoint, tgt_endpoint, content_hash)
-        if isinstance(src_endpoint, _RemoteEndpoint):
+        if isinstance(src_endpoint, ClusterPeerEndpoint):
             return self.transfer_remote_source(
                 src_endpoint,
                 tgt_endpoint,  # type: ignore[arg-type]
                 content_hash,
             )
-        # isinstance(tgt_endpoint, _RemoteEndpoint)  (mypy narrowing)
-        if not isinstance(src_endpoint, _LocalEndpoint) or not isinstance(tgt_endpoint, _RemoteEndpoint):
+        # isinstance(tgt_endpoint, ClusterPeerEndpoint)  (mypy narrowing)
+        if not isinstance(src_endpoint, NodeEndpoint) or not isinstance(tgt_endpoint, ClusterPeerEndpoint):
             return False
         return self.transfer_remote_target(
             src_endpoint,
@@ -321,7 +321,7 @@ class TransferService:
         except ValueError:
             return []
 
-        if isinstance(src_endpoint, _LocalEndpoint) and isinstance(tgt_endpoint, _LocalEndpoint):
+        if isinstance(src_endpoint, NodeEndpoint) and isinstance(tgt_endpoint, NodeEndpoint):
             return self.sync_local(src_endpoint.node, tgt_endpoint.node)
 
         src_digest = src_endpoint.inventory()
@@ -332,15 +332,15 @@ class TransferService:
         missing = self.compare_inventories(tgt_digest, src_digest)
         transferred: list[str] = []
         for h in missing:
-            if isinstance(src_endpoint, _LocalEndpoint) and isinstance(tgt_endpoint, _LocalEndpoint):
+            if isinstance(src_endpoint, NodeEndpoint) and isinstance(tgt_endpoint, NodeEndpoint):
                 ok: bool = self.transfer_local_endpoint(src_endpoint, tgt_endpoint, h)
-            elif isinstance(src_endpoint, _RemoteEndpoint):
+            elif isinstance(src_endpoint, ClusterPeerEndpoint):
                 ok = self.transfer_remote_source(
                     src_endpoint,
                     tgt_endpoint,  # type: ignore[arg-type]
                     h,
                 )
-            elif isinstance(tgt_endpoint, _RemoteEndpoint):
+            elif isinstance(tgt_endpoint, ClusterPeerEndpoint):
                 ok = self.transfer_remote_target(
                     src_endpoint,  # type: ignore[arg-type]
                     tgt_endpoint,
@@ -375,7 +375,7 @@ class TransferService:
         :meth:`transfer_local_endpoint` for callers that pass
         :class:`Node` instances directly.
         """
-        return self.transfer_local_endpoint(_LocalEndpoint(source), _LocalEndpoint(target), content_hash)
+        return self.transfer_local_endpoint(NodeEndpoint(source), NodeEndpoint(target), content_hash)
 
     def pull_from_remote(
         self,
@@ -395,17 +395,17 @@ class TransferService:
         """
         if self.cluster_manager is None:
             return False
-        src_endpoint = _RemoteEndpoint(source_id, self.cluster_manager)
+        src_endpoint = ClusterPeerEndpoint(source_id, self.cluster_manager)
         try:
             tgt_endpoint = self.resolve_endpoint(target)
         except ValueError:
             return False
-        if isinstance(tgt_endpoint, _LocalEndpoint):
+        if isinstance(tgt_endpoint, NodeEndpoint):
             fragment = src_endpoint.retrieve(content_hash)
             if fragment is None:
                 return False
             return tgt_endpoint.store(fragment, is_primary=False)
-        if not isinstance(tgt_endpoint, _RemoteEndpoint):
+        if not isinstance(tgt_endpoint, ClusterPeerEndpoint):
             return False
         # Remote target: chain peer-to-peer.
         return self.transfer_remote_source(src_endpoint, tgt_endpoint, content_hash)
@@ -426,8 +426,8 @@ class TransferService:
         if self.cluster_manager is None:
             return False
         return self.transfer_remote_target(
-            _LocalEndpoint(source),
-            _RemoteEndpoint(target_id, self.cluster_manager),
+            NodeEndpoint(source),
+            ClusterPeerEndpoint(target_id, self.cluster_manager),
             content_hash,
         )
 

@@ -134,7 +134,7 @@ class MTLSConfig:
         )
 
 
-class _AllowAll:
+class AllowAll:
     """Sentinel for the permissive allow-list mode.
 
     Returns True from :func:`peer_cn_allowed` regardless of the
@@ -153,7 +153,7 @@ class _AllowAll:
         return True
 
 
-ALLOW_ALL_MARKER: object = _AllowAll()
+ALLOW_ALL_MARKER: object = AllowAll()
 
 
 def build_server_context(config: MTLSConfig) -> ssl.SSLContext:
@@ -179,8 +179,8 @@ def build_server_context(config: MTLSConfig) -> ssl.SSLContext:
     else:
         context.verify_mode = ssl.CERT_OPTIONAL
     context.load_cert_chain(
-        certfile=_as_pem_path_or_bytes(config.server_cert_pem, "server_cert"),
-        keyfile=_as_pem_path_or_bytes(config.server_key_pem, "server_key"),
+        certfile=as_pem_path_or_bytes(config.server_cert_pem, "server_cert"),
+        keyfile=as_pem_path_or_bytes(config.server_key_pem, "server_key"),
     )
     context.load_verify_locations(cadata=config.ca_bundle_pem)
     return context
@@ -202,8 +202,8 @@ def build_client_context(config: MTLSConfig) -> ssl.SSLContext:
     context.load_verify_locations(cadata=config.ca_bundle_pem)
     if config.client_cert_pem is not None and config.client_key_pem is not None:
         context.load_cert_chain(
-            certfile=_as_pem_path_or_bytes(config.client_cert_pem, "client_cert"),
-            keyfile=_as_pem_path_or_bytes(config.client_key_pem, "client_key"),
+            certfile=as_pem_path_or_bytes(config.client_cert_pem, "client_cert"),
+            keyfile=as_pem_path_or_bytes(config.client_key_pem, "client_key"),
         )
     return context
 
@@ -254,7 +254,7 @@ def peer_cn_allowed(config: MTLSConfig, cn: str) -> bool:
     return cn in config.allowed_cns
 
 
-def _as_pem_path_or_bytes(value: str, kind: str) -> str:
+def as_pem_path_or_bytes(value: str, kind: str) -> str:
     """Treat ``value`` as either a file path (when the string is a real
     filesystem path) or as PEM bytes for the in-memory loaders
     used by tests.
@@ -301,7 +301,7 @@ __all__ = [
 
 
 @dataclass(frozen=True)
-class _SelfSignedTestCerts:
+class SelfSignedTestCerts:
     """Marker dataclass for test-only self-signed material.
 
     Real production deployments ship signed certificates issued
@@ -318,6 +318,3 @@ class _SelfSignedTestCerts:
 # Internal re-export to keep type checkers happy even though
 # the test sentinel is not exported. The reference below is
 # removed by mypy's dead-code elision since the dict is empty.
-
-
-__all_unused__ = {"_SelfSignedTestCerts": _SelfSignedTestCerts}

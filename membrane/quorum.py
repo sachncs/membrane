@@ -96,19 +96,19 @@ def attempt_quorum_acks(
     if not peer_list:
         return QuorumResult(success=False, ack_count=0, timed_out=True, replica_count=0)
 
-    payload = {"fragment": _wire_dict_for(fragment), "is_primary": False}
+    payload = {"fragment": wire_dict_for(fragment), "is_primary": False}
     submitted: list[concurrent.futures.Future[bool]] = []
     ack_count = 0
     timed_out = False
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(quorum_count, len(peer_list)))) as pool:
         for peer in peer_list:
-            submitted.append(pool.submit(_post_replicate, peer, payload))
+            submitted.append(pool.submit(post_replicate, peer, payload))
 
-        deadline = _now() + timeout_sec
+        deadline = now() + timeout_sec
         try:
             for future in concurrent.futures.as_completed(submitted, timeout=timeout_sec):
-                remaining = max(0.0, deadline - _now())
+                remaining = max(0.0, deadline - now())
                 if remaining <= 0:
                     timed_out = True
                     break
@@ -123,7 +123,7 @@ def attempt_quorum_acks(
                                 if not outstanding.done():
                                     outstanding.cancel()
                             break
-                except (concurrent.futures.TimeoutError, _PeerError) as exc:
+                except (concurrent.futures.TimeoutError, PeerError) as exc:
                     timed_out = True
                     logger.debug("quorum peer ack errored: %s", exc)
         except concurrent.futures.TimeoutError:
@@ -132,7 +132,7 @@ def attempt_quorum_acks(
             timed_out = True
 
         # If the deadline hit before quorum, mark timeout.
-        if ack_count < quorum_count and _now() >= deadline:
+        if ack_count < quorum_count and now() >= deadline:
             timed_out = True
 
     return QuorumResult(
@@ -143,20 +143,20 @@ def attempt_quorum_acks(
     )
 
 
-def _now() -> float:
+def now() -> float:
     import time
 
     return time.monotonic()
 
 
-def _post_replicate(peer: Peer, payload: dict) -> bool:
+def post_replicate(peer: Peer, payload: dict) -> bool:
     try:
-        return peer.request_replicate(_fragment_from(payload))
+        return peer.request_replicate(fragment_from(payload))
     except Exception as exc:  # pragma: no cover - propagation is the caller's job
-        raise _PeerError(str(exc)) from exc
+        raise PeerError(str(exc)) from exc
 
 
-def _fragment_from(payload: dict) -> Fragment:
+def fragment_from(payload: dict) -> Fragment:
     """Reconstruct a Fragment from the wire dict carrying already-parsed bytes.
 
     The ``op_store`` route serializes a Fragment once and ships
@@ -172,7 +172,7 @@ def _fragment_from(payload: dict) -> Fragment:
     return from_dict(payload["fragment"])
 
 
-def _wire_dict_for(fragment: Fragment) -> dict:
+def wire_dict_for(fragment: Fragment) -> dict:
     """Convert a Fragment to its v3 wire dict.
 
     The package-private default lives in
@@ -185,8 +185,8 @@ def _wire_dict_for(fragment: Fragment) -> dict:
     return to_dict(fragment)
 
 
-class _PeerError(Exception):
-    """Out-of-band error raised by :func:`_post_replicate`."""
+class PeerError(Exception):
+    """Out-of-band error raised by :func:`post_replicate`."""
 
 
 __all__ = ["QuorumResult", "attempt_quorum_acks"]

@@ -65,7 +65,7 @@ class RefCount:
 
     def __init__(self) -> None:
         """Initialize an empty counter."""
-        self._refs: dict[str, set[str]] = {}
+        self.__refs: dict[str, set[str]] = {}
         self.lock = threading.RLock()
 
     def acquire(self, content_hash: str, node_id: str) -> None:
@@ -76,7 +76,7 @@ class RefCount:
             node_id: Node identifier of the new holder.
         """
         with self.lock:
-            self._refs.setdefault(content_hash, set()).add(node_id)
+            self.__refs.setdefault(content_hash, set()).add(node_id)
 
     def release(self, content_hash: str, node_id: str) -> bool:
         """Release one reference for ``content_hash``.
@@ -91,24 +91,24 @@ class RefCount:
             remains.
         """
         with self.lock:
-            holders = self._refs.get(content_hash)
+            holders = self.__refs.get(content_hash)
             if holders is None:
                 return True
             holders.discard(node_id)
             if not holders:
-                self._refs.pop(content_hash, None)
+                self.__refs.pop(content_hash, None)
                 return True
             return False
 
     def holders(self, content_hash: str) -> set[str]:
         """Return a copy of the current holder set."""
         with self.lock:
-            return set(self._refs.get(content_hash, set()))
+            return set(self.__refs.get(content_hash, set()))
 
     def is_active(self, content_hash: str) -> bool:
         """Return whether ``content_hash`` has any holder."""
         with self.lock:
-            return content_hash in self._refs
+            return content_hash in self.__refs
 
     def forget(self, content_hash: str) -> None:
         """Drop every reference for ``content_hash`` without erasing.
@@ -120,12 +120,12 @@ class RefCount:
             content_hash: Hash to scrub.
         """
         with self.lock:
-            self._refs.pop(content_hash, None)
+            self.__refs.pop(content_hash, None)
 
     def total(self) -> int:
         """Return the number of distinct hashes currently held."""
         with self.lock:
-            return len(self._refs)
+            return len(self.__refs)
 
     def __len__(self) -> int:
         """Return the number of distinct hashes tracked."""
@@ -142,7 +142,7 @@ class TombstoneTable:
 
     def __init__(self) -> None:
         """Initialize an empty table."""
-        self._tombstones: dict[str, Tombstone] = {}
+        self.tombstones: dict[str, Tombstone] = {}
         self.lock = threading.RLock()
 
     def record(self, content_hash: str, until: float, node_ids: set[str] | None = None) -> Tombstone:
@@ -163,7 +163,7 @@ class TombstoneTable:
             Tombstone: The stored record.
         """
         with self.lock:
-            existing = self._tombstones.get(content_hash)
+            existing = self.tombstones.get(content_hash)
             if existing is not None:
                 node_ids = node_ids or set()
                 merged = set(existing.nodes) | node_ids
@@ -178,17 +178,17 @@ class TombstoneTable:
                     until=until,
                     nodes=frozenset(node_ids or ()),
                 )
-            self._tombstones[content_hash] = record
+            self.tombstones[content_hash] = record
             return record
 
     def get(self, content_hash: str) -> Tombstone | None:
         """Return the active tombstone or ``None`` when absent/expired."""
         with self.lock:
-            record = self._tombstones.get(content_hash)
+            record = self.tombstones.get(content_hash)
             if record is None:
                 return None
             if time.time() >= record.until:
-                self._tombstones.pop(content_hash, None)
+                self.tombstones.pop(content_hash, None)
                 return None
             return record
 
@@ -206,24 +206,24 @@ class TombstoneTable:
         now = time.time()
         expired: list[str] = []
         with self.lock:
-            for h, record in list(self._tombstones.items()):
+            for h, record in list(self.tombstones.items()):
                 if now >= record.until:
                     expired.append(h)
-                    self._tombstones.pop(h, None)
+                    self.tombstones.pop(h, None)
         return expired
 
     def total(self) -> int:
         """Return the number of recorded tombstones (active or not)."""
         with self.lock:
-            return len(self._tombstones)
+            return len(self.tombstones)
 
     def clear(self) -> None:
         """Drop every tombstone (used by tests)."""
         with self.lock:
-            self._tombstones.clear()
+            self.tombstones.clear()
 
 
-class _EvictCallback(Protocol):
+class EvictCallback(Protocol):
     """Hook signature used by :class:`Sweeper` for periodic sweeps."""
 
     def __call__(self) -> list[str]:
@@ -255,7 +255,7 @@ class Sweeper:
     on_evict_expired: SweepHook | None = None
     on_tombstones_expired: SweepHook | None = None
     on_post_sweep: SweepHook | None = None
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         """Sanity-check the requested interval."""
@@ -264,12 +264,12 @@ class Sweeper:
 
     def start(self) -> None:
         """Spawn the daemon thread. Idempotent."""
-        with self._lock:
+        with self.lock:
             if self.thread is not None and self.thread.is_alive():
                 return
             self.stop_event.clear()
             self.thread = threading.Thread(
-                target=self._run,
+                target=self.__run,
                 daemon=True,
                 name="membrane-sweeper",
             )
@@ -278,14 +278,14 @@ class Sweeper:
     def stop(self, timeout: float = 2.0) -> None:
         """Signal the daemon to exit and wait briefly for the thread."""
         self.stop_event.set()
-        with self._lock:
+        with self.lock:
             if self.thread is not None:
                 self.thread.join(timeout=timeout)
                 self.thread = None
 
     def run_once(
         self,
-        evict_expired: _EvictCallback | None = None,
+        evict_expired: EvictCallback | None = None,
         tombstones: TombstoneTable | None = None,
     ) -> None:
         """Run a single cleanup pass. Useful from tests and the
@@ -315,7 +315,7 @@ class Sweeper:
             # evicted it.
             self.on_post_sweep(sorted(set(total)))
 
-    def _run(self) -> None:
+    def __run(self) -> None:
         """Worker loop. Uses ``stop_event.wait`` so ``stop`` is prompt."""
         while not self.stop_event.is_set():
             if self.stop_event.wait(self.interval_sec):

@@ -332,7 +332,7 @@ class Gossip:
         now = time.time()
         tombstone_map: dict[str, float] = {}
         with self.tombstones.lock:
-            for h, record in self.tombstones._tombstones.items():  # type: ignore[attr-defined]
+            for h, record in self.tombstones.tombstones.items():
                 if record.until > now:
                     tombstone_map[h] = record.until
         return GossipState(
@@ -415,7 +415,7 @@ class Gossip:
         # skip when the inventories are already in sync.
         local_state = self.build_state()
         if local_state.inventory_merkle_root != incoming.inventory_merkle_root:
-            local_pairs = self._inventory_pairs()
+            local_pairs = self.__inventory_pairs()
             remote_pairs = set()
             for h in incoming.fragment_locations:
                 holders = self.directory.locate_fragment(h)
@@ -433,7 +433,7 @@ class Gossip:
             # the replicator loop will reconcile the missing
             # bytes on its next pass if the immediate push fails.
             for pair in remote_pairs - local_pairs:
-                self._replicator_pull(pair[0], pair[1])
+                self.__replicator_pull(pair[0], pair[1])
 
         # Tombstone convergence: stamp the sender-identified
         # records into the local table. ``record`` uses the
@@ -447,7 +447,7 @@ class Gossip:
 
         return self.build_state().to_json()
 
-    def _inventory_pairs(self) -> set[tuple[str, str]]:
+    def __inventory_pairs(self) -> set[tuple[str, str]]:
         """Snapshot the local (hash, owner_node_id) pairs.
 
         Returns:
@@ -463,7 +463,7 @@ class Gossip:
             pairs.add((h, owner))
         return pairs
 
-    def _replicator_pull(self, content_hash: str, owner_node_id: str) -> None:
+    def __replicator_pull(self, content_hash: str, owner_node_id: str) -> None:
         """Best-effort pull of a single fragment from the named owner.
 
         Implemented as a direct call on the peer's

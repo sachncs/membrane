@@ -18,7 +18,7 @@ class TestBanditE2E:
         for _ in range(50):
             bandit.update(arms[0], reward=1.0)
         # The estimated reward for arm a is 1.0; for others 0.
-        assert bandit._estimated_reward(arms[0]) == 1.0
+        assert bandit.estimated_reward(arms[0]) == 1.0
         # Without exploration, select_arm should return arm a.
         assert bandit.select_arm() is arms[0]
 

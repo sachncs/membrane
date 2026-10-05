@@ -81,8 +81,8 @@ class StaticKeyProvider:
     """
 
     key: bytes | None = None
-    _lock: threading.Lock = field(default_factory=threading.Lock)
-    _cached: bytes | None = field(default=None, init=False)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    cached: bytes | None = field(default=None, init=False)
 
     def master_key(self) -> bytes:
         """Return the master key, generating one on first call.
@@ -90,10 +90,10 @@ class StaticKeyProvider:
         Returns:
             bytes: 32 random bytes (AES-256 key size).
         """
-        with self._lock:
-            if self._cached is None:
-                self._cached = self.key if self.key is not None else _secrets.token_bytes(KEY_SIZE)
-            return self._cached
+        with self.lock:
+            if self.cached is None:
+                self.cached = self.key if self.key is not None else _secrets.token_bytes(KEY_SIZE)
+            return self.cached
 
 
 def derive_tenant_key(
@@ -118,8 +118,8 @@ def derive_tenant_key(
     derived = hashlib.shake_128 if hasattr(hashlib, "shake_128") else None
     if derived is None:
         # stdlib fallback: HKDF using HMAC-SHA256.
-        return _hkdf_hmac_sha256(master_key, salt, info + b":" + content_hash.encode("ascii"))
-    key = _hkdf_hmac_sha256(master_key, salt, info + b":" + content_hash.encode("ascii"))
+        return hkdf_hmac_sha256(master_key, salt, info + b":" + content_hash.encode("ascii"))
+    key = hkdf_hmac_sha256(master_key, salt, info + b":" + content_hash.encode("ascii"))
     return key[:KEY_SIZE]
 
 
@@ -205,7 +205,7 @@ def decrypt_payload_with_versions(
     raise RuntimeError("decryption failed for every candidate key")
 
 
-def _hkdf_hmac_sha256(ikm: bytes, salt: bytes, info: bytes) -> bytes:
+def hkdf_hmac_sha256(ikm: bytes, salt: bytes, info: bytes) -> bytes:
     """Minimal HKDF-SHA256 implementation that does not depend on cryptography.
 
     Args:

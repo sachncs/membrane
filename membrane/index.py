@@ -185,3 +185,8 @@ class Index:
             when the hash has no recorded co-accesses.
         """
         return self.co_access.lookup(content_hash)
+
+
+__all__ = [
+    "Index",
+]

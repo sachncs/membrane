@@ -372,3 +372,8 @@ class Redis:
             hlc=int(data.get("hlc") or 0),
             fingerprint_compat=data.get("fingerprint_compat", ""),
         )
+
+
+__all__ = [
+    "Redis",
+]

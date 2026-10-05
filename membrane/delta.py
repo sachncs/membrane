@@ -125,3 +125,9 @@ class DeltaEncoder:
             raise ValueError(f"Invalid removed_tail_count {removed} for base of length {len(base_tokens)}")
         kept = base_tokens[: len(base_tokens) - removed]
         return kept + delta.appended_tokens
+
+
+__all__ = [
+    "Delta",
+    "DeltaEncoder",
+]

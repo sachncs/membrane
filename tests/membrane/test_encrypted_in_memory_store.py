@@ -23,8 +23,8 @@ class TestEncryptedInProcessBytes:
         store = EncryptedInProcessBytes(tenant_id="acme")
         store.put("k", b"plaintext-marker-XYZ")
         # The on-disk store dict must hold the ciphertext.
-        with store._lock:  # type: ignore[attr-defined]
-            encrypted = store._store["k"]  # type: ignore[attr-defined]
+        with store.lock:  # type: ignore[attr-defined]
+            encrypted = store.store["k"]  # type: ignore[attr-defined]
         assert b"plaintext-marker-XYZ" not in encrypted
 
     def test_missing_key_returns_none(self):
@@ -72,9 +72,9 @@ class TestEncryptedInProcessBytes:
         a.put("k", b"plaintext")
         # b cannot decrypt what a wrote (different master key).
         # Simulate by reading b's underlying dict.
-        with b._lock:  # type: ignore[attr-defined]
+        with b.lock:  # type: ignore[attr-defined]
             b_blob = b""  # b is empty
-        assert b_blob != a._store["k"]  # type: ignore[attr-defined]
+        assert b_blob != a.store["k"]  # type: ignore[attr-defined]
 
     def test_different_tenant_decryption_fails(self):
         provider = StaticKeyProvider(key=b"\x00" * 32)

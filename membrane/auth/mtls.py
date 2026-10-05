@@ -184,7 +184,7 @@ __all__ = [
 # path, so static analyzers confirm the module surface stays
 # closed.
 
-_LAZY_EXPORTS: dict[str, Any] = {
+LAZY_EXPORTS: dict[str, Any] = {
     "MTLSAuthenticator": MTLSAuthenticator,
     "PeerIdentity": PeerIdentity,
     "scopes_for_cn": scopes_for_cn,

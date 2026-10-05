@@ -25,8 +25,8 @@ from typing import override
 
 import httpx
 
-from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
+from membrane.compute.hashing import token_hash
 from membrane.compute.remote import RemoteLLMBackend
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
@@ -192,3 +192,8 @@ class Ollama(RemoteLLMBackend):
                 )
             )
         return fragments
+
+
+__all__ = [
+    "Ollama",
+]

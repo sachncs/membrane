@@ -449,3 +449,8 @@ class Shard:
         replica = payload.get("replica_map", {}) if isinstance(payload, dict) else {}
         self.primary_map = {str(h): str(n) for h, n in primary.items()}
         self.replica_map = {str(h): set(replica.get(h, [])) for h in replica}
+
+
+__all__ = [
+    "Shard",
+]

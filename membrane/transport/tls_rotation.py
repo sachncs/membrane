@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 
-def _parse_pem(payload: str) -> bytes:
+def parse_pem(payload: str) -> bytes:
     """Extract the raw DER bytes from a single CERTIFICATE PEM.
 
     Args:
@@ -54,7 +54,7 @@ def cert_not_after(pem: str) -> datetime.datetime | None:
         when the PEM is empty or the parser is unavailable
         (e.g., :mod:`cryptography` not installed).
     """
-    der = _parse_pem(pem)
+    der = parse_pem(pem)
     if not der:
         return None
     try:
@@ -115,54 +115,54 @@ class CertRotationWatcher:
     key_path: str
     on_rotate: Callable[[str, str], None]
     poll_interval_sec: float = 60.0
-    _last_digest: str = field(default="", init=False)
-    _stop_event: threading.Event = field(default_factory=threading.Event, init=False)
-    _thread: threading.Thread | None = field(default=None, init=False)
-    _sighup_installed: bool = field(default=False, init=False)
+    last_digest: str = field(default="", init=False)
+    stop_event: threading.Event = field(default_factory=threading.Event, init=False)
+    thread: threading.Thread | None = field(default=None, init=False)
+    sighup_installed: bool = field(default=False, init=False)
 
     def install_sighup(self) -> None:
         """Install a SIGHUP handler that triggers an immediate reload."""
-        if self._sighup_installed:
+        if self.sighup_installed:
             return
         watcher = self
 
         def _handler(signum: int, frame: object) -> None:
-            watcher._reload()
+            watcher.reload()
 
         try:
             signal.signal(signal.SIGHUP, _handler)
-            self._sighup_installed = True
+            self.sighup_installed = True
         except ValueError, AttributeError:  # pragma: no cover - non-POSIX
             logger.debug("SIGHUP handler not installed (non-POSIX platform)")
 
     def start(self) -> None:
         """Start the background polling thread."""
-        if self._thread is not None:
+        if self.thread is not None:
             return
-        self._stop_event.clear()
-        self._reload()
-        self._thread = threading.Thread(
-            target=self._run,
+        self.stop_event.clear()
+        self.reload()
+        self.thread = threading.Thread(
+            target=self.__run,
             daemon=True,
             name="membrane-cert-rotation",
         )
-        self._thread.start()
+        self.thread.start()
 
     def stop(self) -> None:
         """Stop the background polling thread."""
-        self._stop_event.set()
-        if self._thread is not None:
-            self._thread.join(timeout=5.0)
-            self._thread = None
+        self.stop_event.set()
+        if self.thread is not None:
+            self.thread.join(timeout=5.0)
+            self.thread = None
 
-    def _run(self) -> None:
+    def __run(self) -> None:
         """Poll loop."""
-        while not self._stop_event.is_set():
-            if self._stop_event.wait(timeout=self.poll_interval_sec):
+        while not self.stop_event.is_set():
+            if self.stop_event.wait(timeout=self.poll_interval_sec):
                 return
-            self._reload()
+            self.reload()
 
-    def _reload(self) -> None:
+    def reload(self) -> None:
         """Read the cert + key files; invoke on_rotate on byte change."""
         try:
             with open(self.cert_path, encoding="utf-8") as f:
@@ -173,9 +173,9 @@ class CertRotationWatcher:
             logger.warning("cert reload skipped: %s", exc)
             return
         digest = hashlib.sha256((cert + "|" + key).encode("utf-8")).hexdigest()
-        if digest == self._last_digest:
+        if digest == self.last_digest:
             return
-        self._last_digest = digest
+        self.last_digest = digest
         # Enforce notAfter when cryptography is importable.
         try:
             enforce_not_after(cert)

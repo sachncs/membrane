@@ -38,13 +38,13 @@ logger = logging.getLogger(__name__)
 #: Wire magic for the v2.0+ quantized frame. The four bytes
 #: match the canonical frame's family ("MV") + a v2-prefixed
 #: "QF" sequence.
-_MAGIC: bytes = b"MVQF"
+MAGIC: bytes = b"MVQF"
 #: Header size = magic (4) + format (1) + reserved (3) + scale (4) +
 #: zero_point (4) + original_dtype_len (1) + original_dtype +
 #: shape_count (1) + shape (4 * shape_count). We keep the
 #: header compact so per-window quantization stays cheap.
-_HEADER_PREFIX: int = 4 + 1 + 3 + 4 + 4 + 1  # 17 bytes fixed prefix
-_TRAILER_LEN: int = 8  # 8-byte SHA-256 prefix for cheap verify
+HEADER_PREFIX: int = 4 + 1 + 3 + 4 + 4 + 1  # 17 bytes fixed prefix
+TRAILER_LEN: int = 8  # 8-byte SHA-256 prefix for cheap verify
 
 
 #: Format identifiers. Stored as a single byte in the wire header
@@ -118,7 +118,7 @@ class QuantizedFrame:
         if self.zero_point < -(1 << 31) or self.zero_point > (1 << 31) - 1:
             raise ValueError(f"zero_point out of range: {self.zero_point}")
         header = (
-            _MAGIC
+            MAGIC
             + struct.pack(
                 "<B",
                 self.format_id,
@@ -133,7 +133,7 @@ class QuantizedFrame:
         )
         import hashlib
 
-        digest = hashlib.sha256(header + self.payload).digest()[:_TRAILER_LEN]
+        digest = hashlib.sha256(header + self.payload).digest()[:TRAILER_LEN]
         return header + self.payload + digest
 
     @classmethod
@@ -148,7 +148,7 @@ class QuantizedFrame:
         """
         import hashlib
 
-        if not frame.startswith(_MAGIC):
+        if not frame.startswith(MAGIC):
             raise ValueError("bad magic in quantized frame")
         if len(frame) < 4 + 1 + 3 + 4 + 4 + 1 + 1:
             raise ValueError("quantized frame too short")
@@ -165,16 +165,16 @@ class QuantizedFrame:
         offset += dtype_len
         shape_count = struct.unpack_from("<B", frame, offset)[0]
         offset += 1
-        if offset + 4 * shape_count + _TRAILER_LEN > len(frame):
+        if offset + 4 * shape_count + TRAILER_LEN > len(frame):
             raise ValueError("quantized frame too short")
         shape = struct.unpack_from(f"<{shape_count}I", frame, offset)
         offset += 4 * shape_count
-        payload_end = len(frame) - _TRAILER_LEN
+        payload_end = len(frame) - TRAILER_LEN
         if payload_end < offset:
             raise ValueError("quantized frame too short")
         payload = bytes(frame[offset:payload_end])
         trailer = bytes(frame[payload_end:])
-        digest = hashlib.sha256(frame[:payload_end]).digest()[:_TRAILER_LEN]
+        digest = hashlib.sha256(frame[:payload_end]).digest()[:TRAILER_LEN]
         if digest != trailer:
             raise ValueError("quantized frame trailer mismatch")
         return cls(
@@ -187,7 +187,7 @@ class QuantizedFrame:
         )
 
 
-def _row_col(tensor: np.ndarray) -> tuple[np.ndarray, int, int]:
+def row_col(tensor: np.ndarray) -> tuple[np.ndarray, int, int]:
     """Normalize ``tensor`` to a 2-D ``(rows, cols)`` layout.
 
     Args:
@@ -216,8 +216,8 @@ def quantize(tensor: np.ndarray, format_name: str = "int8") -> QuantizedFrame:
     Returns:
         QuantizedFrame: The wire-format quantized bundle.
     """
-    arr = _to_numpy(tensor)
-    quantizer = _quantizer_for(format_name)
+    arr = to_numpy(tensor)
+    quantizer = quantizer_for(format_name)
     payload = quantizer.quantize(arr)
     return QuantizedFrame(
         format_id=quantizer.format_id,
@@ -238,11 +238,11 @@ def dequantize(frame: QuantizedFrame) -> np.ndarray:
     Returns:
         np.ndarray: Tensor-like output.
     """
-    quantizer = _quantizer_for_id(frame.format_id)
+    quantizer = quantizer_for_id(frame.format_id)
     return quantizer.dequantize(frame.payload, frame.original_dtype, frame.original_shape)
 
 
-def _quantizer_for(format_name: str) -> Quantizer:
+def quantizer_for(format_name: str) -> Quantizer:
     """Look up the :class:`Quantizer` for ``format_name``."""
     if format_name == "int8":
         return Int8PerChannelQuantizer()
@@ -255,8 +255,8 @@ def _quantizer_for(format_name: str) -> Quantizer:
     raise ValueError(f"unknown quantization format: {format_name!r}; expected one of int8, fp8_e4m3, fp8_e5m2, nf4")
 
 
-def _quantizer_for_id(format_id: int) -> Quantizer:
-    """Inverse of :func:`_quantizer_for` keyed on the wire byte."""
+def quantizer_for_id(format_id: int) -> Quantizer:
+    """Inverse of :func:`quantizer_for` keyed on the wire byte."""
     return {
         FORMAT_INT8: Int8PerChannelQuantizer,
         FORMAT_FP8_E4M3: FP8E4M3Quantizer,
@@ -265,7 +265,7 @@ def _quantizer_for_id(format_id: int) -> Quantizer:
     }[format_id]()  # type: ignore[return-value]
 
 
-def _to_numpy(tensor: Any) -> np.ndarray:
+def to_numpy(tensor: Any) -> np.ndarray:
     """Normalize ``tensor`` to a ``np.ndarray`` view."""
     if hasattr(tensor, "detach") and hasattr(tensor, "cpu") and hasattr(tensor, "numpy"):
         return tensor.detach().cpu().numpy()
@@ -299,7 +299,7 @@ class Int8PerChannelQuantizer:
         Returns:
             bytes: Per-row scales (float32) + int8 values.
         """
-        arr, n_rows, n_cols = _row_col(tensor)
+        arr, n_rows, n_cols = row_col(tensor)
         abs_max = np.max(np.abs(arr), axis=1).astype("float32")
         abs_max = np.where(abs_max == 0, 1.0, abs_max)
         scale = abs_max / 127.0
@@ -338,7 +338,7 @@ class FP8E4M3Quantizer:
     format_id: int = FORMAT_FP8_E4M3
     format_name: str = "fp8_e4m3"
 
-    def _has_fp8(self) -> bool:
+    def __has_fp8(self) -> bool:
         """Return whether both torch fp8 and numpy fp8 are available."""
         try:
             import torch
@@ -366,12 +366,12 @@ class FP8E4M3Quantizer:
         """
         import numpy as np
 
-        arr, n_rows, n_cols = _row_col(tensor)
+        arr, n_rows, n_cols = row_col(tensor)
         abs_max = np.max(np.abs(arr), axis=1).astype("float32")
         abs_max = np.where(abs_max == 0, 1.0, abs_max)
         scale = abs_max / 240.0
         scaled = (arr / scale[:, None]).astype("float32")
-        if self._has_fp8():
+        if self.__has_fp8():
             import torch
 
             scaled = scaled.astype(torch.float8_e4m3fn)
@@ -396,7 +396,7 @@ class FP8E4M3Quantizer:
         scale = np.frombuffer(payload[offset : offset + 4 * n_rows], dtype="float32")
         offset += 4 * n_rows
         body = payload[offset : offset + n_rows * n_cols]
-        if self._has_fp8():
+        if self.__has_fp8():
             import torch
 
             values = np.frombuffer(body, dtype=torch.float8_e4m3fn).astype("float32")
@@ -418,7 +418,7 @@ class FP8E5M2Quantizer:
     format_id: int = FORMAT_FP8_E5M2
     format_name: str = "fp8_e5m2"
 
-    def _has_fp8(self) -> bool:
+    def __has_fp8(self) -> bool:
         """Return whether both torch fp8 and numpy fp8 are available."""
         try:
             import torch
@@ -445,12 +445,12 @@ class FP8E5M2Quantizer:
         """
         import numpy as np
 
-        arr, n_rows, n_cols = _row_col(tensor)
+        arr, n_rows, n_cols = row_col(tensor)
         abs_max = np.max(np.abs(arr), axis=1).astype("float32")
         abs_max = np.where(abs_max == 0, 1.0, abs_max)
         scale = abs_max / 28000.0
         scaled = (arr / scale[:, None]).astype("float32")
-        if self._has_fp8():
+        if self.__has_fp8():
             import torch
 
             scaled = scaled.astype(torch.float8_e5m2)
@@ -475,7 +475,7 @@ class FP8E5M2Quantizer:
         scale = np.frombuffer(payload[offset : offset + 4 * n_rows], dtype="float32")
         offset += 4 * n_rows
         body = payload[offset : offset + n_rows * n_cols]
-        if self._has_fp8():
+        if self.__has_fp8():
             import torch
 
             values = np.frombuffer(body, dtype=torch.float8_e5m2).astype("float32")
@@ -499,7 +499,7 @@ class NF4Quantizer:
 
     # NF4 codebook: 16 quantiles of a normalized Gaussian,
     # symmetric around zero. Dettmers et al. 2023, Table 2.
-    _NF4_TABLE: tuple[float, ...] = (
+    __NF4_TABLE: tuple[float, ...] = (
         -1.0,
         -0.6961928009986877,
         -0.5250730514526367,
@@ -530,12 +530,12 @@ class NF4Quantizer:
         """
         import numpy as np
 
-        arr, n_rows, n_cols = _row_col(tensor)
+        arr, n_rows, n_cols = row_col(tensor)
         abs_max = np.max(np.abs(arr), axis=1).astype("float32")
         abs_max = np.where(abs_max == 0, 1.0, abs_max)
         normalized = arr / abs_max[:, None]
         normalized = np.clip(normalized, -1.0, 1.0)
-        table = np.asarray(self._NF4_TABLE, dtype="float32")
+        table = np.asarray(self.__NF4_TABLE, dtype="float32")
         distances = np.abs(normalized[:, :, None] - table[None, None, :])
         indices = distances.argmin(axis=-1).astype("uint8")
         padded = np.concatenate([indices, np.zeros((n_rows, 1), dtype="uint8")], axis=1) if n_cols % 2 else indices
@@ -571,7 +571,7 @@ class NF4Quantizer:
             indices = np.empty((n_rows, n_cols), dtype="uint8")
             indices[:, 0::2] = high
             indices[:, 1::2] = low
-        table = np.asarray(self._NF4_TABLE, dtype="float32")
+        table = np.asarray(self.__NF4_TABLE, dtype="float32")
         flat = (table[indices.astype("int32")] * abs_max[:, None]).reshape(-1)
         return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(original_dtype)
 

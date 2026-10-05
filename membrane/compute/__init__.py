@@ -28,9 +28,9 @@ keeping ``import membrane.compute`` fast in minimal
 installations.
 """
 
-from membrane.compute._hash import token_hash
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
+from membrane.compute.hashing import token_hash
 
 __all__ = ["CPU", "Backend", "token_hash"]
 

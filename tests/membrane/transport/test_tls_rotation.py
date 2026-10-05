@@ -53,7 +53,7 @@ class TestCertNotAfterParser:
         def _raise(_pem):
             return None
 
-        monkeypatch.setattr(m, "_parse_pem", _raise)
+        monkeypatch.setattr(m, "parse_pem", _raise)
         assert cert_not_after(TEST_CERT_PEM) is None
 
     def test_parser_is_called_with_correct_input(self):
@@ -94,7 +94,7 @@ class TestCertRotationWatcher:
             key_path=str(key),
             on_rotate=on_rotate,
         )
-        watcher._reload()
+        watcher.reload()
         assert len(called) == 1
         assert called[0][0] == TEST_CERT_PEM
 
@@ -109,9 +109,9 @@ class TestCertRotationWatcher:
             key_path=str(key),
             on_rotate=lambda c, k: calls.append(1),
         )
-        watcher._reload()
-        watcher._reload()
-        watcher._reload()
+        watcher.reload()
+        watcher.reload()
+        watcher.reload()
         assert len(calls) == 1
 
     def test_modified_files_re_trigger(self, tmp_path):
@@ -125,11 +125,11 @@ class TestCertRotationWatcher:
             key_path=str(key),
             on_rotate=lambda c, k: calls.append(1),
         )
-        watcher._reload()
-        watcher._reload()
+        watcher.reload()
+        watcher.reload()
         # Mutate the file.
         key.write_text("UPDATED-KEY")
-        watcher._reload()
+        watcher.reload()
         assert len(calls) == 2
 
     def test_missing_file_does_not_raise(self, tmp_path):
@@ -139,4 +139,4 @@ class TestCertRotationWatcher:
             on_rotate=lambda c, k: None,
         )
         # Should log a warning but not raise.
-        watcher._reload()
+        watcher.reload()

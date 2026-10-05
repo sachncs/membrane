@@ -36,7 +36,7 @@ class TierMigration:
     policy: TierPolicy
     on_demote: Callable[[object, str], None] | None = None
     demotions: int = field(default=0, init=False)
-    _seen: set[str] = field(default_factory=set, init=False)
+    seen: set[str] = field(default_factory=set, init=False)
 
     def on_evict(self, fragment: object) -> str | None:
         """Demote ``fragment`` to its assigned tier.
@@ -56,10 +56,10 @@ class TierMigration:
         # Avoid double-processing the same fragment within a
         # single eviction pass.
         ident = getattr(getattr(fragment, "identity", None), "payload_hash", None)
-        if ident in self._seen:
+        if ident in self.seen:
             return tier
         if ident is not None:
-            self._seen.add(ident)
+            self.seen.add(ident)
         self.on_demote(fragment, tier)
         self.demotions += 1
         logger.debug("Demoted fragment %s to tier %s", ident, tier)
@@ -68,7 +68,7 @@ class TierMigration:
     def reset_seen(self) -> None:
         """Reset the de-duplication set so a new eviction pass can
         re-process the same fragment."""
-        self._seen.clear()
+        self.seen.clear()
 
 
 def install_default_demote(node: object, migration: TierMigration) -> None:

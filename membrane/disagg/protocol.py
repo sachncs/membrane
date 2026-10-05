@@ -217,7 +217,7 @@ class DecodeResponse:
 
 
 @dataclass
-class _WallClock:
+class WallClock:
     """Helper that records elapsed milliseconds.
 
     Attributes:

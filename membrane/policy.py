@@ -156,3 +156,10 @@ class Promotion:
             target_replicas=targets,
             reason="high reuse and multi-region demand",
         )
+
+
+__all__ = [
+    "Promotion",
+    "PromotionConfig",
+    "PromotionResult",
+]

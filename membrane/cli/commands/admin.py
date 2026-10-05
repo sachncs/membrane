@@ -25,11 +25,11 @@ import typer
 admin_app = typer.Typer(help="Admin operations against a running Membrane node.")
 
 
-def _base_url(host: str, port: int) -> str:
+def base_url(host: str, port: int) -> str:
     return f"http://{host}:{port}"
 
 
-def _headers(api_key: str | None) -> dict[str, str]:
+def auth_headers(api_key: str | None) -> dict[str, str]:
     if api_key:
         return {"authorization": f"Bearer {api_key}"}
     return {}
@@ -43,8 +43,8 @@ def admin_inspect(
     api_key: str | None = typer.Option(None, "--api-key"),
 ) -> None:
     """Inspect a fragment by content hash."""
-    headers = _headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
-    url = f"{_base_url(host, port)}/admin/fragments/{content_hash}"
+    headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
+    url = f"{base_url(host, port)}/admin/fragments/{content_hash}"
     resp = httpx.get(url, headers=headers, timeout=5.0)
     typer.echo(f"{resp.status_code} {resp.text}")
 
@@ -58,8 +58,8 @@ def admin_placement(
     api_key: str | None = typer.Option(None, "--api-key"),
 ) -> None:
     """Override the primary node for a shard."""
-    headers = _headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
-    url = f"{_base_url(host, port)}/admin/placement"
+    headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
+    url = f"{base_url(host, port)}/admin/placement"
     body: dict[str, Any] = {
         "content_hash": content_hash,
         "primary_node_id": primary_node_id,
@@ -76,8 +76,8 @@ def admin_evict(
     api_key: str | None = typer.Option(None, "--api-key"),
 ) -> None:
     """Manually evict a fragment."""
-    headers = _headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
-    url = f"{_base_url(host, port)}/admin/evict"
+    headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
+    url = f"{base_url(host, port)}/admin/evict"
     body = {"content_hash": content_hash}
     resp = httpx.post(url, json=body, headers=headers, timeout=5.0)
     typer.echo(f"{resp.status_code} {resp.text}")
@@ -91,8 +91,8 @@ def admin_repair(
     api_key: str | None = typer.Option(None, "--api-key"),
 ) -> None:
     """Trigger a repair for a peer."""
-    headers = _headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
-    url = f"{_base_url(host, port)}/admin/repair"
+    headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
+    url = f"{base_url(host, port)}/admin/repair"
     body = {"peer_node_id": peer_node_id}
     resp = httpx.post(url, json=body, headers=headers, timeout=5.0)
     typer.echo(f"{resp.status_code} {resp.text}")
@@ -107,8 +107,8 @@ def admin_policy(
     api_key: str | None = typer.Option(None, "--api-key"),
 ) -> None:
     """Read or update the Promotion knobs."""
-    headers = _headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
-    url = f"{_base_url(host, port)}/admin/policy"
+    headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
+    url = f"{base_url(host, port)}/admin/policy"
     if min_reuse_score is None and demand_threshold is None:
         resp = httpx.get(url, headers=headers, timeout=5.0)
     else:

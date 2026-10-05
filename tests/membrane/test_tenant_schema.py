@@ -4,7 +4,7 @@ import pytest
 
 from membrane.canonical import CANONICAL_SCHEMA_VERSION, MAGIC, canonicalize, parse_canonical
 from membrane.errors import SchemaError
-from membrane.fragment import Fragment, _validate_tenant_id
+from membrane.fragment import Fragment, validate_tenant_id
 from membrane.identity import PayloadIdentity
 from membrane.serialization import SCHEMA_VERSION, from_dict, to_dict
 
@@ -92,11 +92,11 @@ class TestFragmentTenantId:
 
     def test_empty_tenant_rejected(self):
         with pytest.raises(ValueError, match="tenant_id"):
-            _validate_tenant_id("")
+            validate_tenant_id("")
 
     def test_long_tenant_rejected(self):
         with pytest.raises(ValueError, match="tenant_id"):
-            _validate_tenant_id("t" * 129)
+            validate_tenant_id("t" * 129)
 
     @pytest.mark.parametrize(
         "ch",
@@ -104,7 +104,7 @@ class TestFragmentTenantId:
     )
     def test_forbidden_char_in_tenant_rejected(self, ch):
         with pytest.raises(ValueError, match="forbidden"):
-            _validate_tenant_id(f"acme{ch}co")
+            validate_tenant_id(f"acme{ch}co")
 
     def test_with_tenant_returns_new_instance(self):
         ident = _identity()

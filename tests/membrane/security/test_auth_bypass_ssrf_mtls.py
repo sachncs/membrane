@@ -370,13 +370,13 @@ class TestResourceExhaustion:
             validate_outbound_url("")
 
     def test_tenant_id_path_traversal_rejected(self):
-        from membrane.fragment import _validate_tenant_id
+        from membrane.fragment import validate_tenant_id
 
         with pytest.raises(ValueError, match="forbidden"):
-            _validate_tenant_id("../acme")
+            validate_tenant_id("../acme")
 
     def test_tenant_id_slash_rejected(self):
-        from membrane.fragment import _validate_tenant_id
+        from membrane.fragment import validate_tenant_id
 
         with pytest.raises(ValueError, match="forbidden"):
-            _validate_tenant_id("acme/co")
+            validate_tenant_id("acme/co")

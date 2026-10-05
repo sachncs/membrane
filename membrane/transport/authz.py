@@ -97,7 +97,7 @@ def required_scope(method: str, path: str) -> str:
     return ROUTE_SCOPES.get(key, DEFAULT_SCOPE)
 
 
-def _authenticate(
+def authenticate(
     authenticator: Any | None,
     method: str,
     path: str,
@@ -174,7 +174,7 @@ def enforce_route_scope(
     if authenticator is None:
         return AuthContext(subject="", scopes=frozenset())
     headers = dict(headers or {})
-    context = _authenticate(authenticator, method, path, headers)
+    context = authenticate(authenticator, method, path, headers)
     try:
         require_scope(context, scope)
     except AuthBackendError:

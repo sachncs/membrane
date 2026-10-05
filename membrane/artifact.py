@@ -157,3 +157,8 @@ class Artifact:
             token_count=count,
             reuse_score=fragment.reuse_score,
         )
+
+
+__all__ = [
+    "Artifact",
+]

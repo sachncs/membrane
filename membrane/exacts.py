@@ -133,3 +133,9 @@ class Exacts:
             del self.entries[content_hash]
             return True
         return False
+
+
+__all__ = [
+    "Exacts",
+    "IndexEntry",
+]

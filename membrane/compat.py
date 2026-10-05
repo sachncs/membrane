@@ -270,7 +270,7 @@ class MembraneValidator:
                 fragments to this.
         """
         self.fingerprint = fingerprint
-        self._hash = fingerprint.compatibility_hash()
+        self.hash = fingerprint.compatibility_hash()
 
     def validate(self, fragment: object) -> None:
         """Verify ``fragment.fingerprint_compat`` matches the live hash.
@@ -290,7 +290,7 @@ class MembraneValidator:
                 "fragment has no compatibility fingerprint; v2.0+ deployments must "
                 "populate fragment.fingerprint_compat before op_store."
             )
-        if stored != self._hash:
+        if stored != self.hash:
             raise MembraneIncompatibleError(
-                f"fragment.fingerprint_compat={stored!r} disagrees with the live engine fingerprint {self._hash!r}"
+                f"fragment.fingerprint_compat={stored!r} disagrees with the live engine fingerprint {self.hash!r}"
             )

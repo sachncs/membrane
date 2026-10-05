@@ -160,7 +160,7 @@ class TestGrpcSurface:
         from membrane.disagg import transfer_pb2_grpc
         from membrane.disagg.grpc import add_to_server
 
-        handler = grpc_module._GrpcHandler(PrefillService(), DecodeService())
+        handler = grpc_module.GrpcHandler(PrefillService(), DecodeService())
         assert hasattr(handler, "Prefill")
         assert hasattr(handler, "BatchPrefill")
         assert hasattr(handler, "Decode")

@@ -111,3 +111,8 @@ class Replica(Node):
             bool: True if the fragment is stored.
         """
         return super().store(fragment, is_primary=False)
+
+
+__all__ = [
+    "Replica",
+]

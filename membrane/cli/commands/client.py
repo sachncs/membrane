@@ -32,7 +32,7 @@ client_app = typer.Typer(
 )
 
 
-def _build_client(base_url: str, api_key: str) -> MembraneClient:
+def build_client(base_url: str, api_key: str) -> MembraneClient:
     """Construct a MembraneClient from CLI flags.
 
     Args:
@@ -51,7 +51,7 @@ def _build_client(base_url: str, api_key: str) -> MembraneClient:
     )
 
 
-def _emit(payload: dict | list | None) -> None:
+def emit(payload: dict | list | None) -> None:
     """Pretty-print ``payload`` to stdout as JSON.
 
     Args:
@@ -94,7 +94,7 @@ def client_store(
     except MembraneClientError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from None
-    _emit(result)
+    emit(result)
 
 
 @client_app.command("retrieve")
@@ -116,7 +116,7 @@ def client_retrieve(
     except MembraneClientError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from None
-    _emit(result)
+    emit(result)
 
 
 @client_app.command("inventory")
@@ -137,7 +137,7 @@ def client_inventory(
     except MembraneClientError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from None
-    _emit(result)
+    emit(result)
 
 
 @client_app.command("prefill")
@@ -165,7 +165,7 @@ def client_prefill(
     except (ValueError, MembraneClientError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=1) from None
-    _emit(result)
+    emit(result)
 
 
 def main() -> None:

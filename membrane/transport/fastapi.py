@@ -159,7 +159,7 @@ class FastAPIServer:
         self.metrics_registry = metrics_registry
         self.tls = tls
         self.server: Any | None = None
-        self._tls_tmpdir: Any | None = None
+        self.tls_tmpdir: Any | None = None
         self.app = create_app(
             node=node,
             compute_backend=compute_backend,
@@ -187,10 +187,10 @@ class FastAPIServer:
             # and CA bundle. We write the configured PEMs to a
             # short-lived tmpdir; cleanup happens in ``stop`` so
             # the lifetime matches the running server.
-            self._tls_tmpdir = tempfile.TemporaryDirectory(prefix="membrane-tls-")
-            cert_path = f"{self._tls_tmpdir.name}/server.crt.pem"
-            key_path = f"{self._tls_tmpdir.name}/server.key.pem"
-            ca_path = f"{self._tls_tmpdir.name}/ca-bundle.pem"
+            self.tls_tmpdir = tempfile.TemporaryDirectory(prefix="membrane-tls-")
+            cert_path = f"{self.tls_tmpdir.name}/server.crt.pem"
+            key_path = f"{self.tls_tmpdir.name}/server.key.pem"
+            ca_path = f"{self.tls_tmpdir.name}/ca-bundle.pem"
             with open(cert_path, "w") as f:
                 f.write(self.tls.server_cert_pem)
             with open(key_path, "w") as f:
@@ -223,10 +223,10 @@ class FastAPIServer:
         try:
             self.server.run()
         finally:
-            tmp = getattr(self, "_tls_tmpdir", None)
+            tmp = getattr(self, "tls_tmpdir", None)
             if tmp is not None:
                 tmp.cleanup()
-                self._tls_tmpdir = None
+                self.tls_tmpdir = None
 
     def stop(self) -> None:
         """Stop the uvicorn server.
@@ -244,3 +244,9 @@ class FastAPIServer:
 
         t = threading.Thread(target=self.start, daemon=True)
         t.start()
+
+
+__all__ = [
+    "FastAPIServer",
+    "create_app",
+]

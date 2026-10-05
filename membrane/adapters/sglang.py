@@ -23,7 +23,7 @@ from membrane.adapters import (
 logger = logging.getLogger(__name__)
 
 
-def _load_sglang_pool_base() -> type[Any] | None:
+def load_sglang_pool_base() -> type[Any] | None:
     """Import SGLang's :class:`TokenToKVPool` if installed.
 
     Returns:
@@ -39,7 +39,7 @@ def _load_sglang_pool_base() -> type[Any] | None:
     return TokenToKVPool
 
 
-_SGLANG_POOL_BASE: type[Any] | None = _load_sglang_pool_base()
+SGLANG_POOL_BASE: type[Any] | None = load_sglang_pool_base()
 
 
 @dataclass(frozen=True)
@@ -92,8 +92,8 @@ class InMemorySGLangClient(SGLangClusterClient):
     """In-memory SGLang client used by tests + the v1 single-process path."""
 
     def __init__(self) -> None:
-        self._by_handle: dict[tuple[str, str], tuple[SGLangKVEntry, ...]] = {}
-        self._lock = threading.RLock()
+        self.by_handle: dict[tuple[str, str], tuple[SGLangKVEntry, ...]] = {}
+        self.lock = threading.RLock()
 
     def seed(self, model_id: str, handle: str, entries: tuple[SGLangKVEntry, ...]) -> None:
         """Pre-populate rows for ``handle``.
@@ -103,18 +103,18 @@ class InMemorySGLangClient(SGLangClusterClient):
             handle: Cluster-side handle.
             entries: Token-indexed rows in order.
         """
-        with self._lock:
-            self._by_handle[(model_id, handle)] = entries
+        with self.lock:
+            self.by_handle[(model_id, handle)] = entries
 
     @override
     def get(self, model_id: str, handle: str) -> tuple[SGLangKVEntry, ...]:
-        with self._lock:
-            return self._by_handle.get((model_id, handle), ())
+        with self.lock:
+            return self.by_handle.get((model_id, handle), ())
 
     @override
     def put(self, model_id: str, handle: str, entries: tuple[SGLangKVEntry, ...]) -> None:
-        with self._lock:
-            self._by_handle[(model_id, handle)] = entries
+        with self.lock:
+            self.by_handle[(model_id, handle)] = entries
 
 
 class MembraneSGLangAdapter(BaseAdapter):
@@ -163,16 +163,16 @@ class MembraneSGLangAdapter(BaseAdapter):
                 head_range=head_range,
                 token_span=token_span,
                 shape=(1, 1, 1, 64),
-                fingerprint=_placeholder_fingerprint(),
+                fingerprint=placeholder_fingerprint(),
             )
-        rows = self._read_rows(pool, layer_range, token_span)
+        rows = self.__read_rows(pool, layer_range, token_span)
         return KVTensor(
             layers=rows,
             layer_range=layer_range,
             head_range=head_range,
             token_span=token_span,
             shape=(rows[0].k.__sizeof__() if rows else 1, 1, 1, 64),
-            fingerprint=_placeholder_fingerprint(),
+            fingerprint=placeholder_fingerprint(),
         )
 
     def import_into(
@@ -193,7 +193,7 @@ class MembraneSGLangAdapter(BaseAdapter):
         if pool is None:
             logger.debug("MembraneSGLangAdapter.import_into: no kv_pool on model")
             return
-        self._write_rows(pool, tensor.layers, layer_range)
+        self.__write_rows(pool, tensor.layers, layer_range)
 
     @override
     def validate(self, tensor: KVTensor) -> ValidationResult:
@@ -208,7 +208,7 @@ class MembraneSGLangAdapter(BaseAdapter):
         return super().validate(tensor)
 
     @staticmethod
-    def _read_rows(
+    def __read_rows(
         pool: Any,
         layer_range: tuple[int, int],
         token_span: tuple[int, int],
@@ -225,8 +225,8 @@ class MembraneSGLangAdapter(BaseAdapter):
         """
         rows: list[LayerKV] = []
         for layer in range(layer_range[0], layer_range[1] + 1):
-            k_bytes = _slice_pool(pool, layer, "k", token_span)
-            v_bytes = _slice_pool(pool, layer, "v", token_span)
+            k_bytes = slice_pool(pool, layer, "k", token_span)
+            v_bytes = slice_pool(pool, layer, "v", token_span)
             rows.append(
                 LayerKV(
                     layer_idx=layer,
@@ -239,7 +239,7 @@ class MembraneSGLangAdapter(BaseAdapter):
         return tuple(rows)
 
     @staticmethod
-    def _write_rows(pool: Any, layers: tuple[LayerKV, ...], layer_range: tuple[int, int]) -> None:
+    def __write_rows(pool: Any, layers: tuple[LayerKV, ...], layer_range: tuple[int, int]) -> None:
         """Write the K/V rows back into ``pool``.
 
         Args:
@@ -248,12 +248,12 @@ class MembraneSGLangAdapter(BaseAdapter):
             layer_range: Inclusive ``(start, end)``.
         """
         for layer in layers:
-            _store_pool(pool, layer.layer_idx, "k", layer.k)
-            _store_pool(pool, layer.layer_idx, "v", layer.v)
+            store_pool(pool, layer.layer_idx, "k", layer.k)
+            store_pool(pool, layer.layer_idx, "v", layer.v)
         del layer_range
 
 
-def _slice_pool(pool: Any, layer: int, kind: str, token_span: tuple[int, int]) -> bytes:
+def slice_pool(pool: Any, layer: int, kind: str, token_span: tuple[int, int]) -> bytes:
     """Slice a pool's K or V bytes for the given layer.
 
     Args:
@@ -274,7 +274,7 @@ def _slice_pool(pool: Any, layer: int, kind: str, token_span: tuple[int, int]) -
     return b""
 
 
-def _store_pool(pool: Any, layer: int, kind: str, payload: Any) -> None:
+def store_pool(pool: Any, layer: int, kind: str, payload: Any) -> None:
     """Write ``payload`` into ``pool`` for the given layer.
 
     Args:
@@ -296,7 +296,7 @@ def _store_pool(pool: Any, layer: int, kind: str, payload: Any) -> None:
                     buf[token] = chunk
 
 
-def _placeholder_fingerprint() -> Any:
+def placeholder_fingerprint() -> Any:
     """Return a placeholder fingerprint for SGLang bundles.
 
     Returns:
@@ -316,4 +316,4 @@ __all__ = [
 ]
 
 
-SGLANG_AVAILABLE: bool = _SGLANG_POOL_BASE is not None
+SGLANG_AVAILABLE: bool = SGLANG_POOL_BASE is not None

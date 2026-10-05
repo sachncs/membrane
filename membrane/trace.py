@@ -157,3 +157,8 @@ class Trace:
             size_bytes=fragment.payload_size,
             reuse_score=fragment.reuse_score,
         )
+
+
+__all__ = [
+    "Trace",
+]

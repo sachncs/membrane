@@ -59,7 +59,7 @@ class ModelSizeProfile:
     bytes_per_token: int = 1024
 
 
-_DEFAULT_PROFILES: dict[str, ModelSizeProfile] = {
+DEFAULT_PROFILES: dict[str, ModelSizeProfile] = {
     "llama-3-8b": ModelSizeProfile("llama-3-8b", baseline_window_size=128, bytes_per_token=512),
     "llama-3-70b": ModelSizeProfile("llama-3-70b", baseline_window_size=64, bytes_per_token=4096),
     "mistral-7b": ModelSizeProfile("mistral-7b", baseline_window_size=128, bytes_per_token=512),
@@ -80,7 +80,7 @@ def get_model_profile(model_id: str) -> ModelSizeProfile:
         otherwise.
     """
     key = model_id.lower()
-    return _DEFAULT_PROFILES.get(key, ModelSizeProfile(model_id=model_id))
+    return DEFAULT_PROFILES.get(key, ModelSizeProfile(model_id=model_id))
 
 
 @dataclass

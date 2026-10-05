@@ -81,7 +81,7 @@ def fetch_json(host: str, port: int, path: str, timeout: float = 2.0) -> dict[st
 # ---------------------------------------------------------------------------
 
 
-def _header_panel_inproc(diag: ServerDiagnostics) -> Panel:
+def header_panel_inproc(diag: ServerDiagnostics) -> Panel:
     """Render the in-process dashboard header."""
     status = "[green]HEALTHY[/green]" if diag.load < 0.9 else "[yellow]WARNING[/yellow]"
     text = Text.assemble(
@@ -93,7 +93,7 @@ def _header_panel_inproc(diag: ServerDiagnostics) -> Panel:
     return Panel(Align.center(text), style="bold white on blue")
 
 
-def _header_panel_remote(data: dict[str, Any]) -> Panel:
+def header_panel_remote(data: dict[str, Any]) -> Panel:
     """Render the remote-polling dashboard header."""
     node_id = data.get("node_id", "unknown")
     healthy = data.get("healthy", False)
@@ -106,7 +106,7 @@ def _header_panel_remote(data: dict[str, Any]) -> Panel:
     return Panel(Align.center(text), style="bold white on blue")
 
 
-def _metrics_panel(diag: ServerDiagnostics) -> Panel:
+def metrics_panel(diag: ServerDiagnostics) -> Panel:
     """Render the metrics table from a ``ServerDiagnostics`` snapshot."""
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column("Metric", style="cyan", no_wrap=True)
@@ -123,7 +123,7 @@ def _metrics_panel(diag: ServerDiagnostics) -> Panel:
     return Panel(table, title="[bold]Server Metrics[/bold]", border_style="green")
 
 
-def _metrics_panel_remote(data: dict[str, Any]) -> Panel:
+def metrics_panel_remote(data: dict[str, Any]) -> Panel:
     """Render the metrics table from a remote heartbeat payload."""
     table = Table(show_header=False, box=None)
     table.add_column("Metric", style="cyan")
@@ -135,7 +135,7 @@ def _metrics_panel_remote(data: dict[str, Any]) -> Panel:
     return Panel(table, title="[bold]Metrics[/bold]", border_style="green")
 
 
-def _peers_panel(server: Server) -> Panel:
+def peers_panel(server: Server) -> Panel:
     """Render the connected-peers panel (in-process only)."""
     if not server.connected_nodes:
         return Panel(
@@ -151,7 +151,7 @@ def _peers_panel(server: Server) -> Panel:
     return Panel(table, title="[bold]Peers[/bold]", border_style="blue")
 
 
-def _events_panel(server: Server) -> Panel:
+def events_panel(server: Server) -> Panel:
     """Render the recent-events panel (in-process only)."""
     events = server.recent_events(n=15)
     if not events:
@@ -176,13 +176,13 @@ def _events_panel(server: Server) -> Panel:
     return Panel(table, title="[bold]Event Log[/bold]", border_style="yellow")
 
 
-def _diagnostics_panel() -> Panel:
+def diagnostics_panel() -> Panel:
     """Render the diagnostics placeholder panel (remote only)."""
     text = Text("Connect to a local server with 'membrane serve' for full diagnostics.")
     return Panel(text, title="[bold]Diagnostics[/bold]", border_style="yellow")
 
 
-def _footer_inproc() -> Panel:
+def footer_inproc() -> Panel:
     """Footer for the in-process dashboard."""
     return Panel(
         Align.center(Text("[Ctrl+C] Stop server  |  Live Dashboard", style="dim")),
@@ -190,7 +190,7 @@ def _footer_inproc() -> Panel:
     )
 
 
-def _footer_remote() -> Panel:
+def footer_remote() -> Panel:
     """Footer for the remote dashboard."""
     return Panel(
         Align.center(Text("[Q]uit  |  Refresh: ", style="dim")),
@@ -230,11 +230,11 @@ def run_dashboard(server: Server) -> None:
         try:
             while server.running:
                 diag = server.diagnostics()
-                layout["header"].update(_header_panel_inproc(diag))
-                layout["metrics"].update(_metrics_panel(diag))
-                layout["peers"].update(_peers_panel(server))
-                layout["right"].update(_events_panel(server))
-                layout["footer"].update(_footer_inproc())
+                layout["header"].update(header_panel_inproc(diag))
+                layout["metrics"].update(metrics_panel(diag))
+                layout["peers"].update(peers_panel(server))
+                layout["right"].update(events_panel(server))
+                layout["footer"].update(footer_inproc())
                 time.sleep(0.5)
         except KeyboardInterrupt:
             pass
@@ -270,10 +270,10 @@ def run_remote_dashboard(
     with Live(layout, refresh_per_second=1 / refresh, screen=True):
         while True:
             data = fetch_json(host, port, "/heartbeat")
-            layout["header"].update(_header_panel_remote(data))
-            layout["left"].update(_metrics_panel_remote(data))
-            layout["right"].update(_diagnostics_panel())
-            layout["footer"].update(_footer_remote())
+            layout["header"].update(header_panel_remote(data))
+            layout["left"].update(metrics_panel_remote(data))
+            layout["right"].update(diagnostics_panel())
+            layout["footer"].update(footer_remote())
             time.sleep(refresh)
 
 

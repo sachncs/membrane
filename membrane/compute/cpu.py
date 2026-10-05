@@ -104,3 +104,8 @@ class CPU(Backend):
             str: Always ``"cpu"``.
         """
         return "cpu"
+
+
+__all__ = [
+    "CPU",
+]

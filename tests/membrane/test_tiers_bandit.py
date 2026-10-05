@@ -73,7 +73,7 @@ class TestBandit:
     def test_estimated_reward_initial_uses_smoothing(self):
         arm = BanditArm("a", 0.5)
         bandit = Bandit(arms=[arm], epsilon=0.0)
-        assert bandit._estimated_reward(arm) == 0.5
+        assert bandit.estimated_reward(arm) == 0.5
 
     def test_select_arm_with_zero_epsilon_returns_best(self):
         bandit = Bandit(

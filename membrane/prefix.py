@@ -180,3 +180,8 @@ class Prefix:
             token_count=count,
             reuse_score=fragment.reuse_score,
         )
+
+
+__all__ = [
+    "Prefix",
+]

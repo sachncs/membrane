@@ -55,7 +55,7 @@ class Anthropic(RemoteLLMBackend):
     ) -> None:
         """Initialize the backend."""
         super().__init__()
-        self._api_key = api_key
+        self.__api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.client = self.build_client(
@@ -69,7 +69,7 @@ class Anthropic(RemoteLLMBackend):
     @property
     def api_key(self) -> str:
         """Return the configured API key (redacted when logged)."""
-        return self._api_key
+        return self.__api_key
 
     @override
     def __repr__(self) -> str:
@@ -172,3 +172,8 @@ class Anthropic(RemoteLLMBackend):
             str: ``"anthropic(<model>)"``.
         """
         return f"anthropic({self.model})"
+
+
+__all__ = [
+    "Anthropic",
+]

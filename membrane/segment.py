@@ -165,3 +165,8 @@ class Segment:
             size_bytes=fragment.payload_size,
             reuse_score=fragment.reuse_score,
         )
+
+
+__all__ = [
+    "Segment",
+]

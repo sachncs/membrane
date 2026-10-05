@@ -168,3 +168,12 @@ def end_to_end_throughput(
     # The system is bottlenecked by whichever stage has the
     # smallest scaled throughput.
     return min(upstream_membrane, upstream_pd_p, theta_pd_d)
+
+
+__all__ = [
+    "decode_throughput",
+    "end_to_end_throughput",
+    "kv_throughput",
+    "prefill_throughput",
+    "stage_throughput_membrane",
+]

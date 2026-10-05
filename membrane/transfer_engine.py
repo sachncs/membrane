@@ -88,11 +88,11 @@ class CudaMemoryPool:
 
     def __init__(self, device: str = "cuda:0") -> None:
         self.device = device
-        self._lock = threading.RLock()
-        self._closed = False
+        self.lock = threading.RLock()
+        self.__closed = False
 
     def alloc(self, shape: tuple[int, ...], dtype: str) -> TensorHandle:
-        if self._closed:
+        if self.__closed:
             raise RuntimeError("CudaMemoryPool is closed")
         size = 1
         for d in shape:
@@ -102,10 +102,10 @@ class CudaMemoryPool:
 
             if self.device.startswith("cuda") and not torch.cuda.is_available():
                 raise RuntimeError("Torch not compiled with CUDA enabled")
-            tensor = torch.zeros(size, dtype=_torch_dtype(dtype), device=self.device)
-            return TensorHandle(_torch_to_bytes(tensor), shape, dtype)
+            tensor = torch.zeros(size, dtype=torch_dtype(dtype), device=self.device)
+            return TensorHandle(torch_to_bytes(tensor), shape, dtype)
         except ImportError, RuntimeError, AssertionError:
-            bytes_payload = np.zeros(size, dtype=_numpy_dtype(dtype)).tobytes()
+            bytes_payload = np.zeros(size, dtype=numpy_dtype(dtype)).tobytes()
             return TensorHandle(bytes_payload, shape, dtype)
 
     def copy_to(self, src: TensorHandle, dst: TensorHandle) -> None:
@@ -117,8 +117,8 @@ class CudaMemoryPool:
         return TensorHandle(data=src.data, shape=src.shape, dtype=src.dtype)
 
     def close(self) -> None:
-        with self._lock:
-            self._closed = True
+        with self.lock:
+            self.__closed = True
 
 
 # ---------------------------------------------------------------------------
@@ -137,23 +137,23 @@ class RdmaMemoryPool:
 
     def __init__(self, device: str = "cuda:0") -> None:
         self.device = device
-        self._delegate = CudaMemoryPool(device=device)
-        self._lock = threading.RLock()
-        self._closed = False
+        self.__delegate = CudaMemoryPool(device=device)
+        self.lock = threading.RLock()
+        self.__closed = False
 
     def alloc(self, shape: tuple[int, ...], dtype: str) -> TensorHandle:
-        return self._delegate.alloc(shape, dtype)
+        return self.__delegate.alloc(shape, dtype)
 
     def copy_to(self, src: TensorHandle, dst: TensorHandle) -> None:
-        self._delegate.copy_to(src, dst)
+        self.__delegate.copy_to(src, dst)
 
     def pin_host(self, src: TensorHandle) -> TensorHandle:
-        return self._delegate.pin_host(src)
+        return self.__delegate.pin_host(src)
 
     def close(self) -> None:
-        with self._lock:
-            self._closed = True
-            self._delegate.close()
+        with self.lock:
+            self.__closed = True
+            self.__delegate.close()
 
     def rdma_send(self, src: TensorHandle, peer: str) -> int:
         """Stub for a future NCCL-based cross-node send."""
@@ -182,7 +182,7 @@ class CompressionTransport:
     METHOD_ZSTD: str = "zstd"
     METHOD_LZ4: str = "lz4"
 
-    _METHOD_IDS: ClassVar[dict[str, int]] = {
+    __METHOD_IDS: ClassVar[dict[str, int]] = {
         METHOD_RAW: 1,
         METHOD_DEFLATE: 2,
         METHOD_ZSTD: 3,
@@ -197,7 +197,7 @@ class CompressionTransport:
             level: Compression level (1-9 for deflate, 1-22 for
                 zstd). Ignored for raw and lz4.
         """
-        if method not in self._METHOD_IDS:
+        if method not in self.__METHOD_IDS:
             raise ValueError(f"unknown compression method: {method!r}")
         self.method = method
         self.level = level
@@ -228,7 +228,7 @@ class CompressionTransport:
             except ImportError as exc:
                 raise RuntimeError("lz4 compression requires the lz4 package") from exc
             body = lz4.block.compress(payload)
-        return struct.pack("<BI", self._METHOD_IDS[self.method], len(body)) + body
+        return struct.pack("<BI", self.__METHOD_IDS[self.method], len(body)) + body
 
     def decompress(self, payload: bytes) -> bytes:
         """Inverse of :func:`compress`.
@@ -299,8 +299,8 @@ class KVTransferEngine:
         raw_k = k_handle.tobytes()
         raw_v = v_handle.tobytes()
         if self.quantizer is not None:
-            k_frame = self.quantizer.quantize(_bytes_to_array(raw_k, k_handle.shape, k_handle.dtype))
-            v_frame = self.quantizer.quantize(_bytes_to_array(raw_v, v_handle.shape, v_handle.dtype))
+            k_frame = self.quantizer.quantize(bytes_to_array(raw_k, k_handle.shape, k_handle.dtype))
+            v_frame = self.quantizer.quantize(bytes_to_array(raw_v, v_handle.shape, v_handle.dtype))
             raw_k = k_frame.to_bytes() if hasattr(k_frame, "to_bytes") else k_frame
             raw_v = v_frame.to_bytes() if hasattr(v_frame, "to_bytes") else v_frame
         payload = b"MKVR" + struct.pack("<I", len(raw_k)) + struct.pack("<I", len(raw_v)) + raw_k + raw_v
@@ -359,11 +359,11 @@ __all__ = [
 ]
 
 
-def _numpy_dtype(name: str) -> Any:
+def numpy_dtype(name: str) -> Any:
     return np.dtype(name)
 
 
-def _torch_dtype(name: str) -> Any:
+def torch_dtype(name: str) -> Any:
     import torch
 
     return {
@@ -374,9 +374,9 @@ def _torch_dtype(name: str) -> Any:
     }[name]
 
 
-def _torch_to_bytes(tensor: Any) -> bytes:
+def torch_to_bytes(tensor: Any) -> bytes:
     return tensor.detach().cpu().numpy().tobytes()
 
 
-def _bytes_to_array(payload: bytes, shape: tuple[int, ...], dtype: str) -> Any:
+def bytes_to_array(payload: bytes, shape: tuple[int, ...], dtype: str) -> Any:
     return np.frombuffer(payload, dtype=np.dtype(dtype)).reshape(shape)

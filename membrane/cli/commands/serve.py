@@ -39,7 +39,7 @@ console = Console()
 logger = logging.getLogger(__name__)
 
 
-def _is_loopback(host: str) -> bool:
+def is_loopback_host(host: str) -> bool:
     """Return True when ``host`` only accepts local connections."""
     if host == "localhost":
         return True
@@ -49,7 +49,7 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
-def _read_secret(path: str, what: str) -> str:
+def read_secret(path: str, what: str) -> str:
     """Read a secret file, exiting with a clear message on failure."""
     try:
         return Path(path).read_text()
@@ -58,7 +58,7 @@ def _read_secret(path: str, what: str) -> str:
         raise typer.Exit(2) from exc
 
 
-def _split_list(values: list[str] | None) -> list[str]:
+def split_list(values: list[str] | None) -> list[str]:
     """Flatten repeatable options that may also carry comma-separated env values."""
     result: list[str] = []
     for value in values or []:
@@ -66,16 +66,16 @@ def _split_list(values: list[str] | None) -> list[str]:
     return result
 
 
-def _build_tls(cert: str, key: str, ca: str, allowed_cns: list[str], allow_any_cn: bool) -> MTLSConfig | None:
+def build_tls(cert: str, key: str, ca: str, allowed_cns: list[str], allow_any_cn: bool) -> MTLSConfig | None:
     """Build the mTLS configuration from file paths, or ``None`` when unset."""
     if not (cert or key or ca):
         return None
     if not (cert and key and ca):
         console.print("[bold red]--tls-cert, --tls-key and --tls-ca must be given together.[/bold red]")
         raise typer.Exit(2)
-    cert_pem = _read_secret(cert, "TLS certificate")
-    key_pem = _read_secret(key, "TLS key")
-    ca_pem = _read_secret(ca, "TLS CA bundle")
+    cert_pem = read_secret(cert, "TLS certificate")
+    key_pem = read_secret(key, "TLS key")
+    ca_pem = read_secret(ca, "TLS CA bundle")
     if allow_any_cn:
         return MTLSConfig.allow_all_signed_by_ca(
             server_cert_pem=cert_pem,
@@ -272,19 +272,19 @@ def main(
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    peer_list = _split_list(peer)
-    tls = _build_tls(tls_cert, tls_key, tls_ca, _split_list(tls_allowed_cn), tls_allow_any_cn)
+    peer_list = split_list(peer)
+    tls = build_tls(tls_cert, tls_key, tls_ca, split_list(tls_allowed_cn), tls_allow_any_cn)
 
     authenticator = None
     if api_key_file:
         from membrane.auth.apikey import APIKeyAuthenticator
 
-        authenticator = APIKeyAuthenticator(_read_secret(api_key_file, "API keyfile"))
+        authenticator = APIKeyAuthenticator(read_secret(api_key_file, "API keyfile"))
         if not authenticator.keys:
             console.print(f"[bold red]API keyfile {api_key_file!r} contains no valid keys.[/bold red]")
             raise typer.Exit(2)
 
-    if authenticator is None and tls is None and not _is_loopback(host):
+    if authenticator is None and tls is None and not is_loopback_host(host):
         if not allow_unauthenticated:
             console.print(
                 f"[bold red]Refusing to serve unauthenticated on {host}.[/bold red] "
@@ -294,7 +294,7 @@ def main(
             raise typer.Exit(2)
         logger.warning("Serving WITHOUT authentication on %s:%s (--allow-unauthenticated)", host, port)
 
-    peer_api_key = _read_secret(peer_api_key_file, "peer API key").strip() if peer_api_key_file else ""
+    peer_api_key = read_secret(peer_api_key_file, "peer API key").strip() if peer_api_key_file else ""
     if peer_list and authenticator is not None and tls is None:
         if not peer_api_key:
             console.print(
@@ -352,7 +352,7 @@ def main(
         api_key=api_key,
         authenticator=authenticator,
         peer_api_key=peer_api_key,
-        peer_networks=tuple(_split_list(peer_network)),
+        peer_networks=tuple(split_list(peer_network)),
         tls=tls,
     )
 
@@ -368,7 +368,7 @@ def main(
     elif authenticator is not None:
         auth_mode = "API key"
     else:
-        auth_mode = "none (loopback only)" if _is_loopback(host) else "NONE (--allow-unauthenticated)"
+        auth_mode = "none (loopback only)" if is_loopback_host(host) else "NONE (--allow-unauthenticated)"
     console.print(f"[bold green]Membrane server started[/bold green] on {host}:{port}")
     console.print(f"  Node ID : {node_id}")
     console.print(f"  Transport: {transport}")

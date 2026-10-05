@@ -51,12 +51,12 @@ class PeerCredentials:
     ssl_context: ssl.SSLContext | None = None
 
 
-_DEFAULT_CREDENTIALS = PeerCredentials()
+DEFAULT_CREDENTIALS = PeerCredentials()
 
 
 def get_default_peer_credentials() -> PeerCredentials:
     """Return the process-wide :class:`PeerCredentials`."""
-    return _DEFAULT_CREDENTIALS
+    return DEFAULT_CREDENTIALS
 
 
 def set_default_peer_credentials(credentials: PeerCredentials) -> None:
@@ -66,8 +66,8 @@ def set_default_peer_credentials(credentials: PeerCredentials) -> None:
     :class:`Peer` the cluster layer creates uses the same scheme and
     credentials.
     """
-    global _DEFAULT_CREDENTIALS
-    _DEFAULT_CREDENTIALS = credentials
+    global DEFAULT_CREDENTIALS
+    DEFAULT_CREDENTIALS = credentials
 
 
 def peer_url(host_port: str) -> str:
@@ -132,11 +132,11 @@ class HTTPTransport:
     """
 
     def __init__(self, ssl_context: ssl.SSLContext | None = None) -> None:
-        self._client: Any | None = None
+        self.__client: Any | None = None
         self.ssl_context = ssl_context
 
-    def _get_client(self) -> Any:
-        if self._client is None:
+    def __get_client(self) -> Any:
+        if self.__client is None:
             try:
                 import httpx
 
@@ -144,7 +144,7 @@ class HTTPTransport:
                     max_keepalive_connections=10,
                     max_connections=100,
                 )
-                self._client = httpx.Client(
+                self.__client = httpx.Client(
                     timeout=httpx.Timeout(60.0),
                     limits=limits,
                     follow_redirects=False,
@@ -152,8 +152,8 @@ class HTTPTransport:
                 )
             except ImportError:
                 logger.warning("HTTPTransport: httpx not installed; falling back to None")
-                self._client = None
-        return self._client
+                self.__client = None
+        return self.__client
 
     def request(
         self,
@@ -168,7 +168,7 @@ class HTTPTransport:
 
         from membrane.errors import NetworkError
         from membrane.security import validate_outbound_url
-        from membrane.security.url_allowlist import SSRFError, _resolve_addresses, get_default_allowlist
+        from membrane.security.url_allowlist import SSRFError, get_default_allowlist, resolve_addresses
 
         try:
             validate_outbound_url(url)
@@ -176,7 +176,7 @@ class HTTPTransport:
             logger.warning("HTTPTransport %s %s rejected by SSRF policy: %s", method, url, exc)
             return None
 
-        client = self._get_client()
+        client = self.__get_client()
         if client is None:
             raise NetworkError("HTTPTransport: httpx not installed")
 
@@ -186,7 +186,7 @@ class HTTPTransport:
         policy = get_default_allowlist()
         if policy.block_private and parsed.hostname and not policy.is_host_allowed(parsed.hostname.lower()):
             try:
-                addresses = _resolve_addresses(parsed.hostname)
+                addresses = resolve_addresses(parsed.hostname)
             except OSError:
                 addresses = []
             if addresses:

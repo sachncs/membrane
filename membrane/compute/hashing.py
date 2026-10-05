@@ -21,3 +21,8 @@ def token_hash(tokens: Sequence[int]) -> str:
     """
     payload = ",".join(str(t) for t in tokens)
     return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
+
+
+__all__ = [
+    "token_hash",
+]

@@ -223,3 +223,10 @@ class DeltaSync:
         for target in targets:
             results[target.node_id] = self.sync(source, target)
         return results
+
+
+__all__ = [
+    "DeltaSync",
+    "SyncPlan",
+    "SyncResult",
+]

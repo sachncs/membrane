@@ -95,7 +95,7 @@ class EnvSecretProvider:
             raise SecretNotFoundError(secret_name) from exc
 
 
-class _LazyProxy:
+class LazyProxy:
     """Proxy that constructs the underlying provider on first call.
 
     The wrapper exists so :func:`set_default_provider` can
@@ -104,16 +104,16 @@ class _LazyProxy:
     """
 
     def __init__(self, factory: type[SecretProvider]) -> None:
-        self._factory = factory
-        self._instance: SecretProvider | None = None
+        self.__factory = factory
+        self.__instance: SecretProvider | None = None
 
     def get(self, secret_name: str) -> str:
-        if self._instance is None:
-            self._instance = self._factory()
-        return self._instance.get(secret_name)
+        if self.__instance is None:
+            self.__instance = self.__factory()
+        return self.__instance.get(secret_name)
 
 
-_DEFAULT_PROVIDER: SecretProvider | None = None
+DEFAULT_PROVIDER: SecretProvider | None = None
 
 
 def get_default_provider() -> SecretProvider:
@@ -125,10 +125,10 @@ def get_default_provider() -> SecretProvider:
         :class:`EnvSecretProvider` when nothing is installed
         (single-node / test deployments).
     """
-    global _DEFAULT_PROVIDER
-    if _DEFAULT_PROVIDER is None:
-        _DEFAULT_PROVIDER = EnvSecretProvider()
-    return _DEFAULT_PROVIDER
+    global DEFAULT_PROVIDER
+    if DEFAULT_PROVIDER is None:
+        DEFAULT_PROVIDER = EnvSecretProvider()
+    return DEFAULT_PROVIDER
 
 
 def set_default_provider(provider: SecretProvider) -> None:
@@ -137,8 +137,8 @@ def set_default_provider(provider: SecretProvider) -> None:
     Args:
         provider: The new provider.
     """
-    global _DEFAULT_PROVIDER
-    _DEFAULT_PROVIDER = provider
+    global DEFAULT_PROVIDER
+    DEFAULT_PROVIDER = provider
 
 
 def reset_default_provider() -> None:
@@ -147,8 +147,8 @@ def reset_default_provider() -> None:
     Tests call this to undo a :func:`set_default_provider`
     without leaking policy into other test cases.
     """
-    global _DEFAULT_PROVIDER
-    _DEFAULT_PROVIDER = None
+    global DEFAULT_PROVIDER
+    DEFAULT_PROVIDER = None
 
 
 __all__ = [

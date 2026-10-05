@@ -23,7 +23,7 @@ backends.
 import hashlib
 from abc import ABC, abstractmethod
 
-from membrane.compute._hash import token_hash
+from membrane.compute.hashing import token_hash
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 

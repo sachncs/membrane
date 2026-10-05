@@ -23,7 +23,7 @@ from membrane.disagg.protocol import (
     DecodeResponse,
     PrefillRequest,
     PrefillResponse,
-    _WallClock,
+    WallClock,
 )
 from membrane.prefix_cache import KVHandle, PrefixCache, PrefixMatch
 
@@ -123,7 +123,7 @@ class PrefillService:
         """
         self.cache = cache or PrefixCache(capacity=4096)
         self.backend: PrefillBackend = backend or NoopPrefillBackend()
-        self._lock = threading.RLock()
+        self.lock = threading.RLock()
 
     def prefill(self, request: PrefillRequest) -> PrefillResponse:
         """Run prefill on ``request``.
@@ -137,7 +137,7 @@ class PrefillService:
         """
         from membrane.otel_tracer import membrane_span
 
-        clock = _WallClock()
+        clock = WallClock()
         match = self.cache.lookup(request.model_id, request.token_ids)
         cached_prefix_len = match.token_len
         with membrane_span(
@@ -147,7 +147,7 @@ class PrefillService:
             cached_prefix_len=str(cached_prefix_len),
             request_id=request.request_id,
         ):
-            with self._lock:
+            with self.lock:
                 handle = self.cache.insert(
                     request.model_id,
                     request.token_ids,
@@ -180,7 +180,7 @@ class DecodeService:
     """
 
     def __init__(self) -> None:
-        self._lock = threading.RLock()
+        self.lock = threading.RLock()
 
     def decode(self, request: DecodeRequest) -> DecodeResponse:
         """Continue generation for ``request``.
@@ -192,7 +192,7 @@ class DecodeService:
             DecodeResponse: An empty response with
             ``finished=True``.
         """
-        with self._lock:
+        with self.lock:
             return DecodeResponse(
                 request_id=request.request_id,
                 token_ids=(),
@@ -232,7 +232,7 @@ def batch_prefill(
     Returns:
         BatchPrefillResult: Aggregate outcome.
     """
-    clock = _WallClock()
+    clock = WallClock()
     responses = [service.prefill(req) for req in requests]
     return BatchPrefillResult(responses=responses, elapsed_ms=clock.elapsed_ms())
 

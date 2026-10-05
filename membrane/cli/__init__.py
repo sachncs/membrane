@@ -29,7 +29,7 @@ app = typer.Typer(
 )
 
 
-def _version_callback(value: bool) -> None:
+def version_callback(value: bool) -> None:
     if value:
         from membrane import __version__
 
@@ -38,9 +38,9 @@ def _version_callback(value: bool) -> None:
 
 
 @app.callback()
-def _root(
+def root(
     version: bool = typer.Option(
-        False, "--version", "-V", callback=_version_callback, is_eager=True, help="Show the version and exit."
+        False, "--version", "-V", callback=version_callback, is_eager=True, help="Show the version and exit."
     ),
 ) -> None:
     """Membrane — Global Contextual Memory Fabric CLI."""

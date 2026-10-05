@@ -86,3 +86,8 @@ class RemoteLLMBackend(Backend):
         except Exception as exc:
             logger.debug("%s probe failed: %s", type(self).__name__, exc)
             return False
+
+
+__all__ = [
+    "RemoteLLMBackend",
+]
