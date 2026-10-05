@@ -5,12 +5,10 @@ renders the cluster membership as a Rich table.
 """
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
+from membrane.cli import output
 from membrane.cli.dashboard import fetch_json
-
-console = Console()
 
 
 def main(
@@ -20,12 +18,12 @@ def main(
     """Show cluster membership and peer health."""
     data = fetch_json(host, port, "/peers")
     if not data:
-        console.print(f"[red]Could not fetch cluster status from http://{host}:{port}/peers[/red]")
+        output.error(f"Could not fetch cluster status from http://{host}:{port}/peers")
         raise typer.Exit(1)
 
     peers = data.get("peers", [])
     if not peers:
-        console.print("[dim]No peers connected.[/dim]")
+        output.result("No peers connected.")
         return
 
     table = Table(title="Cluster Peers", box=None)
@@ -41,7 +39,7 @@ def main(
             str(p.get("port", "?")),
             is_healthy,
         )
-    console.print(table)
+    output.result(table)
 
 
 __all__ = ["main"]

@@ -5,12 +5,10 @@ renders a summary of the active compute backend.
 """
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
+from membrane.cli import output
 from membrane.cli.dashboard import fetch_json
-
-console = Console()
 
 
 def main(
@@ -20,7 +18,7 @@ def main(
     """Show active LLM backend status and model info."""
     data = fetch_json(host, port, "/metrics.json")
     if not data:
-        console.print(f"[red]Could not fetch LLM status from http://{host}:{port}/metrics.json[/red]")
+        output.error(f"Could not fetch LLM status from http://{host}:{port}/metrics.json")
         raise typer.Exit(1)
 
     table = Table(title="LLM Backend Status", box=None)
@@ -30,7 +28,7 @@ def main(
     table.add_row("Node ID", data.get("node_id", "unknown"))
     table.add_row("Load", f"{data.get('load', 0.0):.2%}")
     table.add_row("Fragments", str(data.get("fragment_count", 0)))
-    console.print(table)
+    output.result(table)
 
 
 __all__ = ["main"]

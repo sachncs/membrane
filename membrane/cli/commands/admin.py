@@ -15,12 +15,13 @@ Each subcommand requires the ``admin`` scope (carried via the
 ``--api-key`` flag or the ``MEMBRANE_API_KEY`` env var).
 """
 
-import json
 import os
 from typing import Any
 
 import httpx
 import typer
+
+from membrane.cli import output
 
 admin_app = typer.Typer(help="Admin operations against a running Membrane node.")
 
@@ -46,7 +47,7 @@ def admin_inspect(
     headers = auth_headers(api_key or os.environ.get("MEMBRANE_API_KEY"))
     url = f"{base_url(host, port)}/admin/fragments/{content_hash}"
     resp = httpx.get(url, headers=headers, timeout=5.0)
-    typer.echo(f"{resp.status_code} {resp.text}")
+    output.result(f"{resp.status_code} {resp.text}")
 
 
 @admin_app.command("placement")
@@ -65,7 +66,7 @@ def admin_placement(
         "primary_node_id": primary_node_id,
     }
     resp = httpx.post(url, json=body, headers=headers, timeout=5.0)
-    typer.echo(f"{resp.status_code} {resp.text}")
+    output.result(f"{resp.status_code} {resp.text}")
 
 
 @admin_app.command("evict")
@@ -80,7 +81,7 @@ def admin_evict(
     url = f"{base_url(host, port)}/admin/evict"
     body = {"content_hash": content_hash}
     resp = httpx.post(url, json=body, headers=headers, timeout=5.0)
-    typer.echo(f"{resp.status_code} {resp.text}")
+    output.result(f"{resp.status_code} {resp.text}")
 
 
 @admin_app.command("repair")
@@ -95,7 +96,7 @@ def admin_repair(
     url = f"{base_url(host, port)}/admin/repair"
     body = {"peer_node_id": peer_node_id}
     resp = httpx.post(url, json=body, headers=headers, timeout=5.0)
-    typer.echo(f"{resp.status_code} {resp.text}")
+    output.result(f"{resp.status_code} {resp.text}")
 
 
 @admin_app.command("policy")
@@ -117,7 +118,7 @@ def admin_policy(
             "demand_threshold": demand_threshold if demand_threshold is not None else 0,
         }
         resp = httpx.post(url, json=body, headers=headers, timeout=5.0)
-    typer.echo(json.dumps(resp.json(), indent=2))
+    output.result_json(resp.json())
 
 
 __all__ = ["admin_app", "main"]

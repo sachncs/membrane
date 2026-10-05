@@ -8,12 +8,11 @@ on a target host.
 import sys
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
+from membrane import __version__ as membrane_version
+from membrane.cli import output
 from membrane.cli.formatters import fmt_bytes
-
-console = Console()
 
 
 def main(
@@ -24,14 +23,14 @@ def main(
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="magenta")
     table.add_row("Package", "membrane")
-    table.add_row("Version", "0.1.0")
+    table.add_row("Version", membrane_version)
     table.add_row("Python", sys.version.split()[0])
     table.add_row("Platform", sys.platform)
     table.add_row("Max Memory Default", fmt_bytes(1 << 30))
     table.add_row("Default Transport", "http")
     table.add_row("Default Compute", "cpu")
     table.add_row("Default Port", "8080")
-    console.print(table)
+    output.result(table)
 
 
 __all__ = ["main"]

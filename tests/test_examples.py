@@ -68,7 +68,7 @@ def test_rag_pipeline_against_live_server() -> None:
                 time.sleep(0.2)
         result = _run("examples/rag_pipeline.py", {"MEMBRANE_URL": f"http://127.0.0.1:{port}"})
         assert result.returncode == 0, result.stderr[-2000:]
-        assert result.stdout.count("hit") == 2
+        assert result.stderr.count("hit") == 2
     finally:
         server.terminate()
         server.wait(timeout=30)
@@ -132,7 +132,7 @@ def test_quickstart_cli_flow(tmp_path: Path) -> None:
 
     refused = _cli("serve", "--host", "0.0.0.0", "--daemon", "--port", str(_free_port()))
     assert refused.returncode == 2
-    assert "Refusing to serve unauthenticated" in refused.stdout
+    assert "Refusing to serve unauthenticated" in refused.stderr
 
     keyfile = tmp_path / "api-keys"
     keyfile.write_text("quickstart-key:acme:read,write\n")

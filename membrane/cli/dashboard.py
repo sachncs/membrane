@@ -30,19 +30,17 @@ import urllib.request
 from typing import Any
 
 from rich.align import Align
-from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from membrane.cli import output
 from membrane.cli.formatters import fmt_bytes, fmt_duration
 from membrane.server import Server, ServerDiagnostics
 
 logger = logging.getLogger(__name__)
-
-console = Console()
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +238,7 @@ def run_dashboard(server: Server) -> None:
             pass
         finally:
             server.stop()
-            console.print("\n[bold red]Server stopped.[/bold red]")
+            output.info("Server stopped.")
 
 
 def run_remote_dashboard(
@@ -266,7 +264,7 @@ def run_remote_dashboard(
         Layout(name="right", ratio=1),
     )
 
-    console.print("[bold cyan]Connecting to Membrane server...[/bold cyan]")
+    output.info("Connecting to Membrane server...")
     with Live(layout, refresh_per_second=1 / refresh, screen=True):
         while True:
             data = fetch_json(host, port, "/heartbeat")

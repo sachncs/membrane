@@ -18,9 +18,13 @@ The CLI is built on :mod:`typer` (commands and option parsing) and
 :mod:`rich` (TUI rendering).
 """
 
+import os
+
 import typer
 
+from membrane.cli import output
 from membrane.cli.commands import admin, client, cluster, config, dashboard, llm, serve
+from membrane.logging import configure_logging
 
 app = typer.Typer(
     name="membrane",
@@ -29,11 +33,33 @@ app = typer.Typer(
 )
 
 
+def ensure_cli_logging() -> None:
+    """Route CLI output and diagnostics through logging.
+
+    Honours ``MEMBRANE_LOG_LEVEL`` and ``MEMBRANE_LOG_FORMAT`` (``json``
+    for one JSON object per diagnostic line); ``membrane serve``
+    reconfigures from its own flags.
+    """
+    configure_logging(
+        level=os.environ.get("MEMBRANE_LOG_LEVEL", "INFO"),
+        json_mode=os.environ.get("MEMBRANE_LOG_FORMAT", "text") == "json",
+    )
+
+
 def version_callback(value: bool) -> None:
+    """Show the version and exit when ``--version`` is given.
+
+    Args:
+        value: Whether the flag was passed.
+
+    Raises:
+        typer.Exit: After printing the version.
+    """
     if value:
+        ensure_cli_logging()
         from membrane import __version__
 
-        typer.echo(f"membrane {__version__}")
+        output.result(f"membrane {__version__}")
         raise typer.Exit()
 
 
@@ -44,6 +70,7 @@ def root(
     ),
 ) -> None:
     """Membrane — Global Contextual Memory Fabric CLI."""
+    ensure_cli_logging()
 
 
 # Register subcommands. Each is a typer.command function from

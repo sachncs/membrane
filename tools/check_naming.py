@@ -12,7 +12,7 @@ class, and every module declares its public API in ``__all__``. Dunder names, th
 parameters, and generated protobuf modules are exempt.
 
 It also fails on direct console output (``print``, ``console.print``,
-``typer.echo``, ``rich.print``): everything goes through
+``typer.echo``, ``rich.print``, ``sys.stdout.write``): everything goes through
 :mod:`logging` (see :mod:`membrane.logging`).
 """
 
@@ -23,7 +23,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PACKAGE = ROOT / "membrane"
-OUTPUT_CALLS = {("print",), ("console", "print"), ("typer", "echo"), ("rich", "print")}
+OUTPUT_CALLS = {
+    ("print",),
+    ("console", "print"),
+    ("typer", "echo"),
+    ("rich", "print"),
+    ("sys", "stdout", "write"),
+    ("sys", "stderr", "write"),
+}
 
 
 def is_semi_private(name: str) -> bool:

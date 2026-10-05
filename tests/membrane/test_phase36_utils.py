@@ -76,4 +76,4 @@ class TestDemoEntryPoint:
         )
         # The demo writes to stdout via print; the exit code is 0.
         assert result.returncode == 0
-        assert "demo:" in result.stdout
+        assert "demo:" in result.stderr  # diagnostics are logged to stderr

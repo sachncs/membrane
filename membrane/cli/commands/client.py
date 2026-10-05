@@ -18,11 +18,11 @@ for advanced flows.
 """
 
 import json
-import sys
 from collections.abc import Sequence  # noqa: F401
 
 import typer
 
+from membrane.cli import output
 from membrane.client import MembraneClient, MembraneClientError
 
 client_app = typer.Typer(
@@ -58,10 +58,7 @@ def emit(payload: dict | list | None) -> None:
         payload: The result to print; ``None`` prints an empty
             object.
     """
-    if payload is None:
-        payload = {}
-    json.dump(payload, sys.stdout, indent=2, sort_keys=True)
-    sys.stdout.write("\n")
+    output.result_json({} if payload is None else payload)
 
 
 @client_app.command("store")
@@ -81,7 +78,7 @@ def client_store(
     try:
         payload = json.loads(body)
     except json.JSONDecodeError as exc:
-        typer.echo(f"error: invalid JSON: {exc}", err=True)
+        output.error(f"error: invalid JSON: {exc}")
         raise typer.Exit(code=1) from None
 
     client = MembraneClient(
@@ -92,7 +89,7 @@ def client_store(
     try:
         result = client.store(payload, is_primary=is_primary)
     except MembraneClientError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        output.error(f"error: {exc}")
         raise typer.Exit(code=1) from None
     emit(result)
 
@@ -114,7 +111,7 @@ def client_retrieve(
     try:
         result = client.retrieve(content_hash)
     except MembraneClientError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        output.error(f"error: {exc}")
         raise typer.Exit(code=1) from None
     emit(result)
 
@@ -135,7 +132,7 @@ def client_inventory(
     try:
         result = client.inventory()
     except MembraneClientError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        output.error(f"error: {exc}")
         raise typer.Exit(code=1) from None
     emit(result)
 
@@ -163,7 +160,7 @@ def client_prefill(
         tokens = [int(t) for t in prompt_tokens.split()]
         result = client.prefill(tokens, model_id=model_id)
     except (ValueError, MembraneClientError) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        output.error(f"error: {exc}")
         raise typer.Exit(code=1) from None
     emit(result)
 

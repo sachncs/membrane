@@ -111,7 +111,7 @@ line-length = 120
 extend-exclude = ["membrane/transport/proto/", "membrane/wire/v3/wire_v3_pb2*.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF", "T20"]
 ignore = ["E501", "E402", "RUF002"]
 
 [tool.ruff.lint.per-file-ignores]

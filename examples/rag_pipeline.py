@@ -20,13 +20,15 @@ adapter such as ``membrane.adapters.vllm``, not through this API.
 """
 
 import hashlib
+import logging
 import os
-import sys
 
 from membrane.client import MembraneClient, MembraneClientError, MembraneConnectionError
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 from membrane.serialization import to_dict
+
+logger = logging.getLogger(__name__)
 
 MODEL_ID = "rag-demo"
 PROMPTS = ["What colors are in the flag of France?", "Who wrote Hamlet?"]
@@ -65,19 +67,19 @@ def main() -> int:
     client = MembraneClient(base_url, api_key=os.environ.get("MEMBRANE_API_KEY", ""))
     try:
         for attempt in (1, 2):
-            print(f"pass {attempt}")
+            logger.info("pass %s", attempt)
             for prompt in PROMPTS:
                 result = client.retrieve(content_hash(prompt))
                 if result and result.get("found"):
-                    print(f"  hit  | {prompt}")
+                    logger.info("  hit  | %s", prompt)
                 else:
                     client.store(to_dict(make_fragment(prompt)), is_primary=True)
-                    print(f"  miss | {prompt} (stored)")
+                    logger.info("  miss | %s (stored)", prompt)
     except MembraneConnectionError as exc:
-        print(f"error: {exc}\nStart a node first: membrane serve --daemon", file=sys.stderr)
+        logger.error("%s\nStart a node first: membrane serve --daemon", exc)
         return 1
     except MembraneClientError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        logger.error("%s", exc)
         return 1
     finally:
         client.close()
@@ -85,4 +87,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     raise SystemExit(main())

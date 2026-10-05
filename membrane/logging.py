@@ -130,8 +130,38 @@ class JsonFormatter(logging.Formatter):
         for key, value in record.__dict__.items():
             if key in self.RESERVED or key in payload:
                 continue
+            if key == "request_id" and not value:
+                continue  # outside a request
             payload[key] = value
         return json.dumps(payload, default=str)
+
+
+class StdStreamHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    """Stream handler bound to ``sys.stdout``/``sys.stderr`` at emit time.
+
+    Resolving the stream on every record keeps output correct when the
+    process redirects its standard streams after logging is configured
+    (test runners, daemonizers).
+    """
+
+    def __init__(self, stream_name: str) -> None:
+        """Initialize the handler.
+
+        Args:
+            stream_name: ``"stdout"`` or ``"stderr"``.
+        """
+        super().__init__()
+        self.stream_name = stream_name
+
+    @override
+    def emit(self, record: logging.LogRecord) -> None:
+        """Write ``record`` to the current standard stream.
+
+        Args:
+            record: The record to emit.
+        """
+        self.stream = getattr(sys, self.stream_name)
+        super().emit(record)
 
 
 class RequestContextFilter(logging.Filter):
@@ -231,7 +261,7 @@ def configure_logging(
     """
     if LoggingState.configured and not force:
         return
-    diagnostics = logging.StreamHandler(sys.stderr)
+    diagnostics = StdStreamHandler("stderr")
     diagnostics.setFormatter(JsonFormatter() if json_mode else TextFormatter(fmt or DEFAULT_LOG_FORMAT))
     diagnostics.addFilter(RequestContextFilter())
     root = logging.getLogger()
@@ -239,7 +269,7 @@ def configure_logging(
     root.addHandler(diagnostics)
     root.setLevel((level or DEFAULT_LOG_LEVEL).upper())
 
-    results = logging.StreamHandler(sys.stdout)
+    results = StdStreamHandler("stdout")
     results.setFormatter(logging.Formatter("%(message)s"))
     output = output_logger()
     output.handlers.clear()
@@ -268,6 +298,7 @@ __all__ = [
     "JsonFormatter",
     "LoggingState",
     "RequestContextFilter",
+    "StdStreamHandler",
     "TextFormatter",
     "configure_logging",
     "get_logger",

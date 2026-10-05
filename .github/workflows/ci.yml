@@ -41,6 +41,9 @@ jobs:
         run: ruff format --check membrane/ tests/ scripts/ examples/
       - name: mypy
         run: mypy membrane/
+      # No semi-private names, __all__ everywhere, no direct console output.
+      - name: naming and output conventions
+        run: python tools/check_naming.py
 
   test:
     name: Tests

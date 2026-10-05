@@ -5,6 +5,7 @@ The CI job falls back to this surface when the
 result is always present in the test output.
 """
 
+import logging
 import time
 
 from membrane.fragment import Fragment
@@ -51,5 +52,5 @@ def test_store_and_retrieve_smoke():
         node.store(frag, is_primary=True)
         node.retrieve(frag.identity.payload_hash)
     elapsed = time.perf_counter() - start
-    print(f"\n[bench] 100x store+retrieve: {elapsed * 1000:.1f} ms")
+    logging.getLogger(__name__).info("[bench] 100x store+retrieve: %.1f ms", elapsed * 1000)
     assert elapsed < 5.0

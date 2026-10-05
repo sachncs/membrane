@@ -25,17 +25,17 @@ from types import FrameType
 from typing import Annotated
 
 import typer
-from rich.console import Console
 
+from membrane.cli import output
 from membrane.cli.dashboard import run_dashboard
 from membrane.cli.formatters import fmt_bytes
 from membrane.cli.wizard import interactive_setup
+from membrane.logging import configure_logging
 from membrane.network.config import ClusterConfig
 from membrane.node import Node
 from membrane.server import Server
 from membrane.transport.tls import MTLSConfig
 
-console = Console()
 logger = logging.getLogger(__name__)
 
 
@@ -54,7 +54,7 @@ def read_secret(path: str, what: str) -> str:
     try:
         return Path(path).read_text()
     except OSError as exc:
-        console.print(f"[bold red]Cannot read {what} file {path!r}: {exc}[/bold red]")
+        output.error(f"[bold red]Cannot read {what} file {path!r}: {exc}[/bold red]")
         raise typer.Exit(2) from exc
 
 
@@ -71,7 +71,7 @@ def build_tls(cert: str, key: str, ca: str, allowed_cns: list[str], allow_any_cn
     if not (cert or key or ca):
         return None
     if not (cert and key and ca):
-        console.print("[bold red]--tls-cert, --tls-key and --tls-ca must be given together.[/bold red]")
+        output.error("[bold red]--tls-cert, --tls-key and --tls-ca must be given together.[/bold red]")
         raise typer.Exit(2)
     cert_pem = read_secret(cert, "TLS certificate")
     key_pem = read_secret(key, "TLS key")
@@ -85,7 +85,7 @@ def build_tls(cert: str, key: str, ca: str, allowed_cns: list[str], allow_any_cn
             client_key_pem=key_pem,
         )
     if not allowed_cns:
-        console.print("[bold red]mTLS needs --tls-allowed-cn (repeatable) or --tls-allow-any-cn.[/bold red]")
+        output.error("[bold red]mTLS needs --tls-allowed-cn (repeatable) or --tls-allow-any-cn.[/bold red]")
         raise typer.Exit(2)
     return MTLSConfig(
         server_cert_pem=cert_pem,
@@ -132,6 +132,12 @@ def main(
         1 << 30, "--max-memory", "-m", envvar="MEMBRANE_MAX_MEMORY", help="Max memory bytes"
     ),
     log_level: str = typer.Option("INFO", "--log-level", "-l", envvar="MEMBRANE_LOG_LEVEL", help="Logging level"),
+    log_format: str = typer.Option(
+        "text",
+        "--log-format",
+        envvar="MEMBRANE_LOG_FORMAT",
+        help="Diagnostics format: text or json (one object per line)",
+    ),
     daemon: bool = typer.Option(
         False,
         "--daemon",
@@ -267,10 +273,10 @@ def main(
         max_memory = cfg["max_memory"]
         log_level = cfg["log_level"]
 
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper(), logging.INFO),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    if log_format not in ("text", "json"):
+        output.error("--log-format must be 'text' or 'json'.")
+        raise typer.Exit(2)
+    configure_logging(level=log_level, json_mode=log_format == "json", force=True)
 
     peer_list = split_list(peer)
     tls = build_tls(tls_cert, tls_key, tls_ca, split_list(tls_allowed_cn), tls_allow_any_cn)
@@ -281,12 +287,12 @@ def main(
 
         authenticator = APIKeyAuthenticator(read_secret(api_key_file, "API keyfile"))
         if not authenticator.keys:
-            console.print(f"[bold red]API keyfile {api_key_file!r} contains no valid keys.[/bold red]")
+            output.error(f"[bold red]API keyfile {api_key_file!r} contains no valid keys.[/bold red]")
             raise typer.Exit(2)
 
     if authenticator is None and tls is None and not is_loopback_host(host):
         if not allow_unauthenticated:
-            console.print(
+            output.error(
                 f"[bold red]Refusing to serve unauthenticated on {host}.[/bold red] "
                 "Configure --api-key-file or mTLS (--tls-cert/--tls-key/--tls-ca), "
                 "bind to 127.0.0.1, or pass --allow-unauthenticated."
@@ -297,7 +303,7 @@ def main(
     peer_api_key = read_secret(peer_api_key_file, "peer API key").strip() if peer_api_key_file else ""
     if peer_list and authenticator is not None and tls is None:
         if not peer_api_key:
-            console.print(
+            output.error(
                 "[bold red]A cluster using API keys needs --peer-api-key-file so peers can authenticate.[/bold red]"
             )
             raise typer.Exit(2)
@@ -307,7 +313,7 @@ def main(
         if peer_record is None:
             logger.warning("Peer API key is not in the local keyfile; peers must share a keyfile containing it")
         elif "admin" not in peer_record.scopes:
-            console.print("[bold red]The peer API key must carry the 'admin' scope.[/bold red]")
+            output.error("[bold red]The peer API key must carry the 'admin' scope.[/bold red]")
             raise typer.Exit(2)
 
     # Only build cluster config when at least one seed peer is
@@ -336,7 +342,7 @@ def main(
         try:
             content_store = build_content_store(data_dir, data_key_file)
         except (OSError, ValueError) as exc:
-            console.print(f"[bold red]Cannot open data directory {data_dir!r}: {exc}[/bold red]")
+            output.error(f"[bold red]Cannot open data directory {data_dir!r}: {exc}[/bold red]")
             raise typer.Exit(2) from exc
     node = Node(node_id=node_id, max_memory_bytes=max_memory, content_store=content_store)
     server = Server(
@@ -357,7 +363,7 @@ def main(
     )
 
     if redis_url and not server.durable:
-        console.print(
+        output.error(
             f"[bold red]Redis at {redis_url} is unreachable; refusing to start without the requested durability.[/bold red]"
         )
         raise typer.Exit(2)
@@ -369,17 +375,21 @@ def main(
         auth_mode = "API key"
     else:
         auth_mode = "none (loopback only)" if is_loopback_host(host) else "NONE (--allow-unauthenticated)"
-    console.print(f"[bold green]Membrane server started[/bold green] on {host}:{port}")
-    console.print(f"  Node ID : {node_id}")
-    console.print(f"  Transport: {transport}")
-    console.print(f"  Auth     : {auth_mode}")
-    console.print(f"  Compute  : {compute}")
-    console.print(f"  LLM URL  : {llm_url or 'default'}")
-    console.print(f"  LLM Model: {llm_model or 'default'}")
-    console.print(f"  Redis    : {redis_url or 'disabled (in-memory)'}")
-    console.print(f"  Data dir : {data_dir or 'none (KV bytes in memory)'}")
-    console.print(f"  Peers    : {', '.join(peer_list) if peer_list else 'none'}")
-    console.print(f"  Max Mem  : {fmt_bytes(max_memory)}")
+    output.info(
+        "\n".join(
+            [
+                f"[bold green]Membrane server started[/bold green] on {host}:{port}",
+                f"  Node ID  : {node_id}",
+                f"  Auth     : {auth_mode}",
+                f"  Compute  : {compute}",
+                f"  LLM      : {llm_url or 'default'} / {llm_model or 'default'}",
+                f"  Redis    : {redis_url or 'disabled (in-memory)'}",
+                f"  Data dir : {data_dir or 'none (KV bytes in memory)'}",
+                f"  Peers    : {', '.join(peer_list) if peer_list else 'none'}",
+                f"  Max Mem  : {fmt_bytes(max_memory)}",
+            ]
+        )
+    )
 
     if daemon or not sys.stdout.isatty():
         # Containers and service managers stop the process with
@@ -389,12 +399,12 @@ def main(
             server.stop()
 
         signal.signal(signal.SIGTERM, _on_sigterm)
-        console.print("[dim]Running in daemon mode. Press Ctrl+C to stop.[/dim]")
+        output.info("[dim]Running in daemon mode. Press Ctrl+C to stop.[/dim]")
         try:
             server.join()
         except KeyboardInterrupt:
             server.stop()
-        console.print("[bold red]Server stopped.[/bold red]")
+        output.info("Server stopped.")
     else:
         # Launch the local TUI dashboard.
         run_dashboard(server)
