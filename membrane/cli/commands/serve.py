@@ -119,6 +119,12 @@ def main(
         envvar="MEMBRANE_SECRET_PROVIDER",
         help="Resolves secret://NAME in any secret setting: env, aws, gcp, vault, or installed",
     ),
+    warm_tier_bytes: int = typer.Option(
+        0,
+        "--warm-tier-bytes",
+        envvar="MEMBRANE_WARM_TIER_BYTES",
+        help="Keep fragments evicted from memory in an encrypted on-disk tier up to this size (needs --data-dir)",
+    ),
     kv_quantization: str = typer.Option(
         "none",
         "--kv-quantization",
@@ -351,6 +357,7 @@ def main(
         persistence: Persistence plugin.
         eviction: Eviction policy plugin.
         secret_provider: Secret provider for ``secret://NAME`` references.
+        warm_tier_bytes: On-disk warm tier size in bytes (0: off).
         kv_quantization: Quantize KV tensors at rest.
         transfer_compression: How KV bytes travel to peers.
         otel_endpoint: OTLP/gRPC endpoint for traces.
@@ -464,6 +471,7 @@ def main(
             otel_endpoint=otel_endpoint,
             transfer_compression=transfer_compression,
             kv_quantization=kv_quantization,
+            warm_tier_bytes=warm_tier_bytes,
             secret_provider=secret_provider,
             max_memory=max_memory,
             peers=tuple(split_list(peer)),

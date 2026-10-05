@@ -221,6 +221,7 @@ class Server:
         else:
             self.compute_type = compute
             self.compute_backend = COMPUTE_BACKENDS.get(compute)(llm_url, llm_model, api_key)
+        self.compute_backend.bind(self.node.content_store)
 
         # Redis writes happen on a background thread so the node's lock
         # never waits on a network round trip.

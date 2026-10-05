@@ -32,7 +32,7 @@ from membrane.fragment import Fragment
 from membrane.otel_tracer.otel import TRACING
 from membrane.resilience import CircuitBreaker, CircuitBreakerPolicy, RetryPolicy, compute_backoff
 from membrane.serialization import JsonDict, from_dict, to_dict
-from membrane.wire.v3.chunks import sha256_hex
+from membrane.wire.v3.chunks import ChunkManifest, sha256_hex
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,10 @@ ACCEPT_COMPRESSION_HEADER = "X-Membrane-Accept-Compression"
 COMPRESS_MIN_BYTES = 1024
 #: Upper bound for a decompressed blob (matches the server's body limit).
 MAX_BLOB_BYTES = 100 << 20
+#: Blobs at least this large upload in resumable chunks.
+RESUMABLE_MIN_BYTES = 8 << 20
+#: Chunk size for resumable uploads.
+UPLOAD_CHUNK_BYTES = 4 << 20
 
 
 @dataclass(frozen=True)
@@ -608,6 +612,10 @@ class Peer:
         Returns:
             bool: True when the peer stored (or already held) the bytes.
         """
+        if len(data) >= RESUMABLE_MIN_BYTES:
+            resumed = self.put_blob_resumable(payload_ref, data)
+            if resumed is not None:
+                return resumed
         headers = {"Content-Type": "application/octet-stream", "X-Content-SHA256": sha256_hex(data)}
         body = data
         method = self.credentials.compression
@@ -616,6 +624,56 @@ class Peer:
             headers[COMPRESSION_HEADER] = method
         resp = self.request_with_retry("PUT", f"/blobs/{payload_ref}", raw_body=body, extra_headers=headers)
         return resp is not None and bool(resp.get("stored", False))
+
+    def put_blob_resumable(self, payload_ref: str, data: bytes, chunk_size: int = UPLOAD_CHUNK_BYTES) -> bool | None:
+        """Upload a large blob in verified chunks, skipping chunks the peer already has.
+
+        After an interrupted upload, calling this again sends only the
+        missing chunks.
+
+        Args:
+            payload_ref: Content-store key.
+            data: The bytes.
+            chunk_size: Chunk size in bytes.
+
+        Returns:
+            bool | None: True when stored, False when interrupted (call again
+            to resume), ``None`` when the peer does not support resumable
+            uploads.
+        """
+        manifest = ChunkManifest.from_payload(data, content_hash=payload_ref, chunk_size=chunk_size)
+        begin = self.request_with_retry(
+            "POST",
+            f"/blobs/{payload_ref}/upload",
+            {
+                "chunk_size": chunk_size,
+                "total_bytes": len(data),
+                "chunks": list(manifest.per_chunk_sha256),
+                "sha256": sha256_hex(data),
+            },
+        )
+        if begin is None:
+            return None
+        if begin.get("stored"):
+            return True
+        received = set(begin.get("received", []))
+        method = self.credentials.compression
+        for index, chunk in enumerate(manifest.split_payload(data)):
+            if index in received:
+                continue
+            headers = {"Content-Type": "application/octet-stream"}
+            body = chunk
+            if method != "raw":
+                body = CompressionTransport(method).compress(chunk)
+                headers[COMPRESSION_HEADER] = method
+            response = self.request_with_retry(
+                "PUT", f"/blobs/{payload_ref}/upload/{index}", raw_body=body, extra_headers=headers
+            )
+            if response is None:
+                return False
+            if response.get("stored"):
+                return True
+        return False
 
     def get_blob(self, payload_ref: str) -> bytes | None:
         """Download KV bytes with ``GET /blobs/{payload_ref}``.

@@ -12,6 +12,36 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Added (data path)
+
+- Blob transfers are compressed (`--transfer-compression`, zstd by
+  default) with bounded decompression; blobs of 8 MiB or more upload in
+  resumable, per-chunk verified pieces.
+- `--kv-quantization int8|fp8_e4m3|fp8_e5m2|nf4` stores KV tensors smaller.
+- `--warm-tier-bytes`: fragments evicted from memory move to an encrypted
+  on-disk tier and are promoted back on read.
+- `GET /inventory?after=&limit=` pages; repair and sync page through it.
+- `encrypted-memory` content store and `kv` compute (real KV extraction)
+  plugins.
+- `AsyncMembraneClient(resilient=True)`: bounded concurrency, retries,
+  and a circuit breaker through `AsyncWireClient`.
+
+### Fixed (data path)
+
+- `POST /sync` copied metadata without the KV bytes and called the source
+  without credentials (401 on any authenticated cluster). It now uses the
+  peer client, a delta plan (missing and outdated), and verified blob
+  downloads.
+- fp8 quantization wrapped scaled values through `int8` and flipped
+  signs; both fp8 formats now round to real fp8 code points.
+- `AsyncWireClient` opened a new connection per attempt and could not send
+  headers or bodies.
+
+### Breaking (data path)
+
+- `POST /sync` requires the `admin` scope (it pulls every tenant's
+  fragments with the node's peer credentials).
+
 ### Added (security and operations)
 
 - `secret://NAME` for any secret setting, resolved by `--secret-provider`

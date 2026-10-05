@@ -17,7 +17,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from membrane.decision import AdmissionPolicy, TenantQuota, TinyLFU
 from membrane.fragment import Fragment
@@ -183,6 +183,9 @@ class Node:
             FrequencyLRU(eviction_strategy) if eviction_strategy is not None else WeightedLRU()
         )
         self.table = FragmentTable()
+        #: Where capacity evictions go instead of being lost (a
+        #: :class:`~membrane.store.tiered.WarmTier`); ``None`` drops them.
+        self.lower_tier: Any = None
         self.__selected_tiers: dict[str, str] = {}
 
         if content_store is None:
@@ -390,6 +393,8 @@ class Node:
             caller is authorized; ``None`` when the fragment is
             absent, expired, or the caller is not authorized.
         """
+        if self.lower_tier is not None and content_hash not in self.table:
+            self.__promote(content_hash)
         with self.lock:
             fragment = self.fragments.get(content_hash)
             if fragment is None:
@@ -544,6 +549,7 @@ class Node:
             for h in self.eviction_policy.order(candidates, self.access_times, now):
                 if freed >= target_bytes:
                     break
+                self.__demote(h)
                 frag = self.remove_fragment(h)
                 freed += frag.payload_size
                 evicted.append(h)
@@ -583,6 +589,7 @@ class Node:
                         continue
                     if freed >= target_bytes:
                         break
+                    self.__demote(neighbor_hash)
                     neighbor_frag = self.remove_fragment(neighbor_hash)
                     freed += neighbor_frag.payload_size
                     evicted.append(neighbor_hash)
@@ -774,6 +781,34 @@ class Node:
             dict[str, Fragment]: ``content_hash -> fragment`` at one instant.
         """
         return self.table.snapshot()
+
+    def __demote(self, content_hash: str) -> None:
+        """Hand a fragment that is being evicted for space to the lower tier.
+
+        Args:
+            content_hash: The fragment about to be removed.
+        """
+        if self.lower_tier is None:
+            return
+        fragment = self.fragments.get(content_hash)
+        if fragment is None:
+            return
+        payload = self.content_store.get(fragment.payload_ref) if fragment.payload_ref is not None else None
+        self.lower_tier.demote_later(fragment, payload)
+
+    def __promote(self, content_hash: str) -> None:
+        """Bring a fragment back from the lower tier into memory.
+
+        Args:
+            content_hash: The fragment to promote.
+        """
+        promoted = self.lower_tier.promote(content_hash)
+        if promoted is None:
+            return
+        fragment, payload = promoted
+        if fragment.payload_ref is not None and payload is not None:
+            self.content_store.put(fragment.payload_ref, payload)
+        self.store(fragment, is_primary=False)
 
     def get_shard_hashes(self) -> set[str]:
         """Return content hashes owned as primary by this node.

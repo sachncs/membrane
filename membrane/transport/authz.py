@@ -76,6 +76,8 @@ ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("PUT", "/blobs"): "admin",
     ("GET", "/blobs"): "admin",
     ("HEAD", "/blobs"): "admin",
+    ("POST", "/blobs/upload"): "admin",
+    ("PUT", "/blobs/upload"): "admin",
 }
 """(method, path) -> required scope. ``public`` means no auth check."""
 

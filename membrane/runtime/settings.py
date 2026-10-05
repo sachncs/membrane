@@ -28,6 +28,7 @@ from membrane.codec import method_available
 from membrane.network.config import CONSISTENCY_LEVELS, ClusterConfig
 from membrane.node import Node
 from membrane.otel_tracer.otel import TRACING
+from membrane.runtime.components import load_data_key
 from membrane.runtime.plugins import (
     AUTHENTICATORS,
     COMPUTE_BACKENDS,
@@ -48,6 +49,7 @@ from membrane.security.files import InsecureFileError, require_private_file
 from membrane.server import Server
 from membrane.store.quantizing import FORMATS as QUANTIZATION_FORMATS
 from membrane.store.quantizing import QuantizingStore
+from membrane.store.tiered import WarmTier
 from membrane.transport.acme import LETS_ENCRYPT, ACMEConfig, ACMEError, ensure_certificate
 from membrane.transport.limits import TransportLimits
 from membrane.transport.spiffe import SPIFFEClient, SPIFFEConfig
@@ -84,6 +86,9 @@ class ServerSettings:
             ``redis_url`` and ``memory`` otherwise.
         eviction: Eviction-policy plugin.
         load_hooks: Run every installed ``membrane.hooks`` entry point.
+        warm_tier_bytes: Keep up to this many bytes of fragments evicted from
+            memory in an encrypted on-disk warm tier (``<data-dir>/warm``);
+            0 disables it.
         kv_quantization: Quantize KV tensors at rest: ``none``, ``int8``,
             ``fp8_e4m3``, ``fp8_e5m2``, or ``nf4`` (lossy; needs numpy).
         transfer_compression: How KV bytes travel to peers: ``zstd``,
@@ -147,6 +152,7 @@ class ServerSettings:
     otel_endpoint: str = ""
     transfer_compression: str = "zstd"
     kv_quantization: str = "none"
+    warm_tier_bytes: int = 0
     max_memory: int = 1 << 30
     peers: tuple[str, ...] = ()
     advertise_host: str = ""
@@ -195,6 +201,8 @@ class ServerSettings:
             ),
             (self.eviction in EVICTION, f"unknown eviction policy {self.eviction!r}"),
             (self.secret_provider in SECRET_PROVIDERS, f"unknown secret provider {self.secret_provider!r}"),
+            (self.warm_tier_bytes >= 0, "warm tier bytes must not be negative"),
+            (not self.warm_tier_bytes or bool(self.data_dir), "the warm tier needs --data-dir"),
             (
                 self.kv_quantization == "none" or self.kv_quantization in QUANTIZATION_FORMATS,
                 f"KV quantization must be none or one of {sorted(QUANTIZATION_FORMATS)}",
@@ -584,6 +592,14 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
         content_store=content_store,
         eviction_policy=EVICTION.get(settings.eviction)(),
     )
+    if settings.warm_tier_bytes:
+        from membrane.content_store import FilesystemBlob
+
+        root = Path(settings.data_dir)
+        warm_store = FilesystemBlob(
+            root / "warm", tenant_id="membrane-warm", key_provider=load_data_key(root, settings.data_key_file)
+        )
+        node.lower_tier = WarmTier(warm_store, settings.warm_tier_bytes)
     server = Server(
         node=node,
         transport=settings.transport,

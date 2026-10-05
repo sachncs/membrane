@@ -118,6 +118,15 @@ class KVBackend(RemoteLLMBackend):
         self.head_dim: int = 0
         self.load_model()
 
+    @override
+    def bind(self, content_store: Any) -> None:
+        """Write frames to the node's content store from now on.
+
+        Args:
+            content_store: The node's content store.
+        """
+        self.content_store = content_store
+
     def load_model(self) -> None:
         """Lazy-load the model and tokenizer on first use.
 
