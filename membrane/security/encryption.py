@@ -1,4 +1,4 @@
-"""AES-256-GCM encryption at rest + per-tenant key derivation (Phase 3.4.6 + 3.4.7).
+"""AES-256-GCM encryption at rest + per-tenant key derivation.
 
 The v3.0.0 release bakes AES-256-GCM encryption into
 :class:`membrane.content_store.FilesystemBlob`. The plain
@@ -9,7 +9,7 @@ content hash, so a single breach of the master key does
 not compromise every tenant.
 
 The :class:`KeyProvider` Protocol allows operators to plug
-in a Vault-backed master key (Phase 3.4.5b) without
+in a Vault-backed master key without
 changing the storage layer.
 """
 

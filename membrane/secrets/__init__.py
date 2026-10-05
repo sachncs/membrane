@@ -1,4 +1,4 @@
-"""SecretProvider Protocol + EnvSecretProvider (Phase 3.4.5).
+"""SecretProvider Protocol + EnvSecretProvider.
 
 The v2.0 release carried API keys + mTLS PEMs as plain
 :class:`MTLSConfig` fields and read them straight from
@@ -9,13 +9,13 @@ optional dependency):
 
 * :class:`EnvSecretProvider` (default; no deps): reads from
   environment variables via the standard library.
-* :class:`VaultSecretProvider` (Phase 3.4.5b; ``pip install
+* :class:`VaultSecretProvider` (``pip install
   membrane[secrets-vault]``): reads from HashiCorp Vault via
   ``hvac``.
-* :class:`AWSSecretsProvider`` (Phase 3.4.5c; ``pip install
+* :class:`AWSSecretsProvider`` (``pip install
   membrane[secrets-aws]``): reads from AWS Secrets Manager
   via ``boto3``.
-* :class:`GCPSecretsProvider`` (Phase 3.4.5d; ``pip install
+* :class:`GCPSecretsProvider`` (``pip install
   membrane[secrets-gcp]``): reads from Google Secret Manager
   via ``google-cloud-secret-manager``.
 

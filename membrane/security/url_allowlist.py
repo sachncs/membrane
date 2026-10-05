@@ -1,4 +1,4 @@
-"""Outbound URL allow-list (Phase 3.1.2).
+"""Outbound URL allow-list.
 
 The v2.0 release shipped
 :func:`membrane.transport.ops.op_sync` and the

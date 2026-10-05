@@ -1,4 +1,4 @@
-"""vLLM KVConnector adapter (Phase 5).
+"""vLLM KVConnector adapter.
 
 Wires the engine-agnostic :class:`~membrane.adapters.KVAdapter`
 protocol onto vLLM's distributed KV-transfer surface. The
@@ -686,7 +686,7 @@ def build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
 
 
 class MembraneVLLMAdapter(BaseAdapter):  # type: ignore[misc]
-    """vLLM-flavored :class:`KVAdapter` (Phase 5).
+    """vLLM-flavored :class:`KVAdapter`.
 
     The v1 of the adapter delegates the vLLM-specific
     :func:`extract` / :func:`import_into` calls to the

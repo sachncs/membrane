@@ -17,7 +17,7 @@ The state classes are pure values. The :class:`Gossip` daemon
 holds the local membership table, the directory, the node
 reference for building snapshots, and the shared tombstone table.
 
-Phase 5 inventory layout: the legacy ``inventory_digest``
+Inventory layout: the legacy ``inventory_digest``
 field is replaced with a Bloom filter (``inventory_bloom``,
 serialized :class:`~membrane.bloom.BloomFilter`), a Merkle root
 (``inventory_merkle_root``), and the leaf count
@@ -177,7 +177,7 @@ class GossipState:
 
         Returns:
             GossipState: Reconstructed instance. When the wire
-            payload predates Phase 5 (no ``inventory_bloom`` /
+            payload predates the Bloom/Merkle inventory (no ``inventory_bloom`` /
             ``inventory_merkle_root`` keys) the instance is built
             with empty inventory placeholders so older clusters
             still parse; the receiving side falls back to
@@ -212,7 +212,7 @@ class GossipState:
         ``max(until)`` per fragment so the longer-lived
         deadline wins.
 
-        Phase 5: the inventory-side fields (Bloom + Merkle root)
+        The inventory-side fields (Bloom + Merkle root)
         are not merged field-by-field because both peers
         computed them from the same local observation. The
         combined state keeps the sender-side fields so the
@@ -424,12 +424,11 @@ class Gossip:
     def handle(self, data: JsonDict) -> JsonDict:
         """Apply an incoming gossip payload to local state.
 
-        Phase 5: when the incoming ``inventory_merkle_root``
-        differs from the local one, the receiver walks the
-        peer's published locations plus its own fragments to
-        compute the diff locally -- a real wire call to ask the
-        sender for its Merkle subtree is left for Phase 5.4. The
-        current implementation uses the Bloom filter to skip the
+        When the incoming ``inventory_merkle_root`` differs from
+        the local one, the receiver walks the peer's published
+        locations plus its own fragments to compute the diff
+        locally (there is no wire call for the sender's Merkle
+        subtree). It uses the Bloom filter to skip the
         diff entirely when the local node has nothing in
         common with the peer.
 

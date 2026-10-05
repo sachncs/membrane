@@ -352,7 +352,7 @@ class Shard:
             bool: ``True`` when the migration completes (pull +
             verify + table flip), ``False`` on any failed step.
         """
-        # Phase 3 verified-migration path: pull + verify + flip.
+        # Verified migration: pull + verify + flip.
         # When the caller supplies pull_fn at all, the migration
         # is gated by both pull and verify -- not by the legacy
         # in-memory push path. This makes the contract explicit

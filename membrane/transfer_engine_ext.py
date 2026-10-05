@@ -1,4 +1,4 @@
-"""GPU-direct pinned host memory + adaptive fragment sizing (Phase 3.3.9 + 3.3.10).
+"""GPU-direct pinned host memory + adaptive fragment sizing.
 
 The v3.0.0 release optimizes the GPU → wire path:
 

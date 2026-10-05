@@ -1,4 +1,4 @@
-"""Prefill / decode disaggregation protocol (Phase 8).
+"""Prefill / decode disaggregation protocol.
 
 The prefill service runs on a node optimized for the
 compute-bound prefill phase; the decode service runs on a

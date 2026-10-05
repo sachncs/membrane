@@ -1,4 +1,4 @@
-"""OpenAPI spec generation (Phase 3.6.2).
+"""OpenAPI spec generation.
 
 The v3.0.0 release exposes a :func:`generate_spec` helper
 that walks the FastAPI app and dumps the OpenAPI 3 JSON.

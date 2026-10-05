@@ -1,4 +1,4 @@
-"""Disaggregated prefill / decode services (Phase 8).
+"""Disaggregated prefill / decode services.
 
 The ``membrane.disagg`` package is the v2.0+ implementation
 of prefill / decode disaggregation. The package exposes:

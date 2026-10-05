@@ -1,4 +1,4 @@
-"""Prefill / decode service (Phase 8).
+"""Prefill / decode service.
 
 The :class:`PrefillService` and :class:`DecodeService` are
 the engine-agnostic building blocks the REST and gRPC

@@ -1,9 +1,7 @@
-"""`membrane client` CLI subcommand (Phase 3.6.1 follow-up).
+"""`membrane client` CLI subcommand.
 
-The Phase 3.6.1 commit shipped the typed ``MembraneClient``;
-the v2.0 CLI never exposed a parity surface. This commit adds
-``membrane client`` as a Typer subcommand for one-off
-interactions with a running Membrane server:
+``membrane client`` wraps :class:`~membrane.client.MembraneClient`
+for one-off interactions with a running Membrane server:
 
 * ``membrane client store`` -- POST a fragment.
 * ``membrane client retrieve --hash <hash>`` -- GET a fragment.

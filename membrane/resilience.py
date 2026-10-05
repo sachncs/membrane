@@ -1,7 +1,7 @@
 """Resilience dataclasses for retry, circuit-breaker, and timeout.
 
 The :mod:`membrane.wire.retry` module composes these into a real
-client (Phase 3.3.7). The v3.0.0 release drops the old
+client. The v3.0.0 release drops the old
 :class:`ResiliencePolicy` composable and the
 :class:`BulkheadPolicy` semaphore that the v2.0 arc carried as
 placeholders; the v3 wire owns its own bulkhead as a

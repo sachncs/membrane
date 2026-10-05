@@ -402,10 +402,8 @@ class Replicator:
         The function operates on the existing :meth:`node.get_stats`
         inventory (per :class:`~membrane.node.Node`'s ``fragments``
         dict) for the local side and on
-        ``client.get_inventory()`` for the peer. Phase 5 will
-        upgrade the inventory exchange to a Bloom + Merkle pair
-        so this method scales sub-linearly; for now the basic
-        diff already covers everything anti-entropy needs.
+        ``client.get_inventory()`` for the peer: one full digest per
+        round, which is linear in the peer's inventory size.
 
         Args:
             peer_id: Destination peer identifier.

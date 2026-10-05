@@ -3,7 +3,7 @@
 This module defines :class:`Node` and :class:`NodeAttributes`.
 
 The :class:`NodeAttributes` dataclass carries the locality metadata
-used by Phase 6: ``region`` (e.g. ``"eu-west-1"``) and ``zone``
+used for locality-aware placement: ``region`` (e.g. ``"eu-west-1"``) and ``zone``
 (e.g. ``"us-east-1a"``) place a node in the deployment topology,
 and ``bandwidth_class`` is a coarse-grained signal (0 = unmetered,
 higher = metered) that :class:`~membrane.replicator.Replicator`
@@ -14,11 +14,6 @@ placements.
 """
 
 import logging
-
-logger = logging.getLogger(__name__)
-
-
-import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,14 +24,18 @@ from membrane.fragment import Fragment
 from membrane.graph import Graph
 from membrane.index import Index
 from membrane.metrics import NodeMetrics
-from membrane.security.tenant import (
-    TenantAuthorizer,
-)
+from membrane.store.eviction import EVICTION_REUSE_EPSILON, EvictionPolicy, FrequencyLRU, WeightedLRU
+from membrane.store.table import FragmentTable
+from membrane.store.tenant_guard import TenantGuard
 from membrane.tiers import TierPolicy, select_tier
 from membrane.transfer_engine_ext import AdaptiveFragmenter
 
 if TYPE_CHECKING:
+    import threading
+
     from membrane.content_store import ContentStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -89,17 +88,15 @@ class Stats:
     primary_count: int
 
 
-#: Small epsilon added to ``reuse_score`` in the eviction formula
-#: to avoid division by zero when a fragment has ``reuse_score == 0``.
-EVICTION_REUSE_EPSILON: float = 0.01
-
-
 class Node:
     """Serving plane node that holds fragments in memory.
 
-    Supports TTL expiry, LRU eviction weighted by ``reuse_score``,
-    and graph-aware co-eviction via an owned
-    :class:`Graph`.
+    A facade over :mod:`membrane.store` components: the
+    :class:`~membrane.store.table.FragmentTable` (resident fragments and
+    bookkeeping), an :class:`~membrane.store.eviction.EvictionPolicy`, a
+    :class:`~membrane.store.tenant_guard.TenantGuard`, plus the index and
+    co-access graph. Supports TTL expiry, policy-ordered eviction, and
+    graph-aware co-eviction.
 
     Attributes:
         node_id: Unique identifier passed at construction time.
@@ -134,6 +131,7 @@ class Node:
         tier_policy: TierPolicy | None = None,
         fragmenter: AdaptiveFragmenter | None = None,
         eviction_strategy: TinyLFU | None = None,
+        eviction_policy: EvictionPolicy | None = None,
     ) -> None:
         """Initialize the node.
 
@@ -157,20 +155,18 @@ class Node:
                 supplied, per-tenant fragment counts are recorded
                 on every successful store.
             admission_policy: Optional :class:`AdmissionPolicy`
-                (cost/benefit gate) from Phase 3.5.1.
-            quotas: Map of tenant_id -> :class:`TenantQuota`
-                from Phase 3.5.3. When ``None`` admission is
+                (cost/benefit gate).
+            quotas: Map of tenant_id -> :class:`TenantQuota`. When ``None`` admission is
                 unbounded.
-            tier_policy: Optional :class:`TierPolicy` from Phase
-                3.5.6. ``select_tier`` is consulted when storing;
+            tier_policy: Optional :class:`TierPolicy`. ``select_tier`` is consulted when storing;
                 ``None`` skips tier bookkeeping.
-            fragmenter: Optional :class:`AdaptiveFragmenter`
-                from Phase 3.3.10. ``None`` uses a fixed
+            fragmenter: Optional :class:`AdaptiveFragmenter`. ``None`` uses a fixed
                 128-token window.
-            eviction_strategy: Optional :class:`TinyLFU` from
-                Phase 3.5.2. ``None`` falls back to the v2.0
-                weighted LRU; the
-                :meth:`evict_lru` path delegates when present.
+            eviction_strategy: Optional :class:`TinyLFU` sketch; when given
+                (and ``eviction_policy`` is not), eviction orders victims by
+                its frequency estimate (:class:`FrequencyLRU`).
+            eviction_policy: Orders eviction victims; defaults to
+                :class:`WeightedLRU`.
         """
         self.node_id = node_id
         self.max_memory_bytes = max_memory_bytes
@@ -183,6 +179,10 @@ class Node:
         self.tier_policy = tier_policy
         self.fragmenter = fragmenter
         self.eviction_strategy = eviction_strategy
+        self.eviction_policy: EvictionPolicy = eviction_policy or (
+            FrequencyLRU(eviction_strategy) if eviction_strategy is not None else WeightedLRU()
+        )
+        self.table = FragmentTable()
         self.__selected_tiers: dict[str, str] = {}
 
         if content_store is None:
@@ -198,18 +198,51 @@ class Node:
         # store can derive its per-tenant key.
         self.__store_uses_tenant = bool(hasattr(content_store, "tenant_id") or content_store is None)
 
-        self.fragments: dict[str, Fragment] = {}
-        self.primary_hashes: set[str] = set()
         self.__eviction_callbacks: list[Callable[[object], None]] = []
         # Durability hooks (see :meth:`set_persistence_hooks`).
         self.__on_store: Callable[[Fragment, bool], None] | None = None
         self.__on_remove: Callable[[str], None] | None = None
         self.__eviction_counter: Callable[[str, int], None] | None = None
-        self.access_times: dict[str, float] = {}
-        self.insertion_times: dict[str, float] = {}
-        self.memory_usage: int = 0
-        self.lock = threading.RLock()
         logger.info("Initialized node %s with %s bytes", node_id, max_memory_bytes)
+
+    @property
+    def fragments(self) -> dict[str, Fragment]:
+        """Resident fragments (the table's map; iterate :meth:`fragment_snapshot`)."""
+        return self.table.fragments
+
+    @property
+    def primary_hashes(self) -> set[str]:
+        """Hashes this node owns as primary."""
+        return self.table.primary_hashes
+
+    @property
+    def access_times(self) -> dict[str, float]:
+        """Last access time per resident hash."""
+        return self.table.access_times
+
+    @property
+    def insertion_times(self) -> dict[str, float]:
+        """Insertion time per resident hash."""
+        return self.table.insertion_times
+
+    @property
+    def memory_usage(self) -> int:
+        """Bytes held by resident fragments."""
+        return self.table.memory_usage
+
+    @memory_usage.setter
+    def memory_usage(self, value: int) -> None:
+        """Override the memory total (tests and restores).
+
+        Args:
+            value: New total in bytes.
+        """
+        self.table.memory_usage = value
+
+    @property
+    def lock(self) -> threading.RLock:
+        """The table lock; hold it to make several operations atomic."""
+        return self.table.lock
 
     def store(
         self,
@@ -250,12 +283,7 @@ class Node:
                 match the fragment's tenant and the caller is
                 not admin.
         """
-        if caller_tenant:
-            authorizer = TenantAuthorizer(
-                caller_tenant=caller_tenant,
-                scopes=caller_scopes,
-            )
-            authorizer.authorize_write(fragment.tenant_id)
+        TenantGuard.check_write(fragment.tenant_id, caller_tenant, caller_scopes)
         if self.admission_policy is not None and not self.admission_policy.should_admit(fragment.reuse_score):
             logger.debug(
                 "Node %s rejected %s: reuse_score=%.3f below threshold",
@@ -308,9 +336,7 @@ class Node:
                         self.node_id,
                     )
 
-                self.fragments[content_hash] = fragment
-                self.memory_usage += fragment.payload_size
-                self.insertion_times[content_hash] = now
+                self.table.add(fragment, now)
                 self.index_system.insert(fragment, {self.node_id})
                 self.graph.add_node(fragment)
                 # A metadata-only fragment (payload_ref is None)
@@ -332,11 +358,7 @@ class Node:
                 if self.metrics is not None:
                     self.metrics.tenant.bump_fragment(fragment.tenant_id, 1)
 
-            self.access_times[content_hash] = now
-
-            if is_primary:
-                self.primary_hashes.add(content_hash)
-
+            self.table.touch(content_hash, now, is_primary=is_primary)
             return True
 
     def retrieve(
@@ -372,25 +394,17 @@ class Node:
             fragment = self.fragments.get(content_hash)
             if fragment is None:
                 return None
-            if caller_tenant:
-                authorizer = TenantAuthorizer(
-                    caller_tenant=caller_tenant,
-                    scopes=caller_scopes,
-                )
-                try:
-                    authorizer.authorize_read(fragment.tenant_id)
-                except Exception:
-                    return None
+            if not TenantGuard.can_read(fragment.tenant_id, caller_tenant, caller_scopes):
+                return None
             now = time.time()
-            age = now - self.insertion_times.get(content_hash, now)
-            if age > fragment.ttl:
+            if self.table.is_expired(content_hash, now):
                 # Background TTL cleanup: remove the expired entry
                 # rather than returning a stale fragment.
                 logger.debug("Evicting expired fragment %s from %s", content_hash, self.node_id)
                 self.remove_fragment(content_hash)
                 return None
 
-            self.access_times[content_hash] = now
+            self.table.touch(content_hash, now)
             logger.debug("Retrieved fragment %s from %s", content_hash, self.node_id)
             return fragment
 
@@ -408,12 +422,8 @@ class Node:
             Fragment: The removed fragment.
         """
         with self.lock:
-            frag = self.fragments.pop(content_hash)
+            frag = self.table.pop(content_hash)
             self.__notify(self.__on_remove, content_hash)
-            self.memory_usage -= frag.payload_size
-            self.primary_hashes.discard(content_hash)
-            self.access_times.pop(content_hash, None)
-            self.insertion_times.pop(content_hash, None)
             # Drop the canonical frame from the active store too.
             # A None payload_ref is metadata-only; skip cleanly.
             if frag.payload_ref is not None:
@@ -426,7 +436,7 @@ class Node:
         """Return the active window size for new admissions.
 
         The v3.0.0 release threads the :class:`AdaptiveFragmenter`
-        (Phase 3.3.10) through the Node so callers can ask the
+        through the Node so callers can ask the
         node for the window it would use today. When no
         fragmenter is configured the helper returns the v2.0
         default 128.
@@ -468,8 +478,7 @@ class Node:
         fragment = self.fragments.get(content_hash)
         if fragment is None:
             return
-        if self.eviction_strategy is not None:
-            self.eviction_strategy.touch(content_hash)
+        self.eviction_policy.touch(content_hash)
         # HitObserver EMA on reuse_score; the helper lives
         # at module level so we don't keep a long-lived
         # observer instance per node.
@@ -484,7 +493,7 @@ class Node:
         target_bytes: int,
         now: float,
     ) -> tuple[list[str], list[Fragment], int]:
-        """Phase 1: evict fragments whose TTL has expired.
+        """Stage 1: evict fragments whose TTL has expired.
 
         Args:
             target_bytes: Number of bytes to free.
@@ -500,8 +509,7 @@ class Node:
             evicted: list[str] = []
             evicted_fragments: list[Fragment] = []
             freed = 0
-            expired = [h for h, frag in self.fragments.items() if now - self.insertion_times.get(h, now) > frag.ttl]
-            for h in expired:
+            for h in self.table.expired(now):
                 if freed >= target_bytes:
                     break
                 frag = self.remove_fragment(h)
@@ -516,13 +524,13 @@ class Node:
         now: float,
         already_evicted: set[str],
     ) -> tuple[list[str], list[Fragment], int]:
-        """Phase 2: evict fragments by LRU weighted by ``reuse_score``.
+        """Stage 2: evict fragments in the eviction policy's order.
 
         Args:
             target_bytes: Number of bytes to free.
             now: Current timestamp.
             already_evicted: Set of hashes already evicted in
-                prior phases; these are skipped.
+                prior stages; these are skipped.
 
         Returns:
             tuple[list[str], list[Fragment], int]: ``(evicted_hashes,
@@ -533,22 +541,10 @@ class Node:
             evicted_fragments: list[Fragment] = []
             freed = 0
             candidates = [(h, frag) for h, frag in self.fragments.items() if h not in already_evicted]
-
-            def eviction_score(hash_and_frag: tuple[str, Fragment]) -> float:
-                """Eviction priority (lower = evict first)."""
-                h, frag = hash_and_frag
-                last_access = self.access_times.get(h, now)
-                # Earlier access and lower reuse_score both push
-                # the score down, making the candidate evict
-                # earlier. The epsilon avoids division by zero.
-                return last_access / (frag.reuse_score + EVICTION_REUSE_EPSILON)
-
-            candidates.sort(key=eviction_score)
-
-            for h, frag in candidates:
+            for h in self.eviction_policy.order(candidates, self.access_times, now):
                 if freed >= target_bytes:
                     break
-                self.remove_fragment(h)
+                frag = self.remove_fragment(h)
                 freed += frag.payload_size
                 evicted.append(h)
                 evicted_fragments.append(frag)
@@ -559,7 +555,7 @@ class Node:
         target_bytes: int,
         seed_hashes: list[str],
     ) -> tuple[list[str], list[Fragment], int]:
-        """Phase 3: co-evict cold graph neighbors of already-evicted fragments.
+        """Stage 3: co-evict cold graph neighbors of already-evicted fragments.
 
         For every seed hash evicted in earlier phases, look up its
         structural neighbors via
@@ -568,7 +564,7 @@ class Node:
 
         Args:
             target_bytes: Number of bytes to free.
-            seed_hashes: Fragments evicted in earlier phases.
+            seed_hashes: Fragments evicted in earlier stages.
 
         Returns:
             tuple[list[str], list[Fragment], int]: ``(evicted_hashes,
@@ -600,11 +596,11 @@ class Node:
     ) -> list[str]:
         """Evict fragments until ``target_bytes`` are freed.
 
-        Runs the three eviction phases in order:
+        Runs the three eviction stages in order:
 
         1. **Expired** — fragments past their TTL.
-        2. **Weighted LRU** — sorted by
-           ``last_access / (reuse_score + ε)``.
+        2. **Policy order** — :attr:`eviction_policy` (weighted LRU by
+           default: ``last_access / (reuse_score + ε)``).
         3. **Graph-aware co-eviction** — cold neighbors of the
            already-evicted fragments.
 
@@ -628,7 +624,7 @@ class Node:
             evicted_fragments: list[object] = []
             freed = 0
 
-            # Phase 1: evict expired fragments.
+            # Stage 1: evict expired fragments.
             expired_evicted, expired_fragments, expired_freed = self.evict_expired(target_bytes, now)
             evicted_hashes.extend(expired_evicted)
             evicted_fragments.extend(expired_fragments)
@@ -637,7 +633,7 @@ class Node:
                 self.__fire_eviction_callbacks(evicted_fragments)
                 return evicted_hashes
 
-            # Phase 2: LRU weighted by reuse_score.
+            # Stage 2: eviction-policy order.
             already_evicted = set(evicted_hashes)
             lru_evicted, lru_fragments, lru_freed = self.evict_lru(target_bytes - freed, now, already_evicted)
             evicted_hashes.extend(lru_evicted)
@@ -647,7 +643,7 @@ class Node:
                 self.__fire_eviction_callbacks(evicted_fragments)
                 return evicted_hashes
 
-            # Phase 3: graph-aware co-eviction.
+            # Stage 3: graph-aware co-eviction.
             graph_evicted, graph_fragments, graph_freed = self.evict_graph_neighbors(
                 target_bytes - freed, evicted_hashes
             )
@@ -777,8 +773,7 @@ class Node:
         Returns:
             dict[str, Fragment]: ``content_hash -> fragment`` at one instant.
         """
-        with self.lock:
-            return dict(self.fragments)
+        return self.table.snapshot()
 
     def get_shard_hashes(self) -> set[str]:
         """Return content hashes owned as primary by this node.
@@ -787,7 +782,7 @@ class Node:
             set[str]: Defensive copy of the primary shard set.
         """
         with self.lock:
-            return set(self.primary_hashes)
+            return self.table.primaries()
 
     def heartbeat(self) -> float:
         """Return node load score between 0.0 and 1.0.

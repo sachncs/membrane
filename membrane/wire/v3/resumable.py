@@ -1,4 +1,4 @@
-"""Resumable transfer over the wire_v3 bidi stream (Phase 3.3.4).
+"""Resumable transfer over the wire_v3 bidi stream.
 
 The v3.0.0 wire replaces the v2.0 atomic transfer with a
 bidi stream where the client sends :class:`membrane.wire.v3.wire_v3_pb2.ChunkRequest`

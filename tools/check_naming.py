@@ -72,6 +72,18 @@ def scope_definitions(body: list[ast.stmt]) -> Iterator[tuple[int, str]]:
         tuple[int, str]: Definition line and name.
     """
     for stmt in body:
+        # Names bound inside try/if/with/for/while/match blocks still
+        # belong to the enclosing module or class scope.
+        if isinstance(stmt, (ast.If, ast.Try, ast.TryStar, ast.With, ast.For, ast.While)):
+            for block in ("body", "orelse", "finalbody"):
+                yield from scope_definitions(getattr(stmt, block, []))
+            for handler in getattr(stmt, "handlers", []):
+                yield from scope_definitions(handler.body)
+            continue
+        if isinstance(stmt, ast.Match):
+            for case in stmt.cases:
+                yield from scope_definitions(case.body)
+            continue
         match stmt:
             case ast.FunctionDef(name=name) | ast.AsyncFunctionDef(name=name) | ast.ClassDef(name=name):
                 yield stmt.lineno, name
@@ -135,7 +147,7 @@ def check_file(path: Path) -> list[str]:
         list[str]: ``path:line: message`` entries.
     """
     tree = ast.parse(path.read_text(), filename=str(path))
-    rel = path.relative_to(ROOT)
+    rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
     problems: list[str] = []
     found: set[tuple[int, str]] = set()
     found.update((line, name) for line, name in scope_definitions(tree.body) if is_semi_private(name))

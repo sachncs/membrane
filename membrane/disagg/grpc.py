@@ -1,4 +1,4 @@
-"""gRPC surface for the prefill / decode services (Phase 8).
+"""gRPC surface for the prefill / decode services.
 
 The gRPC service mirrors the REST surface in
 :mod:`membrane.disagg.rest`. The v1 ships a hand-written

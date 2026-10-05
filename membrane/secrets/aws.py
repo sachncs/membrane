@@ -1,4 +1,4 @@
-"""AWS Secrets Manager provider (Phase 3.4.5c).
+"""AWS Secrets Manager provider.
 
 Pulls secrets from AWS Secrets Manager via :mod:`boto3`.
 The provider is installed via ``pip install

@@ -1,4 +1,4 @@
-"""Master-key rotation for :class:`KeyProvider` (Phase 3.4.6 follow-up).
+"""Master-key rotation for :class:`KeyProvider`.
 
 The v3.0.0 release adds :class:`RotatingKeyProvider`, a
 :class:`KeyProvider` that keeps a versioned list of master

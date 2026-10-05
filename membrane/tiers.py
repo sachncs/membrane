@@ -1,7 +1,6 @@
-"""Cost-aware tiers + online bandit + cost-router wiring (Phase 3.5.6 + 3.5.7 + 3.5.8).
+"""Cost-aware tiers + online bandit + cost-router wiring.
 
-Phase 3.5 wires the v2.0 decision classes into the v3.0
-serving path. This module ships:
+Tier policies and cost-aware routing for the serving path:
 
 * :class:`TierPolicy` + :class:`HotTier` / :class:`WarmTier` /
   :class:`ColdTier` / :class:`ArchivalTier` and the

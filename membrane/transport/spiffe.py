@@ -1,4 +1,4 @@
-"""SPIFFE workload identity adapter (Phase 3.4.4).
+"""SPIFFE workload identity adapter.
 
 The v3.0.0 release ships a :class:`SPIFFEClient` skeleton
 that fetches an SVID document from a SPIFFE Workload API

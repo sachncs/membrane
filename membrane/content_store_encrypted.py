@@ -1,4 +1,4 @@
-"""Encrypted in-memory content store (Phase 3.4.6 follow-up).
+"""Encrypted in-memory content store.
 
 The v3.0.0 release ships :class:`EncryptedInProcessBytes`, an
 in-memory variant of :class:`membrane.content_store.FilesystemBlob`
@@ -46,7 +46,7 @@ class EncryptedInProcessBytes(ContentStore):
         Args:
             tenant_id: Tenant namespace the store keeps data
                 on behalf of. Different tenants get different
-                derived keys (Phase 3.4.7).
+                derived keys.
             key_provider: Optional :class:`KeyProvider`. When
                 ``None``, a :class:`StaticKeyProvider` is
                 constructed and a fresh random master key is
@@ -89,7 +89,7 @@ class EncryptedInProcessBytes(ContentStore):
             self.store[key] = blob
             # ``__used_bytes`` tracks the plaintext size so the
             # operator-visible accounting matches
-            # FilesystemBlob's surface (Phase 3.4.6 + 3.4.7).
+            # FilesystemBlob's surface.
             self.__used_bytes += len(data)
 
     @override

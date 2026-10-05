@@ -375,8 +375,8 @@ class Server:
         1. Mark ``self.is_draining = True``. ``/readyz`` and
            :func:`op_store` then return 503 with ``Retry-After``.
         2. Iterate every hash where this node is the primary and
-           hand it off via :meth:`Shard.migrate_primary`'s
-           verified flow (pull + verify + table-flip; Phase 3.2).
+           hand it, bytes included, to its next healthy ring owner
+           (:meth:`Replicator.hand_off`, verified before ownership moves).
         3. Sleep at most ``deadline_sec`` for the migration pass
            to finish (or for ``is_draining`` to be reset by a
            concurrent operator). On timeout log the stragglers.

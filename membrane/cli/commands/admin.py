@@ -1,9 +1,9 @@
-"""Admin CLI subcommands (Phase 3.2.7).
+"""Admin CLI subcommands.
 
 The v2.0 release exposed only ``serve``, ``dashboard``,
 ``cluster-status``, ``llm-status``, and ``config``. The
 v3.0.0 release adds an ``admin`` subcommand that talks to the
-``/admin/*`` HTTP surface (Phase 3.2.6):
+``/admin/*`` HTTP surface:
 
 * ``membrane admin inspect <hash>``
 * ``membrane admin placement <hash> <node>``

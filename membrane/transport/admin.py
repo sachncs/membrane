@@ -1,4 +1,4 @@
-"""Admin HTTP surface (Phase 3.2.6).
+"""Admin HTTP surface.
 
 The v2.0 release carried :func:`op_delete`, :func:`op_purge`,
 :func:`op_tombstone`, and :func:`op_verify_received` in
@@ -17,7 +17,7 @@ Operations:
 * ``POST /admin/repair`` -- trigger :meth:`Replicator.repair` for a peer.
 * ``GET /admin/policy`` / ``POST /admin/policy`` -- get / set the
   :class:`~membrane.policy.Promotion` knobs.
-* ``GET /admin/audit`` -- query the audit log (Phase 3.2.8).
+* ``GET /admin/audit`` -- query the audit log.
 """
 
 import logging
@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from membrane.audit import AuditLog, verify_chain
 from membrane.serialization import to_dict
 from membrane.transport.authz import enforce_route_scope
+from membrane.transport.context import app_context
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ def create_admin_router() -> APIRouter:
             does not hold the fragment.
         """
         context = admin_scope(request, "GET", "/admin/fragments/{content_hash}")
-        node = request.app.state.node
+        node = app_context(request.app).node
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
         with node.lock:
@@ -126,7 +127,7 @@ def create_admin_router() -> APIRouter:
     async def admin_placement(payload: PlacementOverride, request: Request) -> dict[str, Any]:
         """Override the primary node for a fragment's shard."""
         context = admin_scope(request, "POST", "/admin/placement")
-        cluster = getattr(request.app.state, "cluster_manager", None)
+        cluster = app_context(request.app).cluster
         if cluster is None:
             raise HTTPException(status_code=503, detail="cluster manager not enabled")
         cluster.shard_manager.primary_map[payload.content_hash] = payload.primary_node_id
@@ -147,7 +148,7 @@ def create_admin_router() -> APIRouter:
     async def admin_evict(payload: EvictRequest, request: Request) -> dict[str, Any]:
         """Manually evict a fragment from the local node."""
         context = admin_scope(request, "POST", "/admin/evict")
-        node = request.app.state.node
+        node = app_context(request.app).node
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
         with node.lock:
@@ -165,7 +166,7 @@ def create_admin_router() -> APIRouter:
     async def admin_repair(payload: RepairRequest, request: Request) -> dict[str, Any]:
         """Trigger :meth:`Replicator.repair` for a peer."""
         context = admin_scope(request, "POST", "/admin/repair")
-        cluster = getattr(request.app.state, "cluster_manager", None)
+        cluster = app_context(request.app).cluster
         if cluster is None:
             raise HTTPException(status_code=503, detail="cluster manager not enabled")
         if cluster.replicator is None:
@@ -218,7 +219,7 @@ def create_admin_router() -> APIRouter:
             lines up with the previous one.
         """
         admin_scope(request, "GET", "/admin/audit")
-        log = getattr(request.app.state, "audit_log", None)
+        log = app_context(request.app).audit_log
         if log is None:
             raise HTTPException(status_code=503, detail="audit log not configured")
         entries = log.all()
@@ -252,7 +253,7 @@ def create_admin_router() -> APIRouter:
         from pathlib import Path
 
         context = admin_scope(request, "POST", "/admin/backup")
-        node = request.app.state.node
+        node = app_context(request.app).node
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
         with node.lock:
@@ -298,7 +299,7 @@ def create_admin_router() -> APIRouter:
         from pathlib import Path
 
         context = admin_scope(request, "POST", "/admin/restore")
-        node = request.app.state.node
+        node = app_context(request.app).node
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
         source_path = payload.get("source")
@@ -342,7 +343,7 @@ def request_audit_log(request: Request) -> AuditLog:
         AuditLog: The cluster's audit log (or an in-memory one
         created on demand so single-process tests still work).
     """
-    log = getattr(request.app.state, "audit_log", None)
+    log = app_context(request.app).audit_log
     if log is None:
         log = AuditLog()
         request.app.state.audit_log = log
@@ -368,7 +369,7 @@ def admin_scope(request: Request, method: str, path: str) -> Any:
     from membrane.transport.tls_protocol import peer_headers_from_scope
 
     auth = enforce_route_scope(
-        authenticator=getattr(request.app.state, "authenticator", None),
+        authenticator=app_context(request.app).authenticator,
         method=method,
         path=f"/admin{path}",
         headers=peer_headers_from_scope(request.scope, request.headers.items()),

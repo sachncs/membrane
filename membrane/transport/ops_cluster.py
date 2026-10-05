@@ -52,7 +52,7 @@ def ok(body: Any) -> tuple[int, JsonDict]:
 
 def op_sync(
     node: Node | None,
-    transfer_service: TransferService,
+    transfer_service: TransferService | None,
     source_url: str,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
@@ -88,6 +88,7 @@ def op_sync(
         with urlopen(Request(inventory_url), timeout=5) as resp:
             remote_data = json.loads(resp.read().decode())
         remote_digest = remote_data.get("digest", {})
+        transfer_service = transfer_service or TransferService(local_node=node)
         local_digest = transfer_service.inventory_digest(node) or {}
         missing = transfer_service.compare_inventories(local_digest, remote_digest)
         transferred: list[str] = []

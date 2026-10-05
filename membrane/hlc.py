@@ -21,8 +21,8 @@ counter.
 
 The peer_id tiebreak is applied only when two fragments
 arrive simultaneously with the same HLC value and different
-content_hashes; the cluster's gossip layer (Phase 5) and
-registry layer (Phase 3.2) use ``peer_id`` lex order when
+content_hashes; the cluster's gossip layer and
+registry layer use ``peer_id`` lex order when
 comparing equal HLCs. The HLC itself is purely
 ``(physical, logical)`` so the wire format stays compact.
 
