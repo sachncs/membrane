@@ -17,7 +17,6 @@ from membrane.auth import Authenticator
 from membrane.network.config import ClusterConfig
 from membrane.persistence.cache import CachingPersistence
 from membrane.persistence.memory import Memory
-from membrane.persistence.redis import Redis
 from membrane.transport.tls import MTLSConfig
 
 logger = logging.getLogger(__name__)
@@ -88,39 +87,47 @@ def resolves_to_loopback(host: str) -> bool:
     return bool(addresses) and all(addr.is_loopback for addr in addresses)
 
 
-def build_persistence(redis_url: str) -> CachingPersistence:
-    """Return Redis-backed persistence when reachable, otherwise in-memory.
+def build_persistence(redis_url: str, name: str = "") -> CachingPersistence:
+    """Build the persistence layer from the ``membrane.persistence`` registry.
 
     Args:
-        redis_url: Redis URL; empty for in-memory persistence.
+        redis_url: Backend URL (``redis://...`` for the built-in Redis
+            backend); empty for none.
+        name: Persistence plugin; defaults to ``redis`` when a URL is given
+            and ``memory`` otherwise.
 
     Returns:
-        CachingPersistence: The persistence layer, fronted by a read cache.
+        CachingPersistence: The backend, fronted by a read cache. When the
+        Redis backend is unreachable this falls back to in-memory
+        persistence (and :func:`is_durable` reports False).
     """
+    from membrane.runtime.plugins import PERSISTENCE
+
+    name = name or ("redis" if redis_url else "memory")
     backend: Any = Memory()
-    if redis_url:
-        try:
-            redis_backend = Redis(redis_url)
-            if redis_backend.ping():
-                backend = redis_backend
-                logger.info("Redis connected at %s", redis_url)
-            else:
-                logger.warning("Redis at %s unreachable; using in-memory persistence", redis_url)
-        except Exception as exc:
-            logger.warning("Redis connection failed (%s); using in-memory persistence", exc)
+    try:
+        candidate = PERSISTENCE.get(name)(redis_url)
+        if name != "redis" or candidate.ping():
+            backend = candidate
+            logger.info("persistence: %s%s", name, f" at {redis_url}" if redis_url else "")
+        else:
+            logger.warning("Redis at %s unreachable; using in-memory persistence", redis_url)
+    except Exception as exc:
+        logger.warning("persistence backend %s failed (%s); using in-memory persistence", name, exc)
     return CachingPersistence(backend)
 
 
 def is_durable(persistence: Any) -> bool:
-    """Whether ``persistence`` writes fragments through to Redis.
+    """Whether ``persistence`` keeps fragments beyond this process.
 
     Args:
         persistence: The persistence layer.
 
     Returns:
-        bool: True when the inner backend is Redis.
+        bool: True unless the backend is the in-process :class:`Memory`.
     """
-    return isinstance(getattr(persistence, "inner", None), Redis)
+    inner = getattr(persistence, "inner", None)
+    return inner is not None and not isinstance(inner, Memory)
 
 
 def build_authenticator(mtls: MTLSConfig | None) -> Authenticator | None:

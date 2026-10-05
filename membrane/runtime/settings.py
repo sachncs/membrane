@@ -24,7 +24,14 @@ from membrane.auth import Authenticator
 from membrane.auth.apikey import APIKeyAuthenticator
 from membrane.network.config import CONSISTENCY_LEVELS, ClusterConfig
 from membrane.node import Node
-from membrane.runtime.plugins import AUTHENTICATORS, COMPUTE_BACKENDS, CONTENT_STORES, UnknownPluginError
+from membrane.runtime.plugins import (
+    AUTHENTICATORS,
+    COMPUTE_BACKENDS,
+    CONTENT_STORES,
+    EVICTION,
+    PERSISTENCE,
+    UnknownPluginError,
+)
 from membrane.security.files import InsecureFileError, require_private_file
 from membrane.server import Server
 from membrane.transport.limits import TransportLimits
@@ -54,6 +61,10 @@ class ServerSettings:
         data_dir: Directory for KV bytes; empty keeps them in memory.
         data_key_file: Master key for ``data_dir``.
         content_store: Content-store plugin used with ``data_dir``.
+        persistence: Persistence plugin; empty means ``redis`` with a
+            ``redis_url`` and ``memory`` otherwise.
+        eviction: Eviction-policy plugin.
+        load_hooks: Run every installed ``membrane.hooks`` entry point.
         max_memory: Node memory limit in bytes.
         peers: Seed peers as ``host:port``; empty for a single node.
         advertise_host: Host peers use to reach this node.
@@ -90,6 +101,9 @@ class ServerSettings:
     data_dir: str = ""
     data_key_file: str = ""
     content_store: str = "filesystem"
+    persistence: str = ""
+    eviction: str = "weighted-lru"
+    load_hooks: bool = True
     max_memory: int = 1 << 30
     peers: tuple[str, ...] = ()
     advertise_host: str = ""
@@ -124,6 +138,8 @@ class ServerSettings:
             (0 <= self.port <= 65535, f"port {self.port} is out of range"),
             (self.transport == "http", f"transport {self.transport!r} is not supported (only 'http')"),
             (self.compute in COMPUTE_BACKENDS, f"unknown compute backend {self.compute!r}"),
+            (not self.persistence or self.persistence in PERSISTENCE, f"unknown persistence backend {self.persistence!r}"),
+            (self.eviction in EVICTION, f"unknown eviction policy {self.eviction!r}"),
             (self.max_memory > 0, "max memory must be positive"),
             (self.consistency in CONSISTENCY_LEVELS, f"consistency must be one of {sorted(CONSISTENCY_LEVELS)}"),
             (self.drain_timeout >= 0, "drain timeout must not be negative"),
@@ -374,7 +390,12 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
         except (OSError, ValueError) as exc:
             raise SettingsError(f"Cannot open data directory {settings.data_dir!r}: {exc}") from exc
 
-    node = Node(node_id=settings.node_id, max_memory_bytes=settings.max_memory, content_store=content_store)
+    node = Node(
+        node_id=settings.node_id,
+        max_memory_bytes=settings.max_memory,
+        content_store=content_store,
+        eviction_policy=EVICTION.get(settings.eviction)(),
+    )
     server = Server(
         node=node,
         transport=settings.transport,
@@ -391,6 +412,8 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
         peer_networks=settings.peer_networks,
         tls=tls,
         limits=settings.limits,
+        persistence=settings.persistence,
+        load_hooks=settings.load_hooks,
     )
     if settings.redis_url and not server.durable:
         raise SettingsError(

@@ -14,6 +14,7 @@ Concurrency:
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -121,6 +122,8 @@ class Membership:
         self.peers: dict[str, PeerInfo] = {}
         self.clients: dict[str, Peer] = {}
         self.lock = threading.RLock()
+        #: Called with ``("joined" | "left", node_id)`` after a membership change.
+        self.listeners: list[Callable[[str, str], object]] = []
 
     def add(
         self,
@@ -163,6 +166,7 @@ class Membership:
             self.ring.add_node(node_id)
             self.shard.add_node(node_id)
             logger.info("Added peer %s at %s:%s (cn=%s)", node_id, host, port, peer_cn)
+        self.__notify("joined", node_id)
 
     def remove(self, node_id: str) -> bool:
         """Remove a peer; return True when it was registered.
@@ -182,7 +186,21 @@ class Membership:
             self.shard.remove_node(node_id)
             self.directory.unregister_node(node_id)
             logger.info("Removed peer %s", node_id)
-            return True
+        self.__notify("left", node_id)
+        return True
+
+    def __notify(self, change: str, node_id: str) -> None:
+        """Tell every listener about a membership change; listener errors are logged.
+
+        Args:
+            change: ``"joined"`` or ``"left"``.
+            node_id: The peer.
+        """
+        for listener in list(self.listeners):
+            try:
+                listener(change, node_id)
+            except Exception:
+                logger.exception("membership listener failed on %s %s", change, node_id)
 
     def snapshot(self) -> list[PeerInfo]:
         """Return a copy of the membership list.

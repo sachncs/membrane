@@ -1,4 +1,4 @@
-"""Named plugin registries for compute backends, authenticators, and content stores.
+"""Named plugin registries: compute, auth, storage, eviction, secrets, and hooks.
 
 Built-in implementations are registered here. Third-party packages add
 their own through :mod:`importlib.metadata` entry points; no change to
@@ -11,16 +11,22 @@ Membrane is needed::
 Then ``membrane serve --compute vllm`` loads ``make_backend``. The
 groups and factory signatures are:
 
-=========================== ===================================================
-Group                       Factory
-=========================== ===================================================
-``membrane.compute``        ``(llm_url, llm_model, api_key) -> Backend``
-``membrane.authenticators`` ``(config_path) -> Authenticator``
-``membrane.content_stores`` ``(location, key_file) -> ContentStore``
-=========================== ===================================================
+============================= =================================================
+Group                         Factory
+============================= =================================================
+``membrane.compute``          ``(llm_url, llm_model, api_key) -> Backend``
+``membrane.authenticators``   ``(config_path) -> Authenticator``
+``membrane.content_stores``   ``(location, key_file) -> ContentStore``
+``membrane.persistence``      ``(url) -> persistence backend``
+``membrane.eviction``         ``() -> EvictionPolicy``
+``membrane.secret_providers`` ``() -> SecretProvider`` (reads its own env)
+``membrane.hooks``            ``(bus: EventBus, server: Server) -> None``
+============================= =================================================
 
 A built-in name wins over an entry point with the same name, so an
-installed package cannot silently replace a built-in.
+installed package cannot silently replace a built-in. Hooks are not
+selected by name: every installed ``membrane.hooks`` entry point runs
+when the server is built (``--no-hooks`` turns them off).
 """
 
 import logging
@@ -32,12 +38,18 @@ from typing import Any, cast
 
 from membrane.auth import Authenticator
 from membrane.compute.base import Backend
+from membrane.secrets import SecretProvider
+from membrane.store.eviction import EvictionPolicy
 
 logger = logging.getLogger(__name__)
 
 type ComputeBackendFactory = Callable[[str, str, str], Backend]
 type AuthenticatorFactory = Callable[[str], Authenticator]
 type ContentStoreFactory = Callable[[str, str], Any]
+type PersistenceFactory = Callable[[str], Any]
+type EvictionFactory = Callable[[], EvictionPolicy]
+type SecretProviderFactory = Callable[[], SecretProvider]
+type HookFactory = Callable[[Any, Any], None]
 
 
 class UnknownPluginError(ValueError):
@@ -110,6 +122,21 @@ class PluginRegistry[F]:
         with self.__lock:
             self.__loaded[name] = factory
         return factory
+
+    def load_all(self) -> dict[str, F]:
+        """Return every factory, built-in and installed, by name.
+
+        Returns:
+            dict[str, F]: Name to factory; entry points that fail to load
+            are logged and skipped.
+        """
+        loaded: dict[str, F] = {}
+        for name in self.names():
+            try:
+                loaded[name] = self.get(name)
+            except Exception:
+                logger.exception("could not load %s plugin %r", self.kind, name)
+        return loaded
 
     def __contains__(self, name: object) -> bool:
         """Whether ``name`` is available.
@@ -271,9 +298,113 @@ def memory_content_store(_location: str, _key_file: str) -> Any:
     return InProcessBytes()
 
 
+def memory_persistence(_url: str) -> Any:
+    """Build the in-process persistence backend (state is lost on restart).
+
+    Args:
+        _url: Unused.
+
+    Returns:
+        Any: A :class:`~membrane.persistence.memory.Memory` backend.
+    """
+    from membrane.persistence.memory import Memory
+
+    return Memory()
+
+
+def redis_persistence(url: str) -> Any:
+    """Build the Redis persistence backend.
+
+    Args:
+        url: ``redis://`` URL.
+
+    Returns:
+        Any: A :class:`~membrane.persistence.redis.Redis` backend.
+    """
+    from membrane.persistence.redis import Redis
+
+    return Redis(url)
+
+
+def weighted_lru_eviction() -> EvictionPolicy:
+    """Build the default eviction policy.
+
+    Returns:
+        EvictionPolicy: :class:`~membrane.store.eviction.WeightedLRU`.
+    """
+    from membrane.store.eviction import WeightedLRU
+
+    return WeightedLRU()
+
+
+def tinylfu_eviction() -> EvictionPolicy:
+    """Build the frequency-based eviction policy.
+
+    Returns:
+        EvictionPolicy: :class:`~membrane.store.eviction.FrequencyLRU`.
+    """
+    from membrane.store.eviction import FrequencyLRU
+
+    return FrequencyLRU()
+
+
+def env_secrets() -> SecretProvider:
+    """Build the environment-variable secret provider.
+
+    Returns:
+        SecretProvider: :class:`~membrane.secrets.EnvSecretProvider`.
+    """
+    from membrane.secrets import EnvSecretProvider
+
+    return EnvSecretProvider()
+
+
+def aws_secrets() -> SecretProvider:
+    """Build the AWS Secrets Manager provider (``AWS_REGION``, ``AWS_PROFILE``).
+
+    Returns:
+        SecretProvider: :class:`~membrane.secrets.aws.AWSSecretsProvider`.
+    """
+    import os
+
+    from membrane.secrets.aws import AWSSecretsProvider
+
+    return AWSSecretsProvider(region_name=os.environ.get("AWS_REGION", ""), profile_name=os.environ.get("AWS_PROFILE"))
+
+
+def gcp_secrets() -> SecretProvider:
+    """Build the Google Secret Manager provider (``GOOGLE_CLOUD_PROJECT``).
+
+    Returns:
+        SecretProvider: :class:`~membrane.secrets.gcp.GCPSecretsProvider`.
+    """
+    import os
+
+    from membrane.secrets.gcp import GCPSecretsProvider
+
+    return GCPSecretsProvider(project_id=os.environ.get("GOOGLE_CLOUD_PROJECT", ""))
+
+
+def vault_secrets() -> SecretProvider:
+    """Build the HashiCorp Vault provider (``VAULT_ADDR``, ``VAULT_TOKEN``).
+
+    Returns:
+        SecretProvider: :class:`~membrane.secrets.vault.VaultSecretProvider`.
+    """
+    import os
+
+    from membrane.secrets.vault import VaultSecretProvider
+
+    return VaultSecretProvider(url=os.environ.get("VAULT_ADDR", ""), token=os.environ.get("VAULT_TOKEN", ""))
+
+
 COMPUTE_BACKENDS = PluginRegistry[ComputeBackendFactory]("membrane.compute", "compute backend")
 AUTHENTICATORS = PluginRegistry[AuthenticatorFactory]("membrane.authenticators", "authenticator")
 CONTENT_STORES = PluginRegistry[ContentStoreFactory]("membrane.content_stores", "content store")
+PERSISTENCE = PluginRegistry[PersistenceFactory]("membrane.persistence", "persistence backend")
+EVICTION = PluginRegistry[EvictionFactory]("membrane.eviction", "eviction policy")
+SECRET_PROVIDERS = PluginRegistry[SecretProviderFactory]("membrane.secret_providers", "secret provider")
+HOOKS = PluginRegistry[HookFactory]("membrane.hooks", "hook")
 
 COMPUTE_BACKENDS.register("cpu", cpu_backend)
 COMPUTE_BACKENDS.register("gpu", gpu_backend)
@@ -284,24 +415,48 @@ COMPUTE_BACKENDS.register("transformers", transformers_backend)
 AUTHENTICATORS.register("apikey", apikey_authenticator)
 CONTENT_STORES.register("filesystem", filesystem_content_store)
 CONTENT_STORES.register("memory", memory_content_store)
+PERSISTENCE.register("memory", memory_persistence)
+PERSISTENCE.register("redis", redis_persistence)
+EVICTION.register("weighted-lru", weighted_lru_eviction)
+EVICTION.register("tinylfu", tinylfu_eviction)
+SECRET_PROVIDERS.register("env", env_secrets)
+SECRET_PROVIDERS.register("aws", aws_secrets)
+SECRET_PROVIDERS.register("gcp", gcp_secrets)
+SECRET_PROVIDERS.register("vault", vault_secrets)
 
 __all__ = [
     "AUTHENTICATORS",
     "COMPUTE_BACKENDS",
     "CONTENT_STORES",
+    "EVICTION",
+    "HOOKS",
+    "PERSISTENCE",
+    "SECRET_PROVIDERS",
     "AuthenticatorFactory",
     "ComputeBackendFactory",
     "ContentStoreFactory",
+    "EvictionFactory",
+    "HookFactory",
+    "PersistenceFactory",
     "PluginRegistry",
+    "SecretProviderFactory",
     "UnknownPluginError",
     "anthropic_backend",
     "apikey_authenticator",
+    "aws_secrets",
     "cpu_backend",
+    "env_secrets",
     "filesystem_content_store",
+    "gcp_secrets",
     "gpu_backend",
     "memory_content_store",
+    "memory_persistence",
     "ollama_backend",
     "openai_backend",
     "optional_backend",
+    "redis_persistence",
+    "tinylfu_eviction",
     "transformers_backend",
+    "vault_secrets",
+    "weighted_lru_eviction",
 ]

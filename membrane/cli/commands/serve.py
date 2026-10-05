@@ -100,6 +100,21 @@ def main(
         envvar="MEMBRANE_CONTENT_STORE",
         help="Content-store plugin for --data-dir (filesystem, memory, or an installed plugin)",
     ),
+    persistence: str = typer.Option(
+        "",
+        "--persistence",
+        envvar="MEMBRANE_PERSISTENCE",
+        help="Persistence plugin (redis, memory, or installed); default: redis with --redis, else memory",
+    ),
+    eviction: str = typer.Option(
+        "weighted-lru",
+        "--eviction",
+        envvar="MEMBRANE_EVICTION",
+        help="Eviction policy plugin: weighted-lru, tinylfu, or installed",
+    ),
+    no_hooks: bool = typer.Option(
+        False, "--no-hooks", envvar="MEMBRANE_NO_HOOKS", help="Do not run installed membrane.hooks plugins"
+    ),
     max_memory: int = typer.Option(
         1 << 30, "--max-memory", "-m", envvar="MEMBRANE_MAX_MEMORY", help="Max memory bytes"
     ),
@@ -264,6 +279,9 @@ def main(
         data_key_file: 32-byte (or 64-hex) key for --data-dir; default:
             generated into <data-dir>/master.key.
         content_store: Content-store plugin for --data-dir.
+        persistence: Persistence plugin.
+        eviction: Eviction policy plugin.
+        no_hooks: Do not run installed hook plugins.
         max_memory: Max memory bytes.
         log_level: Logging level.
         log_format: Diagnostics format: text or json (one object per line).
@@ -359,6 +377,9 @@ def main(
             data_dir=data_dir,
             data_key_file=data_key_file,
             content_store=content_store,
+            persistence=persistence,
+            eviction=eviction,
+            load_hooks=not no_hooks,
             max_memory=max_memory,
             peers=tuple(split_list(peer)),
             advertise_host=advertise_host,

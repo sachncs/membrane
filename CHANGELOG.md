@@ -12,6 +12,17 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Added (extensibility)
+
+- Plugin registries `membrane.persistence` (`--persistence`),
+  `membrane.eviction` (`--eviction weighted-lru|tinylfu`), and
+  `membrane.secret_providers` (`env`, `aws`, `gcp`, `vault`).
+- `EventBus` with typed events (`FragmentStored`, `FragmentRemoved`,
+  `PeerJoined`, `PeerLeft`, `DrainStarted`, `DrainFinished`), delivered
+  off the request path. `membrane.hooks` entry points subscribe at server
+  build (`--no-hooks` disables them).
+- `Membership.listeners` for join and leave notifications.
+
 ### Changed (structure)
 
 - One configuration source: `ServerSettings.cluster_config()` derives the
