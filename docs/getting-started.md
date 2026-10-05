@@ -10,18 +10,29 @@ Membrane is installed from source; it is not published on PyPI (the
 
 ## Prerequisites
 
-- Python 3.10 – 3.13
+- Python 3.14 (exactly: Membrane uses 3.14 features and does not run on
+  older versions). [uv](https://docs.astral.sh/uv/) installs it for you.
 - `git`
 - Optional: Docker, for the container image
 
 ## 1. Install
 
+With uv (recommended), which reads `.python-version` and installs the
+exact dependency versions locked in `uv.lock`:
+
 ```bash
 git clone https://github.com/sachncs/membrane.git
 cd membrane
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[server]"
+uv sync --frozen --extra server
+source .venv/bin/activate
 membrane --version
+```
+
+Or with pip, on an existing Python 3.14:
+
+```bash
+python3.14 -m venv .venv && source .venv/bin/activate
+pip install -e ".[server]"
 ```
 
 `[server]` installs what `membrane serve` needs (FastAPI, uvicorn,
@@ -30,11 +41,13 @@ Redis client, `cryptography`). Other extras:
 | Extra | Adds |
 |-------|------|
 | `dev` | Test, lint, and type-check tooling (`pytest`, `ruff`, `mypy`) |
-| `transfer` | KV transfer engine and quantization (`numpy`, `lz4`; zstd is built into Python 3.14) |
+| `transfer` | KV transfer engine and quantization (`numpy`, `lz4`; zstd comes from the standard library) |
 | `gpu` / `local-llm` | PyTorch / HuggingFace Transformers compute backends |
-| `vllm` / `sglang` / `trtllm` | Serving-engine adapters |
 | `secrets-aws` / `secrets-gcp` / `secrets-vault` | Secret backends |
 | `otel` | OpenTelemetry tracing |
+
+Serving engines (vLLM, SGLang, TensorRT-LLM) are not extras: install the
+engine in its own environment; `membrane.adapters` imports it lazily.
 
 ## 2. Start a node
 
@@ -43,12 +56,17 @@ membrane serve --daemon
 ```
 
 ```text
-Membrane server started on 127.0.0.1:8080
-  Node ID : membrane-0
+2026-10-05 12:00:00,000 [INFO] membrane.cli: Membrane server started on 127.0.0.1:8080
+  Node ID  : membrane-0
   Auth     : none (loopback only)
   Compute  : cpu
   Redis    : disabled (in-memory)
+  ...
 ```
+
+Everything the CLI reports goes through Python logging: diagnostics to
+stderr (add `--log-format json` for one JSON object per line), command
+results to stdout, so `membrane client inventory | jq` works.
 
 The node binds `127.0.0.1` by default. Leave it running and open a
 second terminal (or run it in the background with `&`). Without
@@ -98,13 +116,18 @@ work.
 ## 4. Use the Python client
 
 ```python
+import logging
+
 from membrane.client import MembraneClient
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("quickstart")
 
 client = MembraneClient("http://localhost:8080")
 result = client.prefill(list(range(256)), model_id="llama-3")
 for frag in result["fragments"]:
     content_hash = frag["identity"]["payload_hash"]
-    print(content_hash, client.retrieve(content_hash)["found"])
+    log.info("%s found=%s", content_hash, client.retrieve(content_hash)["found"])
 client.close()
 ```
 
@@ -129,18 +152,22 @@ membrane serve --host 0.0.0.0
 # Refusing to serve unauthenticated on 0.0.0.0. Configure --api-key-file or mTLS ...
 ```
 
-Create a keyfile (one `<key>:<subject>:<scopes>` per line; the subject
-is the tenant the key reads and writes) and restart:
+Generate a key. The first line printed is the key itself, for the
+client. The second is its SHA-256 keyfile line, for the server, which
+never stores the key. The subject is the tenant the key reads and
+writes:
 
 ```bash
-printf '%s:acme:read,write\n' "$(openssl rand -hex 32)" > api-keys
+membrane keys generate --subject acme --scope read --scope write > acme.txt
+sed -n 2p acme.txt > api-keys && chmod 600 api-keys
 membrane serve --host 0.0.0.0 --api-key-file api-keys --daemon
 ```
 
-Clients now pass the key:
+The server refuses a keyfile that other users can read. Clients pass
+the key:
 
 ```bash
-export MEMBRANE_API_KEY="$(cut -d: -f1 api-keys)"
+export MEMBRANE_API_KEY="$(sed -n 1p acme.txt)"
 membrane client inventory --api-key "$MEMBRANE_API_KEY"
 ```
 
@@ -165,21 +192,26 @@ default to `strong` consistency: a `store` returns only after
 peer), and fails with `503` when not enough peers are healthy. See
 [Consistency levels](consistency.md).
 
-Stop everything with `kill %1 %2 %3` (or `pkill -f "membrane serve"`);
-nodes shut down gracefully on `SIGTERM`.
+Stop everything with `kill %1 %2 %3` (or `pkill -f "membrane serve"`).
+On `SIGTERM` a node drains: `/readyz` and writes return 503, it hands
+its primaries to peers and leaves the cluster, then exits (within
+`--drain-timeout`, 30 s by default).
 
 ## 7. Run it as a container
 
 ```bash
 docker build -t membrane .
 docker run --read-only --tmpfs /tmp -p 8080:8080 \
-  -v "$PWD:/run/secrets:ro" \
+  -v "$PWD/api-keys:/run/secrets/api-keys:ro" \
   -e MEMBRANE_API_KEY_FILE=/run/secrets/api-keys \
   membrane
 ```
 
-The image is configured with `MEMBRANE_*` environment variables (every
-`membrane serve` flag has one; see `membrane serve --help`).
+The image runs Python 3.14 as uid 1000; on Linux, make that user the
+keyfile's owner (`sudo chown 1000 api-keys`). It logs JSON and is
+configured with `MEMBRANE_*` environment variables (every
+`membrane serve` flag has one; see `membrane serve --help`). Stop it
+with `docker stop -t 40` so the drain can finish.
 
 ## Core concepts
 
@@ -195,6 +227,8 @@ The image is configured with `MEMBRANE_*` environment variables (every
 ## Next steps
 
 - [Deployment](deployment.md): Docker Compose, Kubernetes, and systemd.
+- [Plugins](plugins.md): add compute backends, authenticators, and
+  content stores without changing Membrane.
 - [Security](security.md): API keys, mTLS, scopes, and tenant isolation.
 - [Architecture](architecture.md): how the pieces fit together.
 - [FAQ](faq.md).

@@ -27,9 +27,36 @@ curl -fsS -H "$H" https://membrane.example/metrics | grep -v '^#'
 
 Or from a workstation: `MEMBRANE_API_KEY=… membrane cluster-status --host <node>`.
 
-`/readyz` returns `503` only when the node object is missing; a full
-node is ready. If `/livez` fails, the process is down: check
-`kubectl get pods`, `kubectl logs`, or `journalctl -u membrane`.
+`/readyz` returns `503` while the node drains (`{"status": "draining"}`)
+or when the node object is missing; a full node is ready. If `/livez`
+fails, the process is down: check `kubectl get pods`, `kubectl logs`,
+or `journalctl -u membrane`.
+
+Logs are JSON in containers (`MEMBRANE_LOG_FORMAT=json`). Every line
+written while handling a request carries its `request_id`, which is
+also returned to the caller in `X-Request-ID`. Ask the caller for it
+and filter on it:
+
+```bash
+kubectl logs membrane-0 | jq 'select(.request_id == "0199...")'
+```
+
+### Live debugging (Python 3.14)
+
+Without restarting the process, on a host or container with ptrace
+permission (add `--cap-add SYS_PTRACE` for Docker):
+
+```bash
+python -m asyncio ps <pid>     # tasks of the uvicorn event loop
+python -m pdb -p <pid>         # attach a debugger to the live process (PEP 768)
+```
+
+Stuck background work shows as a thread name: `membrane-http`,
+`membrane-gossip`, `membrane-replication`, `membrane-heartbeat`,
+`membrane-persistence`, `membrane-checkpoint`, `membrane-sweeper`. A
+loop that raises is logged (`cluster <name> loop crashed; restarting
+it`) and restarted. Any other thread that dies is logged at CRITICAL by
+the `membrane.threads` logger.
 
 ## Common scenarios
 
@@ -48,11 +75,16 @@ The node could not get `quorum_count - 1` peer acknowledgements.
 
 ### Node will not start
 
-The process exits with code 2 and prints the reason. Common ones:
+The process exits with code 2 and logs the reason. Common ones:
 
 - `Refusing to serve unauthenticated`: no API keyfile or TLS configured.
-- `Cannot read API keyfile` / `contains no valid keys`: secret not
+- `cannot read API keyfile` / `contains no valid keys`: secret not
   mounted, or empty.
+- `has mode 0644; other users can read or change it`: a secret file
+  (keyfile, TLS key, data key) is readable by other users. Run
+  `chmod 600` (Kubernetes: `defaultMode: 0440` with `fsGroup`).
+- `unknown compute backend` / `unknown content store`: a typo, or the
+  plugin package is not installed in the server's environment.
 - `Redis at … is unreachable`: Redis down or wrong `MEMBRANE_REDIS_URL`.
 - `Cannot open data directory`: volume not writable by UID 1000, or a
   bad `MEMBRANE_DATA_KEY_FILE`.
@@ -62,6 +94,23 @@ The process exits with code 2 and prints the reason. Common ones:
 `401`: unknown or missing key. `403`: valid key without the route's
 scope. Check the caller's key against the keyfile's scopes; see
 [Security](../security.md).
+
+### Callers get 429 or 503 with `Retry-After`
+
+`429`: the caller exceeded `--rate-limit`. `503 {"error": "overloaded"}`:
+all `--max-concurrency` slots were busy for 100 ms. Both are counted
+in `membrane_requests_rejected_total{reason}`. Clients should honour
+`Retry-After`. Persistent `overloaded` means the node needs more CPU
+or more replicas, not a higher limit.
+
+### Redis writes falling behind
+
+`membrane_persistence_queue_depth` rising means Redis is slow or down;
+the background writer retries with backoff while the node keeps
+serving from memory. `membrane_persistence_dropped_total` counts writes
+dropped because the queue (10,000 operations) was full or the node
+stopped before flushing. Those fragments will be missing after a
+restart, and their replicas on peers still serve them.
 
 ### Memory pressure
 

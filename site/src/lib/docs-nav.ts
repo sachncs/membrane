@@ -13,6 +13,7 @@ export const DOCS_NAV: { title: string; items: { id: string; label: string }[] }
       { id: 'deployment', label: 'Deployment' },
       { id: 'security', label: 'Security & auth' },
       { id: 'consistency', label: 'Consistency levels' },
+      { id: 'plugins', label: 'Plugins' },
     ],
   },
   {

@@ -20,7 +20,8 @@ kubectl rollout status statefulset/membrane -n membrane
 ```
 
 The StatefulSet replaces one pod at a time, highest ordinal first.
-Each pod shuts down gracefully on `SIGTERM`, keeps its data volume
+Each pod drains on `SIGTERM` (readiness 503, primaries handed off),
+keeps its data volume
 (`data-membrane-N`), restores its fragments from Redis on start, and
 rejoins its peers. The PodDisruptionBudget keeps two pods available.
 
@@ -32,8 +33,27 @@ During the rollout one node is briefly missing. With the default
 ```bash
 git fetch --tags && git checkout vX.Y.Z
 docker compose up -d --build membrane          # Compose
-pip install -e ".[server]" && sudo systemctl restart membrane   # systemd
+uv sync --frozen --no-dev --extra server && sudo systemctl restart membrane   # systemd
 ```
+
+## Upgrading to the Python 3.14 release
+
+This release requires Python 3.14. Rebuild virtual environments
+(`uv sync --frozen` installs 3.14 automatically) and images (the
+Dockerfile already uses `python:3.14-slim`). Before rolling it out:
+
+- `chmod 600` your API keyfile, TLS private key, and data key. The
+  server now refuses secret files that other users can read.
+- Optionally convert the keyfile to hashed lines. Plaintext lines still
+  work but log a warning. For each key,
+  `printf '%s' "$KEY" | sha256sum | cut -d' ' -f1` (macOS: `shasum -a 256`)
+  gives the digest for `sha256:<digest>:<subject>:<scopes>`.
+- FastAPI's `/docs`, `/redoc`, and `/openapi.json` are gone unless you
+  pass `--enable-api-docs`.
+- The LMCache integration and the `vllm` / `sglang` / `trtllm` extras
+  were removed; see [Compatibility](../compat-matrix.md).
+- Scripts that parsed CLI output: results still go to stdout, while
+  status and errors now go to stderr as log records.
 
 ## Major upgrade
 

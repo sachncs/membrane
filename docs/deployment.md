@@ -8,14 +8,16 @@ Start with the [Quickstart](getting-started.md).
 
 ## 1. Install from source
 
+Membrane runs on Python 3.14 only.
+
 ```bash
 git clone https://github.com/sachncs/membrane.git
 cd membrane
-pip install -e ".[server]"
-membrane --version
+uv sync --frozen --no-dev --extra server   # locked versions, Python 3.14
+.venv/bin/membrane --version
 ```
 
-Or without cloning:
+Or with pip on Python 3.14, without cloning:
 `pip install "membrane[server] @ git+https://github.com/sachncs/membrane.git@vX.Y.Z"`.
 
 ## 2. Configuration
@@ -34,23 +36,45 @@ route except the `/livez` and `/readyz` probes then needs credentials
 (`read` for reads and `/metrics`, `write` for writes, `admin` for
 deletes and `/admin/*`). See [security.md](security.md).
 
-Keyfile lines are `<key>:<subject>:<scope,...>`; the subject is the
-tenant the key reads and writes:
+Keyfile lines hold the SHA-256 digest of each key, never the key; the
+subject is the tenant the key reads and writes. `membrane keys
+generate --subject ingest-svc --scope read --scope write` prints a new
+key and its line:
 
 ```text
-3f9c...e1:ingest-svc:read,write
-8a1b...07:metrics-scraper:read
-c42d...9a:membrane-peers:admin
+sha256:3f9c...e1:ingest-svc:read,write
+sha256:8a1b...07:metrics-scraper:read
+sha256:c42d...9a:membrane-peers:admin
 ```
 
-## 4. Durability
+The keyfile must not be readable by other users (`chmod 600`); the
+server refuses to start otherwise.
+
+## 4. Capacity, shutdown, and logs
+
+| Flag | Env | Default | Effect |
+|------|-----|---------|--------|
+| `--max-concurrency` | `MEMBRANE_MAX_CONCURRENCY` | 64 | Requests handled at once; excess get `503` + `Retry-After` |
+| `--rate-limit` / `--rate-limit-burst` | `MEMBRANE_RATE_LIMIT` / `..._BURST` | off | Requests per second per credential; excess get `429` |
+| `--max-connections` | `MEMBRANE_MAX_CONNECTIONS` | unlimited | Open connections accepted |
+| `--drain-timeout` | `MEMBRANE_DRAIN_TIMEOUT` | 30 | Seconds a `SIGTERM` drain may take |
+| `--log-format` | `MEMBRANE_LOG_FORMAT` | `text` (`json` in the image) | One JSON object per log line, with `request_id` |
+
+On `SIGTERM` (or Ctrl+C) a node drains: `/readyz` returns 503 so load
+balancers stop routing to it, writes get 503 + `Retry-After`, primaries
+are handed to peers, the node leaves the cluster, flushes queued Redis
+writes, and exits 0. Give the process manager a stop timeout longer
+than the drain timeout (the shipped Compose, Kubernetes, and systemd
+files do).
+
+## 5. Durability
 
 By default a node keeps everything in memory and restarts empty (its
 peers still hold replicas). To survive restarts, give each node both:
 
 | Flag | Env | Stores |
 |------|-----|--------|
-| `--redis redis://host:6379/0` | `MEMBRANE_REDIS_URL` | Fragment metadata, written through on every store and removal |
+| `--redis redis://host:6379/0` | `MEMBRANE_REDIS_URL` | Fragment metadata, written behind every store and removal by a background writer that retries through Redis outages |
 | `--data-dir /var/lib/membrane` | `MEMBRANE_DATA_DIR` | KV bytes, AES-256-GCM encrypted, under `<data-dir>/blobs` |
 
 The data key is generated into `<data-dir>/master.key` (mode 0600) on
@@ -60,24 +84,29 @@ characters). A node refuses to start if `--redis` is set but Redis is
 unreachable, rather than silently running without durability. See
 [Backup & restore](operations/backup-restore.md).
 
-## 5. Docker
+## 6. Docker
 
 ```bash
 docker build -t membrane:latest .
-mkdir -p secrets && cp /path/to/api-keys secrets/
+docker run --rm membrane:latest membrane keys generate --subject ops --scope admin > ops.txt
+mkdir -p secrets && sed -n 2p ops.txt > secrets/api-keys && chmod 600 secrets/api-keys
+sudo chown 1000 secrets/api-keys   # Linux: the image's user must own it
 docker run --read-only --tmpfs /tmp -p 8080:8080 \
   -v "$PWD/secrets:/run/secrets:ro" \
   -e MEMBRANE_API_KEY_FILE=/run/secrets/api-keys \
   membrane:latest
-curl -H "Authorization: Bearer <key>" localhost:8080/inventory
+curl -H "Authorization: Bearer $(sed -n 1p ops.txt)" localhost:8080/inventory
 ```
 
-The image runs as UID 1000 under `tini`, binds `0.0.0.0:8080`, works with
-a read-only root filesystem (it needs a writable `/tmp` only when mTLS is
-on), and shuts down gracefully on `SIGTERM`. All settings are
-`MEMBRANE_*` environment variables (`membrane serve --help`).
+The image is `python:3.14-slim` with the locked dependencies (no pip,
+no curl). It runs as UID 1000 under `tini`, binds `0.0.0.0:8080`, logs
+JSON, works with a read-only root filesystem (it needs a writable
+`/tmp` only when mTLS is on), checks its own health with `python -m
+membrane.healthcheck` (mTLS-aware), and drains on `SIGTERM`; stop it
+with `docker stop -t 40`. All settings are `MEMBRANE_*` environment
+variables (`membrane serve --help`).
 
-## 6. Docker Compose
+## 7. Docker Compose
 
 [`docker-compose.yml`](../docker-compose.yml) runs one node behind an
 nginx TLS edge with Redis persistence. Create the keyfile and an nginx
@@ -88,7 +117,7 @@ docker compose up --build -d   # Membrane + Redis + nginx, durable by default
 curl -k -H "Authorization: Bearer <key>" https://localhost/inventory
 ```
 
-## 7. Kubernetes
+## 8. Kubernetes
 
 [`deployment/k8s/`](../deployment/k8s/) holds a 3-replica StatefulSet
 with a headless Service for peer discovery, a PodDisruptionBudget, a
@@ -96,8 +125,10 @@ NetworkPolicy, and a ServiceMonitor. Each pod gets a 10 GiB
 PersistentVolumeClaim (`data-membrane-N`) for its data directory.
 
 1. Create the `membrane-secrets` Secret (`api-keys`, `peer-api-key`,
-   `metrics-token`; see the template in `configmap.yaml`). The peer key
-   must appear in `api-keys` with the `admin` scope.
+   `metrics-token`; see the template in `configmap.yaml`). `api-keys`
+   holds the hashed lines from `membrane keys generate`; `peer-api-key`
+   and `metrics-token` hold the keys themselves. The peer key needs the
+   `admin` scope.
 2. Set `MEMBRANE_PEER_NETWORKS` in `configmap.yaml` to your pod CIDR.
    Peer calls to private addresses are otherwise rejected by the SSRF
    guard.
@@ -105,11 +136,15 @@ PersistentVolumeClaim (`data-membrane-N`) for its data directory.
 
 Each pod advertises
 `<pod>.membrane-headless.<namespace>.svc.cluster.local` to its peers.
+On termination a pod pauses 5 s in `preStop` (so its endpoints are
+removed), then drains within `MEMBRANE_DRAIN_TIMEOUT` (30 s) inside the
+45 s `terminationGracePeriodSeconds`. A 3-replica rolling restart under
+continuous strong writes completes with no failed writes.
 With the defaults (`MEMBRANE_QUORUM_COUNT=2`) a strong write is
 acknowledged once one peer holds a copy, and fails closed with `503`
 when no peer is healthy.
 
-## 8. Systemd Service (Linux)
+## 9. Systemd Service (Linux)
 
 ```bash
 sudo cp deployment/membrane.service /etc/systemd/system/
@@ -122,7 +157,7 @@ sudo systemctl enable --now membrane
 sudo journalctl -u membrane -f
 ```
 
-## 9. Multi-node checklist
+## 10. Multi-node checklist
 
 - Every node needs a unique `MEMBRANE_NODE_ID` and an
   `MEMBRANE_ADVERTISE_HOST` its peers can resolve.
@@ -135,7 +170,7 @@ sudo journalctl -u membrane -f
 - Set `MEMBRANE_PEER_NETWORKS` to the peer CIDR.
 - Size `MEMBRANE_QUORUM_COUNT` to at most the number of nodes.
 
-## 10. Releases
+## 11. Releases
 
 Membrane is installed from source; it is not on PyPI. Tagged releases
 (`.github/workflows/release.yml`) attach a wheel and sdist to the

@@ -27,7 +27,7 @@ Membrane follows [Semantic Versioning](https://semver.org/):
 - [ ] All issues targeted for this release are closed or
       explicitly deferred.
 - [ ] CI is green on ``master`` (the ``CI passed`` check covers
-      lint, types, tests on Python 3.10–3.13, Redis integration,
+      lint (ruff, naming, docstrings), types, tests on Python 3.14, Redis integration,
       stress / chaos / bench smoke, security scans, the container
       smoke test, the site build, and docs links).
 - [ ] `CHANGELOG.md` has a new section above the unreleased

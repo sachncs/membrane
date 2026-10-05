@@ -1,32 +1,25 @@
 #!/usr/bin/env bash
+# Set up a development environment from the lockfile and run the checks CI runs.
 set -euo pipefail
 
 echo "=== Membrane Setup ==="
 
-# Verify Python version
-python_version=$(python --version 2>&1 | awk '{print $2}')
-echo "Python version: $python_version"
-
-# Install dependencies
-if [ -f "requirements.txt" ]; then
-    echo "Installing requirements..."
-    pip install -r requirements.txt
+if ! command -v uv >/dev/null; then
+    echo "uv is required: https://docs.astral.sh/uv/getting-started/installation/" >&2
+    exit 1
 fi
 
-# Install test dependencies
-echo "Installing test dependencies..."
-pip install pytest pytest-cov mypy
+# Python 3.14 (from .python-version) and the exact versions in uv.lock.
+uv sync --frozen --extra dev
 
-# Verify package imports
 echo "Verifying package import..."
-python -c "import membrane; print(f'Package OK: {len(membrane.__all__)} exports')"
+uv run python -c "import logging, membrane; logging.basicConfig(level=logging.INFO, format='%(message)s'); logging.info('Package OK: membrane %s on Python 3.14', membrane.__version__)"
 
-# Run type check
-echo "Running mypy..."
-python -m mypy membrane/ --ignore-missing-imports
-
-# Run tests
-echo "Running tests..."
-python -m pytest tests/ -q --tb=short
+echo "Running checks..."
+uv run ruff check membrane tests scripts examples
+uv run mypy membrane
+uv run python tools/check_naming.py
+uv run python tools/check_docstrings.py
+uv run pytest tests/ -q --tb=short
 
 echo "=== Setup Complete ==="
