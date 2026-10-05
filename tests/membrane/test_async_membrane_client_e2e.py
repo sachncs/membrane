@@ -61,9 +61,7 @@ class TestAsyncMembraneClientE2E:
                     tenant_id="public",
                 )
                 # 1. Store via the async client.
-                store_result = await client.store(
-                    to_dict(frag), is_primary=True
-                )
+                store_result = await client.store(to_dict(frag), is_primary=True)
                 # 2. Inventory via the async client.
                 inventory = await client.inventory()
                 return {"store": store_result, "inventory": inventory}

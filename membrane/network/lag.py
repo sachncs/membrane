@@ -96,22 +96,22 @@ def record_replication_lag(
 ) -> PeerLagSnapshot:
     """Record the per-peer lag gauges into ``registry``.
 
-        Args:
-            registry: The Prometheus registry. The helper
-                creates (or reuses) a Gauge per peer id and
-                stamps the latest value.
-            membership: Cluster membership table.
+    Args:
+        registry: The Prometheus registry. The helper
+            creates (or reuses) a Gauge per peer id and
+            stamps the latest value.
+        membership: Cluster membership table.
 
-        Returns:
-            PeerLagSnapshot: The snapshot that was recorded.
+    Returns:
+        PeerLagSnapshot: The snapshot that was recorded.
 
-        Note:
-            The :class:`MetricsCollector` primitive is scalar
-            today; this helper stores the per-peer map under
-            :attr:`MetricsCollector.gauges` keyed by
-            ``gauge_name + ':' + peer_id`` and renders the
-            per-peer lines via :func:`render_prometheus_gauge`.
-        """
+    Note:
+        The :class:`MetricsCollector` primitive is scalar
+        today; this helper stores the per-peer map under
+        :attr:`MetricsCollector.gauges` keyed by
+        ``gauge_name + ':' + peer_id`` and renders the
+        per-peer lines via :func:`render_prometheus_gauge`.
+    """
     snapshot = snapshot_peer_lag(membership)
     for peer_id, lag in snapshot.lag_seconds.items():
         gauge = registry.gauge(

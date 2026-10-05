@@ -137,9 +137,7 @@ class KVBackend(RemoteLLMBackend):
             from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore[import-not-found]
 
             self.torch = torch
-            self.actual_device = (
-                "cuda" if self.device == "auto" and torch.cuda.is_available() else self.device
-            )
+            self.actual_device = "cuda" if self.device == "auto" and torch.cuda.is_available() else self.device
             logger.info("KVBackend: loading %s on %s", self.model_id, self.actual_device)
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.tokenizer_name, revision=self.tokenizer_revision or None

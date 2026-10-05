@@ -28,9 +28,7 @@ from membrane.security.key_rotation import RotatingKeyProvider
 class TestFilesystemBlobEncryptionE2E:
     def test_round_trip_with_static_key(self, tmp_path):
         provider = StaticKeyProvider(key=b"\x00" * 32)
-        store = FilesystemBlob(
-            root=tmp_path / "fs", tenant_id="acme", key_provider=provider
-        )
+        store = FilesystemBlob(root=tmp_path / "fs", tenant_id="acme", key_provider=provider)
         store.put("payload-h", b"plaintext-marker")
         # The on-disk file is encrypted; the plaintext marker
         # is not in the file.
@@ -42,9 +40,7 @@ class TestFilesystemBlobEncryptionE2E:
 
     def test_cross_tenant_decryption_fails(self, tmp_path):
         provider = StaticKeyProvider(key=b"\x00" * 32)
-        store_a = FilesystemBlob(
-            root=tmp_path / "fs_a", tenant_id="acme", key_provider=provider
-        )
+        store_a = FilesystemBlob(root=tmp_path / "fs_a", tenant_id="acme", key_provider=provider)
         # A writes a tenant_id=acme fragment.
         store_a.put("payload-h", b"acme-secret")
         # Manually load the ciphertext A wrote.
@@ -75,9 +71,7 @@ class TestFilesystemBlobEncryptionE2E:
     def test_master_key_rotation_round_trip(self, tmp_path):
         # Phase 1: write with v1.
         provider = RotatingKeyProvider(initial_key=b"\x00" * 32)
-        store = FilesystemBlob(
-            root=tmp_path / "fs", tenant_id="acme", key_provider=provider
-        )
+        store = FilesystemBlob(root=tmp_path / "fs", tenant_id="acme", key_provider=provider)
         store.put("payload-p", b"v1-data")
         v1_path = next(tmp_path.glob("fs/*/*/payload-p.blob"))
         v1_ciphertext = v1_path.read_bytes()

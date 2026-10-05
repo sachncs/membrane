@@ -48,6 +48,4 @@ class TestAdminRoutesAreAdminScoped:
 
         auth = APIKeyAuthenticator(keyfile_text="ro:reader1:read\n")
         with pytest.raises(AuthBackendError):
-            enforce_route_scope(
-                auth, "POST", "/admin/placement", headers={"authorization": "Bearer ro"}
-            )
+            enforce_route_scope(auth, "POST", "/admin/placement", headers={"authorization": "Bearer ro"})

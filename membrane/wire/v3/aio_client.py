@@ -197,9 +197,7 @@ class AsyncWireClient:
                         resp = await client.request(method, url)
                         if resp.status_code >= 500:
                             breaker.record_failure()
-                            last_exc = RuntimeError(
-                                f"server returned {resp.status_code}"
-                            )
+                            last_exc = RuntimeError(f"server returned {resp.status_code}")
                         else:
                             breaker.record_success()
                             return resp.content

@@ -26,9 +26,7 @@ class TestResumableFlow:
     def test_send_all_chunks_consumer_receives_all(self):
         payload = b"abcdefghij"
         manifest = ChunkManifest.from_payload(payload, "h" * 64, chunk_size=2)
-        producer = ResumableProducer.from_payload(
-            payload=payload, chunk_size=2, content_hash="h" * 64
-        )
+        producer = ResumableProducer.from_payload(payload=payload, chunk_size=2, content_hash="h" * 64)
         transfer = ResumableTransfer.new(manifest)
         receiver = ResumableReceiver(transfer=transfer)
         # Manually walk the producer; the receiver feeds each chunk.

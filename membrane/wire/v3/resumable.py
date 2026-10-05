@@ -85,9 +85,7 @@ class ResumableTransfer:
                 disagrees with the manifest.
         """
         if not self.manifest.verify_chunk(chunk_index, data):
-            raise CorruptPayloadError(
-                f"chunk {chunk_index} sha256 mismatch (cursor at {self.cursor})"
-            )
+            raise CorruptPayloadError(f"chunk {chunk_index} sha256 mismatch (cursor at {self.cursor})")
         if chunk_index >= len(self.received_chunks):
             self.received_chunks.extend([b""] * (chunk_index + 1 - len(self.received_chunks)))
         self.received_chunks[chunk_index] = data

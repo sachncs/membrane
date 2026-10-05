@@ -39,9 +39,7 @@ def _parse_pem(payload: str) -> bytes:
     """
     if "-----BEGIN CERTIFICATE-----" not in payload:
         return b""
-    body = payload.split("-----BEGIN CERTIFICATE-----", 1)[1].split(
-        "-----END CERTIFICATE-----", 1
-    )[0]
+    body = payload.split("-----BEGIN CERTIFICATE-----", 1)[1].split("-----END CERTIFICATE-----", 1)[0]
     import base64
 
     return base64.b64decode("".join(body.split()))
@@ -91,11 +89,7 @@ def enforce_not_after(
     expires = cert_not_after(pem)
     if expires is None:
         return  # no cert to check
-    current = (
-        datetime.datetime.now(tz=datetime.timezone.utc)
-        if now is None
-        else now
-    )
+    current = datetime.datetime.now(tz=datetime.timezone.utc) if now is None else now
     delta = expires - current
     if delta <= datetime.timedelta(0):
         raise RuntimeError(f"mTLS cert is expired (notAfter={expires.isoformat()})")
@@ -180,9 +174,7 @@ class CertRotationWatcher:
         except OSError as exc:
             logger.warning("cert reload skipped: %s", exc)
             return
-        digest = hashlib.sha256(
-            (cert + "|" + key).encode("utf-8")
-        ).hexdigest()
+        digest = hashlib.sha256((cert + "|" + key).encode("utf-8")).hexdigest()
         if digest == self._last_digest:
             return
         self._last_digest = digest

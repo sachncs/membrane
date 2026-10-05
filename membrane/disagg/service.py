@@ -155,9 +155,7 @@ class PrefillService:
                     request.token_ids,
                     layer_range=(0, 0),
                 )
-                prompt_len, backend_ms = self.backend.run_prefill(
-                    request, cached_prefix_len
-                )
+                prompt_len, backend_ms = self.backend.run_prefill(request, cached_prefix_len)
             total_ms = clock.elapsed_ms() + max(backend_ms, 0.0)
             return PrefillResponse(
                 request_id=request.request_id,

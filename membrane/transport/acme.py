@@ -76,9 +76,7 @@ class ACMEClient:
         try:
             from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: F401
         except ImportError as exc:
-            raise RuntimeError(
-                "ACMEClient requires 'cryptography'; install membrane[acme]"
-            ) from exc
+            raise RuntimeError("ACMEClient requires 'cryptography'; install membrane[acme]") from exc
         self.config = config
 
     def issue_certificate(self, domains: list[str], cert_path: str) -> ACMEOrder:

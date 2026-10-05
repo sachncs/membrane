@@ -34,9 +34,7 @@ class TestSnapshotAuditFlow:
         demoted: list[tuple[str, str]] = []
         migration = TierMigration(
             policy=TierPolicy(),
-            on_demote=lambda frag, tier: demoted.append(
-                (frag.identity.payload_hash, tier)
-            ),
+            on_demote=lambda frag, tier: demoted.append((frag.identity.payload_hash, tier)),
         )
         node.add_eviction_callback(migration.on_evict)
 
@@ -80,9 +78,7 @@ class TestSnapshotAuditFlow:
         client = TestClient(app)
 
         # 4. Run a series of admin ops.
-        client.post(
-            "/admin/policy", json={"min_reuse_score": 0.5, "demand_threshold": 1}
-        )
+        client.post("/admin/policy", json={"min_reuse_score": 0.5, "demand_threshold": 1})
         log.record(
             actor="ops",
             action="admin.policy.update",
@@ -97,9 +93,7 @@ class TestSnapshotAuditFlow:
             payload={"content_hash": ident.payload_hash},
         )
         # Evict the first fragment.
-        client.post(
-            "/admin/evict", json={"content_hash": ident.payload_hash}
-        )
+        client.post("/admin/evict", json={"content_hash": ident.payload_hash})
         log.record(
             actor="ops",
             action="admin.evict",
@@ -130,9 +124,7 @@ class TestSnapshotAuditFlow:
         demoted: list[tuple[str, str]] = []
         migration = TierMigration(
             policy=TierPolicy(),
-            on_demote=lambda frag, tier: demoted.append(
-                (frag.identity.payload_hash, tier)
-            ),
+            on_demote=lambda frag, tier: demoted.append((frag.identity.payload_hash, tier)),
         )
         node.add_eviction_callback(migration.on_evict)
         # Fill the node with high-reuse fragments so the

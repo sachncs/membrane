@@ -71,9 +71,7 @@ class TestRotationAcrossStores:
 
         # Phase 1: write with v1 key.
         old_provider = RotatingKeyProvider(initial_key=b"\x00" * 32)
-        old_store = FilesystemBlob(
-            root=tmp_path / "blob", tenant_id="acme", key_provider=old_provider
-        )
+        old_store = FilesystemBlob(root=tmp_path / "blob", tenant_id="acme", key_provider=old_provider)
         old_store.put("payload-h", b"acme-data")
         assert old_store.get("payload-h") == b"acme-data"
 
@@ -81,9 +79,7 @@ class TestRotationAcrossStores:
         # retains the old version.
         new_provider = RotatingKeyProvider(initial_key=b"\x00" * 32)
         new_provider.rotate(b"\x01" * 32)
-        new_store = FilesystemBlob(
-            root=tmp_path / "blob", tenant_id="acme", key_provider=new_provider
-        )
+        new_store = FilesystemBlob(root=tmp_path / "blob", tenant_id="acme", key_provider=new_provider)
         # Legacy ciphertext decrypts via the older v1 key.
         assert new_store.get("payload-h") == b"acme-data"
 
@@ -122,6 +118,4 @@ class TestRotationAcrossStores:
         from membrane.security.encryption import encrypt_payload
 
         blob = encrypt_payload(plaintext, key)
-        assert (
-            decrypt_payload_with_versions(blob, (key,)) == plaintext
-        )
+        assert decrypt_payload_with_versions(blob, (key,)) == plaintext

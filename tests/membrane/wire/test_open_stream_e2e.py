@@ -45,9 +45,7 @@ class _TransferServicerImpl:
         with self._lock:
             for request in request_iterator:
                 self._received.append(request)
-        for index, chunk in enumerate(
-            self.manifest.split_payload(self.payload)
-        ):
+        for index, chunk in enumerate(self.manifest.split_payload(self.payload)):
             yield Chunk(
                 chunk_index=index,
                 offset=0,
@@ -80,6 +78,7 @@ def test_open_stream_round_trip():
     class _Context:
         def set_code(self, *a, **k) -> None:  # pragma: no cover
             pass
+
         def abort(self, *a, **k) -> None:  # pragma: no cover
             pass
 

@@ -206,9 +206,7 @@ def _row_col(tensor: np.ndarray) -> tuple[np.ndarray, int, int]:
     return tensor, tensor.shape[0], tensor.shape[1]
 
 
-def quantize(
-    tensor: np.ndarray, format_name: str = "int8"
-) -> QuantizedFrame:
+def quantize(tensor: np.ndarray, format_name: str = "int8") -> QuantizedFrame:
     """Quantize ``tensor`` using the named :class:`Quantizer`.
 
     Args:
@@ -243,9 +241,7 @@ def dequantize(frame: QuantizedFrame) -> np.ndarray:
         np.ndarray: Tensor-like output.
     """
     quantizer = _quantizer_for_id(frame.format_id)
-    return quantizer.dequantize(
-        frame.payload, frame.original_dtype, frame.original_shape
-    )
+    return quantizer.dequantize(frame.payload, frame.original_dtype, frame.original_shape)
 
 
 def _quantizer_for(format_name: str) -> Quantizer:
@@ -258,10 +254,7 @@ def _quantizer_for(format_name: str) -> Quantizer:
         return FP8E5M2Quantizer()
     if format_name == "nf4":
         return NF4Quantizer()
-    raise ValueError(
-        f"unknown quantization format: {format_name!r}; expected one of "
-        f"int8, fp8_e4m3, fp8_e5m2, nf4"
-    )
+    raise ValueError(f"unknown quantization format: {format_name!r}; expected one of int8, fp8_e4m3, fp8_e5m2, nf4")
 
 
 def _quantizer_for_id(format_id: int) -> Quantizer:
@@ -313,12 +306,7 @@ class Int8PerChannelQuantizer:
         abs_max = np.where(abs_max == 0, 1.0, abs_max)
         scale = abs_max / 127.0
         values = (arr / scale[:, None]).clip(-127, 127).round().astype("int8")
-        return (
-            struct.pack("<I", n_rows)
-            + struct.pack("<I", n_cols)
-            + scale.tobytes()
-            + values.tobytes()
-        )
+        return struct.pack("<I", n_rows) + struct.pack("<I", n_cols) + scale.tobytes() + values.tobytes()
 
     def dequantize(
         self,
@@ -332,17 +320,11 @@ class Int8PerChannelQuantizer:
         offset += 4
         n_cols = struct.unpack_from("<I", payload, offset)[0]
         offset += 4
-        scale = np.frombuffer(
-            payload[offset : offset + 4 * n_rows], dtype="float32"
-        )
+        scale = np.frombuffer(payload[offset : offset + 4 * n_rows], dtype="float32")
         offset += 4 * n_rows
-        values = np.frombuffer(
-            payload[offset : offset + n_rows * n_cols], dtype="int8"
-        ).reshape(n_rows, n_cols)
+        values = np.frombuffer(payload[offset : offset + n_rows * n_cols], dtype="int8").reshape(n_rows, n_cols)
         flat = (values.astype("float32") * scale[:, None]).reshape(-1)
-        return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(
-            original_dtype
-        )
+        return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(original_dtype)
 
 
 class FP8E4M3Quantizer:
@@ -397,12 +379,7 @@ class FP8E4M3Quantizer:
             scaled = scaled.astype(torch.float8_e4m3fn)
         else:
             scaled = scaled.clip(-240, 240).astype("int8")
-        return (
-            struct.pack("<I", n_rows)
-            + struct.pack("<I", n_cols)
-            + scale.tobytes()
-            + scaled.tobytes()
-        )
+        return struct.pack("<I", n_rows) + struct.pack("<I", n_cols) + scale.tobytes() + scaled.tobytes()
 
     def dequantize(
         self,
@@ -418,23 +395,17 @@ class FP8E4M3Quantizer:
         offset += 4
         n_cols = struct.unpack_from("<I", payload, offset)[0]
         offset += 4
-        scale = np.frombuffer(
-            payload[offset : offset + 4 * n_rows], dtype="float32"
-        )
+        scale = np.frombuffer(payload[offset : offset + 4 * n_rows], dtype="float32")
         offset += 4 * n_rows
         body = payload[offset : offset + n_rows * n_cols]
         if self._has_fp8():
             import torch
 
-            values = np.frombuffer(
-                body, dtype=torch.float8_e4m3fn
-            ).astype("float32")
+            values = np.frombuffer(body, dtype=torch.float8_e4m3fn).astype("float32")
         else:
             values = np.frombuffer(body, dtype="int8").astype("float32")
         flat = (values * scale[:, None]).reshape(-1)
-        return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(
-            original_dtype
-        )
+        return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(original_dtype)
 
 
 class FP8E5M2Quantizer:
@@ -487,12 +458,7 @@ class FP8E5M2Quantizer:
             scaled = scaled.astype(torch.float8_e5m2)
         else:
             scaled = scaled.clip(-28000, 28000).astype("int8")
-        return (
-            struct.pack("<I", n_rows)
-            + struct.pack("<I", n_cols)
-            + scale.tobytes()
-            + scaled.tobytes()
-        )
+        return struct.pack("<I", n_rows) + struct.pack("<I", n_cols) + scale.tobytes() + scaled.tobytes()
 
     def dequantize(
         self,
@@ -508,23 +474,17 @@ class FP8E5M2Quantizer:
         offset += 4
         n_cols = struct.unpack_from("<I", payload, offset)[0]
         offset += 4
-        scale = np.frombuffer(
-            payload[offset : offset + 4 * n_rows], dtype="float32"
-        )
+        scale = np.frombuffer(payload[offset : offset + 4 * n_rows], dtype="float32")
         offset += 4 * n_rows
         body = payload[offset : offset + n_rows * n_cols]
         if self._has_fp8():
             import torch
 
-            values = np.frombuffer(
-                body, dtype=torch.float8_e5m2
-            ).astype("float32")
+            values = np.frombuffer(body, dtype=torch.float8_e5m2).astype("float32")
         else:
             values = np.frombuffer(body, dtype="int8").astype("float32")
         flat = (values * scale[:, None]).reshape(-1)
-        return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(
-            original_dtype
-        )
+        return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(original_dtype)
 
 
 class NF4Quantizer:
@@ -580,18 +540,9 @@ class NF4Quantizer:
         table = np.asarray(self._NF4_TABLE, dtype="float32")
         distances = np.abs(normalized[:, :, None] - table[None, None, :])
         indices = distances.argmin(axis=-1).astype("uint8")
-        padded = (
-            np.concatenate([indices, np.zeros((n_rows, 1), dtype="uint8")], axis=1)
-            if n_cols % 2
-            else indices
-        )
+        padded = np.concatenate([indices, np.zeros((n_rows, 1), dtype="uint8")], axis=1) if n_cols % 2 else indices
         packed = (padded[:, 0::2] << 4) | padded[:, 1::2]
-        return (
-            struct.pack("<I", n_rows)
-            + struct.pack("<I", n_cols)
-            + abs_max.tobytes()
-            + packed.tobytes()
-        )
+        return struct.pack("<I", n_rows) + struct.pack("<I", n_cols) + abs_max.tobytes() + packed.tobytes()
 
     def dequantize(
         self,
@@ -607,20 +558,16 @@ class NF4Quantizer:
         offset += 4
         n_cols = struct.unpack_from("<I", payload, offset)[0]
         offset += 4
-        abs_max = np.frombuffer(
-            payload[offset : offset + 4 * n_rows], dtype="float32"
-        )
+        abs_max = np.frombuffer(payload[offset : offset + 4 * n_rows], dtype="float32")
         offset += 4 * n_rows
         n_pairs = (n_cols + 1) // 2
-        packed = np.frombuffer(
-            payload[offset : offset + n_rows * n_pairs], dtype="uint8"
-        ).reshape(n_rows, n_pairs)
+        packed = np.frombuffer(payload[offset : offset + n_rows * n_pairs], dtype="uint8").reshape(n_rows, n_pairs)
         high = (packed >> 4) & 0xF
         low = packed & 0xF
         if n_cols % 2:
             indices = np.empty((n_rows, n_cols), dtype="uint8")
             indices[:, : n_cols - 1 : 2] = high[:, : (n_cols - 1) // 2]
-            indices[:, 1 : n_cols : 2] = low[:, : n_cols // 2]
+            indices[:, 1:n_cols:2] = low[:, : n_cols // 2]
             indices[:, -1] = high[:, -1]
         else:
             indices = np.empty((n_rows, n_cols), dtype="uint8")
@@ -628,9 +575,7 @@ class NF4Quantizer:
             indices[:, 1::2] = low
         table = np.asarray(self._NF4_TABLE, dtype="float32")
         flat = (table[indices.astype("int32")] * abs_max[:, None]).reshape(-1)
-        return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(
-            original_dtype
-        )
+        return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(original_dtype)
 
 
 __all__ = [

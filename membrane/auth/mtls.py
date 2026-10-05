@@ -131,8 +131,7 @@ class MTLSAuthenticator:
         """
         if not config.require_client_cert:
             raise ValueError(
-                "MTLSAuthenticator requires MTLSConfig.require_client_cert=True; "
-                "non-mTLS mode is unsupported at 2.0"
+                "MTLSAuthenticator requires MTLSConfig.require_client_cert=True; non-mTLS mode is unsupported at 2.0"
             )
         self.config = config
 

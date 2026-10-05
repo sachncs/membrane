@@ -108,9 +108,7 @@ class TestAdminEndpoints:
         app.state.node = node
         app.include_router(create_admin_router())
         client = TestClient(app)
-        resp = client.post(
-            "/admin/evict", json={"content_hash": ident.payload_hash}
-        )
+        resp = client.post("/admin/evict", json={"content_hash": ident.payload_hash})
         assert resp.status_code == 200
         assert resp.json() == {"content_hash": ident.payload_hash, "evicted": True}
         # The fragment is gone.

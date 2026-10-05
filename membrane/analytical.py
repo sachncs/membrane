@@ -127,6 +127,7 @@ __all__ = [
     "Workload",
 ]
 
+
 class Predict:
     """Lightweight heuristic predictor for KV size, reuse probability, and optimal region.
 
@@ -189,9 +190,7 @@ class Workload:
     ) -> list[tuple[str, float]]:
         """Return the top-k most frequent patterns."""
         frequencies = self.analyze_patterns(access_log)
-        sorted_items = sorted(
-            frequencies.items(), key=lambda item: item[1], reverse=True
-        )
+        sorted_items = sorted(frequencies.items(), key=lambda item: item[1], reverse=True)
         return sorted_items[:k]
 
     def reuse_ratio(self, access_log: list[str]) -> float:
@@ -201,4 +200,3 @@ class Workload:
         unique = len(set(access_log))
         total = len(access_log)
         return (total - unique) / total if total > unique else 0.0
-

@@ -101,9 +101,7 @@ class ChunkManifest:
             manifest's :attr:`total_bytes`.
         """
         if len(payload) != self.total_bytes:
-            raise ValueError(
-                f"payload length {len(payload)} does not match manifest total {self.total_bytes}"
-            )
+            raise ValueError(f"payload length {len(payload)} does not match manifest total {self.total_bytes}")
         chunks: list[bytes] = []
         for offset in range(0, len(payload), self.chunk_size):
             chunks.append(bytes(payload[offset : offset + self.chunk_size]))

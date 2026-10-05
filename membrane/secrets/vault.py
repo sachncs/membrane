@@ -72,14 +72,10 @@ class VaultSecretProvider(SecretProvider):
         client: Any = hvac.Client(url=self.url, token=self.token)
         try:
             if self.kv_version == 2:
-                response = client.secrets.kv.v2.read_secret(
-                    path=secret_name, mount_point=self.path_prefix
-                )
+                response = client.secrets.kv.v2.read_secret(path=secret_name, mount_point=self.path_prefix)
                 data = response.get("data", {}).get("data", {})
             else:
-                response = client.secrets.kv.v1.read_secret(
-                    path=secret_name, mount_point=self.path_prefix
-                )
+                response = client.secrets.kv.v1.read_secret(path=secret_name, mount_point=self.path_prefix)
                 data = response.get("data", {})
         except Exception as exc:
             raise SecretBackendError(f"vault read failed for {secret_name}: {exc}") from exc

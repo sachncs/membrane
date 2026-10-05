@@ -71,9 +71,7 @@ class Anthropic(RemoteLLMBackend):
         return self._api_key
 
     def __repr__(self) -> str:
-        return (
-            f"Anthropic(base_url={self.base_url!r}, model={self.model!r}, api_key=***)"
-        )
+        return f"Anthropic(base_url={self.base_url!r}, model={self.model!r}, api_key=***)"
 
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Produce content-addressed fragments by hashing the prompt.

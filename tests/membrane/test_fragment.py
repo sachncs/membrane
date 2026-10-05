@@ -6,7 +6,9 @@ from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 
 
-def _identity(payload_hash: str = "abc123", model_id: str = "m", token_span: tuple[int, int] = (0, 1024)) -> PayloadIdentity:
+def _identity(
+    payload_hash: str = "abc123", model_id: str = "m", token_span: tuple[int, int] = (0, 1024)
+) -> PayloadIdentity:
     return PayloadIdentity(
         payload_hash=payload_hash,
         model_id=model_id,
@@ -52,6 +54,7 @@ def test_fragment_is_immutable():
 
 def test_fragment_is_hashable():
     import dataclasses
+
     ident = _identity("h", token_span=(0, 10))
     frag = Fragment(
         identity=ident,
@@ -61,9 +64,7 @@ def test_fragment_is_hashable():
         reuse_score=0.5,
         version_id=1,
     )
-    assert hash(frag) == hash(
-    (ident, "h", 10, 60.0, 0.5, 1, "strong", 0, "", "public")
-)
+    assert hash(frag) == hash((ident, "h", 10, 60.0, 0.5, 1, "strong", 0, "", "public"))
     assert len({frag}) == 1
 
 

@@ -94,9 +94,7 @@ class TestResumableReceiver:
 class TestResumableProducer:
     def test_iter_chunks_yields_each_chunk(self):
         payload = b"abcdef"
-        producer = ResumableProducer.from_payload(
-            payload=payload, chunk_size=2, content_hash="h" * 64
-        )
+        producer = ResumableProducer.from_payload(payload=payload, chunk_size=2, content_hash="h" * 64)
         chunks = list(producer.chunks)
         assert b"".join(chunks) == payload
         assert len(chunks) == 3

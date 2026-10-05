@@ -25,9 +25,7 @@ def _make_transport(routes: dict[tuple[str, str], tuple[int, dict]]):
 
 class TestAsyncMembraneClientPrefill:
     def test_prefill_2xx_returns_response(self):
-        routes = {
-            ("POST", "/prefill"): (200, {"success": True, "fragments": []})
-        }
+        routes = {("POST", "/prefill"): (200, {"success": True, "fragments": []})}
         transport = _make_transport(routes)
 
         async def run() -> dict:

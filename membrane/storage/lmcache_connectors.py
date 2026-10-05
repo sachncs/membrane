@@ -86,16 +86,12 @@ def build_distributed_store(
             surface stays stable for Phase 0.3+ follow-ups.
     """
     if kind == "remote" and not remote_url:
-        raise LMCacheConnectorError(
-            "RemoteBackend requires a remote_url"
-        )
+        raise LMCacheConnectorError("RemoteBackend requires a remote_url")
     if kind == "gds":
         try:
             import ctypes  # noqa: F401  -- gds needs cufile which is ctypes-loaded
         except ImportError as exc:
-            raise LMCacheConnectorError(
-                "GdsBackend requires ctypes / cufile on the system path"
-            ) from exc
+            raise LMCacheConnectorError("GdsBackend requires ctypes / cufile on the system path") from exc
     # LMCache's distributed backends need an asyncio event loop
     # and the worker / engine plumbing. The v1 of this arc defers
     # that work to Phase 5+, where the engine adapters handle the

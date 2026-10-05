@@ -33,10 +33,10 @@ class TestShardLocalityScoredAssign:
         explicit add_node calls; regions are attached via
         node_attributes so locality scoring kicks in.
         """
-        shard = Shard(replica_count=replica_count, node_attributes={
-            nid: NodeAttributes(region=region)
-            for nid, region in regions.items()
-        })
+        shard = Shard(
+            replica_count=replica_count,
+            node_attributes={nid: NodeAttributes(region=region) for nid, region in regions.items()},
+        )
         for nid in regions:
             shard.add_node(nid)
         return shard

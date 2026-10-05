@@ -12,15 +12,19 @@ from tests.conftest import make_fragment
 
 
 def make(content_hash: str, hlc: int, version_id: int = 1):
-    return make_fragment(content_hash, version_id=version_id).__class__(
-        identity=make_fragment(content_hash).__dict__["identity"],
-        payload_ref=make_fragment(content_hash).__dict__["payload_ref"],
-        payload_size=100,
-        ttl=3600.0,
-        reuse_score=0.5,
-        version_id=version_id,
-        hlc=hlc,
-    ) if False else _frag(content_hash, hlc, version_id)
+    return (
+        make_fragment(content_hash, version_id=version_id).__class__(
+            identity=make_fragment(content_hash).__dict__["identity"],
+            payload_ref=make_fragment(content_hash).__dict__["payload_ref"],
+            payload_size=100,
+            ttl=3600.0,
+            reuse_score=0.5,
+            version_id=version_id,
+            hlc=hlc,
+        )
+        if False
+        else _frag(content_hash, hlc, version_id)
+    )
 
 
 def _frag(content_hash: str, hlc: int, version_id: int = 1):

@@ -27,12 +27,14 @@ def _make_async_transport(routes: dict[tuple[str, str], tuple[int, bytes]]):
     Returns:
         httpx.MockTransport: Bound handler.
     """
+
     def handler(request: httpx.Request) -> httpx.Response:
         key = (request.method, request.url.path)
         if key not in routes:
             return httpx.Response(404, content=b"")
         status, body = routes[key]
         return httpx.Response(status, content=body)
+
     return httpx.MockTransport(handler)
 
 
@@ -43,9 +45,7 @@ class TestAsyncWireClient:
         client = AsyncWireClient(base_url="http://t", timeout_sec=1.0)
 
         async def run() -> bytes:
-            async with httpx.AsyncClient(
-                transport=transport, base_url="http://t"
-            ) as shared:
+            async with httpx.AsyncClient(transport=transport, base_url="http://t") as shared:
                 # The client constructs its own internal AsyncClient;
                 # for the unit test we drive the public method
                 # through a one-shot construction and assert the

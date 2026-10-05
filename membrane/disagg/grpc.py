@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 _GRPC_AVAILABLE: bool = False
 try:
     import grpc  # type: ignore[import-not-found]
+
     _GRPC_AVAILABLE = True
 except ImportError:  # pragma: no cover - import guard
     grpc = None  # type: ignore[assignment]
@@ -63,6 +64,7 @@ def _empty_message() -> Any:
     if not _GRPC_AVAILABLE:  # pragma: no cover - import guard
         raise RuntimeError("grpcio is required for the gRPC surface")
     from google.protobuf import struct_pb2  # type: ignore[import-not-found]
+
     return struct_pb2.Struct()
 
 

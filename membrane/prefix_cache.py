@@ -82,9 +82,7 @@ class KVHandle:
         Returns:
             KVHandle: A new handle.
         """
-        digest = hashlib.sha256(
-            f"{model_id}\x00{','.join(str(t) for t in token_ids)}".encode()
-        ).hexdigest()
+        digest = hashlib.sha256(f"{model_id}\x00{','.join(str(t) for t in token_ids)}".encode()).hexdigest()
         return cls(
             handle=digest,
             model_id=model_id,

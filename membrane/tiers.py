@@ -254,9 +254,7 @@ class EconomicRouterConfigWeights:
             tuple[float, float, float, float]: The four weights
             after normalization (positive; sums to 1).
         """
-        total = (
-            self.latency_ms + self.bandwidth_cost + self.gpu_load + self.memory_pressure
-        )
+        total = self.latency_ms + self.bandwidth_cost + self.gpu_load + self.memory_pressure
         if total <= 0:
             return (0.25, 0.25, 0.25, 0.25)
         scale = 1.0 / total
@@ -309,9 +307,7 @@ def record_op_store(
         bool: True when both gates (if configured) allow the
         store.
     """
-    if policy is not None and not policy.should_admit(
-        getattr(fragment, "reuse_score", 0.0)
-    ):
+    if policy is not None and not policy.should_admit(getattr(fragment, "reuse_score", 0.0)):
         return False
     return quota is None or quota.admit(getattr(fragment, "payload_size", 0))
 

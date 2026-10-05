@@ -77,17 +77,13 @@ class SPIFFEClient:
         try:
             import spiffe  # type: ignore[import-not-found]
         except ImportError:
-            logger.warning(
-                "SPIFFE SDK not installed; returning an empty MTLSConfig (test fallback)"
-            )
+            logger.warning("SPIFFE SDK not installed; returning an empty MTLSConfig (test fallback)")
             return MTLSConfig(
                 server_cert_pem="PEM",
                 server_key_pem="PEM",
                 ca_bundle_pem="PEM",
             )
-        with spiffe.WorkloadApiClient(
-            spiffe_workload_api_socket=self.config.socket_path
-        ) as client:
+        with spiffe.WorkloadApiClient(spiffe_workload_api_socket=self.config.socket_path) as client:
             svid = client.fetch_x509_svid()
         return MTLSConfig(
             server_cert_pem=svid.cert_pem,

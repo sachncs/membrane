@@ -42,9 +42,7 @@ class AWSSecretsProvider(SecretProvider):
         try:
             import boto3  # noqa: F401  -- presence probe.
         except ImportError as exc:
-            raise SecretBackendError(
-                "AWSSecretsProvider requires 'boto3'; install membrane[secrets-aws]"
-            ) from exc
+            raise SecretBackendError("AWSSecretsProvider requires 'boto3'; install membrane[secrets-aws]") from exc
 
     def get(self, secret_name: str) -> str:
         """Read ``secret_name`` from AWS Secrets Manager.

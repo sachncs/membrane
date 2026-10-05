@@ -172,9 +172,7 @@ class MembraneClient:
             _raise_for_status(resp.status_code, resp.text)
         body = resp.json()
         if isinstance(body, dict) and body.get("corrupt"):
-            raise MembraneCorruptPayloadError(
-                f"corrupt payload for content_hash={content_hash}"
-            )
+            raise MembraneCorruptPayloadError(f"corrupt payload for content_hash={content_hash}")
         return body
 
     def inventory(self) -> dict[str, Any]:
@@ -183,27 +181,21 @@ class MembraneClient:
         Returns:
             dict: ``{"node_id": ..., "digest": {...}}``.
         """
-        resp = self._client.get(
-            f"{self.base_url}/inventory", headers=self._headers
-        )
+        resp = self._client.get(f"{self.base_url}/inventory", headers=self._headers)
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def peers(self) -> dict[str, Any]:
         """Call ``GET /peers``."""
-        resp = self._client.get(
-            f"{self.base_url}/peers", headers=self._headers
-        )
+        resp = self._client.get(f"{self.base_url}/peers", headers=self._headers)
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
     def heartbeat(self) -> dict[str, Any]:
         """Call ``GET /heartbeat``."""
-        resp = self._client.get(
-            f"{self.base_url}/heartbeat", headers=self._headers
-        )
+        resp = self._client.get(f"{self.base_url}/heartbeat", headers=self._headers)
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
         return resp.json()
@@ -225,9 +217,7 @@ class MembraneClient:
         Returns:
             str: Prometheus text exposition.
         """
-        resp = self._client.get(
-            f"{self.base_url}/metrics", headers=self._headers
-        )
+        resp = self._client.get(f"{self.base_url}/metrics", headers=self._headers)
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
         return resp.text
@@ -274,9 +264,7 @@ class AsyncMembraneClient:
             return {"authorization": f"Bearer {self.api_key}"}
         return {}
 
-    async def store(
-        self, fragment_payload: dict[str, Any], is_primary: bool = False
-    ) -> dict[str, Any]:
+    async def store(self, fragment_payload: dict[str, Any], is_primary: bool = False) -> dict[str, Any]:
         resp = await self._client.post(
             f"{self.base_url}/store",
             json={"fragment": fragment_payload, "is_primary": is_primary},
@@ -296,14 +284,10 @@ class AsyncMembraneClient:
             _raise_for_status(resp.status_code, resp.text)
         body = resp.json()
         if isinstance(body, dict) and body.get("corrupt"):
-            raise MembraneCorruptPayloadError(
-                f"corrupt payload for content_hash={content_hash}"
-            )
+            raise MembraneCorruptPayloadError(f"corrupt payload for content_hash={content_hash}")
         return body
 
-    async def prefill(
-        self, prompt_tokens: list[int], model_id: str = "default"
-    ) -> dict[str, Any]:
+    async def prefill(self, prompt_tokens: list[int], model_id: str = "default") -> dict[str, Any]:
         resp = await self._client.post(
             f"{self.base_url}/prefill",
             json={"prompt_tokens": prompt_tokens, "model_id": model_id},
@@ -314,9 +298,7 @@ class AsyncMembraneClient:
         return resp.json()
 
     async def inventory(self) -> dict[str, Any]:
-        resp = await self._client.get(
-            f"{self.base_url}/inventory", headers=self._headers
-        )
+        resp = await self._client.get(f"{self.base_url}/inventory", headers=self._headers)
         if resp.status_code >= 400:
             _raise_for_status(resp.status_code, resp.text)
         return resp.json()

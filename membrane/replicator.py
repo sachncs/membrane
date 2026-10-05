@@ -265,12 +265,7 @@ class Replicator:
 
         Requires the same constructor args as :meth:`loop`.
         """
-        if (
-            self.membership is None
-            or self.config is None
-            or self.stop_event is None
-            or self.running is None
-        ):
+        if self.membership is None or self.config is None or self.stop_event is None or self.running is None:
             raise RuntimeError("Replicator.repair_loop requires membership, config, stop_event, running")
         while self.running[0] and not self.stop_event.is_set():
             for peer in self.membership.healthy():

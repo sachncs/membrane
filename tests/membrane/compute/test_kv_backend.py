@@ -97,7 +97,10 @@ class TestKVBackend:
 
         identity, frame = frames[0]
         assert isinstance(identity, PayloadIdentity)
-        assert identity.payload_hash == hashlib.sha256(_payload_only(frame, n_layers=2, n_heads=4, window_len=10, head_dim=8)).hexdigest()
+        assert (
+            identity.payload_hash
+            == hashlib.sha256(_payload_only(frame, n_layers=2, n_heads=4, window_len=10, head_dim=8)).hexdigest()
+        )
         assert identity.token_span == (0, 9)
         assert identity.layer_range == (0, 1)
         assert identity.shape == (1, 2, 4, 10, 8)
@@ -146,9 +149,7 @@ class TestKVBackend:
         backend.head_dim = 4
 
         class _FakeModel:
-            config = type(
-                "_C", (), {"num_hidden_layers": 1, "num_attention_heads": 1, "hidden_size": 4}
-            )()
+            config = type("_C", (), {"num_hidden_layers": 1, "num_attention_heads": 1, "hidden_size": 4})()
 
             def __call__(self, *args, **kwargs):
                 outputs = type("_O", (), {})()

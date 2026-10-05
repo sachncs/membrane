@@ -107,12 +107,8 @@ class TestEncryptedFilesystemBlob:
     def test_different_tenant_cannot_read_other_tenant(self, tmp_path):
         """Cross-tenant decryption fails because the derived key differs."""
         provider = StaticKeyProvider(key=b"\x02" * 32)
-        store_acme = FilesystemBlob(
-            tmp_path / "blob_acme", tenant_id="acme", key_provider=provider
-        )
-        store_globex = FilesystemBlob(
-            tmp_path / "blob_globex", tenant_id="globex", key_provider=provider
-        )
+        store_acme = FilesystemBlob(tmp_path / "blob_acme", tenant_id="acme", key_provider=provider)
+        store_globex = FilesystemBlob(tmp_path / "blob_globex", tenant_id="globex", key_provider=provider)
         store_acme.put("cafebabe", b"acme-only")
         # globex store reads the same bytes (the underlying file
         # is identical under the same provider), but its
@@ -121,13 +117,9 @@ class TestEncryptedFilesystemBlob:
 
     def test_persistence_across_instances_with_shared_provider(self, tmp_path):
         provider = StaticKeyProvider(key=b"\x00" * 32)
-        store_a = FilesystemBlob(
-            tmp_path / "blob", tenant_id="acme", key_provider=provider
-        )
+        store_a = FilesystemBlob(tmp_path / "blob", tenant_id="acme", key_provider=provider)
         store_a.put("abcd1234", b"hello")
-        store_b = FilesystemBlob(
-            tmp_path / "blob", tenant_id="acme", key_provider=provider
-        )
+        store_b = FilesystemBlob(tmp_path / "blob", tenant_id="acme", key_provider=provider)
         assert store_b.get("abcd1234") == b"hello"
 
     def test_size_reflects_plaintext(self, tmp_path):

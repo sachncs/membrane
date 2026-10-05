@@ -40,9 +40,7 @@ class TestRewrite:
 
     def test_v2_to_v5(self):
         original = b"\xc0\xde\x01\x02" + b"body"
-        rewritten = migrate_v2_to_v5(
-            original, v2_tenant="acme", v3_tenant="globex"
-        )
+        rewritten = migrate_v2_to_v5(original, v2_tenant="acme", v3_tenant="globex")
         assert rewritten.startswith(b"\xc0\xde\x01\x05")
         assert rewritten[4:] == original[4:]
 

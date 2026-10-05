@@ -123,9 +123,7 @@ class TestDuplicateMessages:
         assert transfer.all_chunks_received()
 
 
-@pytest.mark.skipif(
-    not TOXIPROXY_HOST, reason="toxiproxy host not configured"
-)
+@pytest.mark.skipif(not TOXIPROXY_HOST, reason="toxiproxy host not configured")
 class TestToxiproxyIntegration:
     """Real toxiproxy integration tests; skip when no proxy configured."""
 

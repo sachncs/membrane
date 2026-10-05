@@ -54,9 +54,7 @@ class MerkleDrift:
     remote_root: str
 
 
-def measure_merkle_drift(
-    local: MerkleTree, remote: MerkleTree
-) -> MerkleDrift:
+def measure_merkle_drift(local: MerkleTree, remote: MerkleTree) -> MerkleDrift:
     """Compute the drift between two Merkle trees.
 
     Args:
@@ -68,9 +66,7 @@ def measure_merkle_drift(
         the hex digests of both roots.
     """
     if local.root == remote.root:
-        return MerkleDrift(
-            drift_size=0, local_root=local.root.hex(), remote_root=remote.root.hex()
-        )
+        return MerkleDrift(drift_size=0, local_root=local.root.hex(), remote_root=remote.root.hex())
     diff = set(local.diff(remote))
     return MerkleDrift(
         drift_size=len(diff),

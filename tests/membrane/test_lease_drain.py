@@ -67,7 +67,9 @@ class TestLeaseSemantics:
             mem.add("n2", "127.0.0.1", 8081, peer_cn="admin-1")
             mem.peers["n2"].lease_until = 12345.0
             payload = mem.save_snapshot()
-            snap.save("local", {"schema_version": 2, "cluster_epoch": 1, "membership": payload, "shards": {}, "server": {}})
+            snap.save(
+                "local", {"schema_version": 2, "cluster_epoch": 1, "membership": payload, "shards": {}, "server": {}}
+            )
             loaded = snap.load("local")
             assert loaded is not None
             mem2 = Membership("local", Ring(), Shard())

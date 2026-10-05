@@ -247,7 +247,10 @@ class TestOpJoinMTLS:
         cluster.membership.to_json.return_value = []
         auth = MTLSAuthenticator(_cfg())
         status, body = op_join(
-            cluster, "admin-1", "127.0.0.1", 8081,
+            cluster,
+            "admin-1",
+            "127.0.0.1",
+            8081,
             headers={"x-ssl-client-cn": "admin-1"},
             authenticator=auth,
         )
@@ -261,7 +264,10 @@ class TestOpJoinMTLS:
         cluster = MagicMock()
         auth = MTLSAuthenticator(_cfg())
         status, body = op_join(
-            cluster, "n99", "127.0.0.1", 8081,
+            cluster,
+            "n99",
+            "127.0.0.1",
+            8081,
             headers={"x-ssl-client-cn": "random"},
             authenticator=auth,
         )
@@ -274,7 +280,10 @@ class TestOpJoinMTLS:
         cluster = MagicMock()
         auth = MTLSAuthenticator(_cfg())
         status, body = op_join(
-            cluster, "n2", "127.0.0.1", 8081,
+            cluster,
+            "n2",
+            "127.0.0.1",
+            8081,
             headers={"x-ssl-client-cn": "admin-1"},
             authenticator=auth,
         )
@@ -286,7 +295,10 @@ class TestOpJoinMTLS:
         cluster = MagicMock()
         auth = MTLSAuthenticator(_cfg())
         status, _body = op_join(
-            cluster, "admin-1", "127.0.0.1", 8081,
+            cluster,
+            "admin-1",
+            "127.0.0.1",
+            8081,
             headers={"x-ssl-client-cn": "admin-1"},
             authenticator=auth,
         )
@@ -302,7 +314,10 @@ class TestOpJoinMTLS:
 
         cluster = MagicMock()
         status, body = op_join(
-            cluster, "n2", "127.0.0.1", 8081,
+            cluster,
+            "n2",
+            "127.0.0.1",
+            8081,
             headers={"x-ssl-client-cn": "admin-1"},
             authenticator=_BoomAuth(),
         )
@@ -338,9 +353,7 @@ class TestOpHeartbeatCN:
             headers={"X-Local-Peer-CN": "admin-1", "x-ssl-client-cn": "ignored"},
         )
         assert status == 200
-        cluster.membership.record_peer_cn.assert_called_once_with(
-            "self", "admin-1"
-        )
+        cluster.membership.record_peer_cn.assert_called_once_with("self", "admin-1")
 
     def test_skips_when_cluster_missing(self):
         node = MagicMock()

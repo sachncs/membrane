@@ -27,6 +27,7 @@ def _make_transport(routes: dict[tuple[str, str], tuple[int, bytes]]):
             return httpx.Response(404, content=b"")
         status, body = routes[key]
         return httpx.Response(status, content=body)
+
     return httpx.MockTransport(handler)
 
 
@@ -75,6 +76,7 @@ class TestAsyncWireClientRetry:
             try:
                 httpx.AsyncClient = factory  # type: ignore[assignment]
                 from contextlib import suppress
+
                 with suppress(RuntimeError):
                     await client.request("GET", "/x")
             finally:
@@ -143,6 +145,7 @@ class TestAsyncWireClientRetry:
             try:
                 httpx.AsyncClient = factory  # type: ignore[assignment]
                 from contextlib import suppress
+
                 with suppress(RuntimeError):
                     await client.request("GET", "/x")
             finally:

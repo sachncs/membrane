@@ -83,9 +83,7 @@ class TestAdminBackupRestore:
         for h in list(node.fragments.keys()):
             node.remove_fragment(h)
         assert node.get_stats().fragment_count == 0
-        resp = client.post(
-            "/admin/restore", json={"source": str(backup_path)}
-        )
+        resp = client.post("/admin/restore", json={"source": str(backup_path)})
         assert resp.status_code == 200
         assert resp.json() == {"source": str(backup_path), "restored": 3}
         assert node.get_stats().fragment_count == 3
@@ -111,9 +109,7 @@ class TestAdminBackupRestore:
         app.state.audit_log = log
         app.include_router(create_admin_router())
         client = TestClient(app)
-        resp = client.post(
-            "/admin/restore", json={"source": str(tmp_path / "missing.json")}
-        )
+        resp = client.post("/admin/restore", json={"source": str(tmp_path / "missing.json")})
         assert resp.status_code == 404
 
     def test_restore_requires_source(self, tmp_path):

@@ -42,13 +42,8 @@ class TestMigrateDict:
 class TestMigrateFile:
     def test_dry_run_does_not_modify(self, tmp_path):
         path = tmp_path / "wire.jsonl"
-        path.write_text(
-            '{"schema_version": 4, "tenant_id": "a"}\n'
-            '{"schema_version": 4, "tenant_id": "b"}\n'
-        )
-        rewritten, _skipped = migrate_file(
-            path, default_tenant="public", write=False
-        )
+        path.write_text('{"schema_version": 4, "tenant_id": "a"}\n{"schema_version": 4, "tenant_id": "b"}\n')
+        rewritten, _skipped = migrate_file(path, default_tenant="public", write=False)
         assert rewritten == 2
         # File unchanged.
         assert path.read_text().count('"schema_version": 4') == 2
@@ -56,9 +51,7 @@ class TestMigrateFile:
     def test_write_rewrites_in_place(self, tmp_path):
         path = tmp_path / "wire.jsonl"
         path.write_text('{"schema_version": 4, "tenant_id": "a"}\n')
-        rewritten, _skipped = migrate_file(
-            path, default_tenant="public", write=True
-        )
+        rewritten, _skipped = migrate_file(path, default_tenant="public", write=True)
         assert rewritten == 1
         content = path.read_text()
         assert '"schema_version": 5' in content
@@ -67,20 +60,14 @@ class TestMigrateFile:
     def test_skips_already_v5(self, tmp_path):
         path = tmp_path / "wire.jsonl"
         path.write_text('{"schema_version": 5, "tenant_id": "a"}\n')
-        rewritten, _skipped = migrate_file(
-            path, default_tenant="public", write=False
-        )
+        rewritten, _skipped = migrate_file(path, default_tenant="public", write=False)
         assert rewritten == 0
         assert _skipped == 1
 
     def test_skips_malformed_lines(self, tmp_path):
         path = tmp_path / "wire.jsonl"
-        path.write_text(
-            'not-json\n{"schema_version": 4}\n'
-        )
-        rewritten, _skipped = migrate_file(
-            path, default_tenant="public", write=True
-        )
+        path.write_text('not-json\n{"schema_version": 4}\n')
+        rewritten, _skipped = migrate_file(path, default_tenant="public", write=True)
         # The malformed line is preserved unchanged; the v4 line
         # is migrated.
         assert rewritten == 1
@@ -90,17 +77,11 @@ class TestMigrateFile:
 
     def test_missing_path_is_noop(self, tmp_path):
         path = tmp_path / "nope.jsonl"
-        rewritten, _skipped = migrate_file(
-            path, default_tenant="public", write=False
-        )
+        rewritten, _skipped = migrate_file(path, default_tenant="public", write=False)
         assert rewritten == 0
 
     def test_empty_lines_preserved(self, tmp_path):
         path = tmp_path / "wire.jsonl"
-        path.write_text(
-            '{"schema_version": 4}\n\n{"schema_version": 4}\n'
-        )
-        rewritten, _skipped = migrate_file(
-            path, default_tenant="public", write=True
-        )
+        path.write_text('{"schema_version": 4}\n\n{"schema_version": 4}\n')
+        rewritten, _skipped = migrate_file(path, default_tenant="public", write=True)
         assert rewritten == 2

@@ -47,10 +47,7 @@ class BloomFilter:
         if k_hashes <= 0:
             raise ValueError(f"k_hashes must be > 0, got {k_hashes}")
         if len(bits) * 8 != m_bits:
-            raise ValueError(
-                f"bits length {len(bits)} bytes (={len(bits) * 8} bits) "
-                f"does not match m_bits={m_bits}"
-            )
+            raise ValueError(f"bits length {len(bits)} bytes (={len(bits) * 8} bits) does not match m_bits={m_bits}")
         self.m_bits = m_bits
         self.k_hashes = k_hashes
         self.bits = bits
@@ -101,12 +98,7 @@ class BloomFilter:
 
     def serialize(self) -> bytes:
         """Encode as a self-describing byte string for the wire."""
-        return (
-            _BLOOM_MAGIC
-            + self.m_bits.to_bytes(4, "big")
-            + self.k_hashes.to_bytes(2, "big")
-            + self.bits
-        )
+        return _BLOOM_MAGIC + self.m_bits.to_bytes(4, "big") + self.k_hashes.to_bytes(2, "big") + self.bits
 
     @classmethod
     def deserialize(cls, payload: bytes) -> BloomFilter:
@@ -124,9 +116,7 @@ class BloomFilter:
         k_hashes = int.from_bytes(payload[8:10], "big")
         bits = payload[10:]
         if len(bits) * 8 != m_bits:
-            raise ValueError(
-                f"Bloom bits length {len(bits) * 8} does not match m_bits={m_bits}"
-            )
+            raise ValueError(f"Bloom bits length {len(bits) * 8} does not match m_bits={m_bits}")
         return cls(m_bits=m_bits, k_hashes=k_hashes, bits=bits)
 
     @classmethod
