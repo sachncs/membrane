@@ -1,9 +1,10 @@
 """Permission checks for secret files (API keyfiles, data keys).
 
 A secret that every local user can read is not a secret. The server
-refuses to start on such a file. Group read stays allowed, with a
-warning, because Kubernetes mounts secrets group-readable (0440) when a
-pod sets ``fsGroup``.
+refuses to start on such a file. Group read stays allowed because
+Kubernetes mounts secrets group-readable (0440, owned by the pod's
+``fsGroup``); it is logged when the group is not one of the process's
+own.
 """
 
 import logging
@@ -35,13 +36,14 @@ def require_private_file(path: Path | str, what: str) -> None:
     """
     if os.name != "posix":
         return
-    mode = stat.S_IMODE(Path(path).stat().st_mode)
+    info = Path(path).stat()
+    mode = stat.S_IMODE(info.st_mode)
     if mode & (stat.S_IRWXO | stat.S_IWGRP):
         raise InsecureFileError(
             f"{what} file {str(path)!r} has mode {mode:04o}; other users can read or change it. Run: chmod 600 {path}"
         )
-    if mode & stat.S_IRGRP:
-        logger.warning("%s file %s is group-readable (mode %04o)", what, path, mode)
+    if mode & stat.S_IRGRP and info.st_gid != os.getegid() and info.st_gid not in os.getgroups():
+        logger.warning("%s file %s is readable by group %s (mode %04o)", what, path, info.st_gid, mode)
 
 
 __all__ = ["InsecureFileError", "require_private_file"]

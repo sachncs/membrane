@@ -7,6 +7,8 @@ metadata:
   name: membrane-config
 data:
   MEMBRANE_LOG_LEVEL: "INFO"
+  # One JSON object per line, with request IDs, for log pipelines.
+  MEMBRANE_LOG_FORMAT: "json"
   MEMBRANE_COMPUTE: "cpu"
   MEMBRANE_PORT: "8080"
   MEMBRANE_REDIS_URL: "redis://membrane-redis:6379/0"
@@ -19,13 +21,25 @@ data:
   # Strong writes are acknowledged once 2 copies exist (local + 1 peer).
   MEMBRANE_CONSISTENCY: "strong"
   MEMBRANE_QUORUM_COUNT: "2"
+  # SIGTERM drain budget; keep terminationGracePeriodSeconds above it
+  # plus the preStop pause (statefulset.yaml).
+  MEMBRANE_DRAIN_TIMEOUT: "30"
+  # In-flight request bound: excess requests get 503 + Retry-After.
+  MEMBRANE_MAX_CONCURRENCY: "64"
+  # Requests per second per credential (0 disables); excess gets 429.
+  MEMBRANE_RATE_LIMIT: "0"
 ---
-# Secret template. Generate real keys, e.g.:
-#   kubectl create secret generic membrane-secrets \
-#     --from-file=api-keys=./api-keys --from-file=peer-api-key=./peer-api-key
-# `api-keys` lines are "<key>:<subject>:<scope,...>". The peer key must
-# also appear in `api-keys` with the admin scope: peers replicate every
-# tenant's fragments and propagate deletes.
+# Secret template. Generate each key with `membrane keys generate`, which
+# prints the key and its hashed keyfile line:
+#   membrane keys generate --subject membrane-peers --scope admin
+#   membrane keys generate --subject ingest-svc --scope read --scope write
+#   membrane keys generate --subject metrics-scraper --scope read
+# `api-keys` holds only the hashed lines. `peer-api-key` (presented by
+# each node to its peers) and `metrics-token` (presented by Prometheus)
+# hold the keys themselves. The peer key needs the admin scope: peers
+# replicate every tenant's fragments and propagate deletes.
+#   kubectl create secret generic membrane-secrets --from-file=api-keys=./api-keys \
+#     --from-file=peer-api-key=./peer-api-key --from-file=metrics-token=./metrics-token
 apiVersion: v1
 kind: Secret
 metadata:
@@ -33,9 +47,9 @@ metadata:
 type: Opaque
 stringData:
   api-keys: |
-    REPLACE_WITH_PEER_KEY:membrane-peers:admin
-    REPLACE_WITH_CLIENT_KEY:ingest-svc:read,write
-    REPLACE_WITH_METRICS_KEY:metrics-scraper:read
+    sha256:REPLACE_WITH_PEER_KEY_DIGEST:membrane-peers:admin
+    sha256:REPLACE_WITH_CLIENT_KEY_DIGEST:ingest-svc:read,write
+    sha256:REPLACE_WITH_METRICS_KEY_DIGEST:metrics-scraper:read
   peer-api-key: |
     REPLACE_WITH_PEER_KEY
   metrics-token: |

@@ -58,6 +58,8 @@ RESERVED_ATTRIBUTES: frozenset[str] = frozenset(
         "process",
         "message",
         "taskName",
+        # uvicorn duplicates its messages with ANSI colour codes.
+        "color_message",
     }
 )
 

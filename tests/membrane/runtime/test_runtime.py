@@ -193,9 +193,18 @@ class TestPrivateFiles:
         with pytest.raises(InsecureFileError, match="chmod 600"):
             require_private_file(secret, "key")
 
-    def test_group_readable_warns(self, tmp_path, caplog) -> None:
+    def test_own_group_readable_passes_quietly(self, tmp_path, caplog) -> None:
         secret = tmp_path / "k"
         secret.write_text("x")
         secret.chmod(0o640)
         require_private_file(secret, "key")
-        assert "group-readable" in caplog.text
+        assert "readable by group" not in caplog.text
+
+    def test_foreign_group_readable_warns(self, tmp_path, caplog, monkeypatch) -> None:
+        secret = tmp_path / "k"
+        secret.write_text("x")
+        secret.chmod(0o640)
+        monkeypatch.setattr(os, "getegid", lambda: -1)
+        monkeypatch.setattr(os, "getgroups", lambda: [])
+        require_private_file(secret, "key")
+        assert "readable by group" in caplog.text

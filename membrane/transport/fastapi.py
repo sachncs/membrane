@@ -276,6 +276,8 @@ class FastAPIServer:
             host=self.host,
             port=self.port,
             log_level="info",
+            # Keep uvicorn's records on Membrane's handlers (text or JSON).
+            log_config=None,
             access_log=False,
             limit_concurrency=self.limits.max_connections,
             timeout_keep_alive=int(self.limits.keep_alive_timeout_sec),
