@@ -240,13 +240,12 @@ class Replicator:
         if client is None:
             return set(hashes)
         try:
-            inventory = client.get_inventory()
+            held = client.inventory_digest()
         except Exception as exc:
             logger.debug("replication: inventory from %s failed: %s", peer_id, exc)
             return set(hashes)
-        if not isinstance(inventory, dict):
+        if held is None:
             return set(hashes)
-        held = inventory.get("digest", {})
         self.drift[peer_id] = sum(1 for h in hashes if h not in held)
         failed: set[str] = set()
         for content_hash in hashes:

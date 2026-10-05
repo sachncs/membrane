@@ -136,6 +136,7 @@ class Server:
         acme: ACMEConfig | None = None,
         spiffe: SPIFFEConfig | None = None,
         audit_path: str | None = None,
+        transfer_compression: str = "zstd",
     ) -> None:
         """Initialize the server with all configured subsystems.
 
@@ -183,6 +184,8 @@ class Server:
                 renewed one without a restart.
             audit_path: Persist the admin audit log here (JSON Lines); in
                 memory only when ``None``.
+            transfer_compression: How KV bytes travel to peers (``zstd``,
+                ``lz4``, ``deflate``, ``raw``).
         """
         self.node = node
         self.limits = limits or TransportLimits()
@@ -194,7 +197,7 @@ class Server:
         self.tls = tls or (cluster_config.mtls if cluster_config is not None else None)
         self.authenticator = authenticator or build_authenticator(self.tls)
         if cluster_config is not None:
-            configure_peer_access(cluster_config, self.tls, peer_api_key, peer_networks)
+            configure_peer_access(cluster_config, self.tls, peer_api_key, peer_networks, transfer_compression)
 
         self.start_time = time.time()
         self.request_count = 0
@@ -218,6 +221,7 @@ class Server:
         else:
             self.compute_type = compute
             self.compute_backend = COMPUTE_BACKENDS.get(compute)(llm_url, llm_model, api_key)
+        self.compute_backend.bind(self.node.content_store)
 
         # Redis writes happen on a background thread so the node's lock
         # never waits on a network round trip.

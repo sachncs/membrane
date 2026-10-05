@@ -254,6 +254,26 @@ def transformers_backend(_url: str, model: str, _key: str) -> Backend:
     return cast(Backend, optional_backend("transformers", "Transformers")(model_id=model or "gpt2"))
 
 
+def kv_backend(_url: str, model: str, _key: str) -> Backend:
+    """Build the real KV-extraction backend (HuggingFace causal LM).
+
+    The server binds it to the node's content store, so the extracted
+    frames are what the node serves. Needs the ``local-llm`` extra.
+
+    Args:
+        _url: Unused.
+        model: HuggingFace model id; defaults to ``gpt2``.
+        _key: Unused.
+
+    Returns:
+        Backend: A :class:`~membrane.compute.kv.KVBackend`.
+    """
+    from membrane.compute.kv import KVBackend
+    from membrane.content_store import InProcessBytes
+
+    return KVBackend(content_store=InProcessBytes(), model_id=model or "gpt2")
+
+
 def apikey_authenticator(config_path: str) -> Authenticator:
     """Build the API-key authenticator from a keyfile.
 
@@ -281,6 +301,26 @@ def filesystem_content_store(location: str, key_file: str) -> Any:
     from membrane.runtime.components import build_content_store
 
     return build_content_store(location, key_file)
+
+
+def encrypted_memory_content_store(location: str, key_file: str) -> Any:
+    """Build the encrypted in-process content store (bytes lost on restart).
+
+    Args:
+        location: Data directory (holds the generated key when no key file).
+        key_file: Key file, key directory, or ``secret://NAME``.
+
+    Returns:
+        Any: An :class:`~membrane.content_store_encrypted.EncryptedInProcessBytes`.
+    """
+    from pathlib import Path
+
+    from membrane.content_store_encrypted import EncryptedInProcessBytes
+    from membrane.runtime.components import load_data_key
+
+    root = Path(location)
+    root.mkdir(parents=True, exist_ok=True)
+    return EncryptedInProcessBytes(tenant_id="membrane", key_provider=load_data_key(root, key_file))
 
 
 def memory_content_store(_location: str, _key_file: str) -> Any:
@@ -412,9 +452,11 @@ COMPUTE_BACKENDS.register("ollama", ollama_backend)
 COMPUTE_BACKENDS.register("openai", openai_backend)
 COMPUTE_BACKENDS.register("anthropic", anthropic_backend)
 COMPUTE_BACKENDS.register("transformers", transformers_backend)
+COMPUTE_BACKENDS.register("kv", kv_backend)
 AUTHENTICATORS.register("apikey", apikey_authenticator)
 CONTENT_STORES.register("filesystem", filesystem_content_store)
 CONTENT_STORES.register("memory", memory_content_store)
+CONTENT_STORES.register("encrypted-memory", encrypted_memory_content_store)
 PERSISTENCE.register("memory", memory_persistence)
 PERSISTENCE.register("redis", redis_persistence)
 EVICTION.register("weighted-lru", weighted_lru_eviction)
@@ -445,10 +487,12 @@ __all__ = [
     "apikey_authenticator",
     "aws_secrets",
     "cpu_backend",
+    "encrypted_memory_content_store",
     "env_secrets",
     "filesystem_content_store",
     "gcp_secrets",
     "gpu_backend",
+    "kv_backend",
     "memory_content_store",
     "memory_persistence",
     "ollama_backend",

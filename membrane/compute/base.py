@@ -22,6 +22,7 @@ backends.
 
 import hashlib
 from abc import ABC, abstractmethod
+from typing import Any
 
 from membrane.compute.hashing import token_hash
 from membrane.fragment import Fragment
@@ -85,6 +86,17 @@ class Backend(ABC):
         Returns:
             str: Device name.
         """
+
+    def bind(self, content_store: Any) -> None:
+        """Attach the node's content store; backends that write KV frames override it.
+
+        :class:`~membrane.server.Server` calls this after building the
+        backend, so frames land in the store the node serves from.
+
+        Args:
+            content_store: The node's content store.
+        """
+        return  # most backends write no frames of their own
 
     def simulated_payload(self, fragment: Fragment) -> bytes | None:
         """Return placeholder KV bytes for a fragment this backend produced.

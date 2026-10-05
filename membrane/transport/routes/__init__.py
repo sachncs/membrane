@@ -21,6 +21,7 @@ from membrane.transport.context import app_context
 from membrane.transport.routes.cluster import handle_gossip, handle_join, handle_leave, handle_peers, handle_replicate
 from membrane.transport.routes.common import auth_error_response, route_scope
 from membrane.transport.routes.data import (
+    handle_begin_upload,
     handle_get_blob,
     handle_inventory,
     handle_prefill,
@@ -28,6 +29,7 @@ from membrane.transport.routes.data import (
     handle_retrieve,
     handle_store,
     handle_sync,
+    handle_upload_chunk,
 )
 from membrane.transport.routes.deletes import handle_delete, handle_purge, handle_tombstone, handle_verify
 from membrane.transport.routes.models import (
@@ -80,9 +82,9 @@ def register_routes(app: FastAPI) -> None:
     def retrieve_handler(content_hash: str, request: Request):
         return handle_retrieve(app, content_hash, route_scope(request, "GET", "/retrieve"))
 
-    def inventory_handler(request: Request):
+    def inventory_handler(request: Request, after: str = "", limit: int = 0):
         route_scope(request, "GET", "/inventory")
-        return handle_inventory(app)
+        return handle_inventory(app, after, limit)
 
     def peers_handler(request: Request):
         route_scope(request, "GET", "/peers")
@@ -143,6 +145,14 @@ def register_routes(app: FastAPI) -> None:
     async def get_blob_handler(payload_ref: str, request: Request):
         return await handle_get_blob(app, payload_ref, request)
 
+    async def begin_upload_handler(payload_ref: str, request: Request):
+        return await handle_begin_upload(app, payload_ref, request)
+
+    async def upload_chunk_handler(payload_ref: str, index: int, request: Request):
+        return await handle_upload_chunk(app, payload_ref, index, request)
+
+    app.add_api_route("/blobs/{payload_ref}/upload", begin_upload_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/blobs/{payload_ref}/upload/{index}", upload_chunk_handler, methods=["PUT"], response_model=None)
     app.add_api_route("/blobs/{payload_ref}", put_blob_handler, methods=["PUT"], response_model=None)
     app.add_api_route("/blobs/{payload_ref}", get_blob_handler, methods=["GET"], response_model=None)
     app.add_api_route(

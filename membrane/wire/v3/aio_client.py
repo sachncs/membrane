@@ -77,6 +77,7 @@ class AsyncWireClient:
     timeout_sec: float = 5.0
     breaker: dict[str, CircuitBreaker] = field(default_factory=dict)
     semaphore: asyncio.Semaphore | None = None
+    client: Any = None
 
     async def ensure_semaphore(self) -> asyncio.Semaphore:
         """Lazily create the bulkhead semaphore on first call.
@@ -88,13 +89,79 @@ class AsyncWireClient:
             self.semaphore = asyncio.Semaphore(self.bulkhead.max_concurrent)
         return self.semaphore
 
+    async def send(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+        json_body: Any = None,
+        token: CancellationToken | None = None,
+    ) -> Any:
+        """Send one request through the bulkhead, breaker, and retry policy.
+
+        Transport errors and 5xx responses are retried with jittered
+        backoff and counted against the circuit breaker; while the breaker
+        is open, calls fail fast. Connections are pooled across calls.
+
+        Args:
+            method: HTTP method.
+            path: URL path relative to ``base_url``.
+            headers: Request headers.
+            params: Query parameters.
+            json_body: JSON request body.
+            token: Optional :class:`CancellationToken`.
+
+        Returns:
+            Any: The ``httpx.Response`` (the last one, when every attempt
+            returned 5xx).
+
+        Raises:
+            RuntimeError: When the circuit breaker is open.
+            httpx.HTTPError: When every attempt failed in transport.
+            asyncio.CancelledError: When ``token`` is cancelled.
+        """
+        import httpx
+
+        sem = await self.ensure_semaphore()
+        breaker = self.breaker.setdefault(self.base_url, CircuitBreaker())
+        if not breaker.allow():
+            raise RuntimeError(f"circuit breaker open for {self.base_url}")
+        if self.client is None:
+            self.client = httpx.AsyncClient(timeout=self.timeout_sec)
+        async with sem:
+            url = f"{self.base_url}{path}"
+            last_exc: Exception | None = None
+            last_response: Any = None
+            for attempt in range(self.retry.max_attempts):
+                if token is not None and token.is_cancelled():
+                    raise asyncio.CancelledError("cancelled before request")
+                try:
+                    response = await self.client.request(method, url, headers=headers, params=params, json=json_body)
+                except httpx.HTTPError as exc:
+                    breaker.record_failure()
+                    last_exc = exc
+                else:
+                    if response.status_code < 500:
+                        breaker.record_success()
+                        return response
+                    breaker.record_failure()
+                    last_response = response
+                if attempt + 1 < self.retry.max_attempts:
+                    await asyncio.sleep(compute_backoff(self.retry, attempt))
+            if last_response is not None:
+                return last_response
+            assert last_exc is not None
+            raise last_exc
+
     async def request(
         self,
         method: str,
         path: str,
         token: CancellationToken | None = None,
     ) -> bytes:
-        """Issue a single async HTTP request through the bulkhead.
+        """Issue a body-less request and return the response body.
 
         Args:
             method: HTTP method.
@@ -105,44 +172,18 @@ class AsyncWireClient:
             bytes: Response body.
 
         Raises:
-            asyncio.TimeoutError: When the request exceeds the
-                per-call timeout.
-            asyncio.CancelledError: When ``token`` is cancelled
-                before the request completes.
+            RuntimeError: When the breaker is open or every attempt got 5xx.
         """
-        try:
-            import httpx
-        except ImportError as exc:  # pragma: no cover - import guard
-            raise RuntimeError("httpx is required for AsyncWireClient") from exc
+        response = await self.send(method, path, token=token)
+        if response.status_code >= 500:
+            raise RuntimeError(f"server returned {response.status_code}")
+        return bytes(response.content)
 
-        sem = await self.ensure_semaphore()
-        breaker = self.breaker.setdefault(self.base_url, CircuitBreaker())
-        if breaker.is_open():
-            raise RuntimeError(f"circuit breaker open for {self.base_url}")
-
-        async with sem:
-            url = f"{self.base_url}{path}"
-            last_exc: Exception | None = None
-            for attempt in range(self.retry.max_attempts):
-                if token is not None and token.is_cancelled():
-                    raise asyncio.CancelledError("cancelled before request")
-                try:
-                    async with httpx.AsyncClient(timeout=self.timeout_sec) as client:
-                        resp = await client.request(method, url)
-                        if resp.status_code >= 500:
-                            breaker.record_failure()
-                            last_exc = RuntimeError(f"server returned {resp.status_code}")
-                        else:
-                            breaker.record_success()
-                            return resp.content
-                except httpx.HTTPError as exc:
-                    breaker.record_failure()
-                    last_exc = exc
-                if attempt + 1 < self.retry.max_attempts:
-                    delay = compute_backoff(self.retry, attempt)
-                    await asyncio.sleep(delay)
-            assert last_exc is not None
-            raise last_exc
+    async def close(self) -> None:
+        """Close the pooled HTTP client."""
+        if self.client is not None:
+            await self.client.aclose()
+            self.client = None
 
 
 async def with_deadline(duration_sec: float, awaitable: Any) -> Any:

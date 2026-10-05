@@ -15,6 +15,7 @@ Invalid values fail in the constructor, before anything is started.
 Every refusal raises :class:`SettingsError` with an actionable message.
 """
 
+import importlib.util
 import ipaddress
 import logging
 from dataclasses import dataclass, field
@@ -23,9 +24,11 @@ from pathlib import Path
 from membrane.auth import Authenticator
 from membrane.auth.apikey import APIKeyAuthenticator
 from membrane.auth.spiffe import SPIFFEAuthenticator, parse_id_scopes
+from membrane.codec import method_available
 from membrane.network.config import CONSISTENCY_LEVELS, ClusterConfig
 from membrane.node import Node
 from membrane.otel_tracer.otel import TRACING
+from membrane.runtime.components import load_data_key
 from membrane.runtime.plugins import (
     AUTHENTICATORS,
     COMPUTE_BACKENDS,
@@ -44,6 +47,9 @@ from membrane.secrets import (
 )
 from membrane.security.files import InsecureFileError, require_private_file
 from membrane.server import Server
+from membrane.store.quantizing import FORMATS as QUANTIZATION_FORMATS
+from membrane.store.quantizing import QuantizingStore
+from membrane.store.tiered import WarmTier
 from membrane.transport.acme import LETS_ENCRYPT, ACMEConfig, ACMEError, ensure_certificate
 from membrane.transport.limits import TransportLimits
 from membrane.transport.spiffe import SPIFFEClient, SPIFFEConfig
@@ -80,6 +86,13 @@ class ServerSettings:
             ``redis_url`` and ``memory`` otherwise.
         eviction: Eviction-policy plugin.
         load_hooks: Run every installed ``membrane.hooks`` entry point.
+        warm_tier_bytes: Keep up to this many bytes of fragments evicted from
+            memory in an encrypted on-disk warm tier (``<data-dir>/warm``);
+            0 disables it.
+        kv_quantization: Quantize KV tensors at rest: ``none``, ``int8``,
+            ``fp8_e4m3``, ``fp8_e5m2``, or ``nf4`` (lossy; needs numpy).
+        transfer_compression: How KV bytes travel to peers: ``zstd``,
+            ``lz4``, ``deflate``, or ``raw``.
         otel_endpoint: OTLP/gRPC endpoint for traces; empty uses
             ``OTEL_EXPORTER_OTLP_ENDPOINT`` when set, else tracing is off.
         max_memory: Node memory limit in bytes.
@@ -137,6 +150,9 @@ class ServerSettings:
     eviction: str = "weighted-lru"
     load_hooks: bool = True
     otel_endpoint: str = ""
+    transfer_compression: str = "zstd"
+    kv_quantization: str = "none"
+    warm_tier_bytes: int = 0
     max_memory: int = 1 << 30
     peers: tuple[str, ...] = ()
     advertise_host: str = ""
@@ -185,6 +201,20 @@ class ServerSettings:
             ),
             (self.eviction in EVICTION, f"unknown eviction policy {self.eviction!r}"),
             (self.secret_provider in SECRET_PROVIDERS, f"unknown secret provider {self.secret_provider!r}"),
+            (self.warm_tier_bytes >= 0, "warm tier bytes must not be negative"),
+            (not self.warm_tier_bytes or bool(self.data_dir), "the warm tier needs --data-dir"),
+            (
+                self.kv_quantization == "none" or self.kv_quantization in QUANTIZATION_FORMATS,
+                f"KV quantization must be none or one of {sorted(QUANTIZATION_FORMATS)}",
+            ),
+            (
+                self.kv_quantization == "none" or importlib.util.find_spec("numpy") is not None,
+                "KV quantization needs numpy: install membrane[transfer]",
+            ),
+            (
+                method_available(self.transfer_compression),
+                f"transfer compression {self.transfer_compression!r} is unknown or not installed",
+            ),
             (self.max_memory > 0, "max memory must be positive"),
             (self.consistency in CONSISTENCY_LEVELS, f"consistency must be one of {sorted(CONSISTENCY_LEVELS)}"),
             (self.drain_timeout >= 0, "drain timeout must not be negative"),
@@ -552,12 +582,24 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
         except (OSError, ValueError) as exc:
             raise SettingsError(f"Cannot open data directory {settings.data_dir!r}: {exc}") from exc
 
+    if settings.kv_quantization != "none":
+        from membrane.content_store import InProcessBytes
+
+        content_store = QuantizingStore(content_store or InProcessBytes(), settings.kv_quantization)
     node = Node(
         node_id=settings.node_id,
         max_memory_bytes=settings.max_memory,
         content_store=content_store,
         eviction_policy=EVICTION.get(settings.eviction)(),
     )
+    if settings.warm_tier_bytes:
+        from membrane.content_store import FilesystemBlob
+
+        root = Path(settings.data_dir)
+        warm_store = FilesystemBlob(
+            root / "warm", tenant_id="membrane-warm", key_provider=load_data_key(root, settings.data_key_file)
+        )
+        node.lower_tier = WarmTier(warm_store, settings.warm_tier_bytes)
     server = Server(
         node=node,
         transport=settings.transport,
@@ -582,6 +624,7 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
         acme=acme_config(settings),
         spiffe=spiffe_config(settings),
         audit_path=str(Path(settings.data_dir) / "audit.jsonl") if settings.data_dir else None,
+        transfer_compression=settings.transfer_compression,
     )
     if settings.redis_url and not server.durable:
         raise SettingsError(

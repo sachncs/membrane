@@ -59,6 +59,10 @@ server refuses to start otherwise.
 | `--max-connections` | `MEMBRANE_MAX_CONNECTIONS` | unlimited | Open connections accepted |
 | `--drain-timeout` | `MEMBRANE_DRAIN_TIMEOUT` | 30 | Seconds a `SIGTERM` drain may take |
 | `--log-format` | `MEMBRANE_LOG_FORMAT` | `text` (`json` in the image) | One JSON object per log line, with `request_id` |
+| `--transfer-compression` | `MEMBRANE_TRANSFER_COMPRESSION` | `zstd` | How KV bytes travel between nodes (`zstd`, `lz4`, `deflate`, `raw`); blobs of 8 MiB or more upload in resumable, verified chunks |
+| `--kv-quantization` | `MEMBRANE_KV_QUANTIZATION` | `none` | Store KV tensors as `int8`, `fp8_e4m3`, `fp8_e5m2`, or `nf4` (lossy; 2-4x smaller; needs `membrane[transfer]`) |
+| `--warm-tier-bytes` | `MEMBRANE_WARM_TIER_BYTES` | 0 | Keep fragments evicted from memory in an encrypted on-disk tier (`<data-dir>/warm`) up to this size; reads promote them back |
+| `--content-store` | `MEMBRANE_CONTENT_STORE` | `filesystem` | `filesystem` (encrypted, durable), `encrypted-memory`, `memory`, or a plugin |
 
 On `SIGTERM` (or Ctrl+C) a node drains: `/readyz` returns 503 so load
 balancers stop routing to it, writes get 503 + `Retry-After`, primaries

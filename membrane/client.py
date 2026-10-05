@@ -305,6 +305,7 @@ class AsyncMembraneClient:
         api_key: str = "",
         timeout: float = 5.0,
         client: httpx.AsyncClient | None = None,
+        resilient: bool = False,
     ) -> None:
         """Initialize the async client.
 
@@ -313,11 +314,20 @@ class AsyncMembraneClient:
             api_key: Bearer token (optional).
             timeout: Per-request timeout.
             client: Optional :class:`httpx.AsyncClient` override.
+            resilient: Route calls through an
+                :class:`~membrane.wire.v3.aio_client.AsyncWireClient`:
+                bounded concurrency, retries with jittered backoff on
+                transport errors and 5xx, and a circuit breaker.
         """
+        from membrane.wire.v3.aio_client import AsyncWireClient
+
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
         self.__client = client or httpx.AsyncClient(timeout=timeout)
+        self.wire = (
+            AsyncWireClient(base_url=self.base_url, timeout_sec=timeout, client=self.__client) if resilient else None
+        )
 
     @property
     def __headers(self) -> dict[str, str]:
@@ -338,8 +348,8 @@ class AsyncMembraneClient:
             dict[str, Any]: The server's response body.
         """
         resp = await self.__acall(
-            self.__client.post,
-            f"{self.base_url}/store",
+            "POST",
+            "/store",
             json={"fragment": fragment_payload, "is_primary": is_primary},
             headers=self.__headers,
         )
@@ -357,8 +367,8 @@ class AsyncMembraneClient:
             dict[str, Any] | None: The response body, or ``None`` when absent.
         """
         resp = await self.__acall(
-            self.__client.get,
-            f"{self.base_url}/retrieve",
+            "GET",
+            "/retrieve",
             params={"content_hash": content_hash},
             headers=self.__headers,
         )
@@ -380,8 +390,8 @@ class AsyncMembraneClient:
             dict[str, Any]: The created fragments.
         """
         resp = await self.__acall(
-            self.__client.post,
-            f"{self.base_url}/prefill",
+            "POST",
+            "/prefill",
             json={"prompt_tokens": prompt_tokens, "model_id": model_id},
             headers=self.__headers,
         )
@@ -395,25 +405,33 @@ class AsyncMembraneClient:
         Returns:
             dict[str, Any]: The node's inventory digest.
         """
-        resp = await self.__acall(self.__client.get, f"{self.base_url}/inventory", headers=self.__headers)
+        resp = await self.__acall("GET", "/inventory", headers=self.__headers)
         if resp.status_code >= 400:
             raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
-    async def __acall(self, method: Any, *args: Any, **kwargs: Any) -> Any:
+    async def __acall(self, method: str, path: str, **kwargs: Any) -> Any:
         """Issue a request, translating transport failures.
 
         Args:
-            method: Bound async HTTP client method (``get``/``post``).
-            *args: Positional arguments for ``method``.
-            **kwargs: Keyword arguments for ``method``.
+            method: HTTP method.
+            path: URL path.
+            **kwargs: ``headers``, ``params``, and ``json``.
 
         Returns:
             Any: The HTTP response.
         """
         try:
-            return await method(*args, **kwargs)
-        except httpx.TransportError as exc:
+            if self.wire is not None:
+                return await self.wire.send(
+                    method,
+                    path,
+                    headers=kwargs.get("headers"),
+                    params=kwargs.get("params"),
+                    json_body=kwargs.get("json"),
+                )
+            return await self.__client.request(method, f"{self.base_url}{path}", **kwargs)
+        except (httpx.TransportError, RuntimeError) as exc:
             raise connection_error(self.base_url, exc) from exc
 
     async def close(self) -> None:

@@ -62,7 +62,7 @@ ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("POST", "/store"): "write",
     ("POST", "/replicate"): "write",
     ("POST", "/prefill"): "write",
-    ("POST", "/sync"): "write",
+    ("POST", "/sync"): "admin",  # pulls every tenant's fragments with peer credentials
     ("POST", "/gossip"): "write",
     ("POST", "/join"): "write",
     ("POST", "/leave"): "write",
@@ -76,6 +76,8 @@ ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("PUT", "/blobs"): "admin",
     ("GET", "/blobs"): "admin",
     ("HEAD", "/blobs"): "admin",
+    ("POST", "/blobs/upload"): "admin",
+    ("PUT", "/blobs/upload"): "admin",
 }
 """(method, path) -> required scope. ``public`` means no auth check."""
 

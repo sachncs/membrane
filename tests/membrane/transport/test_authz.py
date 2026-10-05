@@ -48,12 +48,12 @@ class TestRequiredScope:
         assert required_scope("POST", "/store") == "write"
         assert required_scope("POST", "/replicate") == "write"
         assert required_scope("POST", "/prefill") == "write"
-        assert required_scope("POST", "/sync") == "write"
         assert required_scope("POST", "/gossip") == "write"
         assert required_scope("POST", "/join") == "write"
         assert required_scope("POST", "/leave") == "write"
 
     def test_admin(self):
+        assert required_scope("POST", "/sync") == "admin"
         assert required_scope("POST", "/delete") == "admin"
         assert required_scope("POST", "/tombstone") == "admin"
         assert required_scope("POST", "/purge") == "admin"

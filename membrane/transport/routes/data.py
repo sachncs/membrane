@@ -6,9 +6,11 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from membrane.auth import AuthContext
+from membrane.codec import COMPRESSION_METHODS, CompressionTransport
 from membrane.compute.cpu import CPU
 from membrane.integrity import record_corrupt_payload
 from membrane.metrics import NodeMetrics
+from membrane.network.peer import ACCEPT_COMPRESSION_HEADER, COMPRESS_MIN_BYTES, COMPRESSION_HEADER
 from membrane.transport.context import app_context
 from membrane.transport.metrics import record_transport
 from membrane.transport.ops import (
@@ -20,6 +22,7 @@ from membrane.transport.ops import (
     op_retrieve,
     op_store,
     op_sync,
+    valid_payload_ref,
 )
 from membrane.transport.routes.common import (
     read_limited_body,
@@ -32,6 +35,7 @@ from membrane.transport.routes.models import (
     StoreRequest,
     SyncRequest,
 )
+from membrane.transport.uploads import MAX_CHUNK_BYTES, UploadError, UploadRegistry
 from membrane.wire.v3.chunks import sha256_hex
 
 
@@ -92,20 +96,23 @@ def handle_store(app: FastAPI, req: StoreRequest, request: Request):
     return respond(status, body)
 
 
-def handle_inventory(app: FastAPI):
-    """Serve ``GET /inventory``.
+def handle_inventory(app: FastAPI, after: str = "", limit: int = 0):
+    """Serve ``GET /inventory`` (``?after=&limit=`` pages through large nodes).
 
     Args:
         app: The FastAPI application.
+        after: Page cursor.
+        limit: Page size; ``0`` for everything (capped at 100,000 per page).
 
     Returns:
         object: The HTTP response.
     """
+    limit = min(max(limit, 0), 100_000)
     status, body = record_transport(
         transport_metrics_for(app),
         "inventory",
         "GET",
-        lambda: op_inventory(app_context(app).node),
+        lambda: op_inventory(app_context(app).node, after=after, limit=limit),
     )
     return respond(status, body)
 
@@ -180,6 +187,11 @@ async def handle_put_blob(app: FastAPI, payload_ref: str, request: Request) -> R
     if data is None:
         return JSONResponse({"error": "payload too large", "limit": MAX_BODY_BYTES}, status_code=413)
     claimed = request.headers.get("x-content-sha256", "")
+    if request.headers.get(COMPRESSION_HEADER.lower()):
+        try:
+            data = await asyncio.to_thread(CompressionTransport().decompress, data, MAX_BODY_BYTES)
+        except (ValueError, RuntimeError) as exc:
+            return JSONResponse({"error": "bad compressed body", "detail": str(exc)}, status_code=400)
     status, body = await asyncio.to_thread(
         record_transport,
         transport_metrics_for(app),
@@ -206,13 +218,104 @@ async def handle_get_blob(app: FastAPI, payload_ref: str, request: Request) -> R
     status, data = await asyncio.to_thread(op_get_blob, app_context(app).node, payload_ref)
     if data is None:
         return JSONResponse({"error": "not found" if status == 404 else "invalid payload_ref"}, status_code=status)
-    headers = {"X-Content-SHA256": sha256_hex(data), "Content-Length": str(len(data))}
+    headers = {"X-Content-SHA256": sha256_hex(data)}
     if request.method == "HEAD":
+        headers["Content-Length"] = str(len(data))
         return Response(status_code=200, headers=headers, media_type="application/octet-stream")
+    accepted = request.headers.get(ACCEPT_COMPRESSION_HEADER.lower(), "raw")
+    if accepted in COMPRESSION_METHODS and accepted != "raw" and len(data) >= COMPRESS_MIN_BYTES:
+        data = await asyncio.to_thread(CompressionTransport(accepted).compress, data)
+        headers[COMPRESSION_HEADER] = accepted
     return Response(content=data, headers=headers, media_type="application/octet-stream")
 
 
+async def handle_begin_upload(app: FastAPI, payload_ref: str, request: Request) -> Response:
+    """Serve ``POST /blobs/{payload_ref}/upload``: start or resume a chunked upload.
+
+    Args:
+        app: The FastAPI application.
+        payload_ref: Content-store key.
+        request: Body ``{"chunk_size", "total_bytes", "chunks": [sha256...], "sha256"}``.
+
+    Returns:
+        Response: ``{"received": [indices]}``, ``{"stored": true}`` when the
+        bytes are already here, or ``400`` / ``429``.
+    """
+    route_scope(request, "POST", "/blobs/upload")
+    node = app_context(app).node
+    if node is None or not valid_payload_ref(payload_ref):
+        return JSONResponse({"error": "invalid payload_ref"}, status_code=400)
+    if node.content_store.has(payload_ref):
+        return JSONResponse({"stored": True, "received": []})
+    body = await request.json()
+    try:
+        received = uploads_for(app).begin(
+            payload_ref,
+            int(body["chunk_size"]),
+            int(body["total_bytes"]),
+            [str(c) for c in body["chunks"]],
+            str(body["sha256"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        status = 429 if "retry later" in str(exc) else 400
+        return JSONResponse({"error": str(exc)}, status_code=status)
+    return JSONResponse({"stored": False, "received": received})
+
+
+async def handle_upload_chunk(app: FastAPI, payload_ref: str, index: int, request: Request) -> Response:
+    """Serve ``PUT /blobs/{payload_ref}/upload/{index}``: one chunk of an upload.
+
+    Args:
+        app: The FastAPI application.
+        payload_ref: Content-store key.
+        index: Chunk index.
+        request: The chunk bytes (optionally compressed).
+
+    Returns:
+        Response: ``{"stored": true}`` once the last chunk completes the
+        verified payload, else ``{"stored": false, "received": [...]}``.
+    """
+    route_scope(request, "PUT", "/blobs/upload")
+    data = await read_limited_body(request, MAX_CHUNK_BYTES + 64)
+    if data is None:
+        return JSONResponse({"error": "chunk too large"}, status_code=413)
+    if request.headers.get(COMPRESSION_HEADER.lower()):
+        try:
+            data = CompressionTransport().decompress(data, MAX_CHUNK_BYTES)
+        except (ValueError, RuntimeError) as exc:
+            return JSONResponse({"error": "bad compressed body", "detail": str(exc)}, status_code=400)
+    registry = uploads_for(app)
+    try:
+        payload = await asyncio.to_thread(registry.add_chunk, payload_ref, index, data)
+    except UploadError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    if payload is None:
+        return JSONResponse({"stored": False, "received": registry.received(payload_ref)})
+    node = app_context(app).node
+    if node is None:
+        return JSONResponse({"error": "no node"}, status_code=503)
+    await asyncio.to_thread(node.content_store.put, payload_ref, payload)
+    return JSONResponse({"stored": True, "received": []})
+
+
+def uploads_for(app: FastAPI) -> UploadRegistry:
+    """Return the app's upload registry, creating it on first use.
+
+    Args:
+        app: The FastAPI application.
+
+    Returns:
+        UploadRegistry: Staged uploads.
+    """
+    registry = getattr(app.state, "uploads", None)
+    if registry is None:
+        registry = UploadRegistry(max_bytes=MAX_BODY_BYTES)
+        app.state.uploads = registry
+    return registry
+
+
 __all__ = [
+    "handle_begin_upload",
     "handle_get_blob",
     "handle_inventory",
     "handle_prefill",
@@ -220,4 +323,6 @@ __all__ = [
     "handle_retrieve",
     "handle_store",
     "handle_sync",
+    "handle_upload_chunk",
+    "uploads_for",
 ]

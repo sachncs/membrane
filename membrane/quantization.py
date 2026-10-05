@@ -372,63 +372,117 @@ class Int8PerChannelQuantizer:
         return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(original_dtype)
 
 
-class FP8E4M3Quantizer:
-    """fp8 e4m3 quantization.
+@dataclass(frozen=True)
+class FP8Codebook:
+    """The 256 code points of an 8-bit float format.
 
-    When the host has ``torch.float8_e4m3fn`` and a numpy that
-    can read it (numpy 2.x), the wire stores 1 fp8 byte per
-    element. Otherwise the path falls back to int8 with a
-    documented scale of 240; the wire header remains fp8 so the
-    receiver's dequantize reads the right number of bytes.
+    Attributes:
+        decode: Value of each code (NaN for codes that are not finite).
+        sorted_values: Finite values, ascending, de-duplicated.
+        sorted_codes: The code for each entry of ``sorted_values``.
+        max_value: Largest finite value.
     """
 
-    format_id: int = FORMAT_FP8_E4M3
-    format_name: str = "fp8_e4m3"
+    decode: Any
+    sorted_values: Any
+    sorted_codes: Any
+    max_value: float
 
-    def __has_fp8(self) -> bool:
-        """Return whether both torch fp8 and numpy fp8 are available.
 
-        Returns:
-            bool: Whether both torch fp8 and numpy fp8 are available.
-        """
-        try:
-            import torch
+def fp8_codebook(exponent_bits: int, mantissa_bits: int, bias: int, has_infinity: bool) -> FP8Codebook:
+    """Build the codebook of an fp8 format (sign, exponent, mantissa bits).
 
-            _ = torch.float8_e4m3fn
-        except ImportError, AttributeError:
-            return False
-        try:
-            import numpy as np
+    Args:
+        exponent_bits: Exponent width (4 for e4m3, 5 for e5m2).
+        mantissa_bits: Mantissa width (3 for e4m3, 2 for e5m2).
+        bias: Exponent bias.
+        has_infinity: IEEE-style top exponent (e5m2); otherwise only the
+            all-ones pattern is NaN (e4m3fn).
 
-            np.dtype("float8_e4m3fn")
-            return True
-        except TypeError, ValueError:
-            return False
+    Returns:
+        FP8Codebook: Decode table and the sorted finite values for encoding.
+    """
+    import numpy as np
+
+    top = (1 << exponent_bits) - 1
+    values = np.empty(256, dtype="float32")
+    for code in range(256):
+        sign = -1.0 if code & 0x80 else 1.0
+        exponent = (code >> mantissa_bits) & top
+        mantissa = code & ((1 << mantissa_bits) - 1)
+        if (has_infinity and exponent == top) or (
+            not has_infinity and exponent == top and mantissa == (1 << mantissa_bits) - 1
+        ):
+            values[code] = np.nan
+        elif exponent == 0:
+            values[code] = sign * (mantissa / (1 << mantissa_bits)) * 2.0 ** (1 - bias)
+        else:
+            values[code] = sign * (1 + mantissa / (1 << mantissa_bits)) * 2.0 ** (exponent - bias)
+    finite = np.flatnonzero(np.isfinite(values))
+    order = finite[np.argsort(values[finite], kind="stable")]
+    sorted_values, first = np.unique(values[order], return_index=True)
+    return FP8Codebook(
+        decode=values,
+        sorted_values=sorted_values,
+        sorted_codes=order[first].astype("uint8"),
+        max_value=float(sorted_values[-1]),
+    )
+
+
+def fp8_encode(codebook: FP8Codebook, scaled: Any) -> Any:
+    """Round each value to the nearest code point (values beyond the range saturate).
+
+    Args:
+        codebook: The format's codebook.
+        scaled: Values already divided by their scale.
+
+    Returns:
+        Any: ``uint8`` codes, same shape.
+    """
+    import numpy as np
+
+    values = codebook.sorted_values
+    flat = np.clip(scaled.reshape(-1), values[0], values[-1])
+    upper = np.clip(np.searchsorted(values, flat), 1, len(values) - 1)
+    lower = upper - 1
+    nearest = np.where(flat - values[lower] <= values[upper] - flat, lower, upper)
+    return codebook.sorted_codes[nearest].reshape(scaled.shape)
+
+
+class FP8Quantizer:
+    """fp8 quantization with a per-row scale; one byte per element.
+
+    Values are scaled so each row's largest magnitude maps to the
+    format's largest finite value, then rounded to the nearest fp8 code
+    point. Pure numpy: no GPU or ``torch`` fp8 dtype is needed.
+
+    Attributes:
+        format_id: Wire format id.
+        format_name: Format name.
+        codebook: The format's code points.
+    """
+
+    format_id: int
+    format_name: str
+    codebook: FP8Codebook
 
     def quantize(self, tensor: np.ndarray) -> bytes:
-        """Quantize a 2-D tensor to fp8 e4m3.
+        """Quantize a tensor (flattened to rows) to fp8 codes.
 
         Args:
-            tensor: 2-D array (rows, cols).
+            tensor: Any-shaped array.
 
         Returns:
-            bytes: Per-row scales (float32) + raw fp8 bytes (or
-            int8 fallback bytes when fp8 is not supported).
+            bytes: ``rows (u32) | cols (u32) | per-row scales (float32) | codes``.
         """
         import numpy as np
 
         arr, n_rows, n_cols = row_col(tensor)
         abs_max = np.max(np.abs(arr), axis=1).astype("float32")
         abs_max = np.where(abs_max == 0, 1.0, abs_max)
-        scale = abs_max / 240.0
-        scaled = (arr / scale[:, None]).astype("float32")
-        if self.__has_fp8():
-            import torch
-
-            scaled = scaled.astype(torch.float8_e4m3fn)
-        else:
-            scaled = scaled.clip(-240, 240).astype("int8")
-        return struct.pack("<I", n_rows) + struct.pack("<I", n_cols) + scale.tobytes() + scaled.tobytes()
+        scale = (abs_max / self.codebook.max_value).astype("float32")
+        codes = fp8_encode(self.codebook, (arr / scale[:, None]).astype("float32"))
+        return struct.pack("<II", n_rows, n_cols) + scale.tobytes() + codes.tobytes()
 
     def dequantize(
         self,
@@ -436,7 +490,7 @@ class FP8E4M3Quantizer:
         original_dtype: str,
         original_shape: tuple[int, ...],
     ) -> np.ndarray:
-        """Inverse of :func:`quantize`.
+        """Inverse of :meth:`quantize`.
 
         Args:
             payload: Bytes produced by :meth:`quantize`.
@@ -448,114 +502,29 @@ class FP8E4M3Quantizer:
         """
         import numpy as np
 
-        offset = 0
-        n_rows = struct.unpack_from("<I", payload, offset)[0]
-        offset += 4
-        n_cols = struct.unpack_from("<I", payload, offset)[0]
-        offset += 4
+        n_rows, n_cols = struct.unpack_from("<II", payload, 0)
+        offset = 8
         scale = np.frombuffer(payload[offset : offset + 4 * n_rows], dtype="float32")
         offset += 4 * n_rows
-        body = payload[offset : offset + n_rows * n_cols]
-        if self.__has_fp8():
-            import torch
-
-            values = np.frombuffer(body, dtype=torch.float8_e4m3fn).astype("float32")
-        else:
-            values = np.frombuffer(body, dtype="int8").astype("float32")
-        flat = (values * scale[:, None]).reshape(-1)
+        codes = np.frombuffer(payload[offset : offset + n_rows * n_cols], dtype="uint8").reshape(n_rows, n_cols)
+        flat = (self.codebook.decode[codes] * scale[:, None]).reshape(-1)
         return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(original_dtype)
 
 
-class FP8E5M2Quantizer:
-    """fp8 e5m2 quantization.
+class FP8E4M3Quantizer(FP8Quantizer):
+    """fp8 e4m3fn (4 exponent bits, 3 mantissa bits; max 448): more precision."""
 
-    Symmetric counterpart to :class:`FP8E4M3Quantizer`; the
-    e5m2 mantissa has one more bit so it is the better choice
-    for activations where the range matters more than the
-    precision.
-    """
+    format_id = FORMAT_FP8_E4M3
+    format_name = "fp8_e4m3"
+    codebook = fp8_codebook(exponent_bits=4, mantissa_bits=3, bias=7, has_infinity=False)
 
-    format_id: int = FORMAT_FP8_E5M2
-    format_name: str = "fp8_e5m2"
 
-    def __has_fp8(self) -> bool:
-        """Return whether both torch fp8 and numpy fp8 are available.
+class FP8E5M2Quantizer(FP8Quantizer):
+    """fp8 e5m2 (5 exponent bits, 2 mantissa bits; max 57344): more range."""
 
-        Returns:
-            bool: Whether both torch fp8 and numpy fp8 are available.
-        """
-        try:
-            import torch
-
-            _ = torch.float8_e5m2
-        except ImportError, AttributeError:
-            return False
-        try:
-            import numpy as np
-
-            np.dtype("float8_e5m2")
-            return True
-        except TypeError, ValueError:
-            return False
-
-    def quantize(self, tensor: np.ndarray) -> bytes:
-        """Quantize a 2-D tensor to fp8 e5m2.
-
-        Args:
-            tensor: 2-D array (rows, cols).
-
-        Returns:
-            bytes: Per-row scales (float32) + raw fp8 bytes.
-        """
-        import numpy as np
-
-        arr, n_rows, n_cols = row_col(tensor)
-        abs_max = np.max(np.abs(arr), axis=1).astype("float32")
-        abs_max = np.where(abs_max == 0, 1.0, abs_max)
-        scale = abs_max / 28000.0
-        scaled = (arr / scale[:, None]).astype("float32")
-        if self.__has_fp8():
-            import torch
-
-            scaled = scaled.astype(torch.float8_e5m2)
-        else:
-            scaled = scaled.clip(-28000, 28000).astype("int8")
-        return struct.pack("<I", n_rows) + struct.pack("<I", n_cols) + scale.tobytes() + scaled.tobytes()
-
-    def dequantize(
-        self,
-        payload: bytes,
-        original_dtype: str,
-        original_shape: tuple[int, ...],
-    ) -> np.ndarray:
-        """Inverse of :func:`quantize`.
-
-        Args:
-            payload: Bytes produced by :meth:`quantize`.
-            original_dtype: Dtype of the tensor before quantization.
-            original_shape: Shape of the tensor before quantization.
-
-        Returns:
-            np.ndarray: The reconstructed tensor.
-        """
-        import numpy as np
-
-        offset = 0
-        n_rows = struct.unpack_from("<I", payload, offset)[0]
-        offset += 4
-        n_cols = struct.unpack_from("<I", payload, offset)[0]
-        offset += 4
-        scale = np.frombuffer(payload[offset : offset + 4 * n_rows], dtype="float32")
-        offset += 4 * n_rows
-        body = payload[offset : offset + n_rows * n_cols]
-        if self.__has_fp8():
-            import torch
-
-            values = np.frombuffer(body, dtype=torch.float8_e5m2).astype("float32")
-        else:
-            values = np.frombuffer(body, dtype="int8").astype("float32")
-        flat = (values * scale[:, None]).reshape(-1)
-        return flat[: int(np.prod(original_shape))].reshape(original_shape).astype(original_dtype)
+    format_id = FORMAT_FP8_E5M2
+    format_name = "fp8_e5m2"
+    codebook = fp8_codebook(exponent_bits=5, mantissa_bits=2, bias=15, has_infinity=True)
 
 
 class NF4Quantizer:
@@ -663,12 +632,16 @@ __all__ = [
     "FORMAT_FP8_E5M2",
     "FORMAT_INT8",
     "FORMAT_NF4",
+    "FP8Codebook",
     "FP8E4M3Quantizer",
     "FP8E5M2Quantizer",
+    "FP8Quantizer",
     "Int8PerChannelQuantizer",
     "NF4Quantizer",
     "QuantizedFrame",
     "Quantizer",
     "dequantize",
+    "fp8_codebook",
+    "fp8_encode",
     "quantize",
 ]

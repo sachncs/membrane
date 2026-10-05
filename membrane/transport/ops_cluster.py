@@ -20,19 +20,15 @@ defined here for backward compatibility.
 """
 
 import hashlib
-import json
 import logging
 import time
 from typing import Any, cast
-from urllib.request import Request, urlopen
 
 from membrane.auth import AuthContext
-from membrane.errors import NetworkError
 from membrane.gc import TombstoneTable
 from membrane.network.cluster import Cluster
 from membrane.network.peer import JsonDict
 from membrane.node import Node
-from membrane.serialization import from_dict
 from membrane.transfer import TransferService
 
 logger = logging.getLogger(__name__)
@@ -56,65 +52,66 @@ def op_sync(
     source_url: str,
     auth_context: AuthContext | None = None,
 ) -> tuple[int, JsonDict]:
-    """``POST /sync`` — pull missing fragments from a source URL.
+    """``POST /sync`` — copy fragments this node lacks (or holds outdated) from a source node.
 
-    Validates ``source_url`` against the SSRF policy before
-    issuing any outbound HTTP request. A URL that fails the
-    allow-list returns 400 with the SSRF reason.
+    The source is called through the authenticated peer client (bearer
+    key or mTLS client certificate, SSRF policy with address pinning).
+    The inventory is fetched in pages, a delta plan selects missing and
+    outdated fragments, and each fragment's KV bytes are downloaded and
+    digest-verified before its metadata is stored.
 
     Args:
         node: Local node to fill.
-        transfer_service: Service used to move fragments. A default
-            :class:`TransferService` is created when ``None``.
-        source_url: Base URL of the node to pull missing fragments from.
+        transfer_service: Supplies the local inventory; a default one is
+            created when ``None``.
+        source_url: Base URL of the source node.
         auth_context: Authenticated caller; ``None`` when authentication is
             off.
 
     Returns:
-        tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
+        tuple[int, JsonDict]: ``400`` for a URL the SSRF policy rejects;
+        otherwise ``{"success", "transferred", "failed", "outdated"}``, or
+        ``{"error": "network"}`` when the source cannot be reached.
     """
+    from membrane.network.peer import Peer
+    from membrane.security.url_allowlist import SSRFError, validate_outbound_url
+    from membrane.sync import DeltaSync
+
     if not source_url:
         return ok({"error": "missing source_url"})
     if node is None:
         return ok({"error": "no node"})
-    from membrane.security import validate_outbound_url
-    from membrane.security.url_allowlist import SSRFError
-
     try:
-        inventory_url = validate_outbound_url(f"{source_url}/inventory")
+        validate_outbound_url(f"{source_url.rstrip('/')}/inventory")
     except SSRFError as exc:
         return 400, {"error": "ssrf rejected", "reason": str(exc), "url": "inventory"}
-    try:
-        with urlopen(Request(inventory_url), timeout=5) as resp:
-            remote_data = json.loads(resp.read().decode())
-        remote_digest = remote_data.get("digest", {})
-        transfer_service = transfer_service or TransferService(local_node=node)
-        local_digest = transfer_service.inventory_digest(node) or {}
-        missing = transfer_service.compare_inventories(local_digest, remote_digest)
-        transferred: list[str] = []
-        for h in missing:
-            try:
-                retrieve_url = validate_outbound_url(f"{source_url}/retrieve?content_hash={h}")
-            except SSRFError as exc:
-                return 400, {
-                    "error": "ssrf rejected",
-                    "reason": str(exc),
-                    "url": "retrieve",
-                    "content_hash": h,
-                }
-            with urlopen(Request(retrieve_url), timeout=5) as resp:
-                remote_frag_data = json.loads(resp.read().decode())
-            if remote_frag_data.get("found"):
-                frag = from_dict(remote_frag_data["fragment"])
-                if node.store(frag, is_primary=False):
-                    transferred.append(h)
-        return ok({"success": True, "transferred": transferred})
-    except NetworkError as exc:
-        logger.warning("sync failed (network): %s", exc)
+    source = Peer(source_url)
+    remote_digest = source.inventory_digest()
+    if remote_digest is None:
         return ok({"error": "network"})
-    except Exception as exc:
-        logger.warning("sync failed (unexpected): %s", exc)
-        return ok({"error": "internal"})
+    local_digest = (transfer_service or TransferService(local_node=node)).inventory_digest(node) or {}
+    plan = DeltaSync.plan_from_digests(source.base_url, node.node_id, remote_digest, local_digest)
+    transferred: list[str] = []
+    failed: list[str] = []
+    for content_hash in plan.missing_hashes + plan.outdated_hashes:
+        fragment = source.retrieve_fragment(content_hash)
+        if fragment is None:
+            failed.append(content_hash)
+            continue
+        ref = fragment.payload_ref
+        if ref is not None and not node.content_store.has(ref):
+            data = source.get_blob(ref)  # digest-verified
+            if data is None:
+                failed.append(content_hash)
+                continue
+            node.content_store.put(ref, data)
+        if node.store(fragment, is_primary=False):
+            transferred.append(content_hash)
+        else:
+            failed.append(content_hash)
+    if failed:
+        logger.warning("sync from %s: %s fragments failed", source.base_url, len(failed))
+    return ok({"success": True, "transferred": transferred, "failed": failed, "outdated": len(plan.outdated_hashes)})
 
 
 def op_join(
