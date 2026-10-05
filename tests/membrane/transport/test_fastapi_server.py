@@ -41,6 +41,7 @@ class TestFastAPIServer:
 
     def test_store_and_retrieve(self, client):
         frag = make_fragment("abc")
+        client.app.state.node.content_store.put(frag.payload_ref, b"kv-bytes")
         payload = {
             "fragment": to_dict(frag),
             "is_primary": True,
@@ -55,6 +56,14 @@ class TestFastAPIServer:
         assert data["found"] is True
         assert data["fragment"]["identity"]["payload_hash"] == "abc"
 
+    def test_store_rejects_missing_payload_bytes(self, client):
+        """A fragment whose payload_ref is not in the content store is a 422, not a phantom write."""
+        frag = make_fragment("nobytes")
+        resp = client.post("/store", json={"fragment": to_dict(frag), "is_primary": True})
+        assert resp.status_code == 422
+        assert resp.json()["payload_ref"] == frag.payload_ref
+        assert client.get("/retrieve?content_hash=nobytes").json()["found"] is False
+
     def test_retrieve_not_found(self, client):
         resp = client.get("/retrieve?content_hash=missing")
         assert resp.status_code == 200
@@ -62,6 +71,7 @@ class TestFastAPIServer:
 
     def test_inventory(self, client):
         frag = make_fragment("inv1")
+        client.app.state.node.content_store.put(frag.payload_ref, b"kv-bytes")
         client.post(
             "/store",
             json={
@@ -124,9 +134,7 @@ class TestFastAPIServer:
         resp = client.post("/join", json={"node_id": "n2", "host": "127.0.0.1", "port": 8081})
         assert resp.status_code == 200
         assert resp.json()["success"] is True
-        cluster.membership.add.assert_called_once_with(
-            "n2", "127.0.0.1", 8081, peer_cn=""
-        )
+        cluster.membership.add.assert_called_once_with("n2", "127.0.0.1", 8081, peer_cn="")
 
     def test_server_start_stop(self):
         node = Node("n1", max_memory_bytes=10000)

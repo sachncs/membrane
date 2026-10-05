@@ -1,37 +1,42 @@
 ---
-# ConfigMap for non-secret runtime configuration.
+# ConfigMap for non-secret runtime configuration. Every key is a
+# `membrane serve` option (see `membrane serve --help`).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: membrane-config
 data:
-  # `membrane serve` reads MEMBRANE_* env vars; this is the YAML form
-  # operators can patch.
   MEMBRANE_LOG_LEVEL: "INFO"
-  MEMBRANE_TRANSPORT: "http"
   MEMBRANE_COMPUTE: "cpu"
   MEMBRANE_PORT: "8080"
   MEMBRANE_REDIS_URL: "redis://membrane-redis:6379/0"
+  # Seed peers: the stable StatefulSet DNS names.
+  MEMBRANE_PEERS: "membrane-0.membrane-headless:8080,membrane-1.membrane-headless:8080,membrane-2.membrane-headless:8080"
+  # Pod CIDR of your cluster. Peer calls to these addresses bypass the
+  # SSRF private-address block. Set it to the narrowest range that
+  # covers the pod network; never include 169.254.0.0/16.
+  MEMBRANE_PEER_NETWORKS: "10.0.0.0/8"
+  # Strong writes are acknowledged once 2 copies exist (local + 1 peer).
+  MEMBRANE_CONSISTENCY: "strong"
+  MEMBRANE_QUORUM_COUNT: "2"
 ---
-# Secret template for sensitive values. Replace placeholders and apply.
+# Secret template. Generate real keys, e.g.:
+#   kubectl create secret generic membrane-secrets \
+#     --from-file=api-keys=./api-keys --from-file=peer-api-key=./peer-api-key
+# `api-keys` lines are "<key>:<subject>:<scope,...>". The peer key must
+# also appear in `api-keys` with the admin scope: peers replicate every
+# tenant's fragments and propagate deletes.
 apiVersion: v1
 kind: Secret
 metadata:
   name: membrane-secrets
 type: Opaque
 stringData:
-  # Bearer tokens accepted by the APIKeyAuthenticator.
-  # Format: "<api_key>:<subject>:<scope1>,<scope2>"
-  MEMBRANE_API_KEYS_FILE: |
-    # ak_live_admin:sre-bot:admin
-    # ak_live_writer:ingest-svc:write
-    # ak_live_reader:metrics-scraper:read
-  # TLS key + cert (PEM-encoded).
-  MEMBRANE_TLS_KEY: |
-    -----BEGIN PRIVATE KEY-----
-    REPLACE_ME
-    -----END PRIVATE KEY-----
-  MEMBRANE_TLS_CERT: |
-    -----BEGIN CERTIFICATE-----
-    REPLACE_ME
-    -----END CERTIFICATE-----
+  api-keys: |
+    REPLACE_WITH_PEER_KEY:membrane-peers:admin
+    REPLACE_WITH_CLIENT_KEY:ingest-svc:read,write
+    REPLACE_WITH_METRICS_KEY:metrics-scraper:read
+  peer-api-key: |
+    REPLACE_WITH_PEER_KEY
+  metrics-token: |
+    REPLACE_WITH_METRICS_KEY

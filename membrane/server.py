@@ -1,6 +1,6 @@
 """Server: unified production server orchestrating transport, compute, and persistence.
 
-Wraps an HTTP (stdlib or FastAPI) or gRPC transport, a compute
+Wraps the FastAPI HTTP transport, a compute
 backend (CPU/GPU/Transformers/OpenAI/Anthropic/Ollama), and an
 optional Redis persistence layer into a single runnable
 service.
@@ -17,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
+from membrane.auth import Authenticator
 from membrane.compute.base import Backend
 from membrane.gc import Sweeper, TombstoneTable
 from membrane.metrics import (
@@ -35,6 +36,7 @@ from membrane.registry import Registry
 from membrane.snapshot import SNAPSHOT_SCHEMA_VERSION, ClusterEpochGuard, Snapshot
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
+from membrane.transport.tls import MTLSConfig
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +128,19 @@ def _try_import(class_name: str) -> Any:
 _register_compute_backends()
 
 
+def _resolves_to_loopback(host: str) -> bool:
+    """Return True when ``host`` resolves only to loopback addresses."""
+    import ipaddress
+    import socket
+
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    addresses = {ipaddress.ip_address(info[4][0]) for info in infos}
+    return bool(addresses) and all(addr.is_loopback for addr in addresses)
+
+
 @dataclass
 class ServerEvent:
     """A single server event for dashboard logging.
@@ -192,8 +207,7 @@ class Server:
 
     Args:
         node: Node instance.
-        transport: ``"http"`` (FastAPI), ``"stdlib"`` (stdlib
-            HTTP), or ``"grpc"``.
+        transport: ``"http"`` (FastAPI); the only supported value.
         compute: ``"cpu"``, ``"gpu"``, ``"ollama"``,
             ``"openai"``, ``"anthropic"``, or ``"transformers"``.
             Alternatively an existing :class:`Backend` instance.
@@ -205,6 +219,19 @@ class Server:
         llm_url: Base URL for the chosen LLM backend.
         llm_model: Model identifier for the chosen backend.
         api_key: API key for the chosen backend.
+        authenticator: Inbound request authenticator. When ``None``
+            and ``cluster_config.mtls`` requires client certificates,
+            an :class:`~membrane.auth.mtls.MTLSAuthenticator` is built
+            from it; otherwise the node serves unauthenticated.
+        peer_api_key: Bearer token this node presents to its peers.
+            Required in a multi-node cluster that authenticates with
+            API keys; the key needs ``admin`` scope because peers
+            replicate every tenant's fragments and propagate deletes.
+        peer_networks: CIDR ranges the cluster's peers live in.
+            Outbound peer calls to these ranges bypass the SSRF
+            private-address blocklist.
+        tls: mTLS configuration for the listener and for peer
+            calls. Defaults to ``cluster_config.mtls``.
     """
 
     def __init__(
@@ -223,12 +250,16 @@ class Server:
         checkpoint_interval_sec: float = 30.0,
         cluster_epoch: int = 0,
         sweep_interval_sec: float = 30.0,
+        authenticator: Authenticator | None = None,
+        peer_api_key: str = "",
+        peer_networks: tuple[str, ...] = (),
+        tls: MTLSConfig | None = None,
     ) -> None:
         """Initialize the server with all configured subsystems.
 
         Args:
             node: Local :class:`Node` instance.
-            transport: ``"http"`` / ``"stdlib"`` / ``"grpc"``.
+            transport: ``"http"``.
             compute: Backend name or pre-built instance.
             redis_url: Redis URL for the persistence layer.
             host: Bind address.
@@ -256,6 +287,10 @@ class Server:
         self.host = host
         self.port = port
         self.cluster_config = cluster_config
+        self.tls = tls or (cluster_config.mtls if cluster_config is not None else None)
+        self.authenticator = authenticator or self.build_authenticator(self.tls)
+        if cluster_config is not None:
+            self.configure_peer_access(cluster_config, self.tls, peer_api_key, peer_networks)
 
         self.start_time = time.time()
         self.request_count = 0
@@ -276,10 +311,7 @@ class Server:
             self.compute_type = compute
             factory = COMPUTE_BACKENDS.get(compute)
             if factory is None:
-                raise ValueError(
-                    f"Unknown compute backend '{compute}'. "
-                    f"Available: {sorted(COMPUTE_BACKENDS)}"
-                )
+                raise ValueError(f"Unknown compute backend '{compute}'. Available: {sorted(COMPUTE_BACKENDS)}")
             self.compute_backend = factory(llm_url, llm_model, api_key)
 
         self.persistence = self.build_persistence(redis_url)
@@ -353,13 +385,52 @@ class Server:
                 logger.warning("Redis connection failed (%s); using in-memory persistence", exc)
         return CachingPersistence(backend)
 
-    def build_transport(self, transport: str, host: str, port: int) -> Any:
-        mtls = self.cluster_config.mtls if self.cluster_config is not None else None
-        if transport != "http":
-            raise ValueError(
-                f"unsupported transport={transport!r}; v3.0.0 ships the http transport only"
+    @staticmethod
+    def build_authenticator(mtls: MTLSConfig | None) -> Authenticator | None:
+        """Return an mTLS authenticator when client certs are required."""
+        if mtls is None or not mtls.require_client_cert:
+            return None
+        from membrane.auth.mtls import MTLSAuthenticator
+
+        return MTLSAuthenticator(mtls)
+
+    @staticmethod
+    def configure_peer_access(
+        cluster_config: ClusterConfig,
+        mtls: MTLSConfig | None,
+        peer_api_key: str,
+        peer_networks: tuple[str, ...],
+    ) -> None:
+        """Install process-wide peer credentials and the outbound URL policy.
+
+        Seed peer hosts are always allowed; ``peer_networks`` admits
+        peers learned later through join responses and gossip.
+        """
+        from membrane.network.peer import PeerCredentials, set_default_peer_credentials
+        from membrane.security.url_allowlist import configure as configure_allowlist
+        from membrane.transport.tls import build_client_context
+
+        set_default_peer_credentials(
+            PeerCredentials(
+                scheme="https" if mtls is not None else "http",
+                bearer_token=peer_api_key,
+                ssl_context=build_client_context(mtls) if mtls is not None else None,
             )
-        return FastAPIServer(
+        )
+        seed_hosts = [seed.rsplit(":", 1)[0].strip("[]") for seed in cluster_config.peers]
+        networks = list(peer_networks)
+        # A local (loopback) cluster advertises 127.0.0.1 / ::1 rather
+        # than the seed hostnames, so admit loopback peers when the
+        # operator seeded the cluster with loopback addresses.
+        if any(_resolves_to_loopback(host) for host in seed_hosts):
+            networks += ["127.0.0.0/8", "::1/128"]
+        configure_allowlist(allowlist=seed_hosts, allowed_networks=networks)
+
+    def build_transport(self, transport: str, host: str, port: int) -> Any:
+        mtls = self.tls
+        if transport != "http":
+            raise ValueError(f"unsupported transport={transport!r}; v3.0.0 ships the http transport only")
+        server = FastAPIServer(
             node=self.node,
             host=host,
             port=port,
@@ -368,7 +439,18 @@ class Server:
             cluster_manager=self.cluster_manager,
             metrics_registry=self.metrics_registry,
             tls=mtls,
+            authenticator=self.authenticator,
         )
+        # op_store reads these: ``server.is_draining`` rejects writes
+        # during drain, and ``quorum_attempt`` makes strong / quorum
+        # writes block on replica acks instead of degrading to
+        # local-only.
+        server.app.state.server = self
+        if self.cluster_manager is not None:
+            from membrane.quorum import attempt_quorum_acks
+
+            server.app.state.quorum_attempt = attempt_quorum_acks
+        return server
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -438,9 +520,7 @@ class Server:
             if self.checkpoint_thread is not None:
                 self.checkpoint_thread.join(timeout=deadline_sec)
                 if self.checkpoint_thread.is_alive():
-                    logger.warning(
-                        "checkpoint thread did not exit within %.1fs", deadline_sec
-                    )
+                    logger.warning("checkpoint thread did not exit within %.1fs", deadline_sec)
                     joined_cleanly = False
         # Flush a final checkpoint before tearing down so the next
         # process can rebuild from up-to-date state.
@@ -451,10 +531,10 @@ class Server:
             self.cluster_manager.stop(deadline_sec=deadline_sec)
         if self.sweeper is not None:
             self.sweeper.stop(timeout=deadline_sec)
+            if self.sweeper_thread is not None:
+                self.sweeper_thread.join(timeout=deadline_sec)
             if self.sweeper_thread is not None and self.sweeper_thread.is_alive():
-                logger.warning(
-                    "sweeper thread did not exit within %.1fs", deadline_sec
-                )
+                logger.warning("sweeper thread did not exit within %.1fs", deadline_sec)
                 joined_cleanly = False
             self.sweeper_thread = None
         self.log_event("info", f"Server stopped (cleanly={joined_cleanly})")
@@ -519,8 +599,7 @@ class Server:
                 targets = [
                     client
                     for peer in membership.healthy()
-                    if (client := membership.get_client(peer.node_id)) is not None
-                    and peer.node_id != self.node.node_id
+                    if (client := membership.get_client(peer.node_id)) is not None and peer.node_id != self.node.node_id
                 ]
                 if not targets:
                     stragglers.append(content_hash)
@@ -594,7 +673,7 @@ class Server:
     def _sweeper_loop(self) -> None:
         """Background loop sweeping TTL + tombstones every ``sweep_interval_sec``.
 
-        Uses :meth:`Node.evict` (TTL) for the eviction phase and
+        Uses :meth:`Node.sweep_expired` (TTL only) for the eviction phase and
         the shared :class:`~membrane.gc.TombstoneTable` for the
         soft-delete sweep. The post-sweep observer forgets the
         directory entries of every hash touched.
@@ -602,8 +681,8 @@ class Server:
         node = self.node
 
         def _evict() -> list[str]:
-            evicted: list[str] = node.evict(target_bytes=len(node.fragments) * 16)
-            return evicted if evicted is not None else []
+            # TTL only: capacity eviction happens on the store path.
+            return node.sweep_expired()
 
         while self.running:
             if not isinstance(self.sweeper, Sweeper):

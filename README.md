@@ -34,7 +34,7 @@ reconstruction-driven retrieval.
 - **Cluster membership and gossip** — Heartbeats, failure detection, gossip state exchange, background replication
 - **Consistent hashing + sharding** — Primary/replica placement with rebalancing on topology changes
 - **Pluggable compute backends** — CPU, GPU (PyTorch), Transformers, OpenAI, Anthropic, Ollama
-- **Multiple transports** — stdlib HTTP, FastAPI HTTP, and gRPC over the same logical surface
+- **Authenticated HTTP transport** — FastAPI over HTTP or mTLS, with per-route scopes (API keys or client certificates) and per-tenant read isolation
 - **Redis persistence** — Optional durability with LRU eviction and inventory digests
 - **CLI with TUI dashboard** — Live monitoring, cluster status, and interactive setup wizard
 
@@ -59,8 +59,15 @@ pip install -e ".[dev]"
 ### Optional extras
 
 ```bash
-# Server dependencies (FastAPI, gRPC, Redis, httpx)
+# Server dependencies (FastAPI, Redis, httpx, cryptography for TLS / encryption at rest)
 pip install -e ".[server]"
+
+# KV transfer engine and quantization (numpy, lz4, zstandard)
+pip install -e ".[transfer]"
+
+# Secret backends and tracing
+pip install -e ".[secrets-aws]"   # or secrets-gcp, secrets-vault
+pip install -e ".[otel]"
 
 # GPU compute backend (PyTorch with CUDA)
 pip install -e ".[gpu]"
@@ -84,8 +91,12 @@ python scripts/demo_full.py
 python scripts/demo_membrane.py
 python scripts/demo_quantization.py
 
-# Start a single-node server with the CPU backend.
-membrane serve --node-id n1 --port 8080 --transport http --compute cpu
+# Start a single-node server with the CPU backend (binds 127.0.0.1).
+membrane serve --node-id n1 --port 8080 --compute cpu
+
+# Expose it on the network: authentication is required.
+printf '%s:ops:admin\n' "$(openssl rand -hex 32)" > api-keys
+membrane serve --host 0.0.0.0 --api-key-file api-keys
 
 # Open a live TUI dashboard against a running server.
 membrane dashboard --host localhost --port 8080
@@ -161,55 +172,83 @@ retrieved = node.fragments.get(frag.identity.payload_hash)
 
 ### Docker
 
-```bash
-# Build and run a single-node server.
-docker compose up --build
+The image is configured entirely through `MEMBRANE_*` environment
+variables and refuses to start without authentication.
 
-# Run the test suite inside the container.
-docker compose --profile test run --rm membrane-tests
+```bash
+docker build -t membrane .
+docker run --read-only --tmpfs /tmp -p 8080:8080 \
+  -v "$PWD/secrets:/run/secrets:ro" \
+  -e MEMBRANE_API_KEY_FILE=/run/secrets/api-keys membrane
 ```
+
+[`docker-compose.yml`](docker-compose.yml) runs Membrane behind an nginx TLS
+edge with Redis persistence; its header lists the two files to create first.
+Kubernetes manifests for a 3-replica cluster live in
+[`deployment/k8s/`](deployment/k8s/).
 
 ---
 
 ## Configuration
 
-### Compute and transport
+Every `membrane serve` flag can also be set through the environment
+variable shown; `membrane serve --help` is the authoritative list.
+
+### Server
 
 | Flag | Env Variable | Default | Description |
 |------|--------------|---------|-------------|
-| `--compute` | `MEMBRANE_COMPUTE` | `cpu` | `cpu`, `gpu`, `ollama`, `openai`, `anthropic`, `transformers` |
-| `--transport` | `MEMBRANE_TRANSPORT` | `http` | `http` (FastAPI), `stdlib` (stdlib HTTP), or `grpc` |
-| `--redis` | `MEMBRANE_REDIS_URL` | _disabled_ | Redis URL when set, e.g. `redis://localhost:6379/0` |
-| `--max-memory` | — | `1<<30` | Per-node memory budget in bytes |
-| `--port` | `MEMBRANE_PORT` | `8080` | Server listen port |
-| `--host` | `MEMBRANE_HOST` | `0.0.0.0` | Server bind host |
 | `--node-id` | `MEMBRANE_NODE_ID` | `membrane-0` | Unique node identifier |
+| `--host` | `MEMBRANE_HOST` | `127.0.0.1` | Bind address (`0.0.0.0` for all interfaces) |
+| `--port` | `MEMBRANE_PORT` | `8080` | Listen port |
+| `--compute` | `MEMBRANE_COMPUTE` | `cpu` | `cpu`, `gpu`, `ollama`, `openai`, `anthropic`, `transformers` |
+| `--redis` | `MEMBRANE_REDIS_URL` | _disabled_ | Redis URL, e.g. `redis://localhost:6379/0` |
+| `--max-memory` | `MEMBRANE_MAX_MEMORY` | `1<<30` | Per-node memory budget in bytes |
+| `--daemon` | `MEMBRANE_DAEMON` | `false` | No TUI dashboard (implied when stdout is not a TTY) |
+| `--log-level` | `MEMBRANE_LOG_LEVEL` | `INFO` | Logging level |
+
+### Security
+
+The server refuses to listen on a non-loopback address unless one of the
+authentication modes below is configured (or `--allow-unauthenticated` is
+passed). Every route except `/livez` and `/readyz` then requires
+credentials: reads need the `read` scope, writes `write`, deletes and
+`/admin/*` `admin`. Failures return `401` / `403`.
+
+| Flag | Env Variable | Description |
+|------|--------------|-------------|
+| `--api-key-file` | `MEMBRANE_API_KEY_FILE` | Keyfile, one `<key>:<subject>:<scope,...>` per line. Clients send `Authorization: Bearer <key>`; `<subject>` is the tenant the key reads and writes. |
+| `--tls-cert` / `--tls-key` / `--tls-ca` | `MEMBRANE_TLS_CERT_FILE` / `_KEY_FILE` / `_CA_FILE` | Serve HTTPS and require client certificates signed by the CA. The certificate must allow both server and client auth (it is also used for peer calls). |
+| `--tls-allowed-cn` | `MEMBRANE_TLS_ALLOWED_CNS` | Client certificate CNs to accept. Scopes come from the CN prefix (`admin-`, `write-`, `read-`). |
+| `--allow-unauthenticated` | `MEMBRANE_ALLOW_UNAUTHENTICATED` | Serve without auth on a public address (development only). |
 
 ### Cluster and replication
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--peer` | _none_ | Seed peer `host:port` (repeatable) |
-| `--heartbeat-interval` | `2.0` | Heartbeat period in seconds |
-| `--gossip-interval` | `5.0` | Gossip period in seconds |
-| `--replica-count` | `2` | Replicas per primary shard |
-| `--failure-remove-threshold` | `4` | Missed heartbeats before removing a peer |
+| Flag | Env Variable | Default | Description |
+|------|--------------|---------|-------------|
+| `--peer` | `MEMBRANE_PEERS` | _none_ | Seed peer `host:port` (repeatable or comma-separated) |
+| `--advertise-host` | `MEMBRANE_ADVERTISE_HOST` | bind host / FQDN | Address peers dial to reach this node |
+| `--peer-network` | `MEMBRANE_PEER_NETWORKS` | _none_ | CIDR of the peer network, exempt from the SSRF private-address block |
+| `--peer-api-key-file` | `MEMBRANE_PEER_API_KEY_FILE` | _none_ | Bearer key presented to peers (API-key clusters; needs `admin`) |
+| `--consistency` | `MEMBRANE_CONSISTENCY` | `strong` | Default write consistency: `strong`, `quorum`, `eventual` |
+| `--quorum-count` | `MEMBRANE_QUORUM_COUNT` | `2` | Copies (local included) a strong write waits for |
+| `--replica-count` | `MEMBRANE_REPLICA_COUNT` | `2` | Replicas per primary shard |
+| `--heartbeat-interval` | `MEMBRANE_HEARTBEAT_INTERVAL` | `2.0` | Heartbeat period in seconds |
+| `--gossip-interval` | `MEMBRANE_GOSSIP_INTERVAL` | `5.0` | Gossip period in seconds |
+| `--failure-remove-threshold` | `MEMBRANE_FAILURE_REMOVE_THRESHOLD` | `4` | Missed heartbeats before removing a peer |
+
+A strong write fails closed with `503` when fewer than `quorum_count - 1`
+healthy peers acknowledge it.
 
 ### LLM backends
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--llm-url` | _none_ | Base URL (used for Ollama or a custom OpenAI endpoint) |
-| `--llm-model` | _none_ | Model identifier (e.g. `llama3.2`, `gpt-4o-mini`, `claude-3-sonnet`) |
-| `--api-key` | _none_ | API key for OpenAI / Anthropic |
+| Flag | Env Variable | Description |
+|------|--------------|-------------|
+| `--llm-url` | `MEMBRANE_LLM_URL` | Base URL (used for Ollama or a custom OpenAI endpoint) |
+| `--llm-model` | `MEMBRANE_LLM_MODEL` | Model identifier (e.g. `llama3.2`, `gpt-4o-mini`) |
+| `--api-key` | `MEMBRANE_LLM_API_KEY` | API key for the OpenAI / Anthropic compute backend |
 
-### Logging
-
-| Variable | Env Variable | Default | Description |
-|----------|--------------|---------|-------------|
-| Log level | `MEMBRANE_LOG_LEVEL` | `INFO` | Logging level |
-
-See [`.env.example`](.env.example) for the full list.
+See [`.env.example`](.env.example) for a starting point.
 
 ---
 
@@ -256,13 +295,13 @@ python scripts/demo.py
 python scripts/demo_full.py
 
 # 3. Spin up a single-node server with the TUI dashboard.
-membrane serve --node-id n1 --port 8080 --transport http --compute cpu
+membrane serve --node-id n1 --port 8080 --compute cpu
 membrane dashboard --host localhost --port 8080
 
-# 4. Three-node cluster with the CPU backend.
-membrane serve --node-id n1 --port 8080 --transport http --peer localhost:8081 --peer localhost:8082
-membrane serve --node-id n2 --port 8081 --transport http --peer localhost:8080 --peer localhost:8082
-membrane serve --node-id n3 --port 8082 --transport http --peer localhost:8080 --peer localhost:8081
+# 4. Three-node local cluster with the CPU backend.
+membrane serve --node-id n1 --port 8080 --daemon --peer localhost:8081 --peer localhost:8082
+membrane serve --node-id n2 --port 8081 --daemon --peer localhost:8080 --peer localhost:8082
+membrane serve --node-id n3 --port 8082 --daemon --peer localhost:8080 --peer localhost:8081
 membrane cluster-status --host localhost --port 8080
 ```
 
@@ -355,9 +394,12 @@ membrane/
 │   └── redis_backend.py               # Redis-backed persistence
 ├── membrane/transport/                # Network transports
 │   ├── __init__.py                    # Public re-exports
-│   ├── http_server.py                 # stdlib HTTP server
-│   ├── fastapi_server.py              # FastAPI + uvicorn
-│   └── grpc_server.py                 # gRPC servicer
+│   ├── fastapi.py                     # FastAPI + uvicorn server
+│   ├── routes_fastapi.py              # Route bindings + per-route auth
+│   ├── ops.py / ops_cluster.py        # Transport-agnostic operations
+│   ├── authz.py                       # Route -> scope table
+│   ├── tls.py / tls_protocol.py       # mTLS config + verified peer CN
+│   └── admin.py                       # /admin/* router
 ├── membrane/network/                  # Peer-to-peer networking
 │   ├── __init__.py                    # Public re-exports
 │   ├── config.py                      # ClusterConfig dataclass

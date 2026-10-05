@@ -123,13 +123,13 @@ class TestConcurrentAuditConsistency:
         app.state.audit_log = log
         errors: list[Exception] = []
 
-        def worker() -> None:
+        # Thread idents are reused once a thread exits, so key the
+        # hashes on an explicit worker index to keep all 40 distinct.
+        def worker(worker_id: int) -> None:
             try:
                 for i in range(5):
                     ident = PayloadIdentity(
-                        payload_hash=f"orphan-{threading.get_ident()}-{i}".rjust(
-                            64, "0"
-                        )[:64],
+                        payload_hash=f"orphan-{worker_id}-{i}".rjust(64, "0")[:64],
                         model_id="m",
                         model_revision="",
                         tokenizer_name="m",
@@ -158,7 +158,7 @@ class TestConcurrentAuditConsistency:
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [threading.Thread(target=worker) for _ in range(8)]
+        threads = [threading.Thread(target=worker, args=(n,)) for n in range(8)]
         for t in threads:
             t.start()
         for t in threads:

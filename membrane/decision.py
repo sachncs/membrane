@@ -134,7 +134,9 @@ class TinyLFU:
         Returns:
             int: The bucket index.
         """
-        return int(hashlib.sha1(key.encode("utf-8")).hexdigest(), 16) % self._sketch_size
+        # Bucketing only, not a security boundary.
+        digest = hashlib.sha1(key.encode("utf-8"), usedforsecurity=False).hexdigest()
+        return int(digest, 16) % self._sketch_size
 
     def _estimate(self, key: str) -> int:
         """Return the current estimated frequency of ``key``.
@@ -178,9 +180,7 @@ class TinyLFU:
             self._window[key] = None
             if len(self._window) > self.window_size:
                 self._window.popitem(last=False)
-            return TinyLFUDecisions(
-                admit=True, victim_key=victim, reason="window_replace_worst"
-            )
+            return TinyLFUDecisions(admit=True, victim_key=victim, reason="window_replace_worst")
 
     def touch(self, key: str) -> None:
         """Record a hit on ``key`` and promote it through the segments.
@@ -401,9 +401,7 @@ class CoaccessSessionPrefetcher:
                 # never fatal.
                 continue
 
-    def predict_next(
-        self, key: str, session_history: Iterable[str] | None = None
-    ) -> PredictHitProbability:
+    def predict_next(self, key: str, session_history: Iterable[str] | None = None) -> PredictHitProbability:
         """Return the pre-serve hit probability for ``key``.
 
         Args:

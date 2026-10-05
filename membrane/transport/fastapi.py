@@ -1,7 +1,7 @@
 """FastAPIServer: production HTTP/REST server using FastAPI + uvicorn.
 
 The shared business logic lives in
-:mod:`membrane.transport.routes`; this module is purely the
+:mod:`membrane.transport.ops`; this module is purely the
 async transport binding.
 
 Endpoints:
@@ -28,13 +28,15 @@ Observability:
     * ``/metrics`` -- Prometheus text exposition.
 
 Security:
-    * Production deployments at 2.0+ must run with
-      :class:`membrane.transport.tls.MTLSConfig` attached. The
-      :class:`MTLSAuthenticator` is the authoritative gate on
-      membership-sensitive endpoints (``/join``, ``/leave``,
-      ``/gossip``). All other endpoints also require a verified
-      peer cert so the cluster cannot impersonate internal-only
-      RPC on a non-mTLS port.
+    * When an :class:`~membrane.auth.Authenticator` is attached
+      (API keys or mTLS), every endpoint except ``/livez`` and
+      ``/readyz`` authenticates the caller and enforces the scope
+      from :data:`membrane.transport.authz.ROUTE_SCOPES`. Failures
+      return ``401`` (unauthenticated) or ``403`` (missing scope).
+    * Multi-node deployments should attach
+      :class:`membrane.transport.tls.MTLSConfig`; the peer CN used
+      for authorization comes from the verified certificate, never
+      from a request header.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from membrane.auth import Authenticator
 from membrane.compute.base import Backend
 from membrane.metrics import MetricsCollector
 from membrane.network.cluster import Cluster
@@ -51,6 +54,7 @@ from membrane.node import Node
 from membrane.transfer import TransferService
 from membrane.transport.routes_fastapi import register_routes
 from membrane.transport.tls import MTLSConfig, build_server_context
+from membrane.transport.tls_protocol import PeerCertH11Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +65,7 @@ def create_app(
     transfer_service: TransferService,
     cluster_manager: Cluster | None,
     metrics_registry: MetricsCollector | None = None,
+    authenticator: Authenticator | None = None,
 ) -> FastAPI:
     """Build a configured FastAPI application for a Membrane node.
 
@@ -72,6 +77,9 @@ def create_app(
         metrics_registry: Optional :class:`MetricsCollector` for the
             ``/metrics`` Prometheus endpoint. When ``None``, ``/metrics``
             falls back to a JSON snapshot of the node's stats.
+        authenticator: Optional :class:`~membrane.auth.Authenticator`.
+            When set, every route except ``/livez`` and ``/readyz``
+            authenticates the caller and enforces its route scope.
 
     Returns:
         FastAPI: Configured application ready to be served by
@@ -83,6 +91,7 @@ def create_app(
     app.state.transfer_service = transfer_service
     app.state.cluster_manager = cluster_manager
     app.state.metrics_registry = metrics_registry
+    app.state.authenticator = authenticator
     if metrics_registry is not None:
         from membrane.metrics import ClusterMetrics, TransportMetrics
 
@@ -95,6 +104,7 @@ def create_app(
     register_routes(app)
     try:
         from membrane.transport.admin import create_admin_router
+
         app.include_router(create_admin_router(), prefix="")
     except ImportError:  # pragma: no cover - admin is a Phase 3.2.6 surface
         pass
@@ -119,10 +129,12 @@ class FastAPIServer:
             :func:`membrane.transport.tls.build_server_context`
             and feeds it to ``uvicorn.Config(ssl_context=...)``.
             uvicorn terminates the handshake and writes the
-            verified peer cert's CN into ``X-SSL-Client-CN`` on
-            every inbound request; the
-            :class:`MTLSAuthenticator` reads that header at the
-            route level.
+            uvicorn terminates the handshake and
+            :class:`~membrane.transport.tls_protocol.PeerCertH11Protocol`
+            records the verified peer cert's CN in the request
+            scope, where :class:`MTLSAuthenticator` reads it.
+        authenticator: Optional authenticator enforced on every
+            non-probe route.
     """
 
     def __init__(
@@ -135,6 +147,7 @@ class FastAPIServer:
         cluster_manager: Cluster | None = None,
         metrics_registry: MetricsCollector | None = None,
         tls: MTLSConfig | None = None,
+        authenticator: Authenticator | None = None,
     ) -> None:
         """Initialize the FastAPI server wrapper."""
         self.node = node
@@ -153,6 +166,7 @@ class FastAPIServer:
             transfer_service=self.transfer_service,
             cluster_manager=cluster_manager,
             metrics_registry=metrics_registry,
+            authenticator=authenticator,
         )
 
     def start(self) -> None:
@@ -188,6 +202,8 @@ class FastAPIServer:
                 "ssl_keyfile": key_path,
                 "ssl_ca_certs": ca_path,
                 "ssl_cert_reqs": 2 if self.tls.require_client_cert else 0,
+                # Surfaces the verified peer cert CN to the authenticator.
+                "http": PeerCertH11Protocol,
             }
             logger.info(
                 "FastAPI mTLS enabled: require_client_cert=%s",
@@ -203,9 +219,7 @@ class FastAPIServer:
         )
         self.server = uvicorn.Server(config)
         scheme = "https" if ssl_kwargs else "http"
-        logger.info(
-            "FastAPI server listening on %s://%s:%s", scheme, self.host, self.port
-        )
+        logger.info("FastAPI server listening on %s://%s:%s", scheme, self.host, self.port)
         try:
             self.server.run()
         finally:

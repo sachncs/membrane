@@ -87,9 +87,7 @@ def create_admin_router() -> APIRouter:
     router = APIRouter(prefix="/admin", tags=["admin"])
 
     @router.get("/fragments/{content_hash}")
-    async def admin_inspect_fragment(
-        content_hash: str, request: Request
-    ) -> dict[str, Any]:
+    async def admin_inspect_fragment(content_hash: str, request: Request) -> dict[str, Any]:
         """Inspect a fragment's metadata.
 
         Args:
@@ -127,9 +125,7 @@ def create_admin_router() -> APIRouter:
             }
 
     @router.post("/placement")
-    async def admin_placement(
-        payload: PlacementOverride, request: Request
-    ) -> dict[str, Any]:
+    async def admin_placement(payload: PlacementOverride, request: Request) -> dict[str, Any]:
         """Override the primary node for a fragment's shard."""
         context = _scope(request, "POST", "/admin/placement")
         cluster = getattr(request.app.state, "cluster_manager", None)
@@ -195,9 +191,7 @@ def create_admin_router() -> APIRouter:
         }
 
     @router.post("/policy")
-    async def admin_set_policy(
-        payload: PolicyUpdate, request: Request
-    ) -> dict[str, Any]:
+    async def admin_set_policy(payload: PolicyUpdate, request: Request) -> dict[str, Any]:
         """Set the :class:`Promotion` knobs."""
         context = _scope(request, "POST", "/admin/policy")
         _audit_log(request).record(
@@ -246,9 +240,7 @@ def create_admin_router() -> APIRouter:
         }
 
     @router.post("/backup")
-    async def admin_backup(
-        payload: BackupRequest, request: Request
-    ) -> dict[str, Any]:
+    async def admin_backup(payload: BackupRequest, request: Request) -> dict[str, Any]:
         """Snapshot the current Node state to ``payload.destination``.
 
         Args:
@@ -273,17 +265,13 @@ def create_admin_router() -> APIRouter:
                     "memory_used_bytes": node.get_stats().memory_used_bytes,
                     "memory_limit_bytes": node.get_stats().memory_limit_bytes,
                 },
-                "fragments": {
-                    h: to_dict(f) for h, f in node.fragments.items()
-                },
+                "fragments": {h: to_dict(f) for h, f in node.fragments.items()},
             }
         target = Path(payload.destination)
         target.parent.mkdir(parents=True, exist_ok=True)
         import json as _json
 
-        target.write_text(
-            _json.dumps(data, sort_keys=True, indent=2), encoding="utf-8"
-        )
+        target.write_text(_json.dumps(data, sort_keys=True, indent=2), encoding="utf-8")
         _audit_log(request).record(
             actor=context.subject,
             action="admin.backup",
@@ -298,9 +286,7 @@ def create_admin_router() -> APIRouter:
         }
 
     @router.post("/restore")
-    async def admin_restore(
-        payload: dict[str, Any], request: Request
-    ) -> dict[str, Any]:
+    async def admin_restore(payload: dict[str, Any], request: Request) -> dict[str, Any]:
         """Restore a snapshot previously written by ``/admin/backup``.
 
         Args:
@@ -329,9 +315,7 @@ def create_admin_router() -> APIRouter:
             try:
                 data = _json.loads(source.read_text(encoding="utf-8"))
             except (OSError, _json.JSONDecodeError) as exc:
-                raise HTTPException(
-                    status_code=400, detail=f"invalid backup: {exc}"
-                ) from exc
+                raise HTTPException(status_code=400, detail=f"invalid backup: {exc}") from exc
             restored = 0
             for _hash, wire in data.get("fragments", {}).items():
                 from membrane.serialization import from_dict as _from_dict
@@ -383,12 +367,13 @@ def _scope(request: Request, method: str, path: str) -> Any:
         HTTPException: 401 / 403 via the authz helper.
     """
     from membrane.auth import AuthContext
+    from membrane.transport.tls_protocol import peer_headers_from_scope
 
     auth = enforce_route_scope(
         authenticator=getattr(request.app.state, "authenticator", None),
         method=method,
         path=f"/admin{path}",
-        headers={k.lower(): v for k, v in request.headers.items()},
+        headers=peer_headers_from_scope(request.scope, request.headers.items()),
     )
     if auth.subject or auth.scopes:
         return auth

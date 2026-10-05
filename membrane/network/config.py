@@ -64,6 +64,9 @@ class ClusterConfig:
             keep this in lock-step with the ``MTLSConfig.allowed_cns``
             allow-list on peers — a peer whose CN is not in the
             list rejects the inbound call.
+        advertise_host: Host peers use to reach this node. Empty
+            means the bind host, or the machine FQDN when binding
+            to a wildcard address.
         default_consistency: Write level applied by
             :func:`op_store` when the incoming fragment's
             ``consistency`` field is missing or matches the
@@ -71,11 +74,12 @@ class ClusterConfig:
             ``"strong"`` so every op_store blocks on quorum.
             Tests may override to ``"quorum"`` or ``"eventual"``
             to skip the blocking path.
-        quorum_count: Number of replica acks op_store waits for
-            under ``strong`` or ``"quorum"`` consistency. Default
-            ``2`` matches :attr:`replica_count`; production
-            clusters typically set this to
-            ``floor(replica_count / 2) + 1``.
+        quorum_count: Number of copies (the local write included)
+            that must exist before op_store acknowledges a
+            ``strong`` or ``"quorum"`` write; op_store waits for
+            ``quorum_count - 1`` peer acks out of a fan-out to
+            :attr:`replica_count` peers. Default ``2`` (local plus
+            one replica). ``1`` makes strong writes local-only.
         cluster_quorum_timeout_sec: Wall-clock budget for the
             op_store quorum wait. On timeout the write fails
             closed (HTTP 503 + ``Retry-After``); the
@@ -132,6 +136,7 @@ class ClusterConfig:
     gossip_max_fragment_entries: int = 50
     mtls: "MTLSConfig | None" = None
     local_peer_cn: str = ""
+    advertise_host: str = ""
     default_consistency: str = "strong"
     quorum_count: int = 2
     # Default ``9.0`` (was ``5.0``) so the cluster_quorum_timeout
@@ -192,6 +197,7 @@ def validate_config(
         gossip_fanout: int = Field(default=2, ge=1)
         gossip_max_fragment_entries: int = Field(default=50, ge=1)
         local_peer_cn: str = ""
+        advertise_host: str = Field(default="", max_length=255)
         default_consistency: str = Field(default="strong")
         quorum_count: int = Field(default=2, ge=1)
         cluster_quorum_timeout_sec: float = Field(default=9.0, gt=0.0)

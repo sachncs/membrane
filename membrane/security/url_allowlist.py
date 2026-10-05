@@ -27,6 +27,13 @@ Operators that need to allow a private address (e.g., a
 sidecar metadata service reachable on a private network) add
 the exact host string to :class:`URLAllowlist.allowlist`. The
 allowlist is consulted before the blocklist.
+
+Cluster peers usually live on private addresses. Operators
+declare the cluster's network ranges in
+:attr:`URLAllowlist.allowed_networks` (``membrane serve
+--peer-network``); a host whose every resolved address falls in
+one of those ranges is permitted. Ranges should be as narrow as
+the deployment allows, and never include ``169.254.0.0/16``.
 """
 
 from __future__ import annotations
@@ -65,9 +72,7 @@ def _is_blocked_ip(ip: ipaddress._BaseAddress) -> bool:
     multicast = getattr(ip, "is_multicast", False)
     unspecified = getattr(ip, "is_unspecified", False)
     reserved = getattr(ip, "is_reserved", False)
-    return bool(
-        private or loopback or link_local or multicast or unspecified or reserved
-    )
+    return bool(private or loopback or link_local or multicast or unspecified or reserved)
 
 
 @dataclass(frozen=True)
@@ -85,11 +90,20 @@ class URLAllowlist:
             ``False`` to skip the DNS check (e.g., tests that
             only exercise the scheme check).
         resolve_timeout: Seconds to spend on the DNS resolve.
+        allowed_networks: IP networks that bypass the blocklist
+            (typically the cluster's pod / node CIDR). A host is
+            permitted only when every address it resolves to is
+            inside one of these networks.
     """
 
     allowlist: frozenset[str] = field(default_factory=frozenset)
     block_private: bool = True
     resolve_timeout: float = 2.0
+    allowed_networks: frozenset[ipaddress.IPv4Network | ipaddress.IPv6Network] = field(default_factory=frozenset)
+
+    def is_ip_allowed(self, ip: ipaddress._BaseAddress) -> bool:
+        """Return True if ``ip`` is inside one of :attr:`allowed_networks`."""
+        return any(ip.version == net.version and ip in net for net in self.allowed_networks)
 
     def is_host_allowed(self, hostname: str) -> bool:
         """Return True if ``hostname`` is on the explicit allow-list.
@@ -200,7 +214,7 @@ def validate_outbound_url(
     if not addresses:
         raise SSRFError(f"no addresses for {host!r}")
     for ip in addresses:
-        if _is_blocked_ip(ip):
+        if _is_blocked_ip(ip) and not policy.is_ip_allowed(ip):
             raise SSRFError(f"host {host!r} resolves to blocked address {ip}")
     return url
 
@@ -208,6 +222,7 @@ def validate_outbound_url(
 def configure(
     allowlist: Iterable[str] = (),
     block_private: bool = True,
+    allowed_networks: Iterable[str] = (),
 ) -> URLAllowlist:
     """Configure the process-wide default :class:`URLAllowlist`.
 
@@ -216,13 +231,19 @@ def configure(
             allow-list.
         block_private: Whether to enforce the private-IP
             blocklist.
+        allowed_networks: CIDR strings (e.g. ``"10.42.0.0/16"``)
+            whose addresses bypass the private-IP blocklist.
 
     Returns:
         URLAllowlist: The newly installed default.
+
+    Raises:
+        ValueError: When a CIDR string is malformed.
     """
     new = URLAllowlist(
         allowlist=frozenset(h.lower() for h in allowlist),
         block_private=block_private,
+        allowed_networks=frozenset(ipaddress.ip_network(n.strip(), strict=False) for n in allowed_networks),
     )
     set_default_allowlist(new)
     return new

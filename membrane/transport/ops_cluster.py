@@ -77,9 +77,7 @@ def op_sync(
         transferred: list[str] = []
         for h in missing:
             try:
-                retrieve_url = validate_outbound_url(
-                    f"{source_url}/retrieve?content_hash={h}"
-                )
+                retrieve_url = validate_outbound_url(f"{source_url}/retrieve?content_hash={h}")
             except SSRFError as exc:
                 return 400, {
                     "error": "ssrf rejected",
@@ -132,8 +130,7 @@ def op_join(
             logger.warning("op_join rejected: %s", exc)
             return 401, {"error": str(exc)}
         peer_cn = context.subject
-        expected_prefix = peer_cn.split("-", 1)[0]
-        if not node_id.startswith(f"{expected_prefix}-") and peer_cn != node_id:
+        if not _cn_matches_node_id(authenticator, peer_cn, node_id):
             logger.warning(
                 "op_join rejected: cn=%s does not match node_id=%s",
                 peer_cn,
@@ -141,7 +138,32 @@ def op_join(
             )
             return 401, {"error": "CN does not match node_id"}
     cluster.membership.add(node_id, host, port, peer_cn=peer_cn)
-    return _ok({"success": True, "peers": cluster.membership.to_json()})
+    peers = cluster.membership.to_json()
+    # Include the seed itself so the joiner can reach it; membership
+    # entries only describe the seed's *other* peers.
+    advertise_host = getattr(cluster, "advertise_host", None)
+    if isinstance(advertise_host, str) and isinstance(cluster.node_id, str):
+        peers = [*peers, {"node_id": cluster.node_id, "host": advertise_host, "port": cluster.port}]
+    return _ok({"success": True, "peers": peers})
+
+
+def _cn_matches_node_id(authenticator: object, peer_cn: str, node_id: str) -> bool:
+    """Return whether an mTLS peer CN may register as ``node_id``.
+
+    Under mTLS the certificate CN is the node's identity, so a CN may
+    only join as itself: either ``node_id`` verbatim or
+    ``<role>-<node_id>`` with a role prefix from
+    :data:`~membrane.auth.mtls.CN_SCOPE_PREFIXES`. Other
+    authenticators (API keys) identify services rather than nodes;
+    for those, the route's ``write`` scope check is the gate.
+    """
+    from membrane.auth.mtls import CN_SCOPE_PREFIXES, MTLSAuthenticator
+
+    if not isinstance(authenticator, MTLSAuthenticator):
+        return True
+    if peer_cn == node_id:
+        return True
+    return any(peer_cn == f"{prefix}{node_id}" for prefix, _scope in CN_SCOPE_PREFIXES)
 
 
 def op_leave(

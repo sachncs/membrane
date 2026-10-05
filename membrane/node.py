@@ -194,9 +194,7 @@ class Node:
         # (or any other tenant-aware store), the Node
         # threads ``tenant_id`` into the put / get calls so the
         # store can derive its per-tenant key.
-        self._store_uses_tenant = bool(
-            hasattr(content_store, "tenant_id") or content_store is None
-        )
+        self._store_uses_tenant = bool(hasattr(content_store, "tenant_id") or content_store is None)
 
         self.fragments: dict[str, Fragment] = {}
         self.primary_hashes: set[str] = set()
@@ -252,9 +250,7 @@ class Node:
                 scopes=caller_scopes,
             )
             authorizer.authorize_write(fragment.tenant_id)
-        if self.admission_policy is not None and not self.admission_policy.should_admit(
-            fragment.reuse_score
-        ):
+        if self.admission_policy is not None and not self.admission_policy.should_admit(fragment.reuse_score):
             logger.debug(
                 "Node %s rejected %s: reuse_score=%.3f below threshold",
                 self.node_id,
@@ -272,9 +268,7 @@ class Node:
             )
             return False
         if self.tier_policy is not None:
-            self._selected_tiers[fragment.identity.payload_hash] = select_tier(
-                self.tier_policy, fragment
-            )
+            self._selected_tiers[fragment.identity.payload_hash] = select_tier(self.tier_policy, fragment)
         if fragment.payload_size > self.max_memory_bytes:
             logger.warning(
                 "Fragment %s size %s exceeds node %s limit %s",
@@ -498,10 +492,7 @@ class Node:
             evicted: list[str] = []
             evicted_fragments: list[Fragment] = []
             freed = 0
-            expired = [
-                h for h, frag in self.fragments.items()
-                if now - self.insertion_times.get(h, now) > frag.ttl
-            ]
+            expired = [h for h, frag in self.fragments.items() if now - self.insertion_times.get(h, now) > frag.ttl]
             for h in expired:
                 if freed >= target_bytes:
                     break
@@ -640,9 +631,7 @@ class Node:
 
             # Phase 2: LRU weighted by reuse_score.
             already_evicted = set(evicted_hashes)
-            lru_evicted, lru_fragments, lru_freed = self.evict_lru(
-                target_bytes - freed, now, already_evicted
-            )
+            lru_evicted, lru_fragments, lru_freed = self.evict_lru(target_bytes - freed, now, already_evicted)
             evicted_hashes.extend(lru_evicted)
             evicted_fragments.extend(lru_fragments)
             freed += lru_freed
@@ -659,6 +648,24 @@ class Node:
             freed += graph_freed
 
             self._fire_eviction_callbacks(evicted_fragments)
+            return evicted_hashes
+
+    def sweep_expired(self, current_time: float | None = None) -> list[str]:
+        """Evict every fragment past its TTL, and nothing else.
+
+        The periodic sweeper uses this instead of :meth:`evict`, whose
+        LRU and graph phases would remove live fragments on a timer.
+
+        Args:
+            current_time: Optional timestamp for deterministic testing.
+
+        Returns:
+            list[str]: The evicted content hashes.
+        """
+        with self.lock:
+            now = current_time if current_time is not None else time.time()
+            evicted_hashes, evicted_fragments, _freed = self.evict_expired(self.memory_usage + 1, now)
+            self._fire_eviction_callbacks(list(evicted_fragments))
             return evicted_hashes
 
     def add_eviction_callback(self, callback: Callable[[object], None]) -> None:

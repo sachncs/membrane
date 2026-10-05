@@ -32,92 +32,100 @@ python scripts/demo_membrane.py
 pytest tests/ -q
 ```
 
-## 3. Docker Deployment
+## 3. Security model in one paragraph
 
-### Build
+`membrane serve` binds `127.0.0.1` by default. To listen on any other
+address it requires inbound authentication: an API keyfile
+(`--api-key-file`) or mTLS (`--tls-cert/--tls-key/--tls-ca`). Every
+route except the `/livez` and `/readyz` probes then needs credentials
+(`read` for reads and `/metrics`, `write` for writes, `admin` for
+deletes and `/admin/*`). See [security.md](security.md).
+
+Keyfile lines are `<key>:<subject>:<scope,...>`; the subject is the
+tenant the key reads and writes:
+
+```text
+3f9c...e1:ingest-svc:read,write
+8a1b...07:metrics-scraper:read
+c42d...9a:membrane-peers:admin
+```
+
+## 4. Docker
 
 ```bash
 docker build -t membrane:latest .
+mkdir -p secrets && cp /path/to/api-keys secrets/
+docker run --read-only --tmpfs /tmp -p 8080:8080 \
+  -v "$PWD/secrets:/run/secrets:ro" \
+  -e MEMBRANE_API_KEY_FILE=/run/secrets/api-keys \
+  membrane:latest
+curl -H "Authorization: Bearer <key>" localhost:8080/inventory
 ```
 
-### Run Paper Reproduction
+The image runs as UID 1000 under `tini`, binds `0.0.0.0:8080`, works with
+a read-only root filesystem (it needs a writable `/tmp` only when mTLS is
+on), and shuts down gracefully on `SIGTERM`. All settings are
+`MEMBRANE_*` environment variables (`membrane serve --help`).
+
+## 5. Docker Compose
+
+[`docker-compose.yml`](../docker-compose.yml) runs one node behind an
+nginx TLS edge with Redis persistence. Create the keyfile and an nginx
+certificate first (commands are in the file header), then:
 
 ```bash
-docker run --rm membrane:latest python scripts/demo.py
+docker compose up --build -d
+curl -k -H "Authorization: Bearer <key>" https://localhost/inventory
 ```
 
-### Run Tests
+## 6. Kubernetes
 
-```bash
-docker run --rm membrane:latest pytest tests/ -q
-```
+[`deployment/k8s/`](../deployment/k8s/) holds a 3-replica StatefulSet
+with a headless Service for peer discovery, a PodDisruptionBudget, a
+NetworkPolicy, and a ServiceMonitor.
 
-### Run Interactive Shell
+1. Create the `membrane-secrets` Secret (`api-keys`, `peer-api-key`,
+   `metrics-token`; see the template in `configmap.yaml`). The peer key
+   must appear in `api-keys` with the `admin` scope.
+2. Set `MEMBRANE_PEER_NETWORKS` in `configmap.yaml` to your pod CIDR.
+   Peer calls to private addresses are otherwise rejected by the SSRF
+   guard.
+3. `kubectl apply -f deployment/k8s/`.
 
-```bash
-docker run --rm -it membrane:latest python
-```
+Each pod advertises
+`<pod>.membrane-headless.<namespace>.svc.cluster.local` to its peers.
+With the defaults (`MEMBRANE_QUORUM_COUNT=2`) a strong write is
+acknowledged once one peer holds a copy, and fails closed with `503`
+when no peer is healthy.
 
-## 4. Docker Compose (Multi-Node)
-
-```bash
-docker compose up --build
-```
-
-This starts:
-- **Redis** (port 6379) — persistence backend
-- **Membrane** (port 8080) — API server
-- **nginx** (port 80) — reverse proxy
-
-### Profiles
-
-```bash
-# Run tests only
-docker compose --profile test run --rm membrane-tests
-```
-
-## 5. Systemd Service (Linux)
+## 7. Systemd Service (Linux)
 
 ```bash
 sudo cp deployment/membrane.service /etc/systemd/system/
+sudo install -d -m 0750 /etc/membrane
+# MEMBRANE_* settings, one per line; at least MEMBRANE_HOST and
+# MEMBRANE_API_KEY_FILE (or the MEMBRANE_TLS_* files).
+sudoedit /etc/membrane/membrane.env
 sudo systemctl daemon-reload
 sudo systemctl enable --now membrane
 sudo journalctl -u membrane -f
 ```
 
-## 6. Environment Variables
+## 8. Multi-node checklist
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MEMBRANE_LOG_LEVEL` | `INFO` | Logging level |
-| `MEMBRANE_REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
-| `MEMBRANE_NODE_ID` | `membrane-0` | Unique node identifier |
-| `MEMBRANE_TRANSPORT` | `http` | Transport protocol (`http` or `grpc`) |
-| `MEMBRANE_COMPUTE` | `cpu` | Compute backend |
-| `MEMBRANE_PORT` | `8080` | Server listen port |
-| `MEMBRANE_HOST` | `0.0.0.0` | Server bind host |
+- Every node needs a unique `MEMBRANE_NODE_ID` and an
+  `MEMBRANE_ADVERTISE_HOST` its peers can resolve.
+- API-key clusters: set `MEMBRANE_PEER_API_KEY_FILE` on every node; the
+  key needs `admin` because peers replicate all tenants' fragments and
+  propagate deletes.
+- mTLS clusters: issue each node a certificate whose CN is its node id
+  with a role prefix (e.g. `admin-membrane-0`) and whose extended key
+  usage allows both server and client auth.
+- Set `MEMBRANE_PEER_NETWORKS` to the peer CIDR.
+- Size `MEMBRANE_QUORUM_COUNT` to at most the number of nodes.
 
-## 7. PyPI Package
+## 9. PyPI Package
 
-```bash
-pip install build twine
-python -m build
-python -m twine upload dist/*
-```
-
-## 8. Production Considerations
-
-Membrane ships with several production-ready components:
-
-- **Persistent storage** — Redis backend with LRU eviction
-- **Network transports** — HTTP (stdlib or FastAPI), gRPC, and peer-to-peer gossip
-- **Compute backends** — CPU, GPU (PyTorch CUDA), and remote LLM APIs
-- **Monitoring** — `/metrics` and `/heartbeat` endpoints; TUI dashboard
-
-For hardened production deployments, consider:
-
-- **Prometheus / Grafana** metrics exporter
-- **Kubernetes StatefulSets** for horizontal scaling
-- **TLS / mTLS** on gRPC and HTTP transports
-- **Rate limiting and authorization** on the public API surface
-- **S3-compatible blob storage** for large fragment offload
+Releases are published by `.github/workflows/release.yml` when a
+`vX.Y.Z` tag matching `pyproject.toml` is pushed, after the full CI
+suite passes.

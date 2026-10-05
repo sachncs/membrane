@@ -46,7 +46,7 @@ def interactive_setup() -> dict[str, Any]:
         return val in ("y", "yes", "true", "1")
 
     node_id = ask("Node ID", "membrane-0")
-    host = ask("Bind host", "0.0.0.0")
+    host = ask("Bind host", "127.0.0.1")
     port = int(ask("Listen port", "8080"))
 
     transport = ask("Transport (http/grpc)", "http")

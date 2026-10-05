@@ -1,5 +1,7 @@
 ---
 # ServiceMonitor for Prometheus Operator. Scrape /metrics every 15s.
+# /metrics requires the `read` scope; the token comes from the
+# `metrics-token` key of the membrane-secrets Secret.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -15,3 +17,8 @@ spec:
       path: /metrics
       interval: 15s
       scrapeTimeout: 5s
+      authorization:
+        type: Bearer
+        credentials:
+          name: membrane-secrets
+          key: metrics-token

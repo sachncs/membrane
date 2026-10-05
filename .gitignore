@@ -95,3 +95,7 @@ site/.env
 site/.env.production
 site/.env.local
 site/.env.*.local
+
+# Local deployment secrets (see docker-compose.yml)
+deployment/secrets/
+deployment/nginx/ssl/

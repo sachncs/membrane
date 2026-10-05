@@ -20,43 +20,55 @@ that ties them together.
 
 ## Authentication
 
-The runtime accepts two authentication modes:
+`membrane serve` refuses to listen on a non-loopback address unless
+one of these modes is configured (or `--allow-unauthenticated` is
+passed explicitly):
 
-* **API key** — `APIKeyAuthenticator`
-  (`membrane.auth.apikey`) checks the `X-Membrane-API-Key`
-  header against the configured key set. Suitable for
-  service-to-service calls where the caller is already
-  inside a trusted boundary.
-* **mTLS** — `MTLSConfig`
-  (`membrane.transport.tls`) gates inbound HTTP at the
-  TLS handshake. Every peer must present a certificate
-  signed by the cluster CA, and the certificate's CN must
-  appear in `MTLSConfig.allowed_cns`. Production
-  multi-node clusters must supply an `MTLSConfig`; the
-  v3.0.0 release treats the single-node deployment as
-  the only path that may run with `mtls=None`.
+* **API key**: `APIKeyAuthenticator` (`membrane.auth.apikey`),
+  enabled with `--api-key-file`. Clients send
+  `Authorization: Bearer <key>`. Keyfile lines are
+  `<key>:<subject>:<scope,...>`; lines with an empty key or subject
+  are ignored, because an empty subject would bypass the tenant check.
+* **mTLS**: `MTLSConfig` (`membrane.transport.tls`), enabled with
+  `--tls-cert/--tls-key/--tls-ca`. Every connection must present a
+  certificate signed by the CA bundle, and `MTLSAuthenticator` admits
+  only CNs in `allowed_cns`. The CN is read from the **verified peer
+  certificate** of the TLS handshake
+  (`membrane.transport.tls_protocol`); a client-supplied
+  `X-SSL-Client-CN` header is always discarded. Scopes come from the CN
+  prefix (`admin-`, `write-`, `read-`). On `/join` the CN must equal
+  the joining node id, optionally with a role prefix.
 
-The two modes are not mutually exclusive: a single
-deployment can require both an API key on the inbound
-request and a valid client certificate on the TLS layer.
+Authentication failures return `401` with `WWW-Authenticate: Bearer`;
+a valid caller without the required scope gets `403`.
 
 ## Authorisation
 
-`membrane.transport.authz` exposes `AuthContext` (the
-parsed identity of the caller) and a `require_scopes`
-decorator that enforces per-route scope checks:
+`membrane.transport.authz.ROUTE_SCOPES` maps every route to a scope,
+and `enforce_route_scope` runs it at the top of every handler:
 
-* `fragment:read` — read access to `op_get`,
-  `op_inventory`, and the public retrieve HTTP route.
-* `fragment:write` — write access to `op_store` and the
-  public store HTTP route.
-* `cluster:admin` — access to the admin endpoints
-  (`/admin/snapshot`, `/admin/rotate-keys`, etc.).
+| Scope | Routes |
+|-------|--------|
+| public | `GET /livez`, `GET /readyz` |
+| `read` | `GET /retrieve`, `/inventory`, `/peers`, `/heartbeat`, `/metrics`, `/metrics.json` |
+| `write` | `POST /store`, `/replicate`, `/prefill`, `/sync`, `/gossip`, `/join`, `/leave` |
+| `admin` | `POST /delete`, `/tombstone`, `/purge`, `/verify`, and everything under `/admin/` |
 
-`TenantAuthorizer` (`membrane.security.tenant`) layers a
-second check: a fragment carrying `tenant_id="acme"` is
-readable only by callers whose `AuthContext.subject`
-matches `acme` or who carry an explicit `tenant:acme` scope.
+`admin` implies `write` implies `read`. Unlisted routes default to
+`read`, so a new route fails closed.
+
+`TenantAuthorizer` (`membrane.security.tenant`) layers a second
+check: a fragment carrying `tenant_id="acme"` is readable only by
+callers whose `AuthContext.subject` matches `acme`, who carry an
+explicit `tenant:acme` scope, or who hold `admin`. A cross-tenant read
+is indistinguishable from a miss.
+
+### Peer-to-peer calls
+
+Nodes call each other's routes for join, heartbeat, gossip,
+replication, and delete propagation, so they authenticate like any
+client: with the mTLS client certificate, or in API-key clusters with
+the key from `--peer-api-key-file`, which must carry `admin`.
 
 ## SSRF / outbound URL guard
 
@@ -77,6 +89,13 @@ address into the second resolution (`urllib` /
 The outbound client disables redirect-following; every
 3xx response is surfaced to the caller as an explicit
 redirect that must be re-validated.
+
+Cluster peers usually live on private addresses. Seed hosts given
+with `--peer` are allowed by name, and `--peer-network` (or
+`MEMBRANE_PEER_NETWORKS`) admits a CIDR such as the Kubernetes pod
+network for peers learned later. A host passes only when every address
+it resolves to is inside an allowed network. Keep the range as narrow
+as the deployment allows and never include `169.254.0.0/16`.
 
 ## Encryption at rest
 

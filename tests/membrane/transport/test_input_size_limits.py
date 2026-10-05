@@ -132,13 +132,35 @@ class TestLeaveRequest:
 class TestGossipRequest:
     def test_peers_max_length(self):
         with pytest.raises(ValidationError):
-            GossipRequest(peers=[{} for _ in range(4097)])
+            GossipRequest(node_id="n1", timestamp=0.0, peers=[{} for _ in range(4097)])
 
     def test_default_payload_is_empty(self):
-        r = GossipRequest()
+        r = GossipRequest(node_id="n1", timestamp=0.0)
         assert r.peers == []
         assert r.fragment_locations == {}
         assert r.inventory_digest == {}
+
+    def test_sender_identity_is_required(self):
+        """GossipState.from_json needs node_id / timestamp; reject at the edge."""
+        with pytest.raises(ValidationError):
+            GossipRequest()
+
+    def test_round_trips_full_gossip_state(self):
+        """Every field GossipState.to_json emits survives the request model."""
+        from membrane.network.gossip import GossipState, PeerEndpoint
+
+        state = GossipState(
+            node_id="n1",
+            timestamp=12.5,
+            peers=[PeerEndpoint(node_id="n2", host="10.0.0.2", port=8080)],
+            fragment_locations={"h": ["n1"]},
+            inventory_bloom=b"\x01\x02",
+            inventory_merkle_root=b"\xab" * 32,
+            inventory_size=1,
+            fragment_tombstones={"t": 99.0},
+        )
+        dumped = GossipRequest(**state.to_json()).model_dump()
+        assert GossipState.from_json(dumped).to_json() == state.to_json()
 
 
 class TestAdminRequests:

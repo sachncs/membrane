@@ -7,6 +7,7 @@ on:
     branches: [master]
   schedule:
     - cron: "0 6 * * 1"
+  workflow_call:
 
 permissions:
   contents: read
@@ -56,10 +57,20 @@ jobs:
         run: python -m mypy membrane/
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short --cov=membrane --cov-report=term-missing
+        run: pytest tests/ -v --tb=short --timeout=300 --cov=membrane --cov-report=term-missing
 
   integration:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
 
@@ -71,15 +82,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,redis]"
+          pip install -e ".[dev]"
 
-      - name: Start Redis
-        uses: supercharge/redis-github-action@master
-        with:
-          redis-version: "7"
+      # The Redis tests skip when no server answers; fail loudly here
+      # instead so this job cannot pass vacuously.
+      - name: Verify Redis is reachable
+        run: python -c "from membrane.persistence.redis import Redis; assert Redis().ping(), 'redis unreachable'"
 
       - name: Run integration tests with Redis
-        run: pytest tests/membrane/persistence -v --tb=short
+        run: pytest tests/membrane/persistence -v --tb=short --timeout=300
 
   security:
     runs-on: ubuntu-latest
@@ -91,10 +102,17 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install pip-audit and bandit
-        run: pip install pip-audit bandit
+      # pip-audit inspects the active environment, so install what the
+      # server image ships before auditing it.
+      # membrane itself is removed again because a local build is not
+      # on PyPI, which --strict would treat as an audit failure.
+      - name: Install runtime dependencies and scanners
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[server]" pip-audit bandit
+          pip uninstall -y membrane
 
-      - name: pip-audit (HIGH/CRITICAL fail)
+      - name: pip-audit
         run: pip-audit --strict --vulnerability-service osv
 
       - name: bandit
@@ -106,28 +124,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: "fs"
           scan-ref: "."
           severity: "HIGH,CRITICAL"
           exit-code: "1"
-
-      - name: Trivy base image scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: "python:3.12-slim"
-          severity: "HIGH,CRITICAL"
-          exit-code: "1"
-          ignore-unfixed: true
-
-      - name: Trivy Docker image scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: "membrane:latest"
-          severity: "HIGH,CRITICAL"
-          exit-code: "1"
-          ignore-unfixed: true
 
   perf-smoke:
     runs-on: ubuntu-latest
@@ -145,7 +147,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run bench smoke
-        run: pytest tests/bench/ -v --tb=short
+        run: pytest tests/bench/ -v --tb=short --timeout=600
 
   stress:
     runs-on: ubuntu-latest
@@ -163,13 +165,12 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run stress suite
-        run: pytest tests/membrane/stress -v --tb=short -m stress
+        run: pytest tests/membrane/stress -v --tb=short --timeout=600 -m stress
 
   chaos:
-    # Self-hosted runner labeled "chaos" is required. CI on the
-    # default github-hosted runner does not have a real
-    # toxiproxy, so the suite's TestToxiproxyIntegration class
-    # is skipped; the in-process _FakeProxy suite still runs.
+    # A real toxiproxy is not available on github-hosted runners, so the
+    # suite's TestToxiproxyIntegration class is skipped; the in-process
+    # _FakeProxy suite still runs.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -185,7 +186,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run chaos suite
-        run: pytest tests/membrane/chaos -v --tb=short -m chaos
+        run: pytest tests/membrane/chaos -v --tb=short --timeout=600 -m chaos
 
   docker:
     runs-on: ubuntu-latest
@@ -193,15 +194,45 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
       - name: Build Docker image
         uses: docker/build-push-action@v7
         with:
           context: .
           push: false
-          tags: membrane:latest
+          load: true
+          tags: membrane:ci
 
-      - name: Run demo in container
-        run: docker run --rm membrane:latest python -c "import membrane; print(membrane.__version__ if hasattr(membrane, '__version__') else 'ok')"
+      # Boot the image the way production does (read-only root, non-root,
+      # API-key auth) and check probes, auth, and graceful shutdown.
+      - name: Smoke test container
+        run: |
+          set -euo pipefail
+          mkdir -p secrets
+          printf 'ci-key:ci:read,write\n' > secrets/api-keys
+          chmod 644 secrets/api-keys
+          if docker run --rm membrane:ci; then
+            echo "server started without authentication" >&2; exit 1
+          fi
+          docker run -d --name smoke --read-only --tmpfs /tmp -p 8080:8080 \
+            -v "$PWD/secrets:/run/secrets:ro" -e MEMBRANE_API_KEY_FILE=/run/secrets/api-keys membrane:ci
+          for _ in $(seq 1 30); do curl -fsS localhost:8080/livez && break; sleep 1; done
+          curl -fsS localhost:8080/readyz
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/inventory)" = 401
+          curl -fsS -H 'Authorization: Bearer ci-key' localhost:8080/inventory
+          docker stop -t 20 smoke
+          test "$(docker inspect -f '{{.State.ExitCode}}' smoke)" = 0
 
-      - name: Run tests in container
-        run: docker run --rm membrane:latest pytest tests/ -q --tb=short
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: "membrane:ci"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Smoke test logs
+        if: always()
+        run: docker logs smoke || true

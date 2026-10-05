@@ -6,10 +6,9 @@ request bodies; the handlers delegate to the corresponding
 operation after running the per-route scope check from
 :mod:`membrane.transport.authz`.
 
-The stdlib HTTP version lives in :mod:`membrane.transport.routes`
-and shares the same URL contract. Both transports delegate to the
-shared operations so the actual store / retrieve / sync logic
-lives in exactly one place.
+Every route except the ``/livez`` and ``/readyz`` probes runs the
+scope check, so a node configured with an authenticator never
+serves an unauthenticated read.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, conlist
 
-from membrane.auth import AuthContext
+from membrane.auth import AuthBackendError, AuthContext, AuthForbiddenError
 from membrane.compute.cpu import CPU
 from membrane.metrics import TransportMetrics
 from membrane.serialization import JsonDict
@@ -46,6 +45,7 @@ from membrane.transport.ops import (
     op_tombstone,
     op_verify_received,
 )
+from membrane.transport.tls_protocol import peer_headers_from_scope
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +64,19 @@ def _authenticator_for(app: FastAPI) -> object | None:
 
 
 def _peer_headers(request: Request) -> dict[str, str]:
-    """Capture inbound headers as a plain dict for op_join / op_heartbeat.
+    """Capture inbound headers as a plain dict for the authenticator.
 
     FastAPI's :class:`Request.headers` is case-insensitive; we
     downcase keys here so
     :meth:`membrane.transport.tls.parse_peer_cn_header` reads them
     with the ``x-ssl-client-cn`` spelling it expects.
+
+    A client-supplied ``x-ssl-client-cn`` header is always
+    discarded. The only trusted source is the CN of the verified
+    peer certificate, which :class:`~membrane.transport.tls_protocol.PeerCertH11Protocol`
+    records in the ASGI scope after the TLS handshake.
     """
-    return {k.lower(): v for k, v in request.headers.items()}
+    return peer_headers_from_scope(request.scope, request.headers.items())
 
 
 def _scope(request: Request, method: str, path: str) -> AuthContext:
@@ -191,12 +196,19 @@ class GossipRequest(BaseModel):
     The peers + fragment_locations lists are capped so a
     malicious peer cannot blow out the gossip budget with a
     million-element payload.
+
+    The fields mirror :meth:`membrane.network.gossip.GossipState.to_json`;
+    any field dropped here never reaches the receiver.
     """
 
+    node_id: str = Field(min_length=1, max_length=128)
+    timestamp: float
     peers: list[dict[str, Any]] = Field(default_factory=list, max_length=4096)
-    fragment_locations: dict[str, list[str]] = Field(
-        default_factory=dict, max_length=131072
-    )
+    fragment_locations: dict[str, list[str]] = Field(default_factory=dict, max_length=131072)
+    inventory_bloom: str = Field(default="", max_length=4 * 1024 * 1024)
+    inventory_merkle_root: str = Field(default="", max_length=128)
+    inventory_size: int = Field(default=0, ge=0)
+    fragment_tombstones: dict[str, float] = Field(default_factory=dict, max_length=131072)
     inventory_digest: dict[str, int] = Field(default_factory=dict, max_length=131072)
 
 
@@ -244,21 +256,31 @@ def readyz(app: FastAPI):
     """``GET /readyz`` — readiness probe (public, deep)."""
     if not app.state.node:
         return JSONResponse({"status": "no node"}, status_code=503)
-    stats = app.state.node.get_stats()
-    if stats.memory_used_bytes >= stats.memory_limit_bytes:
-        return JSONResponse(
-            {
-                "status": "memory saturated",
-                "memory_used_bytes": stats.memory_used_bytes,
-            },
-            status_code=503,
-        )
+    # A full node is healthy: ``Node.store`` evicts to make room, so
+    # memory saturation is the steady state of a warm cache and must
+    # not take the pod out of rotation.
     return {"status": "ready"}
 
 
 # ---------------------------------------------------------------------------
 # Route registration
 # ---------------------------------------------------------------------------
+
+
+def _auth_error_response(_request: Request, exc: Exception) -> Response:
+    """Translate authentication / authorization failures to 401 / 403.
+
+    The body is deliberately generic so a probe cannot distinguish
+    an unknown key from a known key with the wrong scope beyond the
+    status code itself.
+    """
+    if isinstance(exc, AuthForbiddenError):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    return JSONResponse(
+        {"error": "unauthorized"},
+        status_code=401,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def register_routes(app: FastAPI) -> None:
@@ -274,6 +296,8 @@ def register_routes(app: FastAPI) -> None:
     Args:
         app: The FastAPI app to configure.
     """
+    app.add_exception_handler(AuthBackendError, _auth_error_response)
+
     # GET endpoints that have no body.
     def heartbeat_handler(request: Request):
         return _heartbeat(app, request)
@@ -281,15 +305,31 @@ def register_routes(app: FastAPI) -> None:
     app.add_api_route("/heartbeat", heartbeat_handler, methods=["GET"])
     app.add_api_route("/livez", lambda: livez(app), methods=["GET"])
     app.add_api_route("/readyz", lambda: readyz(app), methods=["GET"])
-    app.add_api_route("/metrics", lambda: _metrics(app), methods=["GET"])
-    app.add_api_route("/metrics.json", lambda: _metrics_json(app), methods=["GET"])
-    app.add_api_route(
-        "/retrieve",
-        lambda content_hash: _retrieve(app, content_hash),
-        methods=["GET"],
-    )
-    app.add_api_route("/inventory", lambda: _inventory(app), methods=["GET"])
-    app.add_api_route("/peers", lambda: _peers(app), methods=["GET"])
+
+    def metrics_handler(request: Request):
+        _scope(request, "GET", "/metrics")
+        return _metrics(app)
+
+    def metrics_json_handler(request: Request):
+        _scope(request, "GET", "/metrics.json")
+        return _metrics_json(app)
+
+    def retrieve_handler(content_hash: str, request: Request):
+        return _retrieve(app, content_hash, _scope(request, "GET", "/retrieve"))
+
+    def inventory_handler(request: Request):
+        _scope(request, "GET", "/inventory")
+        return _inventory(app)
+
+    def peers_handler(request: Request):
+        _scope(request, "GET", "/peers")
+        return _peers(app)
+
+    app.add_api_route("/metrics", metrics_handler, methods=["GET"])
+    app.add_api_route("/metrics.json", metrics_json_handler, methods=["GET"])
+    app.add_api_route("/retrieve", retrieve_handler, methods=["GET"])
+    app.add_api_route("/inventory", inventory_handler, methods=["GET"])
+    app.add_api_route("/peers", peers_handler, methods=["GET"])
 
     # POST endpoints.
     def store_handler(req: StoreRequest, request: Request):
@@ -351,7 +391,9 @@ def _transport_metrics(app: FastAPI) -> TransportMetrics | None:
 def _heartbeat(app: FastAPI, request: Request):
     context = _scope(request, "GET", "/heartbeat")
     status, body = record_transport(
-        _transport_metrics(app), "heartbeat", "GET",
+        _transport_metrics(app),
+        "heartbeat",
+        "GET",
         lambda: op_heartbeat(
             app.state.node,
             cluster=getattr(app.state, "cluster_manager", None),
@@ -379,7 +421,9 @@ def _metrics_json(app: FastAPI):
 
 def _inventory(app: FastAPI):
     status, body = record_transport(
-        _transport_metrics(app), "inventory", "GET",
+        _transport_metrics(app),
+        "inventory",
+        "GET",
         lambda: op_inventory(app.state.node),
     )
     return _respond(status, body)
@@ -387,16 +431,20 @@ def _inventory(app: FastAPI):
 
 def _peers(app: FastAPI):
     status, body = record_transport(
-        _transport_metrics(app), "peers", "GET",
+        _transport_metrics(app),
+        "peers",
+        "GET",
         lambda: op_peers(app.state.cluster_manager),
     )
     return _respond(status, body)
 
 
-def _retrieve(app: FastAPI, content_hash: str):
+def _retrieve(app: FastAPI, content_hash: str, context: AuthContext):
     status, body = record_transport(
-        _transport_metrics(app), "retrieve", "GET",
-        lambda: op_retrieve(app.state.node, content_hash),
+        _transport_metrics(app),
+        "retrieve",
+        "GET",
+        lambda: op_retrieve(app.state.node, content_hash, auth_context=context),
     )
     return _respond(status, body)
 
@@ -405,16 +453,16 @@ def _store(app: FastAPI, req: StoreRequest, request: Request):
     context = _scope(request, "POST", "/store")
     cluster_metrics_obj = getattr(app.state, "cluster_metrics", None)
     status, body = record_transport(
-        _transport_metrics(app), "store", "POST",
+        _transport_metrics(app),
+        "store",
+        "POST",
         lambda: op_store(
             app.state.node,
             req.fragment.to_wire_dict(),
             req.is_primary,
             cluster=getattr(app.state, "cluster_manager", None),
             quorum_attempt=getattr(app.state, "quorum_attempt", None),
-            draining=bool(getattr(app.state.server, "is_draining", False))
-            if hasattr(app.state, "server")
-            else False,
+            draining=bool(getattr(app.state.server, "is_draining", False)) if hasattr(app.state, "server") else False,
             auth_context=context,
             cluster_metrics=cluster_metrics_obj,
         ),
@@ -433,7 +481,9 @@ def _respond_with_retry_after(status: int, body: JsonDict, retry_after: int) -> 
 def _replicate(app: FastAPI, req: ReplicateRequest, request: Request):
     context = _scope(request, "POST", "/replicate")
     status, body = record_transport(
-        _transport_metrics(app), "replicate", "POST",
+        _transport_metrics(app),
+        "replicate",
+        "POST",
         lambda: op_replicate(
             app.state.node,
             req.fragment.to_wire_dict(),
@@ -446,7 +496,9 @@ def _replicate(app: FastAPI, req: ReplicateRequest, request: Request):
 def _sync(app: FastAPI, req: SyncRequest, request: Request):
     context = _scope(request, "POST", "/sync")
     status, body = record_transport(
-        _transport_metrics(app), "sync", "POST",
+        _transport_metrics(app),
+        "sync",
+        "POST",
         lambda: op_sync(
             app.state.node,
             app.state.transfer_service,
@@ -460,7 +512,9 @@ def _sync(app: FastAPI, req: SyncRequest, request: Request):
 def _prefill(app: FastAPI, req: PrefillRequest, request: Request):
     context = _scope(request, "POST", "/prefill")
     status, body = record_transport(
-        _transport_metrics(app), "prefill", "POST",
+        _transport_metrics(app),
+        "prefill",
+        "POST",
         lambda: op_prefill(
             app.state.node,
             app.state.compute_backend or CPU(),
@@ -475,7 +529,9 @@ def _prefill(app: FastAPI, req: PrefillRequest, request: Request):
 def _join(app: FastAPI, req: JoinRequest, request: Request):
     context = _scope(request, "POST", "/join")
     status, body = record_transport(
-        _transport_metrics(app), "join", "POST",
+        _transport_metrics(app),
+        "join",
+        "POST",
         lambda: op_join(
             app.state.cluster_manager,
             req.node_id,
@@ -492,7 +548,9 @@ def _join(app: FastAPI, req: JoinRequest, request: Request):
 def _leave(app: FastAPI, req: LeaveRequest, request: Request):
     context = _scope(request, "POST", "/leave")
     status, body = record_transport(
-        _transport_metrics(app), "leave", "POST",
+        _transport_metrics(app),
+        "leave",
+        "POST",
         lambda: op_leave(
             app.state.cluster_manager,
             req.node_id,
@@ -505,7 +563,9 @@ def _leave(app: FastAPI, req: LeaveRequest, request: Request):
 def _gossip(app: FastAPI, req: GossipRequest, request: Request):
     context = _scope(request, "POST", "/gossip")
     status, body = record_transport(
-        _transport_metrics(app), "gossip", "POST",
+        _transport_metrics(app),
+        "gossip",
+        "POST",
         lambda: op_gossip(
             app.state.cluster_manager,
             req.model_dump(),
@@ -518,7 +578,9 @@ def _gossip(app: FastAPI, req: GossipRequest, request: Request):
 def _delete(app: FastAPI, req: DeleteRequest, request: Request):
     context = _scope(request, "POST", "/delete")
     status, body = record_transport(
-        _transport_metrics(app), "delete", "POST",
+        _transport_metrics(app),
+        "delete",
+        "POST",
         lambda: op_delete(
             app.state.node,
             getattr(app.state, "tombstones", None),
@@ -534,7 +596,9 @@ def _delete(app: FastAPI, req: DeleteRequest, request: Request):
 def _tombstone(app: FastAPI, req: TombstoneRequest, request: Request):
     context = _scope(request, "POST", "/tombstone")
     status, body = record_transport(
-        _transport_metrics(app), "tombstone", "POST",
+        _transport_metrics(app),
+        "tombstone",
+        "POST",
         lambda: op_tombstone(
             getattr(app.state, "tombstones", None),
             req.content_hash,
@@ -549,7 +613,9 @@ def _tombstone(app: FastAPI, req: TombstoneRequest, request: Request):
 def _purge(app: FastAPI, req: PurgeRequest, request: Request):
     context = _scope(request, "POST", "/purge")
     status, body = record_transport(
-        _transport_metrics(app), "purge", "POST",
+        _transport_metrics(app),
+        "purge",
+        "POST",
         lambda: op_purge(
             app.state.node,
             getattr(app.state, "tombstones", None),
@@ -563,7 +629,9 @@ def _purge(app: FastAPI, req: PurgeRequest, request: Request):
 def _verify(app: FastAPI, req: VerifyRequest, request: Request):
     context = _scope(request, "POST", "/verify")
     status, body = record_transport(
-        _transport_metrics(app), "verify", "POST",
+        _transport_metrics(app),
+        "verify",
+        "POST",
         lambda: op_verify_received(
             app.state.node,
             req.content_hash,

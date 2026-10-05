@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Production-readiness pass. Several fixes change operator-visible
+behaviour; see **Breaking** before upgrading.
+
+### Security
+
+- **Authentication was never enforced by a running server.** `Server`
+  now attaches an authenticator (API keyfile via `--api-key-file`, or
+  `MTLSAuthenticator` when mTLS is configured) to the FastAPI app.
+- `GET /retrieve`, `/inventory`, `/peers`, `/metrics` and
+  `/metrics.json` skipped the scope check, so any caller could read any
+  tenant's fragments. Every route except `/livez` and `/readyz` is now
+  authenticated, and `/retrieve` applies the caller's tenant.
+- Auth failures escaped as unhandled exceptions (HTTP 500); they now
+  return `401` (with `WWW-Authenticate`) or `403` (missing scope, new
+  `AuthForbiddenError`).
+- The mTLS peer CN was read from a client-supplied `X-SSL-Client-CN`
+  header, so any CA-signed client could claim `admin-*`. The CN now
+  comes from the verified peer certificate (`PeerCertH11Protocol`);
+  the header is discarded. The nginx config also strips it.
+- `op_join` let an mTLS CN register under another node's id; the CN
+  must now match the node id (optionally with a role prefix).
+- API keyfile lines with an empty subject are rejected; they bypassed
+  the per-tenant read check.
+- Removed the unused, unauthenticated stdlib route table
+  (`membrane.transport.routes`).
+
+### Fixed
+
+- Multi-node clusters could not form: the SSRF guard rejected every
+  private / loopback peer address. Seed hosts are now allowed, and
+  `--peer-network` admits the peer CIDR (`URLAllowlist.allowed_networks`).
+- Nodes advertised their bind address (`0.0.0.0`) to peers; new
+  `--advertise-host` (defaults to the FQDN for wildcard binds).
+- Seed bootstrap ran once and gave up; it now retries with backoff, and
+  joining only itself (a seed list containing its own address) no
+  longer counts as success. Join responses include the seed itself.
+- Peer calls carried no credentials and always used plain HTTP. Peers
+  now send `--peer-api-key-file` as a bearer token or use the mTLS
+  client certificate over HTTPS (with correct SNI under IP pinning).
+- Gossip never worked over HTTP: `GossipRequest` dropped `node_id`,
+  `timestamp`, the inventory Bloom filter / Merkle root, and tombstones.
+- Strong / quorum writes silently degraded to local-only because the
+  quorum fan-out was never wired; `drain()` never rejected writes
+  because `app.state.server` was unset.
+- The periodic sweeper evicted live (unexpired) fragments every 30 s
+  via the LRU path; it now evicts only expired ones
+  (`Node.sweep_expired`).
+- A failed quorum write could delete a previously acknowledged copy of
+  the same fragment during rollback.
+- `/readyz` reported 503 whenever the cache was full, which is the
+  steady state of a warm cache.
+- `membrane serve` ignored every `MEMBRANE_*` variable documented in the
+  README and used by the container, Compose, and Kubernetes manifests.
+- The container image could not start (`ModuleNotFoundError`); it is
+  now a multi-stage build that installs the wheel, with a digest-pinned
+  base image.
+- `docker-compose.yml` failed validation, the nginx config failed to
+  start (`limit_conn` syntax), and the systemd unit passed a
+  nonexistent `--config` flag.
+- Kubernetes: the NetworkPolicy blocked peer traffic, pods shared one
+  node id, secrets were never mounted, and a read-only root filesystem
+  had no writable `/tmp` for the TLS listener.
+- `membrane serve` now runs headless when stdout is not a TTY and shuts
+  down gracefully on `SIGTERM`.
+- A clean `pip install -e ".[dev]"` could not import the test suite:
+  `cryptography`, `numpy`, `lz4`, `zstandard`, `hypothesis` and
+  `pytest-benchmark` were undeclared. New extras: `transfer`,
+  `secrets-aws`, `secrets-gcp`, `secrets-vault`, `tls-spiffe`, `otel`;
+  `server` now includes `cryptography`.
+- CI: the Trivy image scan targeted an image that was never built, the
+  integration job requested a nonexistent `redis` extra and could pass
+  with Redis unreachable, `pip-audit` audited an empty environment, and
+  third-party actions were pinned to `@master`. The Docker job now
+  boots the image and checks probes, auth, and graceful shutdown.
+  Releases now run the full CI suite and check the tag against the
+  package version before publishing.
+
+### Breaking
+
+- `membrane serve` binds `127.0.0.1` by default (was `0.0.0.0`), and
+  refuses a non-loopback bind without authentication unless
+  `--allow-unauthenticated` is passed.
+- `POST /store` returns `422` when the fragment's `payload_ref` is not
+  in the node's content store (it used to report success for a
+  fragment `/retrieve` could never return).
+- `quorum_count` now counts copies including the local write: a strong
+  write waits for `quorum_count - 1` peer acks, fanned out to
+  `replica_count` peers, and fails closed with `503` when not enough
+  peers are healthy.
+- The API-key peer credential must carry the `admin` scope.
+- `POST /gossip` requires `node_id` and `timestamp` (as
+  `GossipState.to_json` always sent).
+
 ## [3.0.1] - 2026-08-30
 
 Patch release. Follow-up work that deepens the 3.0.0 surface

@@ -39,3 +39,8 @@ venv/
 
 # Deployment artifacts (mounted at runtime instead)
 deployment/
+
+# Marketing site and examples (not part of the runtime image)
+site/
+examples/
+tools/
