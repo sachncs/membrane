@@ -21,6 +21,7 @@ import hashlib
 import json
 import logging
 import threading
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -73,6 +74,10 @@ class AuditEntry:
         prev_hash: Hash of the previous entry; the empty
             string for the first entry.
         entry_hash: SHA-256 of (prev_hash || payload).
+        entry_id: UUIDv7: globally unique and ordered by wall-clock
+            time, so entries from several nodes or restarts sort and
+            deduplicate after they are shipped elsewhere. Covered by
+            the hash. Empty only for entries written before 3.1.
     """
 
     index: int
@@ -82,6 +87,19 @@ class AuditEntry:
     payload: dict[str, object]
     prev_hash: str
     entry_hash: str
+    entry_id: str = ""
+
+
+def _hashed_fields(entry_id: str, actor: str, action: str, payload: dict[str, object], ts: float) -> dict[str, object]:
+    """Return the fields an entry's hash covers.
+
+    ``entry_id`` is included only when present so chains written before
+    it existed still verify.
+    """
+    fields: dict[str, object] = {"actor": actor, "action": action, "payload": payload, "timestamp": ts}
+    if entry_id:
+        fields["entry_id"] = entry_id
+    return fields
 
 
 @runtime_checkable
@@ -142,13 +160,8 @@ class AuditLog:
         with self._lock:
             index = len(self._entries)
             ts = _time.monotonic() if timestamp is None else timestamp
-            entry_payload: dict[str, object] = {
-                "actor": actor,
-                "action": action,
-                "payload": payload_dict,
-                "timestamp": ts,
-            }
-            entry_hash = _hash_entry(self._last_hash, entry_payload)
+            entry_id = str(uuid.uuid7())
+            entry_hash = _hash_entry(self._last_hash, _hashed_fields(entry_id, actor, action, payload_dict, ts))
             entry = AuditEntry(
                 index=index,
                 timestamp=ts,
@@ -157,6 +170,7 @@ class AuditLog:
                 payload=payload_dict,
                 prev_hash=self._last_hash,
                 entry_hash=entry_hash,
+                entry_id=entry_id,
             )
             self._entries.append(entry)
             self._last_hash = entry_hash
@@ -199,12 +213,7 @@ def verify_chain(entries: Iterable[AuditEntry]) -> int | None:
             return entry.index
         expected = _hash_entry(
             prev_hash,
-            {
-                "actor": entry.actor,
-                "action": entry.action,
-                "payload": entry.payload,
-                "timestamp": entry.timestamp,
-            },
+            _hashed_fields(entry.entry_id, entry.actor, entry.action, entry.payload, entry.timestamp),
         )
         if expected != entry.entry_hash:
             return entry.index
@@ -240,6 +249,7 @@ class FileAuditStorage:
                 "payload": entry.payload,
                 "prev_hash": entry.prev_hash,
                 "entry_hash": entry.entry_hash,
+                "entry_id": entry.entry_id,
             }
         )
         with self._lock, self.path.open("a", encoding="utf-8") as f:
@@ -276,6 +286,7 @@ class FileAuditStorage:
                         payload=dict(payload.get("payload") or {}),
                         prev_hash=str(payload["prev_hash"]),
                         entry_hash=str(payload["entry_hash"]),
+                        entry_id=str(payload.get("entry_id", "")),
                     )
                 )
             return out

@@ -32,8 +32,6 @@ from membrane.serialization import JsonDict, from_dict, to_dict
 logger = logging.getLogger(__name__)
 
 
-
-
 @dataclass(frozen=True)
 class PeerCredentials:
     """How this node reaches and authenticates to its peers.

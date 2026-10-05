@@ -50,6 +50,7 @@ from membrane.metrics import MetricsCollector
 from membrane.network.cluster import Cluster
 from membrane.node import Node
 from membrane.transfer import TransferService
+from membrane.transport.request_id import RequestIdMiddleware
 from membrane.transport.routes_fastapi import register_routes
 from membrane.transport.tls import MTLSConfig, build_server_context
 from membrane.transport.tls_protocol import PeerCertH11Protocol
@@ -100,6 +101,7 @@ def create_app(
         app.state.cluster_metrics = None
 
     register_routes(app)
+    app.add_middleware(RequestIdMiddleware)
     try:
         from membrane.transport.admin import create_admin_router
 
