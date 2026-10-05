@@ -35,15 +35,16 @@ characters is supported.
 """
 
 import contextlib
+import logging
 import os
-import platform
-import shutil
 import tempfile
 import threading
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from membrane.security.encryption import KeyProvider, StaticKeyProvider
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -268,7 +269,6 @@ class FilesystemBlob:
         self.__used_bytes = 0
         self.__plaintext_bytes: dict[str, int] = {}
         self.__key_provider: KeyProvider = key_provider or StaticKeyProvider()
-        self.__master_key = self.__key_provider.master_key()
 
     def __path_for(self, key: str) -> Path:
         """Return the on-disk path for ``key``.
@@ -309,7 +309,8 @@ class FilesystemBlob:
 
         target = self.__path_for(key)
         target.parent.mkdir(parents=True, exist_ok=True)
-        per_key = derive_tenant_key(self.__master_key, self.tenant_id, key)
+        # Ask the provider each time: a rotated key takes effect at once.
+        per_key = derive_tenant_key(self.__key_provider.master_key(), self.tenant_id, key)
         blob = encrypt_payload(data, per_key)
         with self.lock:
             with tempfile.NamedTemporaryFile(
@@ -331,41 +332,64 @@ class FilesystemBlob:
             self.__plaintext_bytes[key] = len(data)
             self.__used_bytes = sum(self.__plaintext_bytes.values())
 
+    @property
+    def key_provider(self) -> KeyProvider:
+        """The master-key provider (a keyring when keys are versioned)."""
+        return self.__key_provider
+
     def put_from_file(self, key: str, source_path: str) -> None:
-        """Copy ``source_path`` to ``key`` using ``os.sendfile`` when available.
+        """Store the contents of ``source_path`` under ``key`` (encrypted).
 
         Args:
             key: Opaque key.
             source_path: Filesystem path of the source file.
 
         Raises:
-            OSError: When the underlying filesystem rejects the
-                copy or the atomic rename.
+            OSError: When the source cannot be read or the write fails.
         """
-        target = self.__path_for(key)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with self.lock:
-            with tempfile.NamedTemporaryFile(
-                delete=False,
-                dir=str(target.parent),
-                prefix=f".{key}.",
-                suffix=".tmp",
-            ) as tmp:
-                tmp_path = tmp.name
-            src_size = os.path.getsize(source_path)
-            if platform.system() == "Linux" and hasattr(os, "sendfile") and src_size > 0:
-                with open(tmp_path, "wb") as dst, open(source_path, "rb") as src:
-                    os.sendfile(dst.fileno(), src.fileno(), 0, src_size)
-            else:
-                shutil.copyfile(source_path, tmp_path)
-            os.replace(tmp_path, target)
-            dir_fd = os.open(str(target.parent), os.O_RDONLY)
+        self.put(key, Path(source_path).read_bytes())
+
+    def keys(self) -> list[str]:
+        """Return every key stored on disk.
+
+        Returns:
+            list[str]: Keys, in no particular order.
+        """
+        return [path.name.removesuffix(".blob") for path in self.root.rglob("*.blob")]
+
+    def reencrypt_all(self) -> int:
+        """Rewrite every blob not encrypted under the active master key.
+
+        After a key rotation, old blobs stay readable through the older
+        key versions; this pass moves them to the active key so the old
+        versions can be retired.
+
+        Returns:
+            int: Blobs rewritten.
+        """
+        from membrane.security.encryption import decrypt_payload, derive_tenant_key
+
+        rewritten = 0
+        for key in self.keys():
+            path = self.__path_for(key)
             try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-            self.__plaintext_bytes[key] = os.path.getsize(source_path)
-            self.__used_bytes = sum(self.__plaintext_bytes.values())
+                with self.lock:
+                    blob = path.read_bytes()
+            except FileNotFoundError:
+                continue
+            active = derive_tenant_key(self.__key_provider.master_key(), self.tenant_id, key)
+            try:
+                decrypt_payload(blob, active)
+                continue  # already under the active key
+            except Exception:
+                pass
+            data = self.get(key)
+            if data is None:
+                logger.warning("blob %s cannot be decrypted with any key version; left as is", key)
+                continue
+            self.put(key, data)
+            rewritten += 1
+        return rewritten
 
     def get(self, key: str) -> bytes | None:
         """Read and decrypt the bytes stored under ``key``.
@@ -405,7 +429,7 @@ class FilesystemBlob:
                 return decrypt_payload_with_versions(blob, tenant_keys)
             except RuntimeError:
                 return None
-        per_key = derive_tenant_key(self.__master_key, self.tenant_id, key)
+        per_key = derive_tenant_key(self.__key_provider.master_key(), self.tenant_id, key)
         try:
             return decrypt_payload(blob, per_key)
         except Exception:

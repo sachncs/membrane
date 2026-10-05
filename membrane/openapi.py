@@ -1,9 +1,8 @@
-"""OpenAPI spec generation.
+"""OpenAPI 3 schema of the Membrane HTTP API.
 
-The v3.0.0 release exposes a :func:`generate_spec` helper
-that walks the FastAPI app and dumps the OpenAPI 3 JSON.
-The :func:`write_spec` helper writes the spec to a file so
-operators can publish it under ``docs/openapi.json``.
+``membrane openapi`` prints it (or writes it with ``-o``) without a
+running server; a server started with ``--enable-api-docs`` serves the
+same document at ``/openapi.json`` behind the ``read`` scope.
 """
 
 import json
@@ -25,6 +24,27 @@ def generate_spec(app: Any) -> dict[str, Any]:
     return app.openapi()
 
 
+def membrane_spec() -> dict[str, Any]:
+    """Return the schema of a fully configured Membrane app.
+
+    Returns:
+        dict[str, Any]: The OpenAPI 3 document.
+    """
+    from membrane.node import Node
+    from membrane.transfer import TransferService
+    from membrane.transport.fastapi import create_app
+    from membrane.transport.limits import TransportLimits
+
+    app = create_app(
+        node=Node("openapi"),
+        compute_backend=None,
+        transfer_service=TransferService(),
+        cluster_manager=None,
+        limits=TransportLimits(enable_api_docs=True),
+    )
+    return generate_spec(app)
+
+
 def write_spec(app: Any, path: str) -> None:
     """Write the OpenAPI spec to ``path`` as JSON.
 
@@ -37,4 +57,4 @@ def write_spec(app: Any, path: str) -> None:
         json.dump(spec, f, indent=2)
 
 
-__all__ = ["generate_spec", "write_spec"]
+__all__ = ["generate_spec", "membrane_spec", "write_spec"]

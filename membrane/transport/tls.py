@@ -71,6 +71,8 @@ class MTLSConfig:
         min_tls_version: Lowest TLS version to negotiate. Defaults
             to TLSv1_2; TLSv1_3 is encouraged but the config
             accepts older peers that only speak 1.2.
+        verify_hostname: Check the peer's hostname on outbound
+            connections; ``False`` for SPIFFE SVIDs (workload URIs).
 
     Raises:
         ValueError: On missing paths or paths that do not exist.
@@ -84,13 +86,40 @@ class MTLSConfig:
     client_cert_pem: str | None = None
     client_key_pem: str | None = None
     min_tls_version: ssl.TLSVersion = ssl.TLSVersion.TLSv1_2
+    verify_hostname: bool = True
 
     def __post_init__(self) -> None:
-        """Validate that every PEM string is non-empty."""
-        for field_name in ("server_cert_pem", "server_key_pem", "ca_bundle_pem"):
+        """Validate that every required PEM string is non-empty.
+
+        Raises:
+            ValueError: When a certificate or key is empty, or the CA bundle
+                is empty while client certificates are required.
+        """
+        required = ["server_cert_pem", "server_key_pem"]
+        if self.require_client_cert:
+            required.append("ca_bundle_pem")
+        for field_name in required:
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"MTLSConfig.{field_name} must be a non-empty PEM string")
+
+    @classmethod
+    def server_only(cls, server_cert_pem: str, server_key_pem: str) -> MTLSConfig:
+        """TLS for the listener only (e.g. an ACME certificate); clients are not asked for certificates.
+
+        Args:
+            server_cert_pem: Certificate chain PEM.
+            server_key_pem: Private key PEM.
+
+        Returns:
+            MTLSConfig: A configuration with ``require_client_cert=False``.
+        """
+        return cls(
+            server_cert_pem=server_cert_pem,
+            server_key_pem=server_key_pem,
+            ca_bundle_pem="",
+            require_client_cert=False,
+        )
 
     @classmethod
     def allow_all_signed_by_ca(
@@ -201,7 +230,8 @@ def build_server_context(config: MTLSConfig) -> ssl.SSLContext:
         certfile=as_pem_path_or_bytes(config.server_cert_pem, "server_cert"),
         keyfile=as_pem_path_or_bytes(config.server_key_pem, "server_key"),
     )
-    context.load_verify_locations(cadata=config.ca_bundle_pem)
+    if config.ca_bundle_pem:
+        context.load_verify_locations(cadata=config.ca_bundle_pem)
     return context
 
 
@@ -219,6 +249,9 @@ def build_client_context(config: MTLSConfig) -> ssl.SSLContext:
     context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
     context.minimum_version = config.min_tls_version
     context.load_verify_locations(cadata=config.ca_bundle_pem)
+    # SPIFFE SVIDs name a workload (URI SAN), not a host: peers are trusted
+    # through the bundle and authorized by SPIFFE ID on the receiving side.
+    context.check_hostname = config.verify_hostname
     if config.client_cert_pem is not None and config.client_key_pem is not None:
         context.load_cert_chain(
             certfile=as_pem_path_or_bytes(config.client_cert_pem, "client_cert"),

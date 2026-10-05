@@ -258,3 +258,32 @@ def test_server_scrape_reports_live_node_state():
     assert 'membrane_evictions_total{reason="capacity"}' in text
     assert 'membrane_requests_total{endpoint="prefill",method="POST",status="200"} 6.0' in text
     assert f'membrane_tenant_fragments{{tenant="public"}} {float(fragments)}' in text
+
+
+def test_retrieve_records_cache_hits_and_misses() -> None:
+    from fastapi.testclient import TestClient
+
+    from membrane.node import Node
+    from membrane.server import Server
+    from tests.conftest import make_fragment
+
+    server = Server(node=Node("cache-0"), port=0, load_hooks=False)
+    base = make_fragment("hit-1")
+    frag = type(base)(
+        identity=base.identity,
+        payload_ref=None,
+        payload_size=base.payload_size,
+        ttl=base.ttl,
+        reuse_score=base.reuse_score,
+        version_id=base.version_id,
+    )
+    server.node.store(frag)
+    client = TestClient(server.transport.app)
+    client.get("/retrieve", params={"content_hash": "hit-1"})
+    client.get("/retrieve", params={"content_hash": "absent"})
+    client.get("/retrieve", params={"content_hash": "absent-2"})
+    assert server.metrics_node.cache_lookups.get(result="hit") == 1
+    assert server.metrics_node.cache_lookups.get(result="miss") == 2
+    diagnostics = server.diagnostics()
+    assert abs(diagnostics.hit_rate - 1 / 3) < 1e-9 and abs(diagnostics.miss_rate - 2 / 3) < 1e-9
+    assert "membrane_cache_lookups_total" in client.get("/metrics").text

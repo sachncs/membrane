@@ -17,6 +17,7 @@ operators that want to back the chain with a relational store.
 import hashlib
 import json
 import logging
+import os
 import threading
 import uuid
 from collections.abc import Iterable
@@ -149,6 +150,28 @@ class AuditLog:
     entries: list[AuditEntry] = field(default_factory=list)
     head_hash: str = ""
     lock: threading.Lock = field(default_factory=threading.Lock)
+    #: Index of the first tampered entry found by :meth:`open`, if any.
+    broken_at: int | None = None
+
+    @classmethod
+    def open(cls, storage: AuditStorage) -> AuditLog:
+        """Load a persisted log, verify its chain, and keep appending to it.
+
+        Args:
+            storage: Backend holding earlier entries.
+
+        Returns:
+            AuditLog: A log whose next entry chains from the last stored
+            one. A broken chain is logged at CRITICAL and reported by
+            :attr:`broken_at`; new entries still chain from the last
+            stored hash.
+        """
+        entries = storage.all()
+        log = cls(storage=storage, entries=list(entries), head_hash=entries[-1].entry_hash if entries else "")
+        log.broken_at = verify_chain(entries)
+        if log.broken_at is not None:
+            logger.critical("audit log chain is broken at entry %s: it was altered or truncated", log.broken_at)
+        return log
 
     def record(
         self,
@@ -164,8 +187,8 @@ class AuditLog:
             actor: The caller identity.
             action: A short stable verb (e.g., ``"fragment.store"``).
             payload: Optional structured payload.
-            timestamp: Monotonic timestamp; ``None`` reads
-                ``time.monotonic``.
+            timestamp: Unix time; ``None`` reads the clock. (Wall-clock
+                time, so persisted entries stay meaningful across restarts.)
 
         Returns:
             AuditEntry: The new entry.
@@ -175,7 +198,7 @@ class AuditLog:
         payload_dict: dict[str, object] = payload or {}
         with self.lock:
             index = len(self.entries)
-            ts = _time.monotonic() if timestamp is None else timestamp
+            ts = _time.time() if timestamp is None else timestamp
             entry_id = str(uuid.uuid7())
             entry_hash = hash_entry(self.head_hash, hashed_fields(entry_id, actor, action, payload_dict, ts))
             entry = AuditEntry(
@@ -268,6 +291,9 @@ class FileAuditStorage:
                 "entry_id": entry.entry_id,
             }
         )
+        if not self.path.exists():
+            # Admin actions and their actors: readable by the owner only.
+            os.close(os.open(self.path, os.O_WRONLY | os.O_CREAT, 0o600))
         with self.lock, self.path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
             f.flush()

@@ -25,7 +25,7 @@ import os
 import typer
 
 from membrane.cli import output
-from membrane.cli.commands import admin, client, cluster, config, dashboard, keys, llm, serve
+from membrane.cli.commands import admin, client, cluster, config, dashboard, keys, llm, openapi, serve
 from membrane.logging import configure_logging
 
 app = typer.Typer(
@@ -86,6 +86,7 @@ app.command(name="dashboard", help="Open a live TUI dashboard against a remote s
 app.command(name="cluster-status", help="Show cluster membership and peer health.")(cluster.main)
 app.command(name="llm-status", help="Show active LLM backend status and model info.")(llm.main)
 app.command(name="config", help="Show Membrane configuration and environment.")(config.main)
+app.command(name="openapi", help="Print the HTTP API's OpenAPI 3 schema.")(openapi.main)
 # admin and client are command groups; registering their ``main``
 # as a plain command would hide every subcommand.
 app.add_typer(admin.admin_app, name="admin", help="Admin operations against a running Membrane node.")

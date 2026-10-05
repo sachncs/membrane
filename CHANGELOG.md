@@ -12,6 +12,50 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Added (security and operations)
+
+- `secret://NAME` for any secret setting, resolved by `--secret-provider`
+  (`env`, `aws`, `gcp`, `vault`, or a plugin).
+- Versioned data keys: `--data-key-file DIR` of `v<N>.key` files;
+  `membrane keys rotate-data-key DIR` adds a version, nodes switch within
+  a minute and re-encrypt existing blobs.
+- TLS hot reload: changed `--tls-cert/--tls-key` files (or `SIGHUP`) are
+  served without a restart; expired certificates are refused;
+  `membrane_tls_cert_expiry_seconds`.
+- ACME: `--tls-acme-domain` gets and renews the listener certificate over
+  HTTP-01 (RFC 8555 client, tested against Pebble in CI).
+- SPIFFE: `--tls-spiffe-socket` takes TLS material from the Workload API,
+  `--tls-spiffe-allow ID=scopes` authorizes by SPIFFE ID, SVIDs refresh
+  live.
+- OpenTelemetry: `--otel-endpoint`; a span per request (with its request
+  ID), `quorum.replicate` and `replication.push` spans, and `traceparent`
+  on peer calls.
+- Per-peer circuit breakers with jittered retry backoff;
+  `membrane_peer_circuit_open{peer}`.
+- Metrics: `membrane_cache_lookups_total{result}` (the dashboard's hit
+  rate is real now), `membrane_replication_lag_seconds{peer}`,
+  `membrane_merkle_drift_size{peer}`, `membrane_audit_chain_valid`.
+- The audit log persists to `<data-dir>/audit.jsonl` and is verified and
+  continued on restart.
+- `membrane openapi [-o FILE]` prints the API schema.
+
+### Fixed (security and operations)
+
+- The ACME client was a stub that raised `NotImplementedError`.
+- Without its SDK the SPIFFE client returned placeholder PEMs instead of
+  failing, and with the SDK it used attribute names the SDK does not
+  have.
+- `FilesystemBlob` cached the master key, so a rotated key was never used
+  for new writes; `put_from_file` wrote plaintext into the encrypted
+  store.
+- Replication lag compared a monotonic clock with wall-clock heartbeat
+  times and always reported zero.
+- Lag and drift gauges used metric names with the peer id appended
+  (`name:peer`), which Prometheus cannot ingest; they use a `peer` label.
+- `membrane_span` imported OpenTelemetry even with tracing off, so traced
+  code paths failed without the `otel` extra.
+- Audit timestamps were monotonic-clock values.
+
 ### Added (extensibility)
 
 - Plugin registries `membrane.persistence` (`--persistence`),

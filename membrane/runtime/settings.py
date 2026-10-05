@@ -22,20 +22,33 @@ from pathlib import Path
 
 from membrane.auth import Authenticator
 from membrane.auth.apikey import APIKeyAuthenticator
+from membrane.auth.spiffe import SPIFFEAuthenticator, parse_id_scopes
 from membrane.network.config import CONSISTENCY_LEVELS, ClusterConfig
 from membrane.node import Node
+from membrane.otel_tracer.otel import TRACING
 from membrane.runtime.plugins import (
     AUTHENTICATORS,
     COMPUTE_BACKENDS,
     CONTENT_STORES,
     EVICTION,
     PERSISTENCE,
+    SECRET_PROVIDERS,
     UnknownPluginError,
+)
+from membrane.secrets import (
+    SecretBackendError,
+    SecretNotFoundError,
+    is_secret_ref,
+    resolve_secret,
+    set_default_provider,
 )
 from membrane.security.files import InsecureFileError, require_private_file
 from membrane.server import Server
+from membrane.transport.acme import LETS_ENCRYPT, ACMEConfig, ACMEError, ensure_certificate
 from membrane.transport.limits import TransportLimits
+from membrane.transport.spiffe import SPIFFEClient, SPIFFEConfig
 from membrane.transport.tls import MTLSConfig
+from membrane.transport.tls_rotation import enforce_not_after
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +72,16 @@ class ServerSettings:
         llm_api_key: API key for the LLM compute backend.
         redis_url: Redis URL for fragment metadata; empty for none.
         data_dir: Directory for KV bytes; empty keeps them in memory.
-        data_key_file: Master key for ``data_dir``.
+        data_key_file: Master key for ``data_dir`` (a file, or ``secret://name``).
+        secret_provider: Secret-provider plugin that resolves ``secret://``
+            references in any secret setting.
         content_store: Content-store plugin used with ``data_dir``.
         persistence: Persistence plugin; empty means ``redis`` with a
             ``redis_url`` and ``memory`` otherwise.
         eviction: Eviction-policy plugin.
         load_hooks: Run every installed ``membrane.hooks`` entry point.
+        otel_endpoint: OTLP/gRPC endpoint for traces; empty uses
+            ``OTEL_EXPORTER_OTLP_ENDPOINT`` when set, else tracing is off.
         max_memory: Node memory limit in bytes.
         peers: Seed peers as ``host:port``; empty for a single node.
         advertise_host: Host peers use to reach this node.
@@ -84,6 +101,20 @@ class ServerSettings:
         tls_ca: mTLS CA bundle PEM file.
         tls_allowed_cns: Client certificate CNs to accept.
         tls_allow_any_cn: Accept any CN signed by the CA (development only).
+        tls_spiffe_socket: Take the node's certificate, key, and trust bundle
+            from this SPIFFE Workload API socket.
+        tls_spiffe_allow: ``spiffe://.../path=scope,...`` entries: SPIFFE IDs
+            accepted as peers or clients, and their scopes.
+        tls_acme_domains: Obtain and renew the listener certificate from an
+            ACME CA for these DNS names (single-node public listeners).
+        tls_acme_directory: ACME directory URL.
+        tls_acme_email: Contact email for the ACME account.
+        tls_acme_state_dir: Where the account key and certificate live;
+            defaults to ``{data_dir}/acme``.
+        tls_acme_http_port: Port the HTTP-01 responder listens on (the
+            domain's port 80 must reach it).
+        tls_acme_ca_bundle: CA bundle trusted for the ACME directory
+            (private or test CAs).
         allow_unauthenticated: Serve without authentication beyond loopback.
         drain_timeout: Seconds a SIGTERM drain may take.
         limits: HTTP capacity settings.
@@ -100,10 +131,12 @@ class ServerSettings:
     redis_url: str = ""
     data_dir: str = ""
     data_key_file: str = ""
+    secret_provider: str = "env"
     content_store: str = "filesystem"
     persistence: str = ""
     eviction: str = "weighted-lru"
     load_hooks: bool = True
+    otel_endpoint: str = ""
     max_memory: int = 1 << 30
     peers: tuple[str, ...] = ()
     advertise_host: str = ""
@@ -123,6 +156,14 @@ class ServerSettings:
     tls_ca: str = ""
     tls_allowed_cns: tuple[str, ...] = ()
     tls_allow_any_cn: bool = False
+    tls_spiffe_socket: str = ""
+    tls_spiffe_allow: tuple[str, ...] = ()
+    tls_acme_domains: tuple[str, ...] = ()
+    tls_acme_directory: str = LETS_ENCRYPT
+    tls_acme_email: str = ""
+    tls_acme_state_dir: str = ""
+    tls_acme_http_port: int = 80
+    tls_acme_ca_bundle: str = ""
     allow_unauthenticated: bool = False
     drain_timeout: float = 30.0
     limits: TransportLimits = field(default_factory=TransportLimits)
@@ -138,20 +179,45 @@ class ServerSettings:
             (0 <= self.port <= 65535, f"port {self.port} is out of range"),
             (self.transport == "http", f"transport {self.transport!r} is not supported (only 'http')"),
             (self.compute in COMPUTE_BACKENDS, f"unknown compute backend {self.compute!r}"),
-            (not self.persistence or self.persistence in PERSISTENCE, f"unknown persistence backend {self.persistence!r}"),
+            (
+                not self.persistence or self.persistence in PERSISTENCE,
+                f"unknown persistence backend {self.persistence!r}",
+            ),
             (self.eviction in EVICTION, f"unknown eviction policy {self.eviction!r}"),
+            (self.secret_provider in SECRET_PROVIDERS, f"unknown secret provider {self.secret_provider!r}"),
             (self.max_memory > 0, "max memory must be positive"),
             (self.consistency in CONSISTENCY_LEVELS, f"consistency must be one of {sorted(CONSISTENCY_LEVELS)}"),
             (self.drain_timeout >= 0, "drain timeout must not be negative"),
             (self.limits.max_concurrency >= 0, "max concurrency must not be negative"),
             (self.limits.rate_limit_per_sec >= 0, "rate limit must not be negative"),
             (not (self.api_key_file and self.auth_config), "use --api-key-file or --auth-config, not both"),
+            (
+                not (self.tls_acme_domains and (self.tls_cert or self.tls_key or self.tls_ca)),
+                "use --tls-acme-domain or --tls-cert/--tls-key/--tls-ca, not both",
+            ),
+            (not (self.tls_acme_domains and self.peers), "ACME certificates are for single-node public listeners"),
+            (
+                not (self.tls_spiffe_socket and (self.tls_cert or self.tls_key or self.tls_acme_domains)),
+                "use --tls-spiffe-socket alone, without --tls-cert or --tls-acme-domain",
+            ),
+            (
+                not self.tls_spiffe_socket or bool(self.tls_spiffe_allow),
+                "SPIFFE needs --tls-spiffe-allow spiffe://.../path=scope (repeatable)",
+            ),
+            (
+                not self.tls_acme_domains or bool(self.tls_acme_state_dir or self.data_dir),
+                "ACME needs --tls-acme-state-dir or --data-dir to keep its account and certificate",
+            ),
         ]
         for ok, message in checks:
             if not ok:
                 raise SettingsError(message)
         try:
             self.cluster_config(tls=None)
+        except ValueError as exc:
+            raise SettingsError(str(exc)) from exc
+        try:
+            parse_id_scopes(self.tls_spiffe_allow)
         except ValueError as exc:
             raise SettingsError(str(exc)) from exc
         for cidr in self.peer_networks:
@@ -208,18 +274,25 @@ def is_loopback_host(host: str) -> bool:
 
 
 def read_secret(path: str, what: str) -> str:
-    """Read a secret file after checking that other users cannot read it.
+    """Read a secret from a private file, or from the secret provider.
 
     Args:
-        path: Path of the file.
+        path: Path of the file, or ``secret://name`` to ask the configured
+            secret provider (``--secret-provider``) instead.
         what: Human-readable name used in messages.
 
     Returns:
-        str: The file's contents.
+        str: The secret.
 
     Raises:
-        SettingsError: When the file is unreadable or not private.
+        SettingsError: When the file is unreadable or not private, or the
+            provider cannot return the secret.
     """
+    if is_secret_ref(path):
+        try:
+            return resolve_secret(path)
+        except (SecretNotFoundError, SecretBackendError, ValueError) as exc:
+            raise SettingsError(f"cannot resolve {what} {path!r}: {exc!r}") from exc
     try:
         require_private_file(path, what)
         return Path(path).read_text()
@@ -227,6 +300,44 @@ def read_secret(path: str, what: str) -> str:
         raise SettingsError(str(exc)) from exc
     except OSError as exc:
         raise SettingsError(f"cannot read {what} file {path!r}: {exc}") from exc
+
+
+def spiffe_config(settings: ServerSettings) -> SPIFFEConfig | None:
+    """Return the SPIFFE configuration, or ``None`` when SPIFFE is not used.
+
+    Args:
+        settings: Server settings.
+
+    Returns:
+        SPIFFEConfig | None: The configuration.
+    """
+    if not settings.tls_spiffe_socket:
+        return None
+    return SPIFFEConfig(
+        socket_path=settings.tls_spiffe_socket,
+        allowed_ids=frozenset(parse_id_scopes(settings.tls_spiffe_allow)),
+    )
+
+
+def acme_config(settings: ServerSettings) -> ACMEConfig | None:
+    """Return the ACME configuration, or ``None`` when ACME is not used.
+
+    Args:
+        settings: Server settings.
+
+    Returns:
+        ACMEConfig | None: The configuration.
+    """
+    if not settings.tls_acme_domains:
+        return None
+    return ACMEConfig(
+        directory_url=settings.tls_acme_directory,
+        domains=list(settings.tls_acme_domains),
+        state_dir=settings.tls_acme_state_dir or str(Path(settings.data_dir) / "acme"),
+        contact=[f"mailto:{settings.tls_acme_email}"] if settings.tls_acme_email else None,
+        http_port=settings.tls_acme_http_port,
+        ca_bundle=settings.tls_acme_ca_bundle,
+    )
 
 
 def build_tls(settings: ServerSettings) -> MTLSConfig | None:
@@ -241,16 +352,36 @@ def build_tls(settings: ServerSettings) -> MTLSConfig | None:
     Raises:
         SettingsError: When the TLS settings are incomplete or unreadable.
     """
+    spiffe = spiffe_config(settings)
+    if spiffe is not None:
+        try:
+            return SPIFFEClient(spiffe).fetch_mtls_config()
+        except Exception as exc:
+            raise SettingsError(f"SPIFFE Workload API at {settings.tls_spiffe_socket!r}: {exc}") from exc
+    acme = acme_config(settings)
+    if acme is not None:
+        try:
+            ensure_certificate(acme)
+        except (ACMEError, OSError) as exc:
+            raise SettingsError(f"ACME certificate for {', '.join(acme.domains)} failed: {exc}") from exc
+        return MTLSConfig.server_only(acme.cert_path.read_text(), acme.key_path.read_text())
     files = (settings.tls_cert, settings.tls_key, settings.tls_ca)
     if not any(files):
         return None
     if not all(files):
         raise SettingsError("--tls-cert, --tls-key and --tls-ca must be given together")
     try:
-        cert_pem, ca_pem = Path(settings.tls_cert).read_text(), Path(settings.tls_ca).read_text()
-    except OSError as exc:
-        raise SettingsError(f"cannot read TLS file: {exc}") from exc
+        cert_pem, ca_pem = (
+            resolve_secret(ref) if is_secret_ref(ref) else Path(ref).read_text()
+            for ref in (settings.tls_cert, settings.tls_ca)
+        )
+    except (OSError, SecretNotFoundError, SecretBackendError) as exc:
+        raise SettingsError(f"cannot read TLS file: {exc!r}") from exc
     key_pem = read_secret(settings.tls_key, "TLS key")
+    try:
+        enforce_not_after(cert_pem)
+    except RuntimeError as exc:
+        raise SettingsError(str(exc)) from exc
     if settings.tls_allow_any_cn:
         return MTLSConfig.allow_all_signed_by_ca(
             server_cert_pem=cert_pem,
@@ -284,6 +415,8 @@ def build_inbound_authenticator(settings: ServerSettings) -> Authenticator | Non
     Raises:
         SettingsError: When the configuration is unreadable or holds no keys.
     """
+    if settings.tls_spiffe_socket and not settings.api_key_file:
+        return SPIFFEAuthenticator(parse_id_scopes(settings.tls_spiffe_allow))
     if settings.api_key_file:
         authenticator = APIKeyAuthenticator(read_secret(settings.api_key_file, "API keyfile"))
         if not authenticator.keys:
@@ -315,10 +448,13 @@ def auth_mode(settings: ServerSettings, authenticator: Authenticator | None, tls
         SettingsError: When serving unauthenticated beyond loopback without
             ``allow_unauthenticated``.
     """
-    if tls is not None:
+    if settings.tls_spiffe_socket:
+        return "SPIFFE"
+    if tls is not None and tls.require_client_cert:
         return "mTLS"
     if authenticator is not None:
-        return "API key" if isinstance(authenticator, APIKeyAuthenticator) else settings.authenticator
+        kind = "API key" if isinstance(authenticator, APIKeyAuthenticator) else settings.authenticator
+        return f"{kind} over TLS" if tls is not None else kind
     if settings.loopback_only:
         return "none (loopback only)"
     if not settings.allow_unauthenticated:
@@ -346,7 +482,7 @@ def peer_key(settings: ServerSettings, authenticator: Authenticator | None, tls:
             key does not carry the ``admin`` scope.
     """
     key = read_secret(settings.peer_api_key_file, "peer API key").strip() if settings.peer_api_key_file else ""
-    if not settings.peers or authenticator is None or tls is not None:
+    if not settings.peers or authenticator is None or (tls is not None and tls.require_client_cert):
         return key
     if not key:
         raise SettingsError("A cluster using API keys needs --peer-api-key-file so peers can authenticate")
@@ -359,6 +495,27 @@ def peer_key(settings: ServerSettings, authenticator: Authenticator | None, tls:
         elif "admin" not in record.scopes:
             raise SettingsError("The peer API key must carry the 'admin' scope")
     return key
+
+
+def tls_files(settings: ServerSettings, tls: MTLSConfig | None) -> tuple[str, str] | None:
+    """Return the certificate and key files the server should watch for rotation.
+
+    Args:
+        settings: Server settings.
+        tls: The TLS configuration in use.
+
+    Returns:
+        tuple[str, str] | None: ``(cert, key)`` paths, or ``None`` when TLS
+        is off or the material came from the secret provider.
+    """
+    acme = acme_config(settings)
+    if acme is not None:
+        return str(acme.cert_path), str(acme.key_path)
+    if settings.tls_spiffe_socket:
+        return None  # refreshed from the Workload API instead
+    if tls is None or is_secret_ref(settings.tls_cert) or is_secret_ref(settings.tls_key):
+        return None
+    return settings.tls_cert, settings.tls_key
 
 
 def build_server(settings: ServerSettings) -> tuple[Server, str]:
@@ -375,6 +532,11 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
         SettingsError: When the settings violate the startup policy or a
             component cannot be built.
     """
+    try:
+        set_default_provider(SECRET_PROVIDERS.get(settings.secret_provider)())
+    except Exception as exc:
+        raise SettingsError(f"cannot start secret provider {settings.secret_provider!r}: {exc}") from exc
+    TRACING.configure(settings.otel_endpoint, node_id=settings.node_id)
     tls = build_tls(settings)
     authenticator = build_inbound_authenticator(settings)
     mode = auth_mode(settings, authenticator, tls)
@@ -406,7 +568,9 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
         cluster_config=cluster_config,
         llm_url=settings.llm_url,
         llm_model=settings.llm_model,
-        api_key=settings.llm_api_key,
+        api_key=read_secret(settings.llm_api_key, "LLM API key")
+        if is_secret_ref(settings.llm_api_key)
+        else settings.llm_api_key,
         authenticator=authenticator,
         peer_api_key=peer_api_key,
         peer_networks=settings.peer_networks,
@@ -414,6 +578,10 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
         limits=settings.limits,
         persistence=settings.persistence,
         load_hooks=settings.load_hooks,
+        tls_files=tls_files(settings, tls),
+        acme=acme_config(settings),
+        spiffe=spiffe_config(settings),
+        audit_path=str(Path(settings.data_dir) / "audit.jsonl") if settings.data_dir else None,
     )
     if settings.redis_url and not server.durable:
         raise SettingsError(
@@ -425,6 +593,7 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
 __all__ = [
     "ServerSettings",
     "SettingsError",
+    "acme_config",
     "auth_mode",
     "build_inbound_authenticator",
     "build_server",
@@ -432,4 +601,6 @@ __all__ = [
     "is_loopback_host",
     "peer_key",
     "read_secret",
+    "spiffe_config",
+    "tls_files",
 ]

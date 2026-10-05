@@ -17,39 +17,40 @@ from membrane.auth import Authenticator
 from membrane.network.config import ClusterConfig
 from membrane.persistence.cache import CachingPersistence
 from membrane.persistence.memory import Memory
+from membrane.security.encryption import KeyProvider
 from membrane.transport.tls import MTLSConfig
 
 logger = logging.getLogger(__name__)
 
 
-def build_content_store(data_dir: str, key_file: str = "") -> Any:
-    """Return an encrypted on-disk content store rooted at ``data_dir``.
-
-    KV bytes live in ``{data_dir}/blobs`` (AES-256-GCM,
-    :class:`~membrane.content_store.FilesystemBlob`), so they survive a
-    restart. The 32-byte master key comes from ``key_file`` when given
-    (mount it from a secret manager in production); otherwise it is
-    generated once into ``{data_dir}/master.key`` with mode 0600.
+def load_data_key(data_dir: Path, key_file: str) -> KeyProvider:
+    """Load the master key for the encrypted content store.
 
     Args:
-        data_dir: Node data directory; created when missing.
-        key_file: Optional path to a file holding the raw 32-byte key
-            or its 64-character hex encoding.
+        data_dir: Node data directory.
+        key_file: A key file, a directory of versioned ``v<N>.key`` files,
+            ``secret://name``, or empty to use (and on first start
+            generate) ``{data_dir}/master.key``.
 
     Returns:
-        FilesystemBlob: The content store.
+        KeyProvider: A :class:`StaticKeyProvider`, or a
+        :class:`~membrane.security.keyring.DirectoryKeyring` for a key
+        directory.
 
     Raises:
-        ValueError: When the key file is missing, readable by other
-            users, or does not hold a 32-byte key.
+        ValueError: When the key is missing, readable by other users, or
+            malformed.
     """
-    from membrane.content_store import FilesystemBlob
+    from membrane.secrets import is_secret_ref, resolve_secret
     from membrane.security.encryption import StaticKeyProvider
     from membrane.security.files import require_private_file
+    from membrane.security.keyring import DirectoryKeyring, parse_key
 
-    root = Path(data_dir)
-    root.mkdir(parents=True, exist_ok=True)
-    key_path = Path(key_file) if key_file else root / "master.key"
+    if is_secret_ref(key_file):
+        return StaticKeyProvider(key=parse_key(resolve_secret(key_file).encode(), key_file))
+    key_path = Path(key_file) if key_file else data_dir / "master.key"
+    if key_path.is_dir():
+        return DirectoryKeyring(key_path)
     if not key_path.exists():
         if key_file:
             raise ValueError(f"data key file {key_file!r} does not exist")
@@ -57,17 +58,32 @@ def build_content_store(data_dir: str, key_file: str = "") -> Any:
         with os.fdopen(fd, "wb") as handle:
             handle.write(secrets.token_bytes(32))
     require_private_file(key_path, "data key")
-    raw = key_path.read_bytes()
-    if len(raw) == 32:
-        key = raw  # raw key bytes: never strip, they may look like whitespace
-    else:
-        try:
-            key = bytes.fromhex(raw.decode("ascii").strip())
-        except UnicodeDecodeError, ValueError:
-            key = b""
-    if len(key) != 32:
-        raise ValueError(f"data key in {str(key_path)!r} must be 32 bytes (or 64 hex characters)")
-    return FilesystemBlob(root / "blobs", tenant_id="membrane", key_provider=StaticKeyProvider(key=key))
+    return StaticKeyProvider(key=parse_key(key_path.read_bytes(), repr(str(key_path))))
+
+
+def build_content_store(data_dir: str, key_file: str = "") -> Any:
+    """Return an encrypted on-disk content store rooted at ``data_dir``.
+
+    KV bytes live in ``{data_dir}/blobs`` (AES-256-GCM,
+    :class:`~membrane.content_store.FilesystemBlob`), so they survive a
+    restart. The master key comes from :func:`load_data_key`.
+
+    Args:
+        data_dir: Node data directory; created when missing.
+        key_file: Key file, key directory, ``secret://name``, or empty.
+
+    Returns:
+        FilesystemBlob: The content store.
+
+    Raises:
+        ValueError: When the key is missing, readable by other users, or
+            malformed.
+    """
+    from membrane.content_store import FilesystemBlob
+
+    root = Path(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    return FilesystemBlob(root / "blobs", tenant_id="membrane", key_provider=load_data_key(root, key_file))
 
 
 def resolves_to_loopback(host: str) -> bool:
@@ -194,5 +210,6 @@ __all__ = [
     "build_persistence",
     "configure_peer_access",
     "is_durable",
+    "load_data_key",
     "resolves_to_loopback",
 ]

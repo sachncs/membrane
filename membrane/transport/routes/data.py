@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 
 from membrane.auth import AuthContext
 from membrane.compute.cpu import CPU
+from membrane.integrity import record_corrupt_payload
+from membrane.metrics import NodeMetrics
 from membrane.transport.context import app_context
 from membrane.transport.metrics import record_transport
 from membrane.transport.ops import (
@@ -50,6 +52,12 @@ def handle_retrieve(app: FastAPI, content_hash: str, context: AuthContext):
         "GET",
         lambda: op_retrieve(app_context(app).node, content_hash, auth_context=context),
     )
+    registry = app_context(app).metrics_registry
+    if registry is not None and status == 200 and isinstance(body, dict):
+        result = "hit" if body.get("found") else "corrupt" if body.get("corrupt") else "miss"
+        NodeMetrics(registry).cache_lookups.inc(result=result)
+        if result == "corrupt":
+            record_corrupt_payload(registry)
     return respond(status, body)
 
 

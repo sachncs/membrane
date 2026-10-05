@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 from membrane.fragment import Fragment
 from membrane.network.peer import Peer, peer_deadline
+from membrane.otel_tracer.otel import TRACING
 from membrane.replication import replicate_fragment
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,31 @@ class QuorumReplicator:
             background; their results are ignored.
         """
         peer_list = list(peers)
+        with TRACING.span(
+            "quorum.replicate",
+            attributes={"membrane.content_hash": fragment.identity.payload_hash, "membrane.replicas": len(peer_list)},
+        ) as span:
+            result = self.__fan_out(fragment, peer_list, quorum_count, timeout_sec, blob)
+            if span is not None:
+                span.set_attribute("membrane.acks", result.ack_count)
+                span.set_attribute("membrane.quorum_met", result.success)
+        return result
+
+    def __fan_out(
+        self, fragment: Fragment, peer_list: list[Peer], quorum_count: int, timeout_sec: float, blob: bytes | None
+    ) -> QuorumResult:
+        """Contact every peer in parallel; return on quorum or deadline.
+
+        Args:
+            fragment: The fragment to replicate.
+            peer_list: Replica peers.
+            quorum_count: Peer acknowledgements required.
+            timeout_sec: Wall-clock budget.
+            blob: The fragment's KV bytes.
+
+        Returns:
+            QuorumResult: Outcome and counters.
+        """
         if quorum_count <= 0 or not peer_list:
             return QuorumResult(success=False, ack_count=0, timed_out=True, replica_count=len(peer_list))
 
@@ -118,6 +144,8 @@ class QuorumReplicator:
         for peer in peer_list:
             # Each call runs in its own context carrying the deadline; a
             # Context cannot be entered by two threads at once.
+            # The copied context also carries the tracing span, so each
+            # peer call joins this write's trace.
             context = contextvars.copy_context()
             context.run(peer_deadline.set, deadline)
             pending.add(self.pool().submit(context.run, post_replicate, peer, fragment, blob))

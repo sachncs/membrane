@@ -6,6 +6,7 @@ hashed keyfile line, which goes in ``--api-key-file``. The server never
 stores the key itself.
 """
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -13,6 +14,7 @@ from rich.markup import escape
 
 from membrane.auth.apikey import generate_key
 from membrane.cli import output
+from membrane.security.keyring import write_next_key
 
 keys_app = typer.Typer(help="Create API keys for the --api-key-file keyfile.")
 
@@ -52,4 +54,22 @@ def generate(
     output.info("Give the first line to the client; append the second to the server's --api-key-file.")
 
 
-__all__ = ["KNOWN_SCOPES", "generate", "keys_app"]
+@keys_app.command("rotate-data-key")
+def rotate_data_key(
+    directory: Annotated[str, typer.Argument(help="Data-key directory (the --data-key-file of the nodes)")],
+) -> None:
+    """Add the next data-key version to a key directory.
+
+    Running nodes activate it within a minute and re-encrypt their blobs
+    under it; afterwards older ``v<N>.key`` files can be deleted. To adopt
+    versioned keys, move an existing key file to ``DIR/v1.key`` first.
+
+    Args:
+        directory: Data-key directory (the nodes' ``--data-key-file``).
+    """
+    path = write_next_key(Path(directory))
+    output.result(escape(str(path)))
+    output.info("Nodes using this directory switch to the new key within a minute.")
+
+
+__all__ = ["KNOWN_SCOPES", "generate", "keys_app", "rotate_data_key"]

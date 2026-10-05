@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from membrane.auth import AuthBackendError
+from membrane.openapi import generate_spec
 from membrane.transport.context import app_context
 from membrane.transport.routes.cluster import handle_gossip, handle_join, handle_leave, handle_peers, handle_replicate
 from membrane.transport.routes.common import auth_error_response, route_scope
@@ -98,7 +99,7 @@ def register_routes(app: FastAPI) -> None:
 
         def openapi_handler(request: Request):
             route_scope(request, "GET", "/openapi.json")
-            return JSONResponse(app.openapi())
+            return JSONResponse(generate_spec(app))
 
         app.add_api_route("/openapi.json", openapi_handler, methods=["GET"], include_in_schema=False)
 
@@ -143,7 +144,15 @@ def register_routes(app: FastAPI) -> None:
         return await handle_get_blob(app, payload_ref, request)
 
     app.add_api_route("/blobs/{payload_ref}", put_blob_handler, methods=["PUT"], response_model=None)
-    app.add_api_route("/blobs/{payload_ref}", get_blob_handler, methods=["GET", "HEAD"], response_model=None)
+    app.add_api_route("/blobs/{payload_ref}", get_blob_handler, methods=["GET"], response_model=None)
+    app.add_api_route(
+        "/blobs/{payload_ref}",
+        get_blob_handler,
+        methods=["HEAD"],
+        response_model=None,
+        name="head_blob_handler",
+        operation_id="head_blob",
+    )
     app.add_api_route("/store", store_handler, methods=["POST"], response_model=None)
     app.add_api_route("/replicate", replicate_handler, methods=["POST"], response_model=None)
     app.add_api_route("/sync", sync_handler, methods=["POST"], response_model=None)

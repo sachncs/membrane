@@ -41,6 +41,16 @@ and filter on it:
 kubectl logs membrane-0 | jq 'select(.request_id == "0199...")'
 ```
 
+### Traces
+
+Start nodes with `--otel-endpoint http://collector:4317` (or set
+`OTEL_EXPORTER_OTLP_ENDPOINT`; install `membrane[otel]`). Each request
+is a server span tagged with its `membrane.request_id`; strong writes
+add `quorum.replicate` and per-replica `replication.push` spans, and
+peer calls carry `traceparent`, so one write shows up as a single
+trace across the nodes it touched. Search by request ID to go from a
+client error to the trace.
+
 ### Live debugging (Python 3.14)
 
 Without restarting the process, on a host or container with ptrace
@@ -111,6 +121,29 @@ serving from memory. `membrane_persistence_dropped_total` counts writes
 dropped because the queue (10,000 operations) was full or the node
 stopped before flushing. Those fragments will be missing after a
 restart, and their replicas on peers still serve them.
+
+### A peer's circuit breaker is open
+
+`membrane_peer_circuit_open{peer="..."}` is 1: five consecutive calls to
+that peer failed, so calls fail fast for 30 s and then one trial call
+is let through. Quorum writes stop waiting on that peer, and
+replication and gossip skip it. Check the peer (`/livez`, logs); the
+breaker closes on the first successful trial.
+
+### Certificate expiring
+
+`membrane_tls_cert_expiry_seconds` below 14 days: with
+`--tls-cert/--tls-key`, replace the files (the node reloads them within
+a minute, or `kill -HUP` it). ACME nodes renew 30 days ahead; a
+shrinking value means renewal is failing: check the logs for `ACME`
+and that port 80 of the domain reaches `--tls-acme-http-port`.
+
+### Audit chain broken
+
+`membrane_audit_chain_valid` is 0 and the log shows `audit log chain
+is broken at entry N`: `<data-dir>/audit.jsonl` was edited, truncated,
+or reordered. Preserve the file and the node's disk for investigation;
+the node keeps recording new entries after the break.
 
 ### Memory pressure
 

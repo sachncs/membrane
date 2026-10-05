@@ -43,9 +43,7 @@ class TestRecordMerkleDrift:
         b = MerkleTree.from_inventory([("h1", "node-a")])
         drift = measure_merkle_drift(a, b)
         record_merkle_drift(registry, drift, "peer-1")
-        gauge_name = f"{MERKLE_DRIFT_GAUGE}:peer-1"
-        assert gauge_name in registry.gauges
-        assert registry.gauges[gauge_name].value == float(drift.drift_size)
+        assert registry.gauges[MERKLE_DRIFT_GAUGE].get(peer="peer-1") == float(drift.drift_size)
 
 
 class TestRecordCorruptPayload:

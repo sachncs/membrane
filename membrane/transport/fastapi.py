@@ -46,6 +46,7 @@ Security:
 """
 
 import logging
+import os
 from typing import Any
 
 from fastapi import FastAPI
@@ -61,6 +62,7 @@ from membrane.transport.request_id import RequestIdMiddleware
 from membrane.transport.routes import register_routes
 from membrane.transport.tls import MTLSConfig, build_server_context
 from membrane.transport.tls_protocol import PeerCertH11Protocol
+from membrane.transport.tracing import TracingMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +144,8 @@ def create_app(
             burst=limits.rate_limit_burst or max(1, round(2 * limits.rate_limit_per_sec)),
             on_reject=on_reject,
         )
+    # Tracing runs inside the request-ID middleware so spans carry the ID.
+    app.add_middleware(TracingMiddleware)
     app.add_middleware(RequestIdMiddleware)
     try:
         from membrane.transport.admin import create_admin_router
@@ -262,7 +266,7 @@ class FastAPIServer:
             ssl_kwargs = {
                 "ssl_certfile": cert_path,
                 "ssl_keyfile": key_path,
-                "ssl_ca_certs": ca_path,
+                "ssl_ca_certs": ca_path if self.tls.ca_bundle_pem else None,
                 "ssl_cert_reqs": 2 if self.tls.require_client_cert else 0,
                 # Surfaces the verified peer cert CN to the authenticator.
                 "http": PeerCertH11Protocol,
@@ -294,6 +298,32 @@ class FastAPIServer:
             if tmp is not None:
                 tmp.cleanup()
                 self.tls_tmpdir = None
+
+    def reload_tls(self, cert_pem: str, key_pem: str) -> bool:
+        """Serve a new certificate and key on new connections, without a restart.
+
+        Args:
+            cert_pem: Certificate chain PEM.
+            key_pem: Private key PEM.
+
+        Returns:
+            bool: True when the live listener now uses the new chain; False
+            when TLS is off or the server has not started.
+        """
+        config = getattr(self.server, "config", None)
+        context = getattr(config, "ssl", None)
+        if self.tls_tmpdir is None or context is None:
+            return False
+        cert_path = f"{self.tls_tmpdir.name}/server.crt.pem"
+        key_path = f"{self.tls_tmpdir.name}/server.key.pem"
+        with open(cert_path, "w") as f:
+            f.write(cert_pem)
+        fd = os.open(key_path, os.O_WRONLY | os.O_TRUNC | os.O_CREAT, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(key_pem)
+        context.load_cert_chain(cert_path, key_path)
+        logger.info("listener certificate reloaded")
+        return True
 
     def stop(self) -> None:
         """Stop the uvicorn server.

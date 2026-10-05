@@ -84,10 +84,8 @@ class TestRecordReplicationLag:
         membership.record_heartbeat("peer-1", lease_until=0.0)
         snapshot = record_replication_lag(registry, membership)
         assert "peer-1" in snapshot.lag_seconds
-        # The gauge is registered under the per-peer name.
-        gauge_name = f"{REPLICATION_LAG_GAUGE}:peer-1"
-        assert gauge_name in registry.gauges
-        assert registry.gauges[gauge_name].value == 0.0
+        # One gauge, labeled by peer; the heartbeat was just recorded.
+        assert 0.0 <= registry.gauges[REPLICATION_LAG_GAUGE].get(peer="peer-1") < 1.0
 
 
 class TestMembershipHelpers:
@@ -107,3 +105,14 @@ class TestMembershipHelpers:
         assert len(snap) == 1
         assert snap[0].node_id == "peer-1"
         assert snap[0].last_heartbeat == 42.0
+
+
+def test_lag_uses_wall_clock_like_heartbeats() -> None:
+    import time
+
+    membership = _fresh_membership()
+    membership.add("peer-2", "1.1.1.2", 8002)
+    membership.peers["peer-2"].last_heartbeat = time.time() - 42.0
+    from membrane.network.lag import snapshot_peer_lag
+
+    assert 41.0 < snapshot_peer_lag(membership).lag_seconds["peer-2"] < 44.0

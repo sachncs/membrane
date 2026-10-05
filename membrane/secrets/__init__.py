@@ -127,6 +127,9 @@ class LazyProxy:
         return self.__instance.get(secret_name)
 
 
+#: Prefix that marks a setting as a reference into the secret provider.
+SECRET_SCHEME = "secret://"
+
 DEFAULT_PROVIDER: SecretProvider | None = None
 
 
@@ -155,6 +158,39 @@ def set_default_provider(provider: SecretProvider) -> None:
     DEFAULT_PROVIDER = provider
 
 
+def is_secret_ref(value: str) -> bool:
+    """Whether ``value`` is a ``secret://name`` reference.
+
+    Args:
+        value: A setting value.
+
+    Returns:
+        bool: True for ``secret://`` references.
+    """
+    return value.startswith(SECRET_SCHEME)
+
+
+def resolve_secret(ref: str, provider: SecretProvider | None = None) -> str:
+    """Fetch the secret a ``secret://name`` reference points at.
+
+    Args:
+        ref: The reference.
+        provider: Provider to ask; the process default when ``None``.
+
+    Returns:
+        str: The secret.
+
+    Raises:
+        ValueError: When ``ref`` is not a ``secret://`` reference or names
+            nothing.
+        SecretNotFoundError: When the provider has no such secret.
+        SecretBackendError: When the provider fails.
+    """
+    if not is_secret_ref(ref) or len(ref) == len(SECRET_SCHEME):
+        raise ValueError(f"not a secret reference: {ref!r}")
+    return (provider or get_default_provider()).get(ref[len(SECRET_SCHEME) :])
+
+
 def reset_default_provider() -> None:
     """Restore the process-wide provider to its factory default.
 
@@ -166,11 +202,14 @@ def reset_default_provider() -> None:
 
 
 __all__ = [
+    "SECRET_SCHEME",
     "EnvSecretProvider",
     "SecretBackendError",
     "SecretNotFoundError",
     "SecretProvider",
     "get_default_provider",
+    "is_secret_ref",
     "reset_default_provider",
+    "resolve_secret",
     "set_default_provider",
 ]

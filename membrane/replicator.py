@@ -103,6 +103,8 @@ class Replicator:
         self.running = running
         self.semaphore = threading.Semaphore(max_concurrent) if max_concurrent > 0 else None
         self.migrator = migrator
+        #: Fragments each peer lacked at its last full pass (repair drift).
+        self.drift: dict[str, int] = {}
 
     def replicate_cluster(
         self,
@@ -245,6 +247,7 @@ class Replicator:
         if not isinstance(inventory, dict):
             return set(hashes)
         held = inventory.get("digest", {})
+        self.drift[peer_id] = sum(1 for h in hashes if h not in held)
         failed: set[str] = set()
         for content_hash in hashes:
             if content_hash in held or (self.stop_event is not None and self.stop_event.is_set()):

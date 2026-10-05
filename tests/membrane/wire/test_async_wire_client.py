@@ -5,10 +5,11 @@ import asyncio
 import httpx
 import pytest
 
+from membrane.resilience import CircuitBreakerPolicy
 from membrane.wire.v3.aio_client import (
     AsyncWireClient,
     CancellationToken,
-    CircuitBreakerPolicy,
+    CircuitBreaker,
     RetryPolicy,
     WireBulkhead,
     compute_backoff,
@@ -50,7 +51,7 @@ class TestAsyncWireClient:
                 # bulkhead + breaker pass through. The MockTransport
                 # responds to the inner client's outbound request.
                 breaker = client.breaker.setdefault(  # type: ignore[attr-defined]
-                    "http://t", CircuitBreakerPolicy()
+                    "http://t", CircuitBreaker()
                 )
                 assert not breaker.is_open()
                 # Drive the bulkhead + breaker surface directly;
@@ -99,6 +100,6 @@ class TestAsyncWireClient:
     def test_circuit_breaker_open_raises(self):
         # The AsyncWireClient.request raises RuntimeError when the
         # breaker is open. Verify the standalone open() helper.
-        cb = CircuitBreakerPolicy(failure_threshold=1, cool_down=60.0)
+        cb = CircuitBreaker(CircuitBreakerPolicy(failure_threshold=1, cool_down=60.0))
         cb.record_failure()
         assert cb.is_open() is True

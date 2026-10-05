@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from membrane.errors import CorruptPayloadError
 from membrane.merkle import MerkleTree
-from membrane.metrics import MetricsCollector as _Registry
+from membrane.metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ def measure_merkle_drift(local: MerkleTree, remote: MerkleTree) -> MerkleDrift:
 
 
 def record_merkle_drift(
-    registry: _Registry,
+    registry: MetricsCollector,
     drift: MerkleDrift,
     peer_node_id: str,
 ) -> None:
@@ -85,14 +85,12 @@ def record_merkle_drift(
         drift: The drift measurement.
         peer_node_id: Peer identifier used as the label.
     """
-    gauge_name = f"{MERKLE_DRIFT_GAUGE}:{peer_node_id}"
-    registry.gauge(
-        gauge_name,
-        "Inventory leaves that diverge from this peer's tree at last gossip.",
-    ).set(float(drift.drift_size))
+    registry.gauge(MERKLE_DRIFT_GAUGE, "Fragments a peer was missing at the last repair pass.", labels=("peer",)).set(
+        float(drift.drift_size), peer=peer_node_id
+    )
 
 
-def record_corrupt_payload(registry: _Registry | None) -> None:
+def record_corrupt_payload(registry: MetricsCollector | None) -> None:
     """Increment the global corrupt-payload counter.
 
     Args:
@@ -109,7 +107,7 @@ def record_corrupt_payload(registry: _Registry | None) -> None:
     counter.inc()
 
 
-def record_corrupt_from_exception(registry: _Registry | None, exc: BaseException) -> None:
+def record_corrupt_from_exception(registry: MetricsCollector | None, exc: BaseException) -> None:
     """Increment the corrupt-payload counter if ``exc`` is the right type.
 
     Args:

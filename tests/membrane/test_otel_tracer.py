@@ -1,60 +1,87 @@
-"""Tests for the OpenTelemetry tracer integration (Phase 3.2.4).
+"""OpenTelemetry tracing: no-op when off; request, write, and peer spans when on."""
 
-The v3.0.0 release wires OTel into the cluster. Tests run
-without the OTel SDK or with the SDK configured to a no-op
-provider; the contracts under test are the import surface,
-the no-op path, and the convenience context manager.
-"""
+import sys
 
-from membrane.otel_tracer import (
-    SERVICE_NAME,
-    TracerFactory,
-    get_default_tracer,
-    membrane_span,
-)
+import pytest
+from fastapi.testclient import TestClient
 
+from membrane.network.peer import Peer
+from membrane.node import Node
+from membrane.otel_tracer import SERVICE_NAME, TRACING, membrane_span
+from membrane.quorum import QuorumReplicator
+from membrane.server import Server
+from tests.conftest import make_fragment
 
-class TestTracerFactory:
-    def test_default_returns_noop(self):
-        """No OTLP endpoint -> no-op tracer."""
-        factory = TracerFactory()
-        tracer = factory.configure(endpoint=None)
-        # The NoOpTracer instance is what `configure(None)` returns.
-        assert tracer is not None
-
-    def test_configure_with_endpoint_no_op_when_sdk_missing(self):
-        """When the SDK is unavailable, the factory degrades to no-op."""
-        factory = TracerFactory()
-        # An unreachable endpoint should still complete without raising.
-        tracer = factory.configure(endpoint="http://localhost:4317")
-        assert tracer is not None
-
-    def test_lazy_tracer_property(self):
-        factory = TracerFactory()
-        tracer = factory.tracer
-        # Subsequent access returns the same instance.
-        assert factory.tracer is tracer
+pytest.importorskip("opentelemetry.sdk")
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 
-class TestMembraneSpan:
-    def test_with_no_endpoint_is_inert(self):
-        """`membrane_span` on a no-op tracer never raises."""
-        TracerFactory().configure(endpoint=None)
-        with membrane_span("test.span", attribute="value"):
-            pass
-
-    def test_yields_span_object(self):
-        """Inside the context manager a span value is yielded."""
-        TracerFactory().configure(endpoint=None)
-        with membrane_span("test.span") as span:
-            # Either the OTel span or None; both are valid.
-            assert span is None or hasattr(span, "set_attribute")
+@pytest.fixture
+def spans():
+    exporter = InMemorySpanExporter()
+    assert TRACING.configure(exporter=exporter, node_id="t0")
+    yield exporter
+    TRACING.shutdown()
 
 
-class TestServiceName:
-    def test_default_service_name(self):
-        assert SERVICE_NAME == "membrane"
+def test_off_by_default_and_never_imports_the_sdk(monkeypatch) -> None:
+    TRACING.shutdown()
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+    assert not TRACING.configure()
+    monkeypatch.setitem(sys.modules, "opentelemetry", None)  # importing would fail
+    with membrane_span("noop", a=1) as span:
+        assert span is None
+    headers: dict[str, str] = {}
+    TRACING.inject(headers)
+    assert headers == {}
+    assert SERVICE_NAME == "membrane"
 
-    def test_get_default_tracer_returns_something(self):
-        tracer = get_default_tracer()
-        assert tracer is not None
+
+def test_each_request_gets_a_server_span(spans) -> None:
+    server = Server(node=Node("t0"), port=0, load_hooks=False)
+    response = TestClient(server.transport.app).get("/inventory", headers={"X-Request-ID": "req-123"})
+    assert response.status_code == 200
+    span = next(s for s in spans.get_finished_spans() if s.name == "GET /inventory")
+    assert span.attributes["http.response.status_code"] == 200
+    assert span.attributes["membrane.request_id"] == "req-123"
+    assert span.resource.attributes["service.instance.id"] == "t0"
+
+
+def test_incoming_traceparent_is_continued(spans) -> None:
+    server = Server(node=Node("t1"), port=0, load_hooks=False)
+    parent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+    TestClient(server.transport.app).get("/livez", headers={"traceparent": parent})
+    span = next(s for s in spans.get_finished_spans() if s.name == "GET /livez")
+    assert format(span.context.trace_id, "032x") == "0af7651916cd43dd8448eb211c80319c"
+
+
+class RecordingTransport:
+    """Peer transport double that records outgoing headers."""
+
+    def __init__(self) -> None:
+        self.headers: list[dict[str, str]] = []
+
+    def request(self, method, url, body, headers, timeout_sec):
+        self.headers.append(dict(headers))
+        return {"success": True, "stored": True}
+
+    def request_bytes(self, method, url, body, headers, timeout_sec):
+        raise NotImplementedError
+
+
+def test_quorum_write_traces_and_propagates_to_peers(spans) -> None:
+    transport = RecordingTransport()
+    peer = Peer("http://peer:8080", transport=transport, max_retries=1)
+    node = Node("w")
+    frag = make_fragment("q1")
+    result = QuorumReplicator()(frag, [peer], quorum_count=1, timeout_sec=2.0, blob=b"kv")
+    assert result.success
+    names = [s.name for s in spans.get_finished_spans()]
+    assert "quorum.replicate" in names and "replication.push" in names
+    quorum = next(s for s in spans.get_finished_spans() if s.name == "quorum.replicate")
+    assert quorum.attributes["membrane.acks"] == 1
+    # Both the blob upload and the metadata call carry the trace.
+    assert all("traceparent" in h for h in transport.headers) and len(transport.headers) == 2
+    trace_ids = {h["traceparent"].split("-")[1] for h in transport.headers}
+    assert trace_ids == {format(quorum.context.trace_id, "032x")}
+    assert node is not None

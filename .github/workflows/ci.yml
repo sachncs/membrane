@@ -96,6 +96,22 @@ jobs:
       - name: Verify Redis is reachable
         run: python -c "from membrane.persistence.redis import Redis; assert Redis().ping(), 'redis unreachable'"
       - run: pytest tests/membrane/persistence -q --timeout=300
+      # ACME end to end against Pebble (Let's Encrypt's test CA): it
+      # validates HTTP-01 by fetching from this runner via host-gateway.
+      - name: Start Pebble
+        run: |
+          docker run -d --name pebble --add-host host.docker.internal:host-gateway -p 14000:14000 \
+            -e PEBBLE_VA_NOSLEEP=1 -e PEBBLE_WFE_NONCEREJECT=0 \
+            ghcr.io/letsencrypt/pebble:latest -config test/config/pebble-config.json
+          docker cp pebble:/test/certs/pebble.minica.pem "$RUNNER_TEMP/pebble.minica.pem"
+          for _ in $(seq 1 30); do curl -fsk https://localhost:14000/dir >/dev/null && break; sleep 1; done
+      - name: ACME against Pebble
+        env:
+          MEMBRANE_PEBBLE_DIRECTORY: https://localhost:14000/dir
+          MEMBRANE_PEBBLE_CA: ${{ runner.temp }}/pebble.minica.pem
+        run: |
+          pytest tests/membrane/transport/test_acme.py -q --timeout=300
+          pytest tests/membrane/transport/test_acme.py -q -k pebble 2>&1 | grep -q "1 passed"
 
   extended:
     name: Stress, chaos & bench smoke

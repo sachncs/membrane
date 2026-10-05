@@ -20,6 +20,7 @@ import logging
 from typing import Any, Protocol
 
 from membrane.fragment import Fragment
+from membrane.otel_tracer.otel import TRACING
 from membrane.wire.v3.chunks import sha256_hex
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,29 @@ def replicate_fragment(
         False when the bytes are needed but missing locally, or either
         request fails.
     """
+    with TRACING.span(
+        "replication.push",
+        kind="client",
+        attributes={"membrane.content_hash": fragment.identity.payload_hash, "membrane.is_primary": is_primary},
+    ):
+        return push(target, fragment, payload, is_primary, skip_if_present)
+
+
+def push(
+    target: ReplicaTarget, fragment: Fragment, payload: bytes | None, is_primary: bool, skip_if_present: bool
+) -> bool:
+    """Send the bytes (unless present or not needed), then the metadata.
+
+    Args:
+        target: The receiving peer.
+        fragment: The fragment.
+        payload: Its KV bytes.
+        is_primary: Ask the peer to become the primary owner.
+        skip_if_present: Skip the upload when the peer has identical bytes.
+
+    Returns:
+        bool: True when the peer stored both.
+    """
     if fragment.payload_ref is not None:
         if payload is None:
             logger.warning(
@@ -171,4 +195,4 @@ def hand_off_primary(target: ReplicaTarget, fragment: Fragment, payload: bytes |
     )
 
 
-__all__ = ["ReplicaTarget", "hand_off_primary", "payload_for", "replicate_fragment", "verify_replica"]
+__all__ = ["ReplicaTarget", "hand_off_primary", "payload_for", "push", "replicate_fragment", "verify_replica"]

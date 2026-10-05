@@ -10,24 +10,34 @@ dashboard. The builders it uses, and the dashboard's event and
 diagnostics types, are re-exported here for compatibility.
 """
 
+import dataclasses
 import logging
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
+from membrane.audit import AuditLog, FileAuditStorage
 from membrane.auth import Authenticator
+from membrane.cache_metrics import CacheMetrics
+from membrane.canonical import set_default_registry
 from membrane.compute.base import Backend
 from membrane.gc import Sweeper, TombstoneTable
+from membrane.integrity import MerkleDrift, record_merkle_drift
 from membrane.metrics import (
     ClusterMetrics,
     MetricsCollector,
     NodeMetrics,
+    PeerHealthMetrics,
     PersistenceMetrics,
     TransportMetrics,
 )
 from membrane.network.cluster import Cluster
 from membrane.network.config import ClusterConfig
+from membrane.network.lag import record_replication_lag
+from membrane.network.peer import get_default_peer_credentials
 from membrane.node import Node
+from membrane.otel_tracer.otel import TRACING
 from membrane.quorum import QuorumReplicator
 from membrane.registry import Registry
 from membrane.runtime.components import (
@@ -51,11 +61,15 @@ from membrane.runtime.lifecycle import PeriodicTask
 from membrane.runtime.observability import EventLog, ServerDiagnostics, ServerEvent
 from membrane.runtime.persistence_writer import PersistenceWriter
 from membrane.runtime.plugins import COMPUTE_BACKENDS, HOOKS
+from membrane.security.keyring import DirectoryKeyring
 from membrane.snapshot import SNAPSHOT_SCHEMA_VERSION, ClusterEpochGuard, Snapshot
 from membrane.transfer import TransferService
+from membrane.transport.acme import ACMEConfig, ensure_certificate
 from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.limits import TransportLimits
+from membrane.transport.spiffe import REFRESH_INTERVAL_SEC, SPIFFEClient, SPIFFEConfig
 from membrane.transport.tls import MTLSConfig
+from membrane.transport.tls_rotation import CertRotationWatcher, cert_not_after
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +132,10 @@ class Server:
         limits: TransportLimits | None = None,
         persistence: str = "",
         load_hooks: bool = True,
+        tls_files: tuple[str, str] | None = None,
+        acme: ACMEConfig | None = None,
+        spiffe: SPIFFEConfig | None = None,
+        audit_path: str | None = None,
     ) -> None:
         """Initialize the server with all configured subsystems.
 
@@ -158,6 +176,13 @@ class Server:
             persistence: Persistence plugin name (``membrane.persistence``);
                 defaults to ``redis`` with a URL, else ``memory``.
             load_hooks: Run every installed ``membrane.hooks`` entry point.
+            tls_files: ``(cert_path, key_path)`` to watch; a changed pair is
+                served on new connections without a restart (also on SIGHUP).
+            acme: Renew the ACME certificate in ``tls_files`` twice a day.
+            spiffe: Re-fetch the SVID from the Workload API and serve a
+                renewed one without a restart.
+            audit_path: Persist the admin audit log here (JSON Lines); in
+                memory only when ``None``.
         """
         self.node = node
         self.limits = limits or TransportLimits()
@@ -182,6 +207,9 @@ class Server:
         self.metrics_cluster = ClusterMetrics(self.metrics_registry)
         self.metrics_persistence = PersistenceMetrics(self.metrics_registry)
         self.metrics_node = NodeMetrics(self.metrics_registry)
+        self.metrics_peers = PeerHealthMetrics(self.metrics_registry)
+        # Corrupt canonical frames are counted wherever they are parsed.
+        set_default_registry(self.metrics_registry)
         self.node.set_eviction_counter(lambda reason, count: self.metrics_node.evictions.inc(count, reason=reason))
 
         if isinstance(compute, Backend):
@@ -227,6 +255,9 @@ class Server:
             self.cluster_manager.membership.listeners.append(self.on_membership_change)
 
         self.transport = self.build_transport(transport, host, port)
+        self.audit_log = AuditLog.open(FileAuditStorage(Path(audit_path))) if audit_path else AuditLog()
+        self.transport.app.state.audit_log = self.audit_log
+        self.metrics_peers.audit_chain_valid.set(0.0 if self.audit_log.broken_at is not None else 1.0)
         self.running = False
         self.thread: threading.Thread | None = None
         # While draining, ``/readyz`` and writes return 503 so load
@@ -244,6 +275,18 @@ class Server:
         self.epoch_guard = ClusterEpochGuard(current=cluster_epoch)
         self.checkpoint_task = PeriodicTask("membrane-checkpoint", self.checkpoint_interval_sec, self.checkpoint_state)
         self.sweeper_task = PeriodicTask("membrane-sweeper", self.sweep_interval_sec, self.sweep_once)
+        # A directory of versioned data keys is re-read every minute; a
+        # new version re-encrypts existing blobs under it.
+        self.key_refresh_task = PeriodicTask("membrane-key-refresh", 60.0, self.refresh_data_keys)
+        self.acme = acme
+        self.spiffe = spiffe
+        self.spiffe_task = PeriodicTask("membrane-spiffe-refresh", REFRESH_INTERVAL_SEC, self.refresh_svid)
+        self.acme_task = PeriodicTask("membrane-acme-renewal", 12 * 3600.0, self.renew_acme_certificate)
+        self.cert_watcher = (
+            CertRotationWatcher(cert_path=tls_files[0], key_path=tls_files[1], on_rotate=self.rotate_tls)
+            if tls_files is not None and self.tls is not None
+            else None
+        )
         if load_hooks:
             self.run_hooks()
 
@@ -291,7 +334,18 @@ class Server:
         from membrane.transport.metrics import sync_node_metrics
 
         sync_node_metrics(self.node, self.metrics_node)
+        if self.tls is not None:
+            expires = cert_not_after(self.tls.server_cert_pem)
+            if expires is not None:
+                self.metrics_transport.tls_cert_expiry.set(expires.timestamp() - time.time())
         if self.cluster_manager is not None:
+            record_replication_lag(self.metrics_registry, self.cluster_manager.membership)
+            for peer_id, missing in list(self.cluster_manager.replicator.drift.items()):
+                record_merkle_drift(self.metrics_registry, MerkleDrift(missing, "", ""), peer_id)
+            for node_id, client in list(self.cluster_manager.membership.clients.items()):
+                breaker = getattr(client, "breaker", None)
+                if breaker is not None:
+                    self.metrics_peers.circuit_open.set(1.0 if breaker.is_open() else 0.0, peer=node_id)
             peers = self.cluster_manager.membership.snapshot()
             self.metrics_cluster.peers_total.set(float(len(peers)))
             self.metrics_cluster.peers_healthy.set(float(sum(1 for p in peers if p.healthy)))
@@ -389,7 +443,82 @@ class Server:
 
                 self.sweeper.on_post_sweep = forget_swept
             self.sweeper_task.start()
+        if isinstance(getattr(self.node.content_store, "key_provider", None), DirectoryKeyring):
+            self.key_refresh_task.start()
+        if self.cert_watcher is not None:
+            self.cert_watcher.install_sighup()
+            self.cert_watcher.start()
+        if self.acme is not None:
+            self.acme_task.start()
+        if self.spiffe is not None:
+            self.spiffe_task.start()
         self.log_event("info", f"Server started on {self.host}:{self.port}")
+
+    def rotate_tls(self, cert_pem: str, key_pem: str) -> None:
+        """Serve, and present to peers, a renewed certificate and key.
+
+        Args:
+            cert_pem: Certificate chain PEM.
+            key_pem: Private key PEM.
+        """
+        if self.tls is None:
+            return
+        self.tls = dataclasses.replace(
+            self.tls,
+            server_cert_pem=cert_pem,
+            server_key_pem=key_pem,
+            client_cert_pem=cert_pem,
+            client_key_pem=key_pem,
+        )
+        if not self.transport.reload_tls(cert_pem, key_pem):
+            return
+        # Every peer client shares this context, so they all switch at once.
+        context = get_default_peer_credentials().ssl_context
+        if context is not None and self.transport.tls_tmpdir is not None:
+            directory = self.transport.tls_tmpdir.name
+            context.load_cert_chain(f"{directory}/server.crt.pem", f"{directory}/server.key.pem")
+        self.log_event("info", "TLS certificate rotated")
+
+    def renew_acme_certificate(self) -> bool:
+        """Renew the ACME certificate when it nears expiry, and serve the new one.
+
+        Returns:
+            bool: True when a new certificate was issued.
+        """
+        if self.acme is None or not ensure_certificate(self.acme):
+            return False
+        if self.cert_watcher is not None:
+            self.cert_watcher.reload()
+        return True
+
+    def refresh_svid(self) -> bool:
+        """Fetch the current SVID and serve it when it changed.
+
+        Returns:
+            bool: True when a new SVID was installed.
+        """
+        if self.spiffe is None or self.tls is None:
+            return False
+        fresh = SPIFFEClient(self.spiffe).fetch_mtls_config()
+        if fresh.server_cert_pem == self.tls.server_cert_pem:
+            return False
+        self.rotate_tls(fresh.server_cert_pem, fresh.server_key_pem)
+        return True
+
+    def refresh_data_keys(self) -> int:
+        """Activate new data-key versions and re-encrypt blobs under them.
+
+        Returns:
+            int: Blobs re-encrypted (0 when no new version appeared or the
+            store does not use a key directory).
+        """
+        store = self.node.content_store
+        keyring = getattr(store, "key_provider", None)
+        if not isinstance(keyring, DirectoryKeyring) or not keyring.refresh():
+            return 0
+        rewritten = int(store.reencrypt_all())  # type: ignore[attr-defined]
+        logger.info("re-encrypted %s blobs under data key version %s", rewritten, keyring.active_version)
+        return rewritten
 
     def sweep_once(self) -> None:
         """Run one TTL and tombstone sweep (capacity eviction happens on store)."""
@@ -422,10 +551,16 @@ class Server:
         if self.cluster_manager:
             self.cluster_manager.stop(deadline_sec=deadline_sec)
         joined_cleanly = self.sweeper_task.stop(deadline_sec) and joined_cleanly
+        self.key_refresh_task.stop(deadline_sec)
+        if self.cert_watcher is not None:
+            self.cert_watcher.stop()
+        self.acme_task.stop(deadline_sec)
+        self.spiffe_task.stop(deadline_sec)
         if self.replicator is not None:
             self.replicator.shutdown()
         joined_cleanly = self.persistence_writer.stop(deadline_sec) and joined_cleanly
         self.event_bus.close(timeout_sec=min(deadline_sec, 5.0))
+        TRACING.shutdown()  # flush spans still queued for export
         self.log_event("info", f"Server stopped (cleanly={joined_cleanly})")
         return joined_cleanly
 
@@ -662,6 +797,9 @@ class Server:
         """
         stats = self.node.get_stats()
         now = time.time()
+        hits = int(self.metrics_node.cache_lookups.get(result="hit"))
+        misses = int(self.metrics_node.cache_lookups.get(result="miss"))
+        lookups = CacheMetrics(hits=hits, misses=misses, total_requests=hits + misses)
         connected = len(self.connected_nodes)
         if self.cluster_manager:
             connected = max(connected, len(self.cluster_manager.membership.to_json()))
@@ -672,8 +810,8 @@ class Server:
             memory_limit_bytes=stats.memory_limit_bytes,
             fragment_count=stats.fragment_count,
             primary_count=stats.primary_count,
-            hit_rate=0.0,
-            miss_rate=0.0,
+            hit_rate=lookups.hit_rate(),
+            miss_rate=lookups.miss_rate(),
             request_count=self.request_count,
             error_count=self.error_count,
             connected_nodes=connected,

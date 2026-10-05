@@ -9,7 +9,7 @@ import pytest
 from membrane.wire.v3.aio_client import (
     AsyncWireClient,
     CancellationToken,
-    CircuitBreakerPolicy,
+    CircuitBreaker,
     RetryPolicy,
     WireBulkhead,
     compute_backoff,
