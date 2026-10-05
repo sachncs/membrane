@@ -11,7 +11,7 @@ const features = [
     icon: 'search',
     title: 'Four indices, one facade',
     body:
-      'Exact, semantic, positional, and co-access indices over the same fragment set. Sub-millisecond lookups, exposed through a single Index class.',
+      'Exact, semantic, positional, and co-access indices over the same fragment set, exposed through a single Index class.',
     tag: 'retrieval',
   },
   {
@@ -32,28 +32,28 @@ const features = [
     icon: 'cluster',
     title: 'Cluster as one',
     body:
-      'Consistent-hash ring, gossip state exchange, heartbeat-driven failure detection, and background replication — all in-process.',
+      'Consistent-hash ring, gossip membership, heartbeat failure detection, and quorum writes that fail closed when replicas are unreachable.',
     tag: 'cluster',
   },
   {
     icon: 'shield',
-    title: 'Encrypted at rest, mTLS in flight',
+    title: 'Secure by default',
     body:
-      'Per-fragment payload encryption, deny-by-default mTLS, per-route scope checks, and a typed cluster error hierarchy.',
+      'Refuses to serve unauthenticated on a public address. API keys or mTLS on every route, per-tenant reads, and optional AES-256-GCM encryption at rest.',
     tag: 'security',
   },
   {
     icon: 'chip',
     title: 'Pluggable compute',
     body:
-      'CPU reference, GPU (PyTorch CUDA with CPU fallback), HuggingFace Transformers, plus native OpenAI, Anthropic, and Ollama adapters.',
+      'CPU reference, GPU (PyTorch CUDA), HuggingFace Transformers, and OpenAI, Anthropic, and Ollama backends, plus vLLM, SGLang, and TensorRT-LLM adapters.',
     tag: 'compute',
   },
   {
     icon: 'tui',
     title: 'TUI dashboard & CLI',
     body:
-      'A Rich-powered live dashboard, an interactive setup wizard, and a complete admin surface (snapshot, restore, rotate-keys).',
+      'A live TUI dashboard, a setup wizard, a client CLI, and admin commands to inspect, evict, re-place, and repair fragments.',
     tag: 'ops',
   },
 ];
@@ -92,8 +92,8 @@ const iconPaths: Record<string, string> = {
         data-reveal-delay="2"
         class="mx-auto mt-5 max-w-xl text-pretty text-[1.0625rem] leading-relaxed text-ink-200"
       >
-        Production-grade primitives, a coherent runtime, and the operational
-        surface to run them confidently at scale.
+        The storage, retrieval, routing, and cluster primitives — plus the
+        auth, CLI, and deployment pieces needed to run them.
       </p>
     </div>
 

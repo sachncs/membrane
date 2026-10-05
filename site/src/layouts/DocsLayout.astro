@@ -1,0 +1,107 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import { DOCS_NAV, DOCS_ORDER } from '../lib/docs-nav';
+import { BLOB_URL, withBase } from '../lib/site';
+
+export interface Props {
+  id: string;
+  title: string;
+  headings: { depth: number; slug: string; text: string }[];
+}
+
+const { id, title, headings } = Astro.props;
+const index = DOCS_ORDER.findIndex((item) => item.id === id);
+const prev = index > 0 ? DOCS_ORDER[index - 1] : undefined;
+const next = index >= 0 && index < DOCS_ORDER.length - 1 ? DOCS_ORDER[index + 1] : undefined;
+const toc = headings.filter((h) => h.depth === 2);
+---
+
+<BaseLayout title={`${title} — Membrane docs`} description={`Membrane documentation: ${title}.`}>
+  <Nav />
+  <main id="main" class="container-page pt-28 pb-20 sm:pt-32">
+    <div class="grid gap-10 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_200px]">
+      <aside class="lg:sticky lg:top-24 lg:self-start" aria-label="Documentation">
+        <details class="group lg:hidden rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
+          <summary class="cursor-pointer text-sm font-medium text-ink-100">Documentation menu</summary>
+          <div class="mt-3"><slot name="mobile-nav" /></div>
+        </details>
+        <nav class="hidden lg:block space-y-6">
+          {
+            DOCS_NAV.map((section) => (
+              <div>
+                <div class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-ink-400">{section.title}</div>
+                <ul class="mt-2 space-y-0.5">
+                  {section.items.map((item) => (
+                    <li>
+                      <a
+                        href={withBase(`/docs/${item.id}/`)}
+                        aria-current={item.id === id ? 'page' : undefined}
+                        class={`block rounded-md px-2 py-1 text-[0.875rem] transition-colors ${
+                          item.id === id ? 'bg-white/[0.06] text-white' : 'text-ink-300 hover:text-white'
+                        }`}
+                      >
+                        {item.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          }
+        </nav>
+        <nav class="lg:hidden mt-3 space-y-4">
+          {
+            DOCS_NAV.map((section) => (
+              <div>
+                <div class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-ink-400">{section.title}</div>
+                <ul class="mt-1">
+                  {section.items.map((item) => (
+                    <li>
+                      <a href={withBase(`/docs/${item.id}/`)} class="block py-1 text-sm text-ink-200">{item.label}</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          }
+        </nav>
+      </aside>
+
+      <article class="min-w-0">
+        <div class="prose prose-invert max-w-none prose-headings:scroll-mt-24 prose-headings:tracking-tight prose-a:text-accent-cyan prose-a:no-underline hover:prose-a:underline prose-code:before:content-none prose-code:after:content-none prose-code:rounded prose-code:bg-white/[0.06] prose-code:px-1 prose-code:py-0.5 prose-code:font-normal prose-pre:border prose-pre:border-white/[0.08] prose-table:text-sm prose-th:text-ink-100">
+          <slot />
+        </div>
+
+        <div class="mt-12 flex flex-col gap-4 border-t border-white/[0.06] pt-6 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <a href={`${BLOB_URL}/docs/${id}.md`} class="text-ink-300 hover:text-white" target="_blank" rel="noreferrer noopener">
+            Edit this page on GitHub
+          </a>
+          <div class="flex gap-3">
+            {prev && <a href={withBase(`/docs/${prev.id}/`)} class="btn-secondary">← {prev.label}</a>}
+            {next && <a href={withBase(`/docs/${next.id}/`)} class="btn-secondary">{next.label} →</a>}
+          </div>
+        </div>
+      </article>
+
+      {
+        toc.length > 1 && (
+          <aside class="hidden xl:block xl:sticky xl:top-24 xl:self-start" aria-label="On this page">
+            <div class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-ink-400">On this page</div>
+            <ul class="mt-2 space-y-1">
+              {toc.map((h) => (
+                <li>
+                  <a href={`#${h.slug}`} class="block text-[0.82rem] leading-snug text-ink-300 hover:text-white">
+                    {h.text}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        )
+      }
+    </div>
+  </main>
+  <Footer />
+</BaseLayout>

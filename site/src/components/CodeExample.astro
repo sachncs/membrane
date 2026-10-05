@@ -1,71 +1,60 @@
 ---
+// Every snippet here is copied from docs/getting-started.md and is run
+// as part of the test suite or the CI container smoke test.
+import { INSTALL_COMMANDS } from '../lib/site';
+
 const snippets = [
   {
-    id: 'serve',
-    label: 'serve',
-    code: `from membrane.server import Server
-from membrane.compute import CPU
-
-server = Server(
-    node_id="n1",
-    host="0.0.0.0",
-    port=8080,
-    transport="http",
-    compute=CPU(),
-    peers=["n2:8081", "n3:8082"],
-    replica_count=2,
-)
-
-server.run()`,
+    id: 'install',
+    label: 'install',
+    shell: true,
+    code: INSTALL_COMMANDS,
   },
   {
-    id: 'fragment',
-    label: 'fragment',
-    code: `from membrane.fragment import Fragment
-from membrane.identity import PayloadIdentity
-
-identity = PayloadIdentity(
-    payload_hash="sha256:…",
-    model_id="llama-3",
-    layer_range=(0, 32),
-    token_span=(0, 4096),
-    dtype="float16",
-)
-
-frag = Fragment(
-    identity=identity,
-    payload_ref="blob-key",
-    payload_size=8 * 1024 * 1024,
-    ttl=3600.0,
-)`,
+    id: 'run',
+    label: 'first run',
+    shell: true,
+    code: `$ membrane serve --daemon &
+$ membrane client prefill --prompt-tokens "1 2 3 4 5 6 7 8"
+$ membrane client inventory
+$ membrane client retrieve --hash <payload_hash from inventory>`,
   },
   {
-    id: 'route',
-    label: 'route',
-    code: `from membrane.analytical import Joint
-from membrane.telemetry import live
+    id: 'python',
+    label: 'python',
+    shell: false,
+    code: `from membrane.client import MembraneClient
 
-router = Joint()
-target = router.select(
-    payload_hash=identity.payload_hash,
-    candidates=cluster.peers(),
-    telemetry=live(),
-)
-
-target.retrieve(identity)`,
+client = MembraneClient("http://localhost:8080")
+result = client.prefill(list(range(256)), model_id="llama-3")
+for frag in result["fragments"]:
+    content_hash = frag["identity"]["payload_hash"]
+    print(content_hash, client.retrieve(content_hash)["found"])
+client.close()`,
   },
   {
-    id: 'cli',
-    label: 'cli',
-    code: `$ membrane serve --node-id n1 \\
-        --port 8080 \\
-        --transport grpc \\
-        --compute gpu \\
-        --peer n2:8081 --peer n3:8082
+    id: 'secure',
+    label: 'secure node',
+    shell: true,
+    code: `# Any non-loopback bind requires authentication.
+$ printf '%s:ops:admin\\n' "$(openssl rand -hex 32)" > api-keys
+$ membrane serve --host 0.0.0.0 --api-key-file api-keys --daemon
 
-$ membrane dashboard --host n1 --port 8080
-$ membrane cluster-status
-$ membrane admin rotate-keys`,
+# Or as a container (read-only root, non-root user):
+$ docker build -t membrane .
+$ docker run --read-only --tmpfs /tmp -p 8080:8080 \\
+    -v "$PWD:/run/secrets:ro" \\
+    -e MEMBRANE_API_KEY_FILE=/run/secrets/api-keys membrane`,
+  },
+  {
+    id: 'cluster',
+    label: 'cluster',
+    shell: true,
+    code: `# Three local nodes; each seeds from the other two.
+$ membrane serve -n n1 -p 8080 --daemon --peer localhost:8081 --peer localhost:8082 &
+$ membrane serve -n n2 -p 8081 --daemon --peer localhost:8080 --peer localhost:8082 &
+$ membrane serve -n n3 -p 8082 --daemon --peer localhost:8080 --peer localhost:8081 &
+$ membrane cluster-status --port 8080`,
   },
 ];
 
@@ -81,16 +70,20 @@ function escapeHtml(s: string): string {
 function highlight(src: string, isShell: boolean): string {
   if (isShell) {
     return escapeHtml(src)
-      .replace(/(\$[^\s]+)/g, '<span class="text-accent-mint">$1</span>')
-      .replace(/(--[a-z-]+)/g, '<span class="text-accent-cyan">$1</span>')
-      .replace(/(membrane)/g, '<span class="text-accent-violet">$1</span>');
+      .split('\n')
+      .map((line) =>
+        line.startsWith('#')
+          ? `<span class="text-ink-400">${line}</span>`
+          : line
+              .replace(/^(\$)/, '<span class="text-accent-mint">$1</span>')
+              .replace(/(\s)(--?[a-z][a-z-]*)/g, '$1<span class="text-accent-cyan">$2</span>')
+      )
+      .join('\n');
   }
   return escapeHtml(src)
-    .replace(/(#[^\n]*)/g, '<span class="text-ink-400">$1</span>')
-    .replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;)/g, '<span class="text-accent-mint">$1</span>')
-    .replace(/\b(from|import|as|def|class|return|if|else|elif|for|while|with|try|except|raise|in|not|and|or|None|True|False|self)\b/g, '<span class="text-accent-violet">$1</span>')
-    .replace(/\b(Server|Fragment|PayloadIdentity|CPU|GPU|Joint|live|router|target|cluster)\b/g, '<span class="text-accent-cyan">$1</span>')
-    .replace(/(\b\d+\.?\d*\b)/g, '<span style="color:#fb7185">$1</span>');
+    .replace(/(&quot;[^&]*?&quot;)/g, '<span class="text-accent-mint">$1</span>')
+    .replace(/\b(from|import|for|in|print)\b/g, '<span class="text-accent-violet">$1</span>')
+    .replace(/\b(MembraneClient)\b/g, '<span class="text-accent-cyan">$1</span>');
 }
 ---
 
@@ -107,37 +100,35 @@ function highlight(src: string, isShell: boolean): string {
         data-reveal-delay="1"
         class="mt-4 text-balance font-display text-display-lg font-semibold tracking-tighter text-white"
       >
-        Five minutes from <span class="gradient-text-static">pip install</span> to a live cluster.
+        From <span class="gradient-text-static">git clone</span> to a running node in minutes.
       </h2>
       <p
         data-reveal
         data-reveal-delay="2"
         class="mx-auto mt-5 max-w-xl text-pretty text-[1.0625rem] leading-relaxed text-ink-200"
       >
-        A real Python SDK with strict types, a CLI that respects your time,
-        and an OpenAPI surface you can drop into any client generator.
+        One CLI for serving, clients, and admin; a typed Python client; an
+        OpenAPI surface; and a container image that refuses to run insecurely.
       </p>
     </div>
 
     <div data-reveal data-reveal-delay="3" class="relative mx-auto mt-16 max-w-5xl">
-      <div class="absolute -inset-px rounded-[24px] bg-gradient-to-b from-white/[0.10] via-white/[0.03] to-white/[0.01] [mask:linear-gradient(#000,#000)_content-box,linear-gradient(#000,#000)] [-webkit-mask-composite:xor] [mask-composite:exclude] p-px"></div>
       <div class="glass relative overflow-hidden rounded-[24px]">
-        <!-- Tabs -->
-        <div role="tablist" class="flex items-center gap-1 border-b border-white/[0.06] bg-ink-950/40 px-3 py-2" data-tabs>
+        <div role="tablist" aria-label="Code examples" class="flex items-center gap-1 overflow-x-auto border-b border-white/[0.06] bg-ink-950/40 px-3 py-2" data-tabs>
           {
             snippets.map((s, i) => (
               <button
                 type="button"
                 role="tab"
+                id={`tab-${s.id}`}
+                aria-controls={`panel-${s.id}`}
                 aria-selected={i === 0 ? 'true' : 'false'}
                 data-tab={s.id}
-                class={`group inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition-all duration-200 ${
-                  i === 0
-                    ? 'bg-white/[0.06] text-white'
-                    : 'text-ink-300 hover:bg-white/[0.04] hover:text-ink-100'
+                class={`group inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition-all duration-200 ${
+                  i === 0 ? 'bg-white/[0.06] text-white' : 'text-ink-300 hover:bg-white/[0.04] hover:text-ink-100'
                 }`}
               >
-                <span class={`h-1.5 w-1.5 rounded-full ${i === 0 ? 'bg-accent-violet' : 'bg-ink-400 group-hover:bg-ink-200'}`}/>
+                <span class={`h-1.5 w-1.5 rounded-full ${i === 0 ? 'bg-accent-violet' : 'bg-ink-400 group-hover:bg-ink-200'}`} />
                 <span class="code-block">{s.label}</span>
               </button>
             ))
@@ -145,31 +136,28 @@ function highlight(src: string, isShell: boolean): string {
           <div class="ml-auto flex items-center gap-2 pr-2">
             <button type="button" data-copy class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.72rem] font-medium text-ink-300 transition-colors hover:bg-white/[0.05] hover:text-white" aria-label="Copy code">
               <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="5" y="5" width="9" height="9" rx="1.5"/>
-                <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/>
+                <rect x="5" y="5" width="9" height="9" rx="1.5" />
+                <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" />
               </svg>
               <span data-copy-label>copy</span>
             </button>
           </div>
         </div>
 
-        <!-- Code panels -->
         <div class="relative">
           {
             snippets.map((s, i) => (
               <pre
                 role="tabpanel"
+                id={`panel-${s.id}`}
+                aria-labelledby={`tab-${s.id}`}
                 data-panel={s.id}
                 class={`code-block overflow-x-auto px-6 py-7 text-[0.85rem] leading-[1.7] ${i === 0 ? '' : 'hidden'}`}
-              ><code set:html={highlight(s.code, s.id === 'cli')} /></pre>
+              ><code set:html={highlight(s.code, s.shell)} /></pre>
             ))
           }
         </div>
       </div>
-
-      <p class="mt-4 text-center text-[0.78rem] text-ink-400">
-        Strict types throughout · mypy strict · Google-style docstrings · zero semi-private names.
-      </p>
     </div>
   </div>
 </section>
@@ -207,8 +195,10 @@ function highlight(src: string, isShell: boolean): string {
     copyBtn.addEventListener('click', async () => {
       const panel = document.querySelector<HTMLElement>('[data-panel]:not(.hidden)');
       if (!panel) return;
+      // Copy runnable commands: drop the "$ " prompts.
+      const text = panel.innerText.replace(/^\$ /gm, '');
       try {
-        await navigator.clipboard.writeText(panel.innerText);
+        await navigator.clipboard.writeText(text);
         const prev = copyLabel.textContent;
         copyLabel.textContent = 'copied';
         setTimeout(() => (copyLabel.textContent = prev), 1400);

@@ -1,0 +1,17 @@
+---
+import { withBase } from '../../lib/site';
+const target = withBase('/docs/getting-started/');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content={`0; url=${target}`} />
+    <link rel="canonical" href={target} />
+    <title>Membrane docs</title>
+  </head>
+  <body>
+    <a href={target}>Continue to the Membrane quickstart</a>
+  </body>
+</html>
