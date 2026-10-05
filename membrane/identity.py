@@ -43,7 +43,7 @@ _DTYPE_VALUES: frozenset[str] = frozenset(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PayloadIdentity:
     """Immutable fragment fingerprint.
 

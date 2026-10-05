@@ -74,7 +74,7 @@ def _validate_tenant_id(tenant_id: str) -> None:
         raise ValueError(f"tenant_id contains forbidden character in {tenant_id!r}")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Fragment:
     """Immutable content-addressed fragment.
 
