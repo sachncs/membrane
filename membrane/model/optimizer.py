@@ -26,6 +26,9 @@ Assumptions (documented inline):
 """
 
 import logging
+import os
+from concurrent.futures import InterpreterPoolExecutor
+from itertools import repeat
 
 logger = logging.getLogger(__name__)
 
@@ -100,39 +103,74 @@ def evaluate_configuration(
     return throughput.end_to_end_throughput(theta_membrane, theta_pd_p, theta_pd_d, p)
 
 
+def search_thresholds(
+    thresholds: tuple[int, ...],
+    lengths: list[int],
+    total_pd_instances: int,
+) -> tuple[int, int, int, float]:
+    """Best configuration over ``thresholds`` (one grid-search chunk).
+
+    Module-level and free of shared state so it can run in a
+    subinterpreter.
+
+    Args:
+        thresholds: Routing thresholds to evaluate, in order.
+        lengths: Workload lengths.
+        total_pd_instances: Total number of PD instances.
+
+    Returns:
+        tuple[int, int, int, float]: ``(threshold, n_p, n_d,
+        lambda_max)`` of the first best configuration in iteration
+        order; ``lambda_max`` is ``-1.0`` for an empty chunk.
+    """
+    best = (THRESHOLD_MIN, 1, total_pd_instances - 1, -1.0)
+    for threshold in thresholds:
+        for n_p in range(1, total_pd_instances):
+            n_d = total_pd_instances - n_p
+            lam = evaluate_configuration(threshold, n_p, n_d, lengths)
+            if lam > best[3]:
+                best = (threshold, n_p, n_d, lam)
+    return best
+
+
 def search(
     lengths: list[int],
     total_pd_instances: int = TOTAL_PD_INSTANCES,
+    workers: int | None = None,
 ) -> tuple[int, int, int, float]:
     """Grid search over ``t`` and ``N_p`` to maximize ``Lambda_max``.
 
-    ``N_d`` is implicitly ``total_pd_instances - N_p``.
+    ``N_d`` is implicitly ``total_pd_instances - N_p``. With more than
+    one worker the threshold range is split into contiguous chunks
+    evaluated in parallel subinterpreters
+    (:class:`concurrent.futures.InterpreterPoolExecutor`, PEP 734),
+    which run Python code truly in parallel. Chunk results are reduced
+    in order, so the answer, including tie-breaking, is identical to
+    the sequential search.
 
     Args:
         lengths: Workload lengths.
-        total_pd_instances: Total number of PD instances
-            available.
+        total_pd_instances: Total number of PD instances available.
+        workers: Parallel subinterpreters. ``None`` uses
+            :func:`os.process_cpu_count`; ``1`` searches sequentially.
 
     Returns:
         tuple[int, int, int, float]: ``(optimal_threshold,
         optimal_n_p, optimal_n_d, optimal_lambda_max)``.
     """
-    best_lambda = -1.0
-    best_t = THRESHOLD_MIN
-    best_n_p = 1
-    best_n_d = total_pd_instances - 1
-
-    for threshold in range(THRESHOLD_MIN, THRESHOLD_MAX + 1, THRESHOLD_STEP):
-        for n_p in range(1, total_pd_instances):
-            n_d = total_pd_instances - n_p
-            lam = evaluate_configuration(threshold, n_p, n_d, lengths)
-            if lam > best_lambda:
-                best_lambda = lam
-                best_t = threshold
-                best_n_p = n_p
-                best_n_d = n_d
-
-    return best_t, best_n_p, best_n_d, best_lambda
+    thresholds = tuple(range(THRESHOLD_MIN, THRESHOLD_MAX + 1, THRESHOLD_STEP))
+    count = max(1, min(workers or os.process_cpu_count() or 1, len(thresholds)))
+    if count == 1:
+        return search_thresholds(thresholds, lengths, total_pd_instances)
+    size = -(-len(thresholds) // count)
+    chunks = [thresholds[k : k + size] for k in range(0, len(thresholds), size)]
+    with InterpreterPoolExecutor(max_workers=len(chunks)) as pool:
+        results = list(pool.map(search_thresholds, chunks, repeat(lengths), repeat(total_pd_instances)))
+    best = results[0]
+    for candidate in results[1:]:
+        if candidate[3] > best[3]:
+            best = candidate
+    return best
 
 
 def optimal_homogeneous_pd(

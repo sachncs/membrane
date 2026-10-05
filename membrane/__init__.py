@@ -58,52 +58,82 @@ by tests/demos.
   modules.
 """
 
-import logging
+import importlib
+from typing import Any
 
-logger = logging.getLogger(__name__)
+#: Public name -> defining module. Exports load on first access (PEP 562),
+#: so ``import membrane.model`` does not pull in the HTTP server stack.
+LAZY_EXPORTS: dict[str, str] = {
+    "Anthropic": "membrane.compute.anthropic",
+    "Artifact": "membrane.artifact",
+    "Authenticator": "membrane.auth",
+    "Backend": "membrane.compute.base",
+    "BackendError": "membrane.errors",
+    "CPU": "membrane.compute.cpu",
+    "CachingPersistence": "membrane.persistence.cache",
+    "CapacityError": "membrane.errors",
+    "ConfigError": "membrane.errors",
+    "Error": "membrane.errors",
+    "FastAPIServer": "membrane.transport.fastapi",
+    "Fragment": "membrane.fragment",
+    "FragmentKind": "membrane.fragment_kind",
+    "GPU": "membrane.compute.gpu",
+    "Index": "membrane.index",
+    "Memory": "membrane.persistence.memory",
+    "MigrationError": "membrane.errors",
+    "NetworkError": "membrane.errors",
+    "Node": "membrane.node",
+    "Ollama": "membrane.compute.ollama",
+    "OpenAI": "membrane.compute.openai",
+    "Origin": "membrane.origin",
+    "PayloadIdentity": "membrane.identity",
+    "PersistenceBackend": "membrane.persistence.base",
+    "PersistenceError": "membrane.errors",
+    "Prefix": "membrane.prefix",
+    "Reconstructor": "membrane.reconstructor",
+    "Redis": "membrane.persistence.redis",
+    "Replica": "membrane.replica",
+    "Ring": "membrane.ring",
+    "SchemaError": "membrane.errors",
+    "Segment": "membrane.segment",
+    "Server": "membrane.server",
+    "Shard": "membrane.shard",
+    "TimeoutError": "membrane.errors",
+    "Trace": "membrane.trace",
+    "TransferService": "membrane.transfer",
+    "Transformers": "membrane.compute.transformers",
+    "configure_logging": "membrane.logging",
+}
 
 
-from membrane.artifact import Artifact
-from membrane.auth import Authenticator
-from membrane.compute.anthropic import Anthropic
-from membrane.compute.base import Backend
-from membrane.compute.cpu import CPU
-from membrane.compute.gpu import GPU
-from membrane.compute.ollama import Ollama
-from membrane.compute.openai import OpenAI
-from membrane.compute.transformers import Transformers
-from membrane.errors import (
-    BackendError,
-    CapacityError,
-    ConfigError,
-    Error,
-    MigrationError,
-    NetworkError,
-    PersistenceError,
-    SchemaError,
-    TimeoutError,
-)
-from membrane.fragment import Fragment
-from membrane.fragment_kind import FragmentKind
-from membrane.identity import PayloadIdentity
-from membrane.index import Index
-from membrane.logging import configure_logging
-from membrane.node import Node
-from membrane.origin import Origin
-from membrane.persistence.base import PersistenceBackend
-from membrane.persistence.cache import CachingPersistence
-from membrane.persistence.memory import Memory
-from membrane.persistence.redis import Redis
-from membrane.prefix import Prefix
-from membrane.reconstructor import Reconstructor
-from membrane.replica import Replica
-from membrane.ring import Ring
-from membrane.segment import Segment
-from membrane.server import Server
-from membrane.shard import Shard
-from membrane.trace import Trace
-from membrane.transfer import TransferService
-from membrane.transport.fastapi import FastAPIServer
+def __getattr__(name: str) -> Any:
+    """Load a public export on first access.
+
+    Args:
+        name: Attribute requested from the package.
+
+    Returns:
+        Any: The exported object.
+
+    Raises:
+        AttributeError: When ``name`` is not a public export.
+    """
+    module_name = LAZY_EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module 'membrane' has no attribute {name!r}")
+    value = getattr(importlib.import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    """List the package's public names, including not-yet-loaded exports.
+
+    Returns:
+        list[str]: Sorted attribute names.
+    """
+    return sorted({*globals(), *LAZY_EXPORTS})
+
 
 try:
     from importlib.metadata import PackageNotFoundError, version
