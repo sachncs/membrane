@@ -57,6 +57,7 @@ ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("GET", "/retrieve"): "read",
     ("GET", "/inventory"): "read",
     ("GET", "/peers"): "read",
+    ("GET", "/openapi.json"): "read",
     # Writes
     ("POST", "/store"): "write",
     ("POST", "/replicate"): "write",

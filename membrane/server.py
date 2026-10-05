@@ -46,6 +46,7 @@ from membrane.runtime.plugins import COMPUTE_BACKENDS
 from membrane.snapshot import SNAPSHOT_SCHEMA_VERSION, ClusterEpochGuard, Snapshot
 from membrane.transfer import TransferService
 from membrane.transport.fastapi import FastAPIServer
+from membrane.transport.limits import TransportLimits
 from membrane.transport.tls import MTLSConfig
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,8 @@ class Server:
             private-address blocklist.
         tls: mTLS configuration for the listener and for peer
             calls. Defaults to ``cluster_config.mtls``.
+        limits: HTTP capacity settings (concurrency bound, rate limit,
+            connections, API docs).
     """
 
     def __init__(
@@ -104,6 +107,7 @@ class Server:
         peer_api_key: str = "",
         peer_networks: tuple[str, ...] = (),
         tls: MTLSConfig | None = None,
+        limits: TransportLimits | None = None,
     ) -> None:
         """Initialize the server with all configured subsystems.
 
@@ -139,8 +143,11 @@ class Server:
             peer_networks: CIDR ranges of the peer network, exempt from the SSRF
                 private-address block.
             tls: mTLS configuration; defaults to ``cluster_config.mtls``.
+            limits: HTTP capacity settings; defaults to
+                :class:`~membrane.transport.limits.TransportLimits`.
         """
         self.node = node
+        self.limits = limits or TransportLimits()
         self.transport_type = transport
         self.redis_url = redis_url
         self.host = host
@@ -283,6 +290,7 @@ class Server:
             metrics_registry=self.metrics_registry,
             tls=mtls,
             authenticator=self.authenticator,
+            limits=self.limits,
         )
         # op_store reads these: ``server.is_draining`` rejects writes
         # during drain, and ``quorum_attempt`` makes strong / quorum

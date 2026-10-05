@@ -320,6 +320,15 @@ class TransportMetrics:
         )
 
     @property
+    def rejected(self) -> Counter:
+        """Requests shed before reaching a handler, by reason."""
+        return self.registry.counter(
+            "membrane_requests_rejected_total",
+            "Requests rejected by backpressure or rate limiting, by reason (overloaded, rate_limited).",
+            labels=("reason",),
+        )
+
+    @property
     def duration(self) -> Histogram:
         """Request latency, by endpoint."""
         return self.registry.histogram(

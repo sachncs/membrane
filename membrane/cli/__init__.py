@@ -8,6 +8,8 @@ Commands:
 * ``membrane cluster-status`` — show cluster membership (commands/cluster.py).
 * ``membrane llm-status`` — show LLM backend status (commands/llm.py).
 * ``membrane config`` — show static configuration (commands/config.py).
+* ``membrane keys generate`` — create an API key and its hashed keyfile
+  line (commands/keys.py).
 
 Example::
 
@@ -23,7 +25,7 @@ import os
 import typer
 
 from membrane.cli import output
-from membrane.cli.commands import admin, client, cluster, config, dashboard, llm, serve
+from membrane.cli.commands import admin, client, cluster, config, dashboard, keys, llm, serve
 from membrane.logging import configure_logging
 
 app = typer.Typer(
@@ -88,6 +90,7 @@ app.command(name="config", help="Show Membrane configuration and environment.")(
 # as a plain command would hide every subcommand.
 app.add_typer(admin.admin_app, name="admin", help="Admin operations against a running Membrane node.")
 app.add_typer(client.client_app, name="client", help="One-off interactions with a running Membrane server.")
+app.add_typer(keys.keys_app, name="keys", help="Create API keys for the --api-key-file keyfile.")
 
 
 def main() -> None:

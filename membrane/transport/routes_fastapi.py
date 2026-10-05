@@ -365,6 +365,15 @@ def register_routes(app: FastAPI) -> None:
     app.add_api_route("/inventory", inventory_handler, methods=["GET"])
     app.add_api_route("/peers", peers_handler, methods=["GET"])
 
+    limits = getattr(app.state, "limits", None)
+    if limits is not None and limits.enable_api_docs:
+
+        def openapi_handler(request: Request):
+            route_scope(request, "GET", "/openapi.json")
+            return JSONResponse(app.openapi())
+
+        app.add_api_route("/openapi.json", openapi_handler, methods=["GET"], include_in_schema=False)
+
     # POST endpoints.
     def store_handler(req: StoreRequest, request: Request):
         return handle_store(app, req, request)
