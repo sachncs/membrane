@@ -44,14 +44,14 @@ class Anthropic(RemoteLLMBackend):
         base_url: API base URL
             (default ``https://api.anthropic.com/v1``).
         model: Model name
-            (default ``"claude-3-sonnet-20240229"``).
+            (default ``"claude-sonnet-5-5"``).
     """
 
     def __init__(
         self,
         api_key: str,
         base_url: str = "https://api.anthropic.com/v1",
-        model: str = "claude-3-sonnet-20240229",
+        model: str = "claude-sonnet-5-5",
     ) -> None:
         """Initialize the backend.
 

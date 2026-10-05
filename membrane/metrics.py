@@ -392,6 +392,22 @@ class PersistenceMetrics:
         )
 
     @property
+    def dropped(self) -> Counter:
+        """Write-behind operations dropped (queue full or unflushed at shutdown)."""
+        return self.registry.counter(
+            "membrane_persistence_dropped_total",
+            "Write-behind persistence operations dropped, by kind.",
+            labels=("kind",),
+        )
+
+    @property
+    def queue_depth(self) -> Gauge:
+        """Write-behind operations waiting to be applied."""
+        return self.registry.gauge(
+            "membrane_persistence_queue_depth", "Write-behind persistence operations waiting to be applied."
+        )
+
+    @property
     def circuit_open(self) -> Gauge:
         """1 while the persistence circuit breaker is open."""
         return self.registry.gauge(

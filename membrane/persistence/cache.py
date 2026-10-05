@@ -130,22 +130,27 @@ class CachingPersistence:
             self.on_unavailable("delete_fragment", exc)
             return False
 
-    def forget_on_node(self, content_hash: str, node_id: str) -> None:
+    def forget_on_node(self, content_hash: str, node_id: str) -> bool:
         """Drop ``content_hash`` from ``node_id``'s set in the inner backend.
 
         Args:
             content_hash: Content hash of the fragment.
             node_id: Node identifier.
+
+        Returns:
+            bool: False when the inner backend failed, so callers can retry.
         """
         with self.lock:
             self.cache.pop(content_hash, None)
         forget = getattr(self.inner, "forget_on_node", None)
         if forget is None:
-            return
+            return True
         try:
             forget(content_hash, node_id)
         except Exception as exc:
             self.on_unavailable("forget_on_node", exc)
+            return False
+        return True
 
     def inventory_digest(self) -> dict[str, int]:
         """Return the inventory digest from the inner backend.

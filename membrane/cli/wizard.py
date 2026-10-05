@@ -66,7 +66,7 @@ def interactive_setup() -> dict[str, Any]:
         llm_model = ask("OpenAI model", "gpt-4o-mini")
     elif compute == "anthropic":
         api_key = ask("Anthropic API key", "")
-        llm_model = ask("Anthropic model", "claude-3-sonnet-20240229")
+        llm_model = ask("Anthropic model", "claude-sonnet-5-5")
     elif compute == "transformers":
         llm_model = ask("HuggingFace model ID", "gpt2")
 

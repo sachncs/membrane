@@ -276,10 +276,14 @@ def readyz(app: FastAPI):
         app: The FastAPI application.
 
     Returns:
-        object: ``{"status": "ready"}``, or a 503 response without a node.
+        object: ``{"status": "ready"}``, or a 503 response without a node
+        or while the node drains (so load balancers stop routing to it).
     """
     if not app.state.node:
         return JSONResponse({"status": "no node"}, status_code=503)
+    server = getattr(app.state, "server", None)
+    if server is not None and getattr(server, "is_draining", False):
+        return JSONResponse({"status": "draining"}, status_code=503, headers={"Retry-After": "5"})
     # A full node is healthy: ``Node.store`` evicts to make room, so
     # memory saturation is the steady state of a warm cache and must
     # not take the pod out of rotation.
