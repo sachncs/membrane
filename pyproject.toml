@@ -42,14 +42,14 @@ dev = [
     "pytest-cov>=7.1.0",
     "mypy>=2.3.1",
     "redis>=8.1.0",
-    "ruff>=0.16.5",
+    "ruff>=0.16.10",
     # Server extras are needed at test-collection time because the
     # compute-backend tests import httpx and the integration /
     # transport tests import fastapi and grpcio.
-    "grpcio>=1.83.1",
-    "grpcio-tools>=1.83.1",
-    "fastapi>=0.141.1",
-    "uvicorn[standard]>=0.52.4",
+    "grpcio>=1.84.0",
+    "grpcio-tools>=1.84.0",
+    "fastapi>=0.142.2",
+    "uvicorn[standard]>=0.54.0",
     "httpx>=0.28.1",
     "pydantic>=2.13.5",
     # Optional runtime extras exercised by the test suite.
@@ -62,7 +62,7 @@ dev = [
     "pytest-timeout>=2.3.0",
 ]
 # Everything `membrane serve` needs, including TLS / encryption at rest.
-server = ["redis>=8.1.0", "fastapi>=0.141.1", "uvicorn[standard]>=0.52.4", "httpx>=0.28.1", "pydantic>=2.13.5", "cryptography>=44.0.0"]
+server = ["redis>=8.1.0", "fastapi>=0.142.2", "uvicorn[standard]>=0.54.0", "httpx>=0.28.1", "pydantic>=2.13.5", "cryptography>=44.0.0"]
 # KV transfer engine and quantization (membrane.transfer_engine, membrane.quantization).
 transfer = ["numpy>=1.26.0", "lz4>=4.3.0", "zstandard>=0.23.0"]
 # Secret backends (membrane.secrets.*). Each pulls cryptography for envelope encryption.
@@ -73,26 +73,26 @@ tls-spiffe = ["spiffe>=0.2.0"]
 # OpenTelemetry tracing (membrane.otel_tracer).
 otel = ["opentelemetry-api>=1.25.0", "opentelemetry-sdk>=1.25.0", "opentelemetry-exporter-otlp-proto-grpc>=1.25.0"]
 gpu = ["torch>=2.13.0"]
-local-llm = ["transformers>=5.16.1", "tokenizers>=0.23.1", "torch>=2.13.0", "sentencepiece>=0.2.2", "protobuf>=7.36.0"]
+local-llm = ["transformers>=5.18.0", "tokenizers>=0.23.1", "torch>=2.13.0", "sentencepiece>=0.2.2", "protobuf>=7.36.2"]
 # LMCache is the v2.0+ canonical KV substrate. Optional install;
 # operators opt in via `pip install membrane[lmcache]`. The exact
 # pin is left to the deployment image so the protobuf <-> grpcio
 # version conflict in 0.5.4 can be resolved in CI without
 # breaking the existing `[server]` extras.
-lmcache = ["lmcache>=0.5,<0.6"]
+lmcache = ["lmcache>=0.5.5,<0.6"]
 # Engine integrations for v2.0+. The pins are loose on purpose:
 # the v2.0 release is the first one that targets the v0.10+
 # vLLM KVConnector v1 surface, the SGLang radix-cache pool,
 # and the TensorRT-LLM runtime; operators pin the exact
 # version in their deployment image.
-vllm = ["vllm>=0.10,<0.12"]
-sglang = ["sglang>=0.4,<0.6"]
+vllm = ["vllm>=0.30.0,<0.31"]
+sglang = ["sglang>=0.5.21,<0.6"]
 trtllm = ["tensorrt-llm>=0.20,<0.22"]
 # Prefill / decode disaggregation surface (Phase 8). The
 # REST surface is FastAPI-only; the gRPC surface additionally
 # pulls in grpcio. Operators that only need one of the two
 # surfaces can install the corresponding extra directly.
-disagg = ["fastapi>=0.141.1", "uvicorn[standard]>=0.52.4", "grpcio>=1.83.1", "grpcio-tools>=1.83.1"]
+disagg = ["fastapi>=0.142.2", "uvicorn[standard]>=0.54.0", "grpcio>=1.84.0", "grpcio-tools>=1.84.0"]
 # Convenience: every v2.0+ engine integration plus the
 # disagg surface. Use for local end-to-end demos.
 all = ["membrane[lmcache,vllm,sglang,trtllm,disagg]"]
