@@ -10,8 +10,6 @@ cleanly when the plugin is not installed (CI picks up
 hypothesis in the v3.0.1 extras).
 """
 
-from __future__ import annotations
-
 import pytest
 
 try:

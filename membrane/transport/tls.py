@@ -36,8 +36,6 @@ instead of committing real PEM strings; production is expected to
 mount signed certificates from the cluster's CA.
 """
 
-from __future__ import annotations
-
 import logging
 import ssl
 from dataclasses import dataclass, field

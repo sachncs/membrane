@@ -4,8 +4,6 @@ Several demos had silently broken against API changes; running them in
 the test suite keeps the onboarding path honest.
 """
 
-from __future__ import annotations
-
 import os
 import socket
 import subprocess

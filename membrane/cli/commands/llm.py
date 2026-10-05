@@ -4,8 +4,6 @@ Connects to a remote Membrane server's ``/metrics.json`` endpoint and
 renders a summary of the active compute backend.
 """
 
-from __future__ import annotations
-
 import typer
 from rich.console import Console
 from rich.table import Table

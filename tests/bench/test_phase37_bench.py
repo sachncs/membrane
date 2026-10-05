@@ -13,8 +13,6 @@ installed; the smoke fallback lives in
 :mod:`tests.bench.test_phase37_smoke`.
 """
 
-from __future__ import annotations
-
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 

@@ -1,7 +1,5 @@
 """Seed bootstrap must not count joining ourselves as success."""
 
-from __future__ import annotations
-
 from unittest.mock import patch
 
 from membrane.network.membership import Membership

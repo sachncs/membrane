@@ -14,8 +14,6 @@ The v3.0.0 release optimizes the GPU → wire path:
   size path remains the legacy :class:`membrane.fragmenter.Fragmenter`.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 

@@ -7,8 +7,6 @@ Pydantic ``Field(max_length=...)`` so a hostile payload cannot
 exhaust memory on a single field.
 """
 
-from __future__ import annotations
-
 import pytest
 from pydantic import ValidationError
 

@@ -20,8 +20,6 @@ Exceptions:
   to distinguish from a benign miss).
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

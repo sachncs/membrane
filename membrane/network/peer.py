@@ -18,8 +18,6 @@ Thread safety:
     :class:`HTTPTransport` handles concurrent sockets internally.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import ssl

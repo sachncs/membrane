@@ -170,7 +170,7 @@ def build_content_store(data_dir: str, key_file: str = "") -> Any:
     else:
         try:
             key = bytes.fromhex(raw.decode("ascii").strip())
-        except (UnicodeDecodeError, ValueError):
+        except UnicodeDecodeError, ValueError:
             key = b""
     if len(key) != 32:
         raise ValueError(f"data key in {str(key_path)!r} must be 32 bytes (or 64 hex characters)")

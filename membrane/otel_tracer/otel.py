@@ -15,8 +15,6 @@ and carry the standard service attributes
 (``service.name``, ``service.version``).
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from collections.abc import Iterator

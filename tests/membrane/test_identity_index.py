@@ -1,7 +1,5 @@
 """Tests for the IdentityIndex."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.identity import PayloadIdentity

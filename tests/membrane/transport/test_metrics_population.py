@@ -5,8 +5,6 @@ the real op call paths so :func:`op_metrics` produces a
 populated Prometheus text exposition.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.metrics import (

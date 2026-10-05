@@ -15,8 +15,6 @@ Phase 1.6 covers:
 * Snapshot round-trip preserves peer_cn across restarts.
 """
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock
 
 import pytest

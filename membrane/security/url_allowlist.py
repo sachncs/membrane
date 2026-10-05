@@ -36,8 +36,6 @@ one of those ranges is permitted. Ranges should be as narrow as
 the deployment allows, and never include ``169.254.0.0/16``.
 """
 
-from __future__ import annotations
-
 import ipaddress
 import logging
 import socket

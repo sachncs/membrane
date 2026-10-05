@@ -5,8 +5,6 @@ The CI job falls back to this surface when the
 result is always present in the test output.
 """
 
-from __future__ import annotations
-
 import time
 
 from membrane.fragment import Fragment

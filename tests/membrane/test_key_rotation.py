@@ -1,7 +1,5 @@
 """Tests for the master-key rotation primitive (Phase 3.4.6 follow-up)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.security.encryption import StaticKeyProvider

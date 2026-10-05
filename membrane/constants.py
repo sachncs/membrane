@@ -5,8 +5,6 @@ default cache TTLs) live here so that all defaults are auditable in one place
 and CLI / server constructors cannot drift apart.
 """
 
-from __future__ import annotations
-
 DEFAULT_HOST: str = "0.0.0.0"
 DEFAULT_PORT: int = 8080
 DEFAULT_GRPC_PORT: int = 50051

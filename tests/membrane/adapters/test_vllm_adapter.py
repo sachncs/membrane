@@ -1,7 +1,5 @@
 """Tests for the vLLM KVConnector adapter (Phase 5)."""
 
-from __future__ import annotations
-
 from typing import Any
 
 import pytest

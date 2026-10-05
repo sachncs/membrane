@@ -141,7 +141,7 @@ class Prefix:
         )
 
     @classmethod
-    def from_fragment(cls, fragment: Fragment) -> "Prefix":
+    def from_fragment(cls, fragment: Fragment) -> Prefix:
         """Reconstruct a :class:`Prefix` from a stored :class:`Fragment`.
 
         Used when the canonical store (or remote peer) returns a

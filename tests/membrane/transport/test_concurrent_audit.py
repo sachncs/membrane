@@ -9,8 +9,6 @@ invariant at the end confirms the hash chain survives the
 concurrent pressure.
 """
 
-from __future__ import annotations
-
 import threading
 
 import pytest

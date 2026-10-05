@@ -131,7 +131,7 @@ class Segment:
         )
 
     @classmethod
-    def from_fragment(cls, fragment: Fragment) -> "Segment":
+    def from_fragment(cls, fragment: Fragment) -> Segment:
         """Reconstruct a :class:`Segment` from a stored :class:`Fragment`.
 
         Used when a fragment is retrieved from the store whose

@@ -1,7 +1,5 @@
 """Tests for the SSRF allow-list (Phase 3.1.2)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.security import (

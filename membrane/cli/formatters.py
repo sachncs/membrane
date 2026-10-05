@@ -5,8 +5,6 @@ the dashboard rendering layer and the static config command use
 these helpers so the output is consistent everywhere.
 """
 
-from __future__ import annotations
-
 
 def fmt_bytes(n: int) -> str:
     """Format an integer byte count using human-readable units.

@@ -13,8 +13,6 @@ adopt :class:`RotatingKeyProvider` when they need a rotation
 cycle.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from dataclasses import dataclass

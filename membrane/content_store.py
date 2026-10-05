@@ -34,8 +34,6 @@ Key strings are opaque to the store. By convention
 characters is supported.
 """
 
-from __future__ import annotations
-
 import contextlib
 import os
 import platform

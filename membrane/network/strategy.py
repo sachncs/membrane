@@ -12,8 +12,6 @@ construction via the ``failure_detector=...`` and ``migrator=...``
 kwargs; the rest of the cluster loop machinery is unchanged.
 """
 
-from __future__ import annotations
-
 import logging
 import time
 from collections.abc import Callable, Iterable

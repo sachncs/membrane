@@ -69,8 +69,8 @@ class IntervalNode:
     start: int
     end: int
     max_end: int
-    left: "IntervalNode | None" = None
-    right: "IntervalNode | None" = None
+    left: IntervalNode | None = None
+    right: IntervalNode | None = None
     height: int = 1
 
     @property

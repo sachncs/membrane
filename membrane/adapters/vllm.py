@@ -34,8 +34,6 @@ client is decoupled from the connector so unit tests can
 inject a fake without touching the network.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from dataclasses import dataclass, field

@@ -24,8 +24,6 @@ process-wide provider; operators install their backend via
 :func:`set_default_provider` at startup.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from dataclasses import dataclass

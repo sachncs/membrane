@@ -1,7 +1,5 @@
 """Tests for the SGLang and TensorRT-LLM adapters (Phase 6)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.adapters.sglang import (

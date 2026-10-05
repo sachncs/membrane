@@ -10,8 +10,6 @@ without the file-system layout (CI, ephemeral workloads,
 sidecar containers).
 """
 
-from __future__ import annotations
-
 import threading
 from collections.abc import Iterator
 

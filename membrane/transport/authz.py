@@ -32,8 +32,6 @@ closed: an unlisted route is treated as a read-class operation,
 and missing scope is rejected.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 from membrane.auth import (

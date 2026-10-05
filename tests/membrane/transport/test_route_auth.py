@@ -11,8 +11,6 @@ Covers the gaps fixed for production readiness:
 * ``op_join`` let a CN register under another node's id.
 """
 
-from __future__ import annotations
-
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 

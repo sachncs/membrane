@@ -26,8 +26,6 @@ extras, OOM, network outage), ``prefill`` falls back to the shared
 receive well-formed fragments.
 """
 
-from __future__ import annotations
-
 import hashlib
 import logging
 import struct

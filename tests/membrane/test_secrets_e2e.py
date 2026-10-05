@@ -13,8 +13,6 @@ a new cluster:
   the encrypted stores.
 """
 
-from __future__ import annotations
-
 import os
 
 import pytest

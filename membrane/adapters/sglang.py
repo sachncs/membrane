@@ -8,8 +8,6 @@ SGLang's hooks when SGLang is importable. The tests run
 against a duck-typed stub that mirrors the same surface.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from dataclasses import dataclass

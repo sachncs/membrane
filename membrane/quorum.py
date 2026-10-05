@@ -24,8 +24,6 @@ failure to keep the cluster from being left with a partial-write
 footprint that gossip would otherwise propagate.
 """
 
-from __future__ import annotations
-
 import concurrent.futures
 import logging
 from collections.abc import Iterable

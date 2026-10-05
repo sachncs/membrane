@@ -8,8 +8,6 @@ to verify the bulkhead + circuit breaker + retry behavior
 end-to-end.
 """
 
-from __future__ import annotations
-
 import asyncio
 
 import httpx

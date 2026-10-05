@@ -13,8 +13,6 @@ the backend for the cached prefix length. A real backend
 (a vLLM ModelRunner or an HF causal LM) plugs in here.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from dataclasses import dataclass, field

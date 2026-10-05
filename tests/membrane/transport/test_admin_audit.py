@@ -1,7 +1,5 @@
 """Tests for the /admin/audit HTTP surface (Phase 3.2.8 follow-up)."""
 
-from __future__ import annotations
-
 import pytest
 
 

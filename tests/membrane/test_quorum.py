@@ -24,8 +24,6 @@ The fixtures deliberately avoid spinning up real servers; the
 :class:`~membrane.network.cluster.Cluster` integration.
 """
 
-from __future__ import annotations
-
 import time
 from typing import Any
 from unittest.mock import MagicMock

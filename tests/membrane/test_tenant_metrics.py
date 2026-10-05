@@ -1,7 +1,5 @@
 """Tests for per-tenant metrics (Phase 3.1.7)."""
 
-from __future__ import annotations
-
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
 from membrane.metrics import (

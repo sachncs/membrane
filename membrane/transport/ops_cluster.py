@@ -19,8 +19,6 @@ concerns can evolve independently. The original
 defined here for backward compatibility.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import logging

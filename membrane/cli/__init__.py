@@ -18,8 +18,6 @@ The CLI is built on :mod:`typer` (commands and option parsing) and
 :mod:`rich` (TUI rendering).
 """
 
-from __future__ import annotations
-
 import typer
 
 from membrane.cli.commands import admin, client, cluster, config, dashboard, llm, serve

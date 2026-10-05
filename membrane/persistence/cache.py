@@ -16,8 +16,6 @@ The :class:`~membrane.persistence.memory.Memory` class is the
 test-only fallback (no inner backend, no caching layer).
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from collections.abc import Callable

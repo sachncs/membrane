@@ -1,7 +1,5 @@
 """Tests for the GC primitives: RefCount, TombstoneTable, Sweeper."""
 
-from __future__ import annotations
-
 import threading
 import time
 

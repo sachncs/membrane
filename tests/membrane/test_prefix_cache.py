@@ -1,7 +1,5 @@
 """Tests for the prefix cache + KV handle (Phase 7)."""
 
-from __future__ import annotations
-
 import threading
 
 import pytest

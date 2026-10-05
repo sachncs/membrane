@@ -1,7 +1,5 @@
 """Tests for the /admin/* HTTP surface (Phase 3.2.6)."""
 
-from __future__ import annotations
-
 import pytest
 
 

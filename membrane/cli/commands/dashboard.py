@@ -6,8 +6,6 @@ runs in a separate process from the server; for an in-process
 dashboard, see ``membrane serve`` (no ``--daemon``).
 """
 
-from __future__ import annotations
-
 import typer
 
 from membrane.cli.dashboard import run_remote_dashboard

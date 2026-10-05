@@ -41,8 +41,6 @@ The public surface:
   integers for the wire format.
 """
 
-from __future__ import annotations
-
 import threading
 import time
 from dataclasses import dataclass

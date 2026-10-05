@@ -1,7 +1,5 @@
 """Tests for the v3.0 admission + TinyLFU + quota + EMA + prefetcher (Phase 3.5.1-3.5.5 + 3.5.9)."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 import pytest

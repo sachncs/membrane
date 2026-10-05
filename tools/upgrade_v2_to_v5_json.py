@@ -25,8 +25,6 @@ handles the on-disk bytes (Phase 3.3.1) and this tool handles
 the in-memory wire dicts.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import logging
@@ -112,10 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog="membrane-upgrade-v2-to-v5-json",
-        description=(
-            "Rewrite v4 JSON wire dicts to v5 (bumps schema_version, "
-            "adds tenant_id)."
-        ),
+        description=("Rewrite v4 JSON wire dicts to v5 (bumps schema_version, adds tenant_id)."),
     )
     parser.add_argument("--path", required=True, help="JSON file or directory of files")
     parser.add_argument(
@@ -123,12 +118,8 @@ def main(argv: list[str] | None = None) -> int:
         default="public",
         help="Default tenant id when the source dict has none (default: public)",
     )
-    parser.add_argument(
-        "--write", action="store_true", help="Apply the migration (default: dry-run)"
-    )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Verbose logging"
-    )
+    parser.add_argument("--write", action="store_true", help="Apply the migration (default: dry-run)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -140,11 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("Path does not exist: %s", target)
         return 1
 
-    paths = (
-        [target]
-        if target.is_file()
-        else sorted(target.rglob("*.jsonl")) + sorted(target.rglob("*.json"))
-    )
+    paths = [target] if target.is_file() else sorted(target.rglob("*.jsonl")) + sorted(target.rglob("*.json"))
 
     if not paths:
         logger.warning("No .jsonl / .json files under %s", target)
@@ -152,9 +139,7 @@ def main(argv: list[str] | None = None) -> int:
 
     total_rewritten, total_skipped = 0, 0
     for path in paths:
-        rewritten, skipped = migrate_file(
-            path, default_tenant=args.tenant, write=args.write
-        )
+        rewritten, skipped = migrate_file(path, default_tenant=args.tenant, write=args.write)
         if rewritten or skipped:
             logger.info(
                 "%s %s: rewritten=%d skipped=%d",

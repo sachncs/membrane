@@ -13,8 +13,6 @@ in a Vault-backed master key (Phase 3.4.5b) without
 changing the storage layer.
 """
 
-from __future__ import annotations
-
 import hashlib
 import hmac
 import os

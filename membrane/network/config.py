@@ -134,7 +134,7 @@ class ClusterConfig:
     enable_replication: bool = True
     gossip_fanout: int = 2
     gossip_max_fragment_entries: int = 50
-    mtls: "MTLSConfig | None" = None
+    mtls: MTLSConfig | None = None
     local_peer_cn: str = ""
     advertise_host: str = ""
     default_consistency: str = "strong"
@@ -156,8 +156,8 @@ class ClusterConfig:
 
 
 def validate_config(
-    config: "ClusterConfig | dict",
-) -> "ClusterConfig":
+    config: ClusterConfig | dict,
+) -> ClusterConfig:
     """Validate ``config`` and return a normalized :class:`ClusterConfig`.
 
     Args:

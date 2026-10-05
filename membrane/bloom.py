@@ -13,8 +13,6 @@ seeds. The filter is fully deterministic across Python versions
 and platforms because :class:`hashlib.sha256` is.
 """
 
-from __future__ import annotations
-
 import hashlib
 import math
 

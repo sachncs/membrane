@@ -17,8 +17,6 @@ state or perform retries; operators use the Python client
 for advanced flows.
 """
 
-from __future__ import annotations
-
 import json
 import sys
 from collections.abc import Sequence  # noqa: F401

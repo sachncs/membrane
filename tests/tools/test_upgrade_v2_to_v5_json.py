@@ -1,7 +1,5 @@
 """Tests for the JSON wire dict migration tool (Phase 3.0+ follow-up)."""
 
-from __future__ import annotations
-
 import json
 
 import pytest

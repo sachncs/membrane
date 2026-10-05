@@ -5,8 +5,6 @@ Useful for confirming that the installed package matches expectations
 on a target host.
 """
 
-from __future__ import annotations
-
 import sys
 
 import typer

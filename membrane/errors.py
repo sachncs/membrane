@@ -19,8 +19,6 @@ Hierarchy::
     └── MigrationError            # shard migration failure
 """
 
-from __future__ import annotations
-
 
 class Error(Exception):
     """Base class for all Membrane-raised exceptions."""

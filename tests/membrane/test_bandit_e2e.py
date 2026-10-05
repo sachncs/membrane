@@ -1,7 +1,5 @@
 """End-to-end test for the Bandit online-learning loop (Phase 3.5.8 follow-up)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.tiers import Bandit, BanditArm, apply_bandit_to_weights

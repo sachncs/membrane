@@ -15,8 +15,6 @@ and stable across processes that have observed the same set
 of pairs in the same order.
 """
 
-from __future__ import annotations
-
 import hashlib
 from dataclasses import dataclass
 

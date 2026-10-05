@@ -273,7 +273,7 @@ class Redis:
         """
         try:
             return cast(bool, self.client.ping())
-        except (self.RedisError, OSError):
+        except self.RedisError, OSError:
             # Connection refused, timeout, or any other Redis/network
             # failure translates to "not reachable" from the caller's
             # perspective.

@@ -36,8 +36,6 @@ Design rationale:
       eviction and promotion decisions.
 """
 
-from __future__ import annotations
-
 import logging
 
 logger = logging.getLogger(__name__)

@@ -19,8 +19,6 @@ bytes of a real engine reach the node's content store through an engine
 adapter such as ``membrane.adapters.vllm``, not through this API.
 """
 
-from __future__ import annotations
-
 import hashlib
 import os
 import sys

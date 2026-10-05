@@ -11,8 +11,6 @@ tensors and the metadata required to install them back into a
 HuggingFace, vLLM, or SGLang engine.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable

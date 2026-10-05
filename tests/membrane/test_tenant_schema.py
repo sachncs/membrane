@@ -1,7 +1,5 @@
 """Tests for the v3.0.0 tenant field + schema 5 bump (Phase 3.1.5)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.canonical import CANONICAL_SCHEMA_VERSION, MAGIC, canonicalize, parse_canonical

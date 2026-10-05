@@ -26,8 +26,6 @@ side-channel; the Merkle root is the precise diff root the
 receiver descends when the roots disagree.
 """
 
-from __future__ import annotations
-
 import logging
 import random
 import threading

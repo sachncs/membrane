@@ -1,7 +1,5 @@
 """End-to-end AsyncMembraneClient test against a real running FastAPI app."""
 
-from __future__ import annotations
-
 import asyncio
 
 import httpx

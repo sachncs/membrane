@@ -13,8 +13,6 @@ The v3.0.0 release adds hot-reload of the cert chain at runtime:
   to wait for the poll interval.
 """
 
-from __future__ import annotations
-
 import datetime
 import hashlib
 import logging
@@ -89,7 +87,7 @@ def enforce_not_after(
     expires = cert_not_after(pem)
     if expires is None:
         return  # no cert to check
-    current = datetime.datetime.now(tz=datetime.timezone.utc) if now is None else now
+    current = datetime.datetime.now(tz=datetime.UTC) if now is None else now
     delta = expires - current
     if delta <= datetime.timedelta(0):
         raise RuntimeError(f"mTLS cert is expired (notAfter={expires.isoformat()})")
@@ -134,7 +132,7 @@ class CertRotationWatcher:
         try:
             signal.signal(signal.SIGHUP, _handler)
             self._sighup_installed = True
-        except (ValueError, AttributeError):  # pragma: no cover - non-POSIX
+        except ValueError, AttributeError:  # pragma: no cover - non-POSIX
             logger.debug("SIGHUP handler not installed (non-POSIX platform)")
 
     def start(self) -> None:

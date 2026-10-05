@@ -36,8 +36,6 @@ durable KV store) carries the canonical state; the file is the
 fallback when Redis is empty or unreachable.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import os
@@ -165,7 +163,7 @@ class Snapshot:
             try:
                 with path.open("rb") as fh:
                     data = json.loads(fh.read().decode("utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except OSError, json.JSONDecodeError:
                 continue
             captured = float(data.get("captured_at", 0.0))
             if captured > latest_time:

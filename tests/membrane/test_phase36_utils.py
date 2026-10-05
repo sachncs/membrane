@@ -1,7 +1,5 @@
 """Tests for OpenAPI spec, demo entry-point, and ClusterConfig validation (Phase 3.6.2 + 3.6.4 + 3.6.5)."""
 
-from __future__ import annotations
-
 import json
 import subprocess
 import sys

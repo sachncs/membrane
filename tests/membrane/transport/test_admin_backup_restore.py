@@ -11,8 +11,6 @@ admin surface; this test exercises the full round-trip:
   entries in the chain.
 """
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

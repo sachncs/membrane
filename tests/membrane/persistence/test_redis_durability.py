@@ -5,8 +5,6 @@ and Redis records dropped ``tenant_id`` (a restored fragment would
 have become public).
 """
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.auth import AuthContext

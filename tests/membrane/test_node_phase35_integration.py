@@ -1,7 +1,5 @@
 """Tests for the v3.0.0 Node integration of cost + admission + tier surfaces."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.decision import AdmissionPolicy, TenantQuota, TinyLFU

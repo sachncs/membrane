@@ -21,8 +21,6 @@ Threading:
       with a short timeout).
 """
 
-from __future__ import annotations
-
 import logging
 import socket
 import threading

@@ -16,8 +16,6 @@ that lets callers purge every identity variant when a fragment is
 removed.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from dataclasses import dataclass

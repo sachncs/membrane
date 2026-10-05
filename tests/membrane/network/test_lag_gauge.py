@@ -1,7 +1,5 @@
 """Tests for the per-peer replication-lag gauge (Phase 3.2.2)."""
 
-from __future__ import annotations
-
 import math
 
 import pytest

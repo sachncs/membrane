@@ -1,7 +1,5 @@
 """Tests for AES-GCM encryption + per-tenant key derivation (Phase 3.4.6 + 3.4.7)."""
 
-from __future__ import annotations
-
 import os
 
 import pytest

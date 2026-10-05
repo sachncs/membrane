@@ -11,8 +11,6 @@ Attributes:
     project_id: GCP project id (e.g., ``"membrane-prod"``).
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 

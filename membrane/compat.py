@@ -40,8 +40,6 @@ content-independent digest used as the wire field
 ``Fragment.fingerprint_compat``.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from dataclasses import dataclass
@@ -126,7 +124,7 @@ class ModelCompatibilityFingerprint:
         def _coerce_int(value: object, default: int) -> int:
             try:
                 return int(value)  # type: ignore[call-overload]
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return default
 
         return cls(

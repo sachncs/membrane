@@ -7,8 +7,6 @@ of configuration values; the caller is responsible for building
 :class:`~membrane.server.Server` from it.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 from rich.console import Console

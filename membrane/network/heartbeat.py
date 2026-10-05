@@ -5,8 +5,6 @@ daemon thread; it reads the membership via :class:`Membership` and
 records heartbeat results via the same.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 import time

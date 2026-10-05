@@ -15,8 +15,6 @@ Each subcommand requires the ``admin`` scope (carried via the
 ``--api-key`` flag or the ``MEMBRANE_API_KEY`` env var).
 """
 
-from __future__ import annotations
-
 import json
 import os
 from typing import Any

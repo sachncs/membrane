@@ -7,8 +7,6 @@ CheckpointThread daemon, and the cluster_epoch guard rejecting
 stale persisted state.
 """
 
-from __future__ import annotations
-
 import time
 from pathlib import Path
 

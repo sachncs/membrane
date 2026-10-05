@@ -8,8 +8,6 @@ the cache hit rate so a new operator can see the system doing
 real work without standing up a cluster.
 """
 
-from __future__ import annotations
-
 import logging
 
 logger = logging.getLogger(__name__)

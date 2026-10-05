@@ -12,8 +12,6 @@ isolation flow:
   preserves the ability to decrypt legacy v1 ciphertexts.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.content_store_encrypted import EncryptedInProcessBytes

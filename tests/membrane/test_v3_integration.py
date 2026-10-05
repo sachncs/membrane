@@ -17,8 +17,6 @@ A single test that exercises the v3.0.0+ contract end-to-end:
   3.4.6 follow-up).
 """
 
-from __future__ import annotations
-
 import pytest
 
 

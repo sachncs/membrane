@@ -12,8 +12,6 @@ attaches the tier machinery to that callback so operators
 get a one-line wiring point.
 """
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field

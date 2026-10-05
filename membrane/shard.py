@@ -55,7 +55,7 @@ class Shard:
         self,
         hash_ring: Ring | None = None,
         replica_count: int = 2,
-        node_attributes: dict[str, "NodeAttributes"] | None = None,
+        node_attributes: dict[str, NodeAttributes] | None = None,
     ) -> None:
         """Initialize the manager with an optional hash ring.
 

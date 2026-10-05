@@ -41,8 +41,6 @@ Frames are immutable; the on-disk file should be written atomically
 module.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import struct

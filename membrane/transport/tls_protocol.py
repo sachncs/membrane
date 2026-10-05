@@ -14,8 +14,6 @@ authenticator: it drops any client-supplied ``x-ssl-client-cn`` and
 substitutes the verified value.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Iterable
 from typing import Any

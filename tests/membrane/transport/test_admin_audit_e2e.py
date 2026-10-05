@@ -1,7 +1,5 @@
 """End-to-end audit log integration with /admin/audit (Phase 3.2.8 follow-up)."""
 
-from __future__ import annotations
-
 import pytest
 
 

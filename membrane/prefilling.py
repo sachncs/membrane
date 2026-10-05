@@ -270,7 +270,7 @@ class Prefiller:
                     for t in timeout_tasks:
                         t.cancel()
                     return result
-                except (asyncio.TimeoutError, NodePrefillError):
+                except TimeoutError, NodePrefillError:
                     continue
         finally:
             for t in timeout_tasks:

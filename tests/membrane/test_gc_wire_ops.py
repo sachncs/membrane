@@ -1,7 +1,5 @@
 """Tests for delete / tombstone / purge wire ops and peer forwarding."""
 
-from __future__ import annotations
-
 import time
 from unittest.mock import MagicMock
 

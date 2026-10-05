@@ -18,12 +18,10 @@ Thread safety:
     The enum is immutable; safe to share across threads.
 """
 
-from __future__ import annotations
-
-from enum import Enum
+from enum import StrEnum
 
 
-class FragmentKind(str, Enum):
+class FragmentKind(StrEnum):
     """Discriminator for Membrane memory-object fragment types.
 
     Values are the wire-format strings used by

@@ -1,7 +1,5 @@
 """Tests for Phase 4 memory pool + transfer engine (Phase 4)."""
 
-from __future__ import annotations
-
 import sys
 
 import pytest

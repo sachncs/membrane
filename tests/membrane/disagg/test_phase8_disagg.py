@@ -1,7 +1,5 @@
 """Tests for the prefill / decode disaggregation services (Phase 8)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.disagg import (

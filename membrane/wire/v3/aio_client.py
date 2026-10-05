@@ -8,8 +8,6 @@ HTTP client with an async client built on
 client rather than a separate resilience policy.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import time

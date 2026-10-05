@@ -10,8 +10,6 @@ under a real FastAPI app and verifies the cross-tenant flow:
   audit entries.
 """
 
-from __future__ import annotations
-
 import pytest
 
 

@@ -1,7 +1,5 @@
 """Tests for save_snapshot / load_snapshot on Membership and Shard."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.network.membership import Membership, PeerInfo

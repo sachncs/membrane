@@ -16,8 +16,6 @@ address without inbound authentication (``--api-key-file`` or mTLS)
 unless ``--allow-unauthenticated`` is passed explicitly.
 """
 
-from __future__ import annotations
-
 import ipaddress
 import logging
 import signal

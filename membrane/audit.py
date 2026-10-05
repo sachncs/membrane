@@ -17,8 +17,6 @@ shim). The :data:`AuditStorage` Protocol is the swap point for
 operators that want to back the chain with a relational store.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import logging

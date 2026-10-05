@@ -16,8 +16,6 @@ runs the full on-disk round-trip:
   tenant A's ciphertext.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.content_store import FilesystemBlob

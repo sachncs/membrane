@@ -11,8 +11,6 @@ Example keyfile::
     ak_live_reader:metrics-scraper:read
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 

@@ -11,8 +11,6 @@ scope check, so a node configured with an authenticator never
 serves an unauthenticated read.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

@@ -25,8 +25,6 @@ should call :func:`membrane.serialization.from_dict` first
 and re-emit via :func:`membrane.serialization.to_dict`.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import os
@@ -151,9 +149,7 @@ def migrate(
             new_buf = migrate_v4_to_v5(buf)
             counts["v4"] += 1
         elif version == 2:
-            new_buf = migrate_v2_to_v5(
-                buf, v2_tenant=v2_tenant, v3_tenant=v3_tenant
-            )
+            new_buf = migrate_v2_to_v5(buf, v2_tenant=v2_tenant, v3_tenant=v3_tenant)
             counts["v2"] += 1
         else:
             logger.warning("Skipping %s (unknown magic)", path)
@@ -182,18 +178,10 @@ def main(argv: list[str] | None = None) -> int:
         description="Migrate on-disk blobs from v2 / v4 magic to the v5 magic.",
     )
     parser.add_argument("--root", required=True, type=Path, help="Filesystem root")
-    parser.add_argument(
-        "--v2-tenant", default="public", help="Source tenant (informational)"
-    )
-    parser.add_argument(
-        "--v3-tenant", default="public", help="Target tenant (informational)"
-    )
-    parser.add_argument(
-        "--write", action="store_true", help="Apply changes (default: dry-run)"
-    )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Verbose logging"
-    )
+    parser.add_argument("--v2-tenant", default="public", help="Source tenant (informational)")
+    parser.add_argument("--v3-tenant", default="public", help="Target tenant (informational)")
+    parser.add_argument("--write", action="store_true", help="Apply changes (default: dry-run)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

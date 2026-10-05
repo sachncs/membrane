@@ -13,8 +13,6 @@ recorded error. The v3 ops accept an optional ``metrics``
 parameter (the :class:`TransportMetrics` instance).
 """
 
-from __future__ import annotations
-
 import logging
 import time
 from collections.abc import Callable

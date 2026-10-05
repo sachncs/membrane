@@ -22,8 +22,6 @@ hooks (which fired only on the read path) and the pre-existing
 :mod:`membrane.constants` that was declared but never wired.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 import time

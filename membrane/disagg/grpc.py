@@ -15,8 +15,6 @@ The :func:`add_to_server` function wires the
 to issue RPCs.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

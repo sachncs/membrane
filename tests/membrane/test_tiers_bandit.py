@@ -1,7 +1,5 @@
 """Tests for the tier + bandit + cost router wiring (Phase 3.5.6 + 3.5.7 + 3.5.8)."""
 
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass
 

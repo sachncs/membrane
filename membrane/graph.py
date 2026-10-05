@@ -23,8 +23,6 @@ Thread safety:
     synchronization when sharing across threads.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING
 

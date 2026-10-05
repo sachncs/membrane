@@ -13,8 +13,6 @@ composes them with its own run loop so there is no shared
 :class:`ResiliencePolicy` wrapper.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from membrane.errors import ConnectionError as PersistenceConnectionError

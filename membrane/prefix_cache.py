@@ -17,8 +17,6 @@ in the cache; the v1 keeps a fixed capacity and evicts the
 oldest entry once the limit is reached.
 """
 
-from __future__ import annotations
-
 import hashlib
 import logging
 import threading

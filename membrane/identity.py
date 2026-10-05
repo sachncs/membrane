@@ -20,8 +20,6 @@ fingerprint is hashable and comparable; equality on all ten fields is
 the operational definition of "these two payloads are interchangeable".
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from dataclasses import asdict, dataclass

@@ -27,8 +27,6 @@ Thread safety:
     facade as a whole is not thread-safe.
 """
 
-from __future__ import annotations
-
 import logging
 
 logger = logging.getLogger(__name__)

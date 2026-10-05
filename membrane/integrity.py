@@ -19,8 +19,6 @@ v2.0 release computed internally but never reported:
   helper is the single call site.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 

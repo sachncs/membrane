@@ -6,8 +6,6 @@ limits, and per-tenant scope. This module is the
 consolidated test surface for those guarantees.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.auth import (

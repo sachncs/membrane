@@ -6,8 +6,6 @@ The :func:`write_spec` helper writes the spec to a file so
 operators can publish it under ``docs/openapi.json``.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 from typing import Any

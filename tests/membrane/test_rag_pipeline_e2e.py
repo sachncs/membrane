@@ -9,8 +9,6 @@ encrypted store, the client retrieves them, and a hit /
 miss loop drives a small ranking step.
 """
 
-from __future__ import annotations
-
 import pytest
 
 

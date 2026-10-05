@@ -34,8 +34,6 @@ selects the appropriate :class:`LocalEndpoint` /
 operation.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, Protocol
 

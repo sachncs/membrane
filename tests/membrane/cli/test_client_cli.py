@@ -1,7 +1,5 @@
 """Tests for the `membrane client` CLI subcommand (Phase 3.6.1 follow-up)."""
 
-from __future__ import annotations
-
 import io
 import json
 import sys

@@ -20,8 +20,6 @@ path together:
   integrations.
 """
 
-from __future__ import annotations
-
 import logging
 import struct
 import threading
@@ -105,7 +103,7 @@ class CudaMemoryPool:
                 raise RuntimeError("Torch not compiled with CUDA enabled")
             tensor = torch.zeros(size, dtype=_torch_dtype(dtype), device=self.device)
             return TensorHandle(_torch_to_bytes(tensor), shape, dtype)
-        except (ImportError, RuntimeError, AssertionError):
+        except ImportError, RuntimeError, AssertionError:
             bytes_payload = np.zeros(size, dtype=_numpy_dtype(dtype)).tobytes()
             return TensorHandle(bytes_payload, shape, dtype)
 

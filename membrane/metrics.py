@@ -9,8 +9,6 @@ the composition root (``membrane.server.Server.__init__``) and injected
 into each subsystem that needs it.
 """
 
-from __future__ import annotations
-
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, field

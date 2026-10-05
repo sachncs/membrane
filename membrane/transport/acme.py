@@ -13,8 +13,6 @@ the import is lazy so the absence of :mod:`cryptography` and
 actually instantiated.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 

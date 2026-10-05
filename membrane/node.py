@@ -13,8 +13,6 @@ heartbeat response so peers can compute locality-aware
 placements.
 """
 
-from __future__ import annotations
-
 import logging
 
 logger = logging.getLogger(__name__)

@@ -47,7 +47,7 @@ class CacheMetrics:
     total_kv_size_bytes: int = 0
     peak_memory_bytes: int = 0
 
-    def record_hit(self) -> "CacheMetrics":
+    def record_hit(self) -> CacheMetrics:
         """Return a new :class:`CacheMetrics` with hit incremented.
 
         Returns:
@@ -62,7 +62,7 @@ class CacheMetrics:
             peak_memory_bytes=self.peak_memory_bytes,
         )
 
-    def record_miss(self, kv_size_bytes: int = 0) -> "CacheMetrics":
+    def record_miss(self, kv_size_bytes: int = 0) -> CacheMetrics:
         """Return a new :class:`CacheMetrics` with miss incremented.
 
         Args:

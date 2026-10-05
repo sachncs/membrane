@@ -9,8 +9,6 @@ signal from the access history.
 For richer reuse modeling, see :mod:`membrane.predict`.
 """
 
-from __future__ import annotations
-
 import logging
 
 logger = logging.getLogger(__name__)

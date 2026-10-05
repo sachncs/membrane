@@ -20,8 +20,6 @@ Operations:
 * ``GET /admin/audit`` -- query the audit log (Phase 3.2.8).
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

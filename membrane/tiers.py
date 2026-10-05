@@ -14,8 +14,6 @@ serving path. This module ships:
   paths without inflating the call sites (3.5.7).
 """
 
-from __future__ import annotations
-
 import logging
 import random
 import threading

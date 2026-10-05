@@ -1,7 +1,5 @@
 """Tests for the SecretProvider abstraction (Phase 3.4.5)."""
 
-from __future__ import annotations
-
 import pytest
 
 from membrane.secrets import (

@@ -23,8 +23,6 @@ check so the same logic runs in the HTTP op layer, the gRPC
 layer, and the internal store path.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from membrane.errors import TenantScopeError

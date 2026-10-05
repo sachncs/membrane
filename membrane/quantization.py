@@ -24,8 +24,6 @@ recomputing scale factors. The :func:`quantize` /
 ``KVTensor`` round-trips through them before serializing.
 """
 
-from __future__ import annotations
-
 import logging
 import math
 import struct
@@ -346,14 +344,14 @@ class FP8E4M3Quantizer:
             import torch
 
             _ = torch.float8_e4m3fn
-        except (ImportError, AttributeError):
+        except ImportError, AttributeError:
             return False
         try:
             import numpy as np
 
             np.dtype("float8_e4m3fn")
             return True
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return False
 
     def quantize(self, tensor: np.ndarray) -> bytes:
@@ -426,14 +424,14 @@ class FP8E5M2Quantizer:
             import torch
 
             _ = torch.float8_e5m2
-        except (ImportError, AttributeError):
+        except ImportError, AttributeError:
             return False
         try:
             import numpy as np
 
             np.dtype("float8_e5m2")
             return True
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return False
 
     def quantize(self, tensor: np.ndarray) -> bytes:

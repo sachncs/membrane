@@ -24,8 +24,6 @@ retrieve / replicate call paths and increments the relevant
 counters (3.5.7).
 """
 
-from __future__ import annotations
-
 import hashlib
 import logging
 import threading

@@ -27,8 +27,6 @@ Protocol uses a single-argument form that matches the
 concrete implementations.
 """
 
-from __future__ import annotations
-
 from typing import Protocol, runtime_checkable
 
 from membrane.fragment import Fragment

@@ -1,7 +1,5 @@
 """Tests for the typed MembraneClient (Phase 3.6.1)."""
 
-from __future__ import annotations
-
 import json
 
 import httpx

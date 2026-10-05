@@ -7,8 +7,6 @@ threshold behavior; :class:`QuorumDetector` requires majority votes
 from healthy peers.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 

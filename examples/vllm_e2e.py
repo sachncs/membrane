@@ -13,8 +13,6 @@ connector to the vLLM scheduler + model runner. This script
 exercises the Membrane side of the same flow.
 """
 
-from __future__ import annotations
-
 import sys
 
 
