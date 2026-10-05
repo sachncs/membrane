@@ -62,17 +62,22 @@ class TestOtelAuditLogIntegration:
         assert verify_chain(entries) is None
 
     def test_membrane_span_records_attributes(self):
-        """The OTel context manager records attributes on a real tracer."""
-        from membrane.otel_tracer import TracerFactory, membrane_span
+        """membrane_span records attributes when tracing is on."""
 
-        # Configure with no endpoint: returns the no-op tracer.
-        # The OTel SDK's NoOpTracer returns a
-        # NonRecordingSpan, not None; we just check that the
-        # context manager does not raise and exits cleanly.
-        factory = TracerFactory()
-        factory.configure(endpoint=None)
-        with membrane_span("test.span", kv_bytes="1024", model_id="m") as _span:
-            pass  # span may be None or NonRecordingSpan; both OK
+        pytest.importorskip("opentelemetry.sdk")
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+        from membrane.otel_tracer import TRACING, membrane_span
+
+        exporter = InMemorySpanExporter()
+        TRACING.configure(exporter=exporter)
+        try:
+            with membrane_span("test.span", kv_bytes="1024", model_id="m"):
+                pass
+            (span,) = exporter.get_finished_spans()
+            assert span.attributes["kv_bytes"] == "1024" and span.attributes["model_id"] == "m"
+        finally:
+            TRACING.shutdown()
 
     def test_audit_log_with_metrics_counters(self):
         """Audit log + cluster_metrics tenant counter integrate cleanly."""

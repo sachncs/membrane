@@ -31,7 +31,7 @@ class PeerLagSnapshot:
         lag_seconds: Map from peer node id to the seconds since
             the last successful heartbeat. Missing peers
             (never beat) are reported as ``math.inf``.
-        now: Monotonic clock used for the computation.
+        now: Wall-clock time used for the computation.
     """
 
     lag_seconds: dict[str, float]
@@ -43,14 +43,14 @@ def snapshot_peer_lag(membership: Membership, *, now: float | None = None) -> Pe
 
     Args:
         membership: The cluster membership table.
-        now: Optional monotonic clock override. ``None`` reads
-            ``time.monotonic()`` so the helper is deterministic
-            in tests when an explicit ``now`` is supplied.
+        now: Optional wall-clock override (``time.time()`` scale, like
+            ``PeerInfo.last_heartbeat``); ``None`` reads the clock.
 
     Returns:
         PeerLagSnapshot: Per-peer ``now - last_heartbeat``.
     """
-    current = time.monotonic() if now is None else now
+    # ``last_heartbeat`` is wall-clock time (``time.time()``).
+    current = time.time() if now is None else now
     lag_seconds: dict[str, float] = {}
     for peer in membership.snapshot():
         last = peer.last_heartbeat
@@ -106,17 +106,12 @@ def record_replication_lag(
     Note:
         The :class:`MetricsCollector` primitive is scalar
         today; this helper stores the per-peer map under
-        :attr:`MetricsCollector.gauges` keyed by
-        ``gauge_name + ':' + peer_id`` and renders the
-        per-peer lines via :func:`render_prometheus_gauge`.
+        one gauge labeled by ``peer``.
     """
     snapshot = snapshot_peer_lag(membership)
+    gauge = registry.gauge(REPLICATION_LAG_GAUGE, "Seconds since the last heartbeat from each peer.", labels=("peer",))
     for peer_id, lag in snapshot.lag_seconds.items():
-        gauge = registry.gauge(
-            f"{REPLICATION_LAG_GAUGE}:{peer_id}",
-            "Per-peer replication lag seconds.",
-        )
-        gauge.set(lag if math.isfinite(lag) else 10 * 365 * 24 * 3600.0)
+        gauge.set(lag if math.isfinite(lag) else 10 * 365 * 24 * 3600.0, peer=peer_id)
     return snapshot
 
 

@@ -5,10 +5,11 @@ import time
 
 import pytest
 
+from membrane.resilience import CircuitBreakerPolicy
 from membrane.wire.v3.aio_client import (
     AsyncWireClient,
     CancellationToken,
-    CircuitBreakerPolicy,
+    CircuitBreaker,
     RetryPolicy,
     WireBulkhead,
     compute_backoff,
@@ -24,13 +25,13 @@ class TestComputeBackoff:
             assert 0.0 <= delay <= 1.0
 
 
-class TestCircuitBreakerPolicy:
+class TestCircuitBreaker:
     def test_closed_initially(self):
-        cb = CircuitBreakerPolicy()
+        cb = CircuitBreaker()
         assert cb.is_open() is False
 
     def test_opens_after_threshold(self):
-        cb = CircuitBreakerPolicy(failure_threshold=3, cool_down=60.0)
+        cb = CircuitBreaker(CircuitBreakerPolicy(failure_threshold=3, cool_down=60.0))
         cb.record_failure()
         cb.record_failure()
         assert cb.is_open() is False
@@ -38,7 +39,7 @@ class TestCircuitBreakerPolicy:
         assert cb.is_open() is True
 
     def test_success_resets(self):
-        cb = CircuitBreakerPolicy(failure_threshold=2, cool_down=60.0)
+        cb = CircuitBreaker(CircuitBreakerPolicy(failure_threshold=2, cool_down=60.0))
         cb.record_failure()
         cb.record_failure()
         cb.record_success()
@@ -87,7 +88,7 @@ class TestAsyncWireClient:
     def test_circuit_breaker_state_per_host(self):
         client = AsyncWireClient(base_url="http://node-1:8080")
         # The first request sets the breaker for the host.
-        breaker = client.breaker.setdefault("http://node-1:8080", CircuitBreakerPolicy())
+        breaker = client.breaker.setdefault("http://node-1:8080", CircuitBreaker())
         assert breaker.is_open() is False
 
     def test_retry_policy_defaults(self):
@@ -97,7 +98,7 @@ class TestAsyncWireClient:
     def test_circuit_breaker_records_failure_then_success(self):
         client = AsyncWireClient(base_url="http://node-1:8080")
         breaker = client.breaker.setdefault(
-            "http://node-1:8080", CircuitBreakerPolicy(failure_threshold=2, cool_down=60.0)
+            "http://node-1:8080", CircuitBreaker(CircuitBreakerPolicy(failure_threshold=2, cool_down=60.0))
         )
         breaker.record_failure()
         breaker.record_failure()

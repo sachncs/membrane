@@ -10,9 +10,10 @@ client rather than a separate resilience policy.
 
 import asyncio
 import logging
-import time
 from dataclasses import dataclass, field
 from typing import Any
+
+from membrane.resilience import CircuitBreaker, RetryPolicy, compute_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -58,75 +59,6 @@ class WireBulkhead:
     per_host: int = 8
 
 
-@dataclass(frozen=True)
-class RetryPolicy:
-    """Exponential backoff with full jitter.
-
-    Attributes:
-        max_attempts: Total attempts including the first.
-        base_delay: Initial delay (seconds).
-        max_delay: Cap on the per-attempt delay.
-    """
-
-    max_attempts: int = 3
-    base_delay: float = 0.1
-    max_delay: float = 2.0
-
-
-def compute_backoff(policy: RetryPolicy, attempt: int) -> float:
-    """Compute the delay before retry ``attempt`` (0-based).
-
-    Args:
-        policy: The retry policy.
-        attempt: Zero-based attempt index.
-
-    Returns:
-        float: Seconds to sleep before the next attempt.
-    """
-    import random
-
-    delay = min(policy.max_delay, policy.base_delay * (2**attempt))
-    return random.uniform(0, delay)
-
-
-@dataclass
-class CircuitBreakerPolicy:
-    """Per-host circuit breaker state."""
-
-    failure_threshold: int = 5
-    cool_down: float = 30.0
-    failures: int = 0
-    open_until: float = 0.0
-
-    def is_open(self, now: float | None = None) -> bool:
-        """Return True when the breaker is open (caller should fail fast).
-
-        Args:
-            now: Monotonic clock. ``None`` reads ``time.monotonic``.
-
-        Returns:
-            bool: True when the breaker is still cooling down.
-        """
-        current = time.monotonic() if now is None else now
-        return self.open_until > current
-
-    def record_failure(self, now: float | None = None) -> None:
-        """Increment the failure counter and open the breaker on threshold.
-
-        Args:
-            now: Monotonic clock. ``None`` reads ``time.monotonic``.
-        """
-        current = time.monotonic() if now is None else now
-        self.failures += 1
-        if self.failures >= self.failure_threshold:
-            self.open_until = current + self.cool_down
-
-    def record_success(self) -> None:
-        """Reset the failure counter on a successful call."""
-        self.failures = 0
-        self.open_until = 0.0
-
-
 @dataclass
 class AsyncWireClient:
     """Async httpx client with wire bulkhead + circuit breaker.
@@ -141,9 +73,9 @@ class AsyncWireClient:
 
     base_url: str
     bulkhead: WireBulkhead = field(default_factory=WireBulkhead)
-    retry: RetryPolicy = field(default_factory=RetryPolicy)
+    retry: RetryPolicy = field(default_factory=lambda: RetryPolicy(base_delay=0.1, max_delay=2.0))
     timeout_sec: float = 5.0
-    breaker: dict[str, CircuitBreakerPolicy] = field(default_factory=dict)
+    breaker: dict[str, CircuitBreaker] = field(default_factory=dict)
     semaphore: asyncio.Semaphore | None = None
 
     async def ensure_semaphore(self) -> asyncio.Semaphore:
@@ -184,7 +116,7 @@ class AsyncWireClient:
             raise RuntimeError("httpx is required for AsyncWireClient") from exc
 
         sem = await self.ensure_semaphore()
-        breaker = self.breaker.setdefault(self.base_url, CircuitBreakerPolicy())
+        breaker = self.breaker.setdefault(self.base_url, CircuitBreaker())
         if breaker.is_open():
             raise RuntimeError(f"circuit breaker open for {self.base_url}")
 
@@ -232,7 +164,7 @@ async def with_deadline(duration_sec: float, awaitable: Any) -> Any:
 __all__ = [
     "AsyncWireClient",
     "CancellationToken",
-    "CircuitBreakerPolicy",
+    "CircuitBreaker",
     "RetryPolicy",
     "WireBulkhead",
     "compute_backoff",

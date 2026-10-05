@@ -30,7 +30,8 @@ def peer_cn_from_transport(transport: asyncio.BaseTransport) -> str | None:
         transport: The connection's asyncio transport.
 
     Returns:
-        str | None: The certificate subject's commonName, or ``None``
+        str | None: The certificate subject's commonName or, for a SPIFFE
+        SVID (which carries no CN), its ``spiffe://`` URI SAN; ``None``
         for plaintext connections and connections without a client
         certificate.
     """
@@ -46,6 +47,9 @@ def peer_cn_from_transport(transport: asyncio.BaseTransport) -> str | None:
         for key, value in rdn:
             if key == "commonName" and value:
                 return str(value)
+    for kind, value in cert.get("subjectAltName", ()):
+        if kind == "URI" and str(value).startswith("spiffe://"):
+            return str(value)
     return None
 
 

@@ -28,6 +28,8 @@ from typing import Any, Protocol, runtime_checkable
 
 from membrane.errors import NetworkError
 from membrane.fragment import Fragment
+from membrane.otel_tracer.otel import TRACING
+from membrane.resilience import CircuitBreaker, CircuitBreakerPolicy, RetryPolicy, compute_backoff
 from membrane.serialization import JsonDict, from_dict, to_dict
 from membrane.wire.v3.chunks import sha256_hex
 
@@ -393,6 +395,7 @@ class Peer:
         retry_delay_sec: float = 1.0,
         local_peer_cn: str = "",
         credentials: PeerCredentials | None = None,
+        breaker_policy: CircuitBreakerPolicy | None = None,
     ) -> None:
         """Initialize the client.
 
@@ -415,6 +418,8 @@ class Peer:
             credentials: Scheme / bearer token / TLS context for
                 this peer. Defaults to
                 :func:`get_default_peer_credentials`.
+            breaker_policy: When to stop calling this peer; the default
+                opens after 5 consecutive failed calls for 30 s.
         """
         self.credentials = credentials or get_default_peer_credentials()
         self.base_url = peer_url(base_url).rstrip("/")
@@ -423,6 +428,12 @@ class Peer:
         self.max_retries = max_retries
         self.retry_delay_sec = retry_delay_sec
         self.local_peer_cn = local_peer_cn
+        # One breaker per peer: a dead peer costs one failed call per
+        # cool-down, not every caller's full retry budget.
+        self.breaker = CircuitBreaker(breaker_policy or CircuitBreakerPolicy())
+        self.retry = RetryPolicy(
+            max_attempts=max_retries, base_delay=retry_delay_sec, max_delay=max(retry_delay_sec * 8, 0.0)
+        )
 
     @property
     def base_headers(self) -> dict[str, str]:
@@ -609,13 +620,20 @@ class Peer:
             RawResponse | None: The response, or ``None`` on terminal failure.
         """
         url = f"{self.base_url}{path}"
+        if not self.breaker.allow():
+            return None
         for attempt in range(self.max_retries):
             try:
-                return self.transport.request_bytes(method, url, None, dict(self.base_headers), self.timeout_sec)
+                headers = dict(self.base_headers)
+                TRACING.inject(headers)
+                response = self.transport.request_bytes(method, url, None, headers, self.timeout_sec)
+                self.breaker.record_success()
+                return response
             except NetworkError as exc:
                 logger.debug("%s %s failed (attempt %s/%s): %s", method, url, attempt + 1, self.max_retries, exc)
                 if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay_sec * (2**attempt))
+                    time.sleep(compute_backoff(self.retry, attempt))
+        self.breaker.record_failure()
         return None
 
     def request_delete(
@@ -746,8 +764,12 @@ class Peer:
             headers["Content-Type"] = "application/json"
         if extra_headers:
             headers.update(extra_headers)
+        TRACING.inject(headers)
         last_error: Exception | None = None
 
+        if not self.breaker.allow():
+            logger.debug("circuit open for %s; failing fast on %s %s", self.base_url, method, path)
+            return None
         deadline = peer_deadline.get()
         for attempt in range(self.max_retries):
             timeout = self.timeout_sec
@@ -765,6 +787,7 @@ class Peer:
                     timeout_sec=timeout,
                 )
                 if resp is not None:
+                    self.breaker.record_success()
                     return resp
             except NetworkError as exc:
                 last_error = exc
@@ -772,7 +795,7 @@ class Peer:
             if attempt == self.max_retries - 1:
                 break  # no point sleeping after the last attempt
             # Exponential backoff: 1x, 2x, 4x, ...
-            delay = self.retry_delay_sec * (2**attempt)
+            delay = compute_backoff(self.retry, attempt)
             if deadline is not None and time.monotonic() + delay >= deadline:
                 break  # the caller has already given up
             logger.debug(
@@ -785,6 +808,7 @@ class Peer:
             )
             time.sleep(delay)
 
+        self.breaker.record_failure()
         logger.warning(
             "Request to %s%s failed after %s retries: %s",
             self.base_url,

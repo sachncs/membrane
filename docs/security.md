@@ -19,7 +19,11 @@ them, isolates tenants, and protects data at rest.
 | Encryption at rest | `membrane.security.encryption`, `membrane.content_store` | `encrypt_payload`, `FilesystemBlob`, `DecryptError` |
 | Key rotation | `membrane.security.key_rotation` | versioned master keys |
 | Secret backends | `membrane.secrets` | AWS, GCP, Vault |
-| Audit log | `membrane.audit` | `AuditLog`, `verify_chain` |
+| Audit log | `membrane.audit` | `AuditLog`, `FileAuditStorage`, `verify_chain` |
+| Data keys and rotation | `membrane.security.keyring` | `DirectoryKeyring`, `write_next_key` |
+| ACME certificates | `membrane.transport.acme` | `ACMEClient`, `ensure_certificate` |
+| SPIFFE identity | `membrane.transport.spiffe`, `membrane.auth.spiffe` | `SPIFFEClient`, `SPIFFEAuthenticator` |
+| Certificate hot reload | `membrane.transport.tls_rotation` | `CertRotationWatcher` |
 
 ## Authentication
 
@@ -50,6 +54,41 @@ passed explicitly):
   `X-SSL-Client-CN` header is always discarded. Scopes come from the CN
   prefix (`admin-`, `write-`, `read-`). On `/join` the CN must equal
   the joining node id, optionally with a role prefix.
+* **SPIFFE**: `--tls-spiffe-socket /run/spire/agent.sock` takes the
+  node's certificate, key, and trust bundle from the SPIFFE Workload
+  API (SPIRE). Callers present SVIDs; `SPIFFEAuthenticator` admits the
+  SPIFFE IDs listed with `--tls-spiffe-allow spiffe://td/path=read,write`
+  and grants those scopes. SVIDs are re-fetched every 5 minutes and a
+  renewed one is served without a restart. Peers trust each other through
+  the bundle (their certificates name workloads, not hosts). Install
+  `membrane[tls-spiffe]`.
+
+### TLS certificates
+
+* **Hot reload.** With `--tls-cert/--tls-key`, the files are checked
+  every minute and on `SIGHUP`; a changed pair is served on new
+  connections and presented to peers without a restart. An expired
+  certificate is refused at startup and on reload, and
+  `membrane_tls_cert_expiry_seconds` tracks the time left.
+* **ACME.** `--tls-acme-domain example.com` (repeatable) gets the
+  listener certificate from an ACME CA (Let's Encrypt by default,
+  `--tls-acme-directory` for others) through HTTP-01 challenges, keeps
+  the account and certificate in `--tls-acme-state-dir` (default
+  `<data-dir>/acme`, mode 0600), and renews it when less than 30 days
+  remain. The domain's port 80 must reach `--tls-acme-http-port`.
+  ACME certificates serve clients that authenticate with API keys;
+  they are for single-node public listeners (peers use mTLS or SPIFFE).
+
+### Secrets from a secret manager
+
+The secret settings `--api-key-file`, `--peer-api-key-file`,
+`--tls-cert`, `--tls-key`, `--tls-ca`, `--data-key-file`, and the LLM
+`--api-key` accept `secret://NAME` in place of a file or value. It is
+resolved through `--secret-provider`:
+`env` (environment variables, the default), `aws` (Secrets Manager;
+`AWS_REGION`), `gcp` (Secret Manager; `GOOGLE_CLOUD_PROJECT`), or
+`vault` (`VAULT_ADDR`, `VAULT_TOKEN`), or an installed
+`membrane.secret_providers` plugin. The secret never touches disk.
 
 Authentication failures return `401` with `WWW-Authenticate: Bearer`;
 a valid caller without the required scope gets `403`.
@@ -163,8 +202,9 @@ With `--data-dir`, KV bytes are stored by `FilesystemBlob`: each blob
 is encrypted with AES-256-GCM under a key derived from the node's
 master key and the blob's content hash, and written atomically
 (temp file, `fsync`, rename). The master key comes from
-`--data-key-file` or is generated once into `<data-dir>/master.key`
-with mode 0600; a key file other users can read is refused. Keep the
+`--data-key-file` (a file, a key directory, or `secret://NAME`) or is
+generated once into `<data-dir>/master.key` with mode 0600; a key file
+other users can read is refused. Keep the
 key outside the volume in production; a
 snapshot that contains both the blobs and the key protects nothing.
 
@@ -177,19 +217,30 @@ Without `--data-dir`, KV bytes live only in process memory.
 
 ## Key rotation
 
-`membrane.security.key_rotation` supports versioned master keys: a key
-provider that exposes `version_keys()` lets `FilesystemBlob` decrypt
-blobs written under older keys while new writes use the current key.
-`membrane serve` currently takes a single key; rotation requires a
-custom key provider through the Python API.
+Point `--data-key-file` at a directory of versioned keys (`v1.key`,
+`v2.key`, ...; move an existing key to `DIR/v1.key` to adopt this).
+The highest version encrypts new blobs and every version still
+decrypts. To rotate:
+
+```bash
+membrane keys rotate-data-key /etc/membrane/data-keys   # writes v2.key (0600)
+```
+
+Each node re-reads the directory every minute, switches to the new
+version, and re-encrypts its existing blobs under it in the background
+(logged as `re-encrypted N blobs under data key version 2`). After that
+the old `v1.key` can be deleted.
 
 ## Audit log
 
 Every `/admin/*` operation (inspect, placement, evict, repair, policy
 changes) is appended to a hash-chained `AuditLog`, which admins can
-read with `GET /admin/audit`; `membrane.audit.verify_chain` detects
-tampering. The log is held in memory and resets when the node
-restarts; ship it to durable storage if you need a retained trail.
+read with `GET /admin/audit`. With `--data-dir` the log is persisted to
+`<data-dir>/audit.jsonl` (mode 0600) and survives restarts: on start the
+node reloads it, verifies the chain, and continues it. A broken chain
+(an edited, removed, or reordered entry) is logged at CRITICAL and
+`membrane_audit_chain_valid` drops to 0. Without `--data-dir` the log
+is in memory only.
 
 ## See also
 

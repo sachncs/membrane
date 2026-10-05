@@ -320,6 +320,13 @@ class TransportMetrics:
         )
 
     @property
+    def tls_cert_expiry(self) -> Gauge:
+        """Seconds until the serving certificate expires."""
+        return self.registry.gauge(
+            "membrane_tls_cert_expiry_seconds", "Seconds until the serving TLS certificate expires."
+        )
+
+    @property
     def rejected(self) -> Counter:
         """Requests shed before reaching a handler, by reason."""
         return self.registry.counter(
@@ -383,6 +390,29 @@ class ClusterMetrics:
     def replication_failures(self) -> Counter:
         """Failed replica pushes."""
         return self.registry.counter("membrane_replication_failures_total", "Failed replication pushes.")
+
+
+@dataclass
+class PeerHealthMetrics:
+    """Typed collector for per-peer client health.
+
+    Attributes:
+        registry: The collector the gauges live in.
+    """
+
+    registry: MetricsCollector
+
+    @property
+    def audit_chain_valid(self) -> Gauge:
+        """1 while the persisted audit chain verifies, 0 once tampering was found."""
+        return self.registry.gauge("membrane_audit_chain_valid", "1 when the audit log hash chain verifies.")
+
+    @property
+    def circuit_open(self) -> Gauge:
+        """1 while calls to a peer fail fast (its circuit breaker is open)."""
+        return self.registry.gauge(
+            "membrane_peer_circuit_open", "1 while the circuit breaker for a peer is open.", labels=("peer",)
+        )
 
 
 @dataclass
@@ -468,6 +498,13 @@ class NodeMetrics:
     tenant: TenantMetrics = field(default_factory=TenantMetrics)
 
     @property
+    def cache_lookups(self) -> Counter:
+        """Fragment lookups by result (``hit``, ``miss``, ``corrupt``)."""
+        return self.registry.counter(
+            "membrane_cache_lookups_total", "Fragment lookups by result (hit, miss, corrupt).", labels=("result",)
+        )
+
+    @property
     def fragments(self) -> Gauge:
         """Fragments held by this node."""
         return self.registry.gauge("membrane_fragments_total", "Total fragments held locally.")
@@ -537,6 +574,7 @@ __all__ = [
     "Histogram",
     "MetricsCollector",
     "NodeMetrics",
+    "PeerHealthMetrics",
     "PersistenceMetrics",
     "TransportMetrics",
     "metrics_summary",

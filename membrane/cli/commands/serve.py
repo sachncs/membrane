@@ -30,6 +30,7 @@ from membrane.cli.wizard import interactive_setup
 from membrane.logging import configure_logging
 from membrane.runtime.lifecycle import run_until_signalled
 from membrane.runtime.settings import ServerSettings, SettingsError, build_server
+from membrane.transport.acme import LETS_ENCRYPT
 from membrane.transport.limits import TransportLimits
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,18 @@ def main(
         "--eviction",
         envvar="MEMBRANE_EVICTION",
         help="Eviction policy plugin: weighted-lru, tinylfu, or installed",
+    ),
+    secret_provider: str = typer.Option(
+        "env",
+        "--secret-provider",
+        envvar="MEMBRANE_SECRET_PROVIDER",
+        help="Resolves secret://NAME in any secret setting: env, aws, gcp, vault, or installed",
+    ),
+    otel_endpoint: str = typer.Option(
+        "",
+        "--otel-endpoint",
+        envvar="MEMBRANE_OTEL_ENDPOINT",
+        help="Export traces to this OTLP/gRPC endpoint (also honours OTEL_EXPORTER_OTLP_ENDPOINT)",
     ),
     no_hooks: bool = typer.Option(
         False, "--no-hooks", envvar="MEMBRANE_NO_HOOKS", help="Do not run installed membrane.hooks plugins"
@@ -211,6 +224,50 @@ def main(
         envvar="MEMBRANE_TLS_ALLOW_ANY_CN",
         help="Accept any CN signed by the CA (development only)",
     ),
+    tls_spiffe_socket: str = typer.Option(
+        "",
+        "--tls-spiffe-socket",
+        envvar="MEMBRANE_TLS_SPIFFE_SOCKET",
+        help="Get the certificate, key, and trust bundle from this SPIFFE Workload API socket",
+    ),
+    tls_spiffe_allow: Annotated[
+        list[str] | None,
+        typer.Option(
+            envvar="MEMBRANE_TLS_SPIFFE_ALLOW",
+            help="Allowed SPIFFE ID and its scopes, spiffe://td/path=read,write (repeatable)",
+        ),
+    ] = None,
+    tls_acme_domain: Annotated[
+        list[str] | None,
+        typer.Option(
+            envvar="MEMBRANE_TLS_ACME_DOMAINS",
+            help="Get and renew the listener certificate from an ACME CA for this domain (repeatable)",
+        ),
+    ] = None,
+    tls_acme_directory: str = typer.Option(
+        LETS_ENCRYPT, "--tls-acme-directory", envvar="MEMBRANE_TLS_ACME_DIRECTORY", help="ACME directory URL"
+    ),
+    tls_acme_email: str = typer.Option(
+        "", "--tls-acme-email", envvar="MEMBRANE_TLS_ACME_EMAIL", help="Contact email for the ACME account"
+    ),
+    tls_acme_state_dir: str = typer.Option(
+        "",
+        "--tls-acme-state-dir",
+        envvar="MEMBRANE_TLS_ACME_STATE_DIR",
+        help="Where the ACME account key and certificate live (default: <data-dir>/acme)",
+    ),
+    tls_acme_http_port: int = typer.Option(
+        80,
+        "--tls-acme-http-port",
+        envvar="MEMBRANE_TLS_ACME_HTTP_PORT",
+        help="Port for HTTP-01 challenges (the domain's port 80 must reach it)",
+    ),
+    tls_acme_ca_bundle: str = typer.Option(
+        "",
+        "--tls-acme-ca-bundle",
+        envvar="MEMBRANE_TLS_ACME_CA_BUNDLE",
+        help="CA bundle for a private or test ACME directory",
+    ),
     allow_unauthenticated: bool = typer.Option(
         False,
         "--allow-unauthenticated",
@@ -281,6 +338,8 @@ def main(
         content_store: Content-store plugin for --data-dir.
         persistence: Persistence plugin.
         eviction: Eviction policy plugin.
+        secret_provider: Secret provider for ``secret://NAME`` references.
+        otel_endpoint: OTLP/gRPC endpoint for traces.
         no_hooks: Do not run installed hook plugins.
         max_memory: Max memory bytes.
         log_level: Logging level.
@@ -311,6 +370,14 @@ def main(
         tls_ca: mTLS CA bundle PEM file.
         tls_allowed_cn: Peer certificate CN to accept (repeatable).
         tls_allow_any_cn: Accept any CN signed by the CA (development only).
+        tls_spiffe_socket: SPIFFE Workload API socket.
+        tls_spiffe_allow: Allowed SPIFFE IDs and their scopes (repeatable).
+        tls_acme_domain: Domains for an ACME certificate (repeatable).
+        tls_acme_directory: ACME directory URL.
+        tls_acme_email: Contact email for the ACME account.
+        tls_acme_state_dir: Where the ACME account and certificate live.
+        tls_acme_http_port: Port for HTTP-01 challenges.
+        tls_acme_ca_bundle: CA bundle for a private or test ACME directory.
         allow_unauthenticated: Serve without authentication on a
             non-loopback address (unsafe).
         drain_timeout: Seconds SIGTERM may spend draining.
@@ -380,6 +447,8 @@ def main(
             persistence=persistence,
             eviction=eviction,
             load_hooks=not no_hooks,
+            otel_endpoint=otel_endpoint,
+            secret_provider=secret_provider,
             max_memory=max_memory,
             peers=tuple(split_list(peer)),
             advertise_host=advertise_host,
@@ -399,6 +468,14 @@ def main(
             tls_ca=tls_ca,
             tls_allowed_cns=tuple(split_list(tls_allowed_cn)),
             tls_allow_any_cn=tls_allow_any_cn,
+            tls_spiffe_socket=tls_spiffe_socket,
+            tls_spiffe_allow=tuple(split_list(tls_spiffe_allow)),
+            tls_acme_domains=tuple(split_list(tls_acme_domain)),
+            tls_acme_directory=tls_acme_directory,
+            tls_acme_email=tls_acme_email,
+            tls_acme_state_dir=tls_acme_state_dir,
+            tls_acme_http_port=tls_acme_http_port,
+            tls_acme_ca_bundle=tls_acme_ca_bundle,
             allow_unauthenticated=allow_unauthenticated,
             drain_timeout=drain_timeout,
             limits=TransportLimits(

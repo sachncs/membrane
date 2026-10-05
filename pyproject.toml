@@ -57,6 +57,9 @@ dev = [
     "hypothesis>=6.100.0",
     "pytest-benchmark>=4.0.0",
     "pytest-timeout>=2.3.0",
+    # Tracing tests use the SDK's in-memory exporter.
+    "opentelemetry-sdk>=1.25.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
 ]
 # Everything `membrane serve` needs, including TLS / encryption at rest.
 server = ["redis>=8.1.0", "fastapi>=0.142.2", "uvicorn[standard]>=0.54.0", "httpx>=0.28.1", "pydantic>=2.13.5", "cryptography>=44.0.0"]

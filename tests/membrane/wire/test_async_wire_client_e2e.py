@@ -13,9 +13,10 @@ import asyncio
 import httpx
 import pytest
 
+from membrane.resilience import CircuitBreakerPolicy
 from membrane.wire.v3.aio_client import (
     AsyncWireClient,
-    CircuitBreakerPolicy,
+    CircuitBreaker,
     RetryPolicy,
     WireBulkhead,
 )
@@ -102,7 +103,7 @@ class TestAsyncWireClientE2E:
                     retry=RetryPolicy(max_attempts=2, base_delay=0.0, max_delay=0.0),
                     bulkhead=WireBulkhead(max_concurrent=2),
                 )
-                client.breaker["http://x"] = CircuitBreakerPolicy(failure_threshold=2, cool_down=60.0)
+                client.breaker["http://x"] = CircuitBreaker(CircuitBreakerPolicy(failure_threshold=2, cool_down=60.0))
                 with pytest.raises(RuntimeError, match="server returned"):
                     await client.request("GET", "/x")
                 # The breaker recorded 2 failures.
@@ -122,7 +123,7 @@ class TestAsyncWireClientE2E:
             transport = _make_async_transport(routes)
             with self._patch_async_client(transport) as _:
                 client = AsyncWireClient(base_url="http://y", timeout_sec=1.0)
-                client.breaker["http://y"] = CircuitBreakerPolicy(failure_threshold=1, cool_down=60.0)
+                client.breaker["http://y"] = CircuitBreaker(CircuitBreakerPolicy(failure_threshold=1, cool_down=60.0))
                 return await client.request("GET", "/y")
 
         # 4xx is a successful response; the breaker is untouched.
