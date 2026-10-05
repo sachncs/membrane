@@ -11,7 +11,7 @@ duck-typed stub that mirrors the same surface.
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, override
 
 from membrane.adapters import (
     BaseAdapter,
@@ -102,10 +102,12 @@ class InMemoryTrtClient(TrtClusterClient):
         with self._lock:
             self._by_handle[(model_id, handle)] = blocks
 
+    @override
     def get(self, model_id: str, handle: str) -> tuple[TrtKVBlock, ...]:
         with self._lock:
             return self._by_handle.get((model_id, handle), ())
 
+    @override
     def put(self, model_id: str, handle: str, blocks: tuple[TrtKVBlock, ...]) -> None:
         with self._lock:
             self._by_handle[(model_id, handle)] = blocks
@@ -192,6 +194,7 @@ class MembraneTrtAdapter(BaseAdapter):
         block_indices = self._blocks_for(tensor.token_span)
         self._write_blocks(manager, tensor.layers, block_indices)
 
+    @override
     def validate(self, tensor: KVTensor) -> ValidationResult:
         """Default BaseAdapter validation.
 

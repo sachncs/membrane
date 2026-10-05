@@ -23,6 +23,7 @@ import sys
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from string.templatelib import Interpolation, Template
+from typing import override
 
 from membrane.constants import DEFAULT_LOG_FORMAT, DEFAULT_LOG_LEVEL
 
@@ -82,6 +83,7 @@ class TextFormatter(logging.Formatter):
         """
         super().__init__(fmt=fmt)
 
+    @override
     def format(self, record: logging.LogRecord) -> str:
         """Format ``record``, suffixing the request ID when present.
 
@@ -107,6 +109,7 @@ class JsonFormatter(logging.Formatter):
 
     RESERVED: frozenset[str] = RESERVED_ATTRIBUTES
 
+    @override
     def format(self, record: logging.LogRecord) -> str:
         """Serialize ``record`` as one JSON object.
 
@@ -134,6 +137,7 @@ class JsonFormatter(logging.Formatter):
 class RequestContextFilter(logging.Filter):
     """Attach the current :data:`request_id` to every record."""
 
+    @override
     def filter(self, record: logging.LogRecord) -> bool:
         """Stamp ``record.request_id`` and keep the record.
 

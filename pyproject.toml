@@ -91,6 +91,9 @@ include = ["membrane*"]
 
 [tool.mypy]
 python_version = "3.14"
+# Overriding methods must say so (typing.override), so a renamed base
+# method is a type error instead of a silently dead override.
+enable_error_code = ["explicit-override"]
 exclude = ["membrane/transport/proto/", "membrane/wire/v3/wire_v3_pb2*.py"]
 ignore_missing_imports = true
 

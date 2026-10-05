@@ -23,6 +23,7 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from typing import override
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ class KVHandle:
     token_len: int
     created_at: float
 
+    @override
     def __eq__(self, other: object) -> bool:
         """Compare by ``handle`` (the identity of the prefix).
 
@@ -65,6 +67,7 @@ class KVHandle:
             return NotImplemented
         return self.handle == other.handle
 
+    @override
     def __hash__(self) -> int:
         """Hash by ``handle`` for use in dict / set."""
         return hash(self.handle)

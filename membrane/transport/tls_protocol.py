@@ -16,7 +16,7 @@ substitutes the verified value.
 
 import asyncio
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, override
 
 from uvicorn.protocols.http.h11_impl import H11Protocol
 
@@ -52,6 +52,7 @@ def peer_cn_from_transport(transport: asyncio.BaseTransport) -> str | None:
 class PeerCertH11Protocol(H11Protocol):
     """h11 protocol that records the verified peer CN in the ASGI scope."""
 
+    @override
     def connection_made(self, transport: asyncio.Transport) -> None:  # type: ignore[override]
         """Capture the peer CN once per connection and wrap the app."""
         super().connection_made(transport)

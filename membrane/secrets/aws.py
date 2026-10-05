@@ -13,6 +13,7 @@ Attributes:
 
 import logging
 from dataclasses import dataclass
+from typing import override
 
 from membrane.secrets import SecretBackendError, SecretNotFoundError, SecretProvider
 
@@ -42,6 +43,7 @@ class AWSSecretsProvider(SecretProvider):
         except ImportError as exc:
             raise SecretBackendError("AWSSecretsProvider requires 'boto3'; install membrane[secrets-aws]") from exc
 
+    @override
     def get(self, secret_name: str) -> str:
         """Read ``secret_name`` from AWS Secrets Manager.
 

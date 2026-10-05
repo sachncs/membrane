@@ -27,6 +27,7 @@ Security:
 
 import json
 import logging
+from typing import override
 
 import httpx
 
@@ -74,12 +75,14 @@ class OpenAI(RemoteLLMBackend):
         """Return the configured API key (redacted when logged)."""
         return self._api_key
 
+    @override
     def __repr__(self) -> str:
         return (
             f"OpenAI(base_url={self.base_url!r}, model={self.model!r}, "
             f"embedding_model={self.embedding_model!r}, api_key=***)"
         )
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Fetch embeddings from OpenAI and convert to fragments.
 
@@ -151,6 +154,7 @@ class OpenAI(RemoteLLMBackend):
         )
         return fragments
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Generate text via OpenAI chat completions.
 
@@ -186,10 +190,12 @@ class OpenAI(RemoteLLMBackend):
             logger.warning("OpenAI generate failed: %s", exc)
             return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
         """Return whether the API is reachable."""
         return self.probe("models", timeout=5.0)
 
+    @override
     def device_name(self) -> str:
         """Return the backend's device descriptor.
 

@@ -16,6 +16,7 @@ cycle.
 import logging
 import threading
 from dataclasses import dataclass
+from typing import override
 
 from membrane.security.encryption import KeyProvider
 
@@ -109,6 +110,7 @@ class RotatingKeyProvider(KeyProvider):
         with self._lock:
             return tuple(v.key for v in self._versions)
 
+    @override
     def master_key(self) -> bytes:
         """Return the active master key.
 

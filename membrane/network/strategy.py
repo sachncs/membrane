@@ -16,7 +16,7 @@ import logging
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol, override, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +181,7 @@ class Migrator:
 class EagerMigrator(Migrator):
     """Migrate all primaries immediately on topology change."""
 
+    @override
     def migrations_per_second(self) -> float:
         return float("inf")
 
@@ -191,6 +192,7 @@ class RateLimitedMigrator(Migrator):
 
     max_per_second: float = 50.0
 
+    @override
     def migrations_per_second(self) -> float:
         return self.max_per_second
 

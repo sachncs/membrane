@@ -29,7 +29,7 @@ receive well-formed fragments.
 import hashlib
 import logging
 import struct
-from typing import Any
+from typing import Any, override
 
 from membrane.compute.base import Backend
 from membrane.compute.remote import RemoteLLMBackend
@@ -163,6 +163,7 @@ class KVBackend(RemoteLLMBackend):
             self.model = None
             self.tokenizer = None
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Run real prefill and emit one fragment per window.
 
@@ -325,6 +326,7 @@ class KVBackend(RemoteLLMBackend):
             )
         return fragments
 
+    @override
     def simulated_payload(self, fragment: Fragment) -> bytes | None:
         """Return ``None`` for real frames, which are already in :attr:`content_store`.
 
@@ -335,6 +337,7 @@ class KVBackend(RemoteLLMBackend):
             return None
         return super().simulated_payload(fragment)
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Stub text-generation entry point.
 
@@ -352,6 +355,7 @@ class KVBackend(RemoteLLMBackend):
         """
         return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
         """Return whether the model and tokenizer are loaded.
 
@@ -361,6 +365,7 @@ class KVBackend(RemoteLLMBackend):
         """
         return self.model is not None and self.tokenizer is not None
 
+    @override
     def device_name(self) -> str:
         """Return a descriptive device name.
 

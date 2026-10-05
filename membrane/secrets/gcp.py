@@ -13,6 +13,7 @@ Attributes:
 
 import logging
 from dataclasses import dataclass
+from typing import override
 
 from membrane.secrets import SecretBackendError, SecretNotFoundError, SecretProvider
 
@@ -43,6 +44,7 @@ class GCPSecretsProvider(SecretProvider):
                 "GCPSecretsProvider requires 'google-cloud-secret-manager'; install membrane[secrets-gcp]"
             ) from exc
 
+    @override
     def get(self, secret_name: str) -> str:
         """Read ``secret_name`` from Google Secret Manager.
 

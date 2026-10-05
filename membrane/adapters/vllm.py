@@ -37,7 +37,7 @@ inject a fake without touching the network.
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, override
 
 from membrane.adapters import (
     BaseAdapter,
@@ -246,6 +246,7 @@ class InMemoryClusterClient(MembraneClusterClient):
         with self._lock:
             self._by_handle[kv_handle] = dict(layers)
 
+    @override
     def lookup_prefix(
         self,
         model_id: str,
@@ -259,6 +260,7 @@ class InMemoryClusterClient(MembraneClusterClient):
                 return MatchedPrefix(len(token_ids), handle)
         return MatchedPrefix(0, "")
 
+    @override
     def start_load(
         self,
         kv_handle: str,
@@ -270,6 +272,7 @@ class InMemoryClusterClient(MembraneClusterClient):
                 return ()
             return tuple(LayerLoad(layer_idx=i, kv_handle=kv_handle) for i in layer_indices if i in bundle)
 
+    @override
     def fetch_layer(
         self,
         layer_load: LayerLoad,
@@ -297,6 +300,7 @@ class InMemoryClusterClient(MembraneClusterClient):
             fingerprint=_placeholder_fingerprint(model_id, dtype),
         )
 
+    @override
     def save_layer(
         self,
         layer: LayerKV,
@@ -443,6 +447,7 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
 
         # ----- vLLM connector surface -----
 
+        @override
         def get_num_new_matched_tokens(
             self,
             request: Any,
@@ -463,6 +468,7 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
                 state.matched = matched
             return matched.prefix_len
 
+        @override
         def update_state_after_alloc(
             self,
             request: Any,
@@ -481,6 +487,7 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
             with self._lock:
                 state.block_table = block_table
 
+        @override
         def build_connector_meta(self, scheduler_output: Any) -> dict[str, Any]:
             """Emit per-step metadata for the model runner.
 
@@ -499,6 +506,7 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
                     for req_id, state in self._requests.items()
                 }
 
+        @override
         def start_load_kv(self, request: Any) -> None:
             """Begin streaming the cached K/V for ``request``.
 
@@ -515,6 +523,7 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
             with self._lock:
                 state.loads = {load.layer_idx: load for load in loads}
 
+        @override
         def wait_for_layer_load(self, layer: int, request: Any) -> None:
             """Block until ``layer`` is resident for ``request``.
 
@@ -534,6 +543,7 @@ def _build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
                 self.dtype,
             )
 
+        @override
         def save_kv(
             self,
             layer: int,
@@ -732,6 +742,7 @@ class MembraneVLLMAdapter(BaseAdapter):  # type: ignore[misc]
         )
         return None
 
+    @override
     def validate(self, tensor: KVTensor) -> ValidationResult:
         """Run the default BaseAdapter validation.
 

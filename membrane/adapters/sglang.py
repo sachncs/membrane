@@ -11,7 +11,7 @@ against a duck-typed stub that mirrors the same surface.
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, override
 
 from membrane.adapters import (
     BaseAdapter,
@@ -106,10 +106,12 @@ class InMemorySGLangClient(SGLangClusterClient):
         with self._lock:
             self._by_handle[(model_id, handle)] = entries
 
+    @override
     def get(self, model_id: str, handle: str) -> tuple[SGLangKVEntry, ...]:
         with self._lock:
             return self._by_handle.get((model_id, handle), ())
 
+    @override
     def put(self, model_id: str, handle: str, entries: tuple[SGLangKVEntry, ...]) -> None:
         with self._lock:
             self._by_handle[(model_id, handle)] = entries
@@ -193,6 +195,7 @@ class MembraneSGLangAdapter(BaseAdapter):
             return
         self._write_rows(pool, tensor.layers, layer_range)
 
+    @override
     def validate(self, tensor: KVTensor) -> ValidationResult:
         """Default BaseAdapter validation.
 

@@ -21,6 +21,7 @@ warning.
 
 import json
 import logging
+from typing import override
 
 import httpx
 
@@ -49,6 +50,7 @@ class Ollama(RemoteLLMBackend):
         self.model = model
         self.client = self.build_client(timeout=30.0)
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Fetch embeddings from Ollama and convert to fragments.
 
@@ -119,6 +121,7 @@ class Ollama(RemoteLLMBackend):
         )
         return fragments
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Generate text via Ollama's ``/api/generate``.
 
@@ -155,10 +158,12 @@ class Ollama(RemoteLLMBackend):
             logger.warning("Ollama generate failed: %s", exc)
             return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
         """Return whether Ollama is reachable."""
         return self.probe("api/tags")
 
+    @override
     def device_name(self) -> str:
         """Return the backend's device descriptor.
 

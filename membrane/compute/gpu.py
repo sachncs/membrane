@@ -24,6 +24,7 @@ Limitations:
 """
 
 import logging
+from typing import override
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ class GPU(Backend):
             logger.warning("GPU: torch not installed, using CPU fallback")
             self.fallback = CPU()
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Run prefill on GPU (or fallback to CPU).
 
@@ -106,6 +108,7 @@ class GPU(Backend):
         )
         return fragments
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Generate tokens on the GPU (or CPU fallback).
 
@@ -122,6 +125,7 @@ class GPU(Backend):
             return self.fallback.generate(prompt_tokens, model_id, max_tokens)
         return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
         """Return whether GPU prefill is usable.
 
@@ -131,6 +135,7 @@ class GPU(Backend):
         """
         return self.fallback is None
 
+    @override
     def device_name(self) -> str:
         """Return the active device name.
 

@@ -12,6 +12,7 @@ sidecar containers).
 
 import threading
 from collections.abc import Iterator
+from typing import override
 
 from membrane.content_store import ContentStore
 from membrane.security.encryption import (
@@ -68,6 +69,7 @@ class EncryptedInProcessBytes(ContentStore):
         self._used_bytes = 0
         self._lock = threading.RLock()
 
+    @override
     def put(self, key: str, data: bytes) -> None:
         """Encrypt and store ``data`` under ``key``.
 
@@ -90,6 +92,7 @@ class EncryptedInProcessBytes(ContentStore):
             # FilesystemBlob's surface (Phase 3.4.6 + 3.4.7).
             self._used_bytes += len(data)
 
+    @override
     def delete(self, key: str) -> bool:
         """Remove the entry at ``key``.
 
@@ -108,6 +111,7 @@ class EncryptedInProcessBytes(ContentStore):
             self._used_bytes = max(0, self._used_bytes - (len(existing) - 28))
             return True
 
+    @override
     def get(self, key: str) -> bytes | None:
         """Decrypt and return the bytes stored under ``key``.
 
@@ -142,6 +146,7 @@ class EncryptedInProcessBytes(ContentStore):
         except Exception:
             return None
 
+    @override
     def has(self, key: str) -> bool:
         """Return True when ``key`` is present on disk.
 
@@ -154,6 +159,7 @@ class EncryptedInProcessBytes(ContentStore):
         with self._lock:
             return key in self._store
 
+    @override
     def size(self) -> int:
         """Return the plaintext byte total.
 

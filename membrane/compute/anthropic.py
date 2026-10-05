@@ -25,6 +25,7 @@ Security:
 
 import json
 import logging
+from typing import override
 
 import httpx
 
@@ -70,9 +71,11 @@ class Anthropic(RemoteLLMBackend):
         """Return the configured API key (redacted when logged)."""
         return self._api_key
 
+    @override
     def __repr__(self) -> str:
         return f"Anthropic(base_url={self.base_url!r}, model={self.model!r}, api_key=***)"
 
+    @override
     def prefill(self, prompt_tokens: list[int], model_id: str) -> list[Fragment]:
         """Produce content-addressed fragments by hashing the prompt.
 
@@ -110,6 +113,7 @@ class Anthropic(RemoteLLMBackend):
         )
         return fragments
 
+    @override
     def generate(self, prompt_tokens: list[int], model_id: str, max_tokens: int = 128) -> dict:
         """Generate text via the Anthropic Messages API.
 
@@ -155,10 +159,12 @@ class Anthropic(RemoteLLMBackend):
             logger.warning("Anthropic generate failed: %s", exc)
             return {"text": "", "tokens": []}
 
+    @override
     def available(self) -> bool:
         """Return whether the API is reachable."""
         return self.probe("models", timeout=5.0)
 
+    @override
     def device_name(self) -> str:
         """Return the backend's device descriptor.
 

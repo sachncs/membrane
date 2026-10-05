@@ -13,7 +13,7 @@ HuggingFace, vLLM, or SGLang engine.
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, override, runtime_checkable
 
 from membrane.compat import ModelCompatibilityFingerprint
 
@@ -488,6 +488,7 @@ class MembraneAdapter(BaseAdapter, KVAdapter):
         """
         self.kv_backend = kv_backend
 
+    @override
     def extract(
         self,
         model: Any,
@@ -543,6 +544,7 @@ class MembraneAdapter(BaseAdapter, KVAdapter):
             fingerprint=fingerprint,
         )
 
+    @override
     def import_into(
         self,
         model: Any,
