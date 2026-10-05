@@ -1,22 +1,22 @@
 # Security & authentication model
 
-Membrane's authentication and authorisation model is split
-across four modules; this page is the single landing page
-that ties them together.
+This page describes how Membrane authenticates callers, authorizes
+them, isolates tenants, and protects data at rest.
 
 ## Module map
 
-| Concern | Module | Notes |
-|---------|--------|-------|
-| mTLS / TLS configuration | `membrane.transport.tls` | `MTLSConfig`, `TLSConfig`, peer-CN allow-list. |
-| Per-op authorisation (tenant scopes) | `membrane.transport.authz` | `AuthContext`, `require_scopes` decorators. |
-| Per-tenant fragment policy | `membrane.security.tenant` | `TenantAuthorizer`, `TenantPolicy`. |
-| Outbound URL allow-list (SSRF) | `membrane.security.url_allowlist` | `URLAllowlist`, `validate_outbound_url`. |
-| Secrets vault (AWS / GCP / Vault / in-process) | `membrane.secrets` | Backend-agnostic secret fetch. |
-| Encryption at rest | `membrane.security.encryption` | AES-256-GCM, `DecryptError`. |
-| Key rotation | `membrane.security.key_rotation` | Master-key envelope rotation. |
-| Append-only audit log | `membrane.audit` | Hash-chained `AuditRecord`. |
-| Authentication protocol | `membrane.auth` | `Authenticator` + `APIKeyAuthenticator`. |
+| Concern | Module | Key names |
+|---------|--------|-----------|
+| Authentication protocol | `membrane.auth` | `Authenticator`, `AuthContext`, `require_scope` |
+| API keys | `membrane.auth.apikey` | `APIKeyAuthenticator` |
+| mTLS | `membrane.auth.mtls`, `membrane.transport.tls`, `membrane.transport.tls_protocol` | `MTLSAuthenticator`, `MTLSConfig`, `PeerCertH11Protocol` |
+| Route scopes | `membrane.transport.authz` | `ROUTE_SCOPES`, `enforce_route_scope` |
+| Tenant isolation | `membrane.security.tenant` | `TenantAuthorizer` |
+| Outbound URL guard (SSRF) | `membrane.security.url_allowlist` | `URLAllowlist`, `validate_outbound_url` |
+| Encryption at rest | `membrane.security.encryption`, `membrane.content_store` | `encrypt_payload`, `FilesystemBlob`, `DecryptError` |
+| Key rotation | `membrane.security.key_rotation` | versioned master keys |
+| Secret backends | `membrane.secrets` | AWS, GCP, Vault |
+| Audit log | `membrane.audit` | `AuditLog`, `verify_chain` |
 
 ## Authentication
 
@@ -70,6 +70,21 @@ replication, and delete propagation, so they authenticate like any
 client: with the mTLS client certificate, or in API-key clusters with
 the key from `--peer-api-key-file`, which must carry `admin`.
 
+### Prefill and tenants
+
+`POST /prefill` stamps the caller's tenant (the key's subject or the
+certificate CN) on every fragment it creates, so one tenant's prefill
+is not readable by another.
+
+### Known limitation: identical content across tenants
+
+A node keys fragments by content hash alone. When two tenants store or
+prefill byte-identical content, the node keeps the first tenant's copy;
+the second tenant's write succeeds but its reads miss, exactly as if the
+fragment were absent. Nothing is exposed across tenants, but the second
+tenant gets no cache benefit for that content. Tenant-scoped fragment
+keys are planned.
+
 ## SSRF / outbound URL guard
 
 Every outbound HTTP request from the cluster layer is
@@ -99,37 +114,36 @@ as the deployment allows and never include `169.254.0.0/16`.
 
 ## Encryption at rest
 
-`membrane.security.encryption` provides AES-256-GCM
-authenticated encryption for the canonical payload bytes.
-The `Encryption` class is constructed from a master key
-(or a `SecretsBackend` that produces one); every payload
-is encrypted with a per-record IV and carries a 16-byte
-GCM tag.
+With `--data-dir`, KV bytes are stored by `FilesystemBlob`: each blob
+is encrypted with AES-256-GCM under a key derived from the node's
+master key and the blob's content hash, and written atomically
+(temp file, `fsync`, rename). The master key comes from
+`--data-key-file` or is generated once into `<data-dir>/master.key`
+with mode 0600. Keep the key outside the volume in production; a
+snapshot that contains both the blobs and the key protects nothing.
 
-The storage layer raises `DecryptError` (typed) when the
-GCM tag fails to verify; the storage layer's
-`EncryptedInProcessBytes.get` and `FilesystemBlob.get`
-propagate the error as a typed signal (added in 3.0.1)
-so corruption is not silently conflated with a miss.
+A blob that fails authentication (tampering, or the wrong key) is
+never returned: `/retrieve` reports it as `found: false`, and the
+in-memory encrypted store (`EncryptedInProcessBytes`) raises
+`DecryptError`, which `/retrieve` reports as `"corrupt": true`.
+
+Without `--data-dir`, KV bytes live only in process memory.
 
 ## Key rotation
 
-`membrane.security.key_rotation` provides envelope
-encryption with key versioning: every encrypted payload
-carries the key version that produced it, and the
-rotation path reads the new master key from the
-configured `SecretsBackend` without re-encrypting
-existing payloads in place. Old payloads decrypt with
-the prior key version until they age out.
+`membrane.security.key_rotation` supports versioned master keys: a key
+provider that exposes `version_keys()` lets `FilesystemBlob` decrypt
+blobs written under older keys while new writes use the current key.
+`membrane serve` currently takes a single key; rotation requires a
+custom key provider through the Python API.
 
 ## Audit log
 
-`membrane.audit` writes every privileged operation
-(`op_store`, `op_delete`, key-rotation events, admin
-endpoints) to an append-only, hash-chained `AuditRecord`.
-The chain is verifiable end-to-end: the operator can
-walk the chain from any point and confirm the digest
-matches the prior record's `prev_hash`.
+Every `/admin/*` operation (inspect, placement, evict, repair, policy
+changes) is appended to a hash-chained `AuditLog`, which admins can
+read with `GET /admin/audit`; `membrane.audit.verify_chain` detects
+tampering. The log is held in memory and resets when the node
+restarts; ship it to durable storage if you need a retained trail.
 
 ## See also
 

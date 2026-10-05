@@ -84,6 +84,51 @@ behaviour; see **Breaking** before upgrading.
   Releases now run the full CI suite and check the tag against the
   package version before publishing.
 
+### Added
+
+- `--data-dir` keeps KV bytes on disk (AES-256-GCM, `FilesystemBlob`)
+  and `--redis` now actually persists fragment metadata write-through;
+  together a node restores its fragments after a restart. `--redis`
+  with an unreachable Redis now fails startup instead of silently
+  running non-durable.
+- `membrane --version`, `membrane.__version__`, and `python -m membrane`.
+- `MembraneConnectionError` for unreachable servers.
+- Prometheus metrics carry their labels (`endpoint`, `status`, `reason`,
+  `tenant`); `/metrics` reports live node memory, fragment, eviction,
+  and peer gauges.
+- Documentation site: `docs/` is rendered at
+  <https://sachncs.github.io/membrane/docs/>.
+
+### Fixed (usability and reliability)
+
+- `membrane client …` and `membrane admin …` subcommands were
+  unreachable from the CLI.
+- Fragments created by `/prefill` could not be retrieved: simulated and
+  remote-API backends never wrote their KV bytes.
+- `/prefill` stored every fragment in the public tenant regardless of
+  the caller.
+- Redis records dropped `tenant_id`, `consistency`, `hlc`, and
+  `fingerprint_compat`.
+- Prometheus counters and gauges discarded all labels;
+  `membrane_tenant_fragments` grew on every scrape; node and eviction
+  metrics were never populated in a running server.
+- Demo scripts printed nothing or crashed; the RAG example never stored
+  anything. All scripts and examples now run in the test suite.
+- The chaos CI job selected no tests.
+
+### Changed
+
+- CI: uv-based installs with caching, per-job timeouts, concurrency
+  cancellation, a coverage floor, lint of `scripts/` and `examples/`,
+  site type-check and build, offline docs link check, and a single
+  `CI passed` status for branch protection.
+- Releases publish to GitHub Releases and GHCR (multi-arch, SBOM,
+  provenance) instead of PyPI.
+- The marketing site's performance figures now come from
+  `scripts/demo.py` instead of illustrative numbers; install
+  instructions use the source checkout.
+- `grpcio` moved from the `server` extra to `disagg`.
+
 ### Breaking
 
 - `membrane serve` binds `127.0.0.1` by default (was `0.0.0.0`), and

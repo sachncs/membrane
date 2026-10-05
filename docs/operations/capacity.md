@@ -1,67 +1,68 @@
 # Capacity Planning
 
-This document provides sizing guidance for Membrane deployments. Numbers
-are derived from the model's throughput equations (Eqs. 1–6 in the
-referenced paper) and validated against the local benchmark
-(`scripts/demo.py`).
+## What uses memory
 
-## Memory sizing
+A node's budget (`--max-memory`, default 1 GiB) covers the
+`payload_size` of the fragments it holds. When a store would exceed
+the budget, the node evicts expired fragments first, then the
+least valuable ones (weighted by last access and `reuse_score`), then
+cold graph neighbours. A full node is therefore normal; watch
+`membrane_evictions_total{reason="capacity"}` to see whether it is
+evicting fragments that are still wanted.
 
-Approximate fragment sizes per model layer (KV cache, fp16):
+Where the bytes live:
 
-| Model | Layers | KV per 1k tokens / layer |
-|---|---|---|
-| Llama-3-8B | 32 | 1.0 MiB |
-| Llama-3-70B | 80 | 2.5 MiB |
-| Mistral-7B | 32 | 1.0 MiB |
-| Mixtral-8x7B | 32 | 1.8 MiB |
+| Configuration | KV bytes | Fragment metadata |
+|---------------|----------|-------------------|
+| default | process memory | process memory |
+| `--data-dir` | encrypted files under `<data-dir>/blobs` | process memory |
+| `--data-dir` + `--redis` | encrypted files | process memory, written through to Redis |
 
-For a 128k-token context window on Llama-3-8B:
-128 × 32 × 1.0 MiB = 4 GiB per fragment.
+Budget process memory for the fragment payloads you keep in memory
+plus roughly 1 KiB of metadata and index entries per fragment. With
+`--data-dir`, size the volume for the payload bytes instead.
 
-Add 30 % headroom for overhead (indexes, Python objects, fragmentation).
-**Budget: 5 GiB per fragment** is a safe starting point.
+## KV cache size per token
 
-## CPU sizing
+For a decoder model in fp16 / bf16:
 
-One Membrane worker thread per ~500 active fragments. For a cluster
-serving 100k fragments, plan for 200 worker threads, which on x86 means
-about 8 cores.
+```text
+bytes per token = 2 (K and V) × layers × kv_heads × head_dim × 2 bytes
+```
 
-## Redis sizing
+| Model | Layers | KV heads × head dim | Per token | Per 1k tokens |
+|-------|--------|---------------------|-----------|---------------|
+| Llama-3-8B | 32 | 8 × 128 | 128 KiB | 128 MiB |
+| Llama-3-70B | 80 | 8 × 128 | 320 KiB | 320 MiB |
+| Mistral-7B | 32 | 8 × 128 | 128 KiB | 128 MiB |
+| Mixtral-8x7B | 32 | 8 × 128 | 128 KiB | 128 MiB |
 
-* Fragment payloads dominate Redis memory; size Redis at 2× the per-node
-  fragment budget to account for replicas.
-* Use `maxmemory-policy allkeys-lru` so Redis evicts when its own
-  memory cap is reached.
-* Enable AOF (`appendonly yes`) for durability; budget 10 % overhead for
-  the AOF file.
+So caching a 32k-token prefix of Llama-3-8B takes about 4 GiB, and a
+node with 64 GiB of fragment budget holds roughly 16 such prefixes, or
+proportionally more shorter ones. FP8 or the `transfer` extra's
+quantization halves or quarters these figures.
 
-## Network sizing
+## Redis
 
-* Inter-node gossip: ~50 entries × 200 bytes = 10 KiB per gossip
-  interval (5 s default). Negligible.
-* Cross-cluster prefill transfer: ~5–50 MiB per prefill, depending on
-  context length. Plan for 10 Gbps inter-node links.
+Redis holds only fragment metadata (well under 1 KiB per fragment),
+never KV bytes. Records expire with each fragment's TTL. A single small
+Redis instance serves many nodes; enable AOF (`appendonly yes`) so the
+metadata survives a Redis restart.
 
-## Replica count
+## Network
 
-* `replica_count` defaults to 2. Increase to 3 for higher read
-  availability; further increases are diminishing returns.
-* Place replicas on different hosts (anti-affinity in K8s).
+- Gossip: a few KiB per peer every `--gossip-interval` (5 s).
+  Negligible.
+- Strong writes send each fragment's metadata to `replica_count` peers.
+- Moving KV bytes between nodes or datacenters is the dominant cost.
+  `python scripts/demo.py` estimates it for the paper's workload
+  (about 4.8 Gbps average egress at the threshold the model picks).
 
-## Worked example
+## Replicas and quorum
 
-Target: 10k active fragments, 99.9 % availability, p99 retrieval < 50 ms.
-
-| Resource | Estimate |
-|---|---|
-| Memory per node | 50 GiB (10k × 5 GiB) |
-| Cluster size | 3 nodes × 2 replicas = 6 nodes |
-| Redis | 60 GiB RAM, 1 Gbps network |
-| Compute | 16 vCPU per node, GPU optional |
-
-## References
-
-* `scripts/demo.py` — local throughput demonstration
-* `membrane/model/throughput.py` — analytical model
+- `--replica-count` (default 2) peers receive each strong write.
+- `--quorum-count` (default 2) copies, the local one included, must
+  exist before a strong write succeeds, so strong writes keep working
+  while at least `quorum_count` nodes are up.
+- Spread replicas across hosts (the StatefulSet uses pod
+  anti-affinity) and, for regional failure tolerance, across zones.

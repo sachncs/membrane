@@ -2,9 +2,14 @@
 
 This page documents the procedure for cutting a new Membrane
 release. Releases are tied to the version in ``pyproject.toml``
-and to the ``vX.Y.Z`` git tag; the CI workflow
-(``.github/workflows/release.yml``) publishes the wheel,
-sdist, and ``ghcr.io/sachncs/membrane`` image on every tag.
+and to the ``vX.Y.Z`` git tag. On every tag,
+``.github/workflows/release.yml`` runs the full CI suite, then
+attaches the wheel and sdist to a GitHub Release and pushes the
+``ghcr.io/sachncs/membrane`` image (``linux/amd64`` and
+``linux/arm64``).
+
+Membrane is **not** published to PyPI: the ``membrane`` name there
+belongs to an unrelated project.
 
 ## Versioning
 
@@ -21,13 +26,10 @@ Membrane follows [Semantic Versioning](https://semver.org/):
 
 - [ ] All issues targeted for this release are closed or
       explicitly deferred.
-- [ ] The full test suite (`pytest tests/ -v`) is green on
-      every supported Python version.
-- [ ] The lint (`ruff check membrane/ tests/`) and type
-      check (`mypy membrane/`) are green.
-- [ ] The bench smoke (`pytest tests/bench/ -v`) is green.
-- [ ] The chaos suite (`pytest tests/membrane/chaos -m chaos`)
-      is green (or documented as self-hosted-runner only).
+- [ ] CI is green on ``master`` (the ``CI passed`` check covers
+      lint, types, tests on Python 3.10–3.13, Redis integration,
+      stress / chaos / bench smoke, security scans, the container
+      smoke test, the site build, and docs links).
 - [ ] `CHANGELOG.md` has a new section above the unreleased
       marker with the version, the date, and a "Breaking" /
       "Added" / "Fixed" / "Changed" block.
@@ -55,34 +57,37 @@ git push origin master
 git push origin vX.Y.Z
 ```
 
-The CI workflow ``.github/workflows/release.yml`` picks up
-the tag and:
+The release workflow then:
 
-1. Builds the sdist and wheel via ``python -m build``.
-2. Publishes them to PyPI under ``membrane``.
-3. Builds the Docker image and pushes it to
-   ``ghcr.io/sachncs/membrane:vX.Y.Z`` and
-   ``ghcr.io/sachncs/membrane:latest``.
+1. Runs the full CI workflow and checks that the tag matches the
+   ``pyproject.toml`` version and that ``CHANGELOG.md`` has a
+   matching section.
+2. Builds the sdist and wheel and attaches them, with the
+   CHANGELOG section as release notes, to a GitHub Release.
+3. Builds the multi-arch image (with SBOM and provenance) and pushes
+   ``ghcr.io/sachncs/membrane:X.Y.Z``, ``:X.Y``, and ``:latest``.
 
 ## Post-release
 
-- [ ] Verify the PyPI release is visible at
-      https://pypi.org/project/membrane/.
+- [ ] Verify the GitHub Release and its assets at
+      https://github.com/sachncs/membrane/releases.
 - [ ] Verify the GHCR image is visible at
       https://github.com/sachncs/membrane/pkgs/container/membrane.
 - [ ] Update the k8s StatefulSet image tag in
       ``deployment/k8s/statefulset.yaml`` to match the
       newly-published version.
-- [ ] Smoke-test ``pip install membrane`` in a fresh venv
-      and run ``python scripts/demo.py``.
+- [ ] Smoke-test the release in a fresh venv:
+      ``pip install "membrane[server] @ git+https://github.com/sachncs/membrane.git@vX.Y.Z"``,
+      then follow the [Quickstart](getting-started.md).
 
 ## Rollback
 
 If the release ships a regression:
 
-1. Yank the PyPI release (``twine yank membrane==X.Y.Z``).
-2. Delete the GHCR tag from
-   ``ghcr.io/sachncs/membrane:vX.Y.Z``.
+1. Mark the GitHub Release as a pre-release (or delete it) so it
+   is no longer the latest.
+2. Re-point ``ghcr.io/sachncs/membrane:latest`` at the previous
+   version, or delete the bad tag.
 3. Cut a patch release (``X.Y.(Z+1)``) with the fix.
 
 The wire format is forward-compatible within a major series

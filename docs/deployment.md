@@ -2,35 +2,28 @@
 
 ## Overview
 
-Membrane can be deployed as a **library**, **simulator**, or **containerized service**. This guide covers all deployment options.
+This guide covers running Membrane as a service: a single node, a
+container, Docker Compose, Kubernetes, and systemd. New to Membrane?
+Start with the [Quickstart](getting-started.md).
 
-## 1. Library Installation
+## 1. Install from source
 
 ```bash
-# Clone and install in editable mode
 git clone https://github.com/sachncs/membrane.git
 cd membrane
-pip install -e ".[dev]"
-
-# Verify
-python -c "import membrane; print(len(membrane.__all__), 'exports')"
+pip install -e ".[server]"
+membrane --version
 ```
 
-## 2. Run Simulations Locally
+Or without cloning:
+`pip install "membrane[server] @ git+https://github.com/sachncs/membrane.git@vX.Y.Z"`.
 
-```bash
-# Paper reproduction demo
-python scripts/demo.py
+## 2. Configuration
 
-# Full Membrane multi-phase demo
-python scripts/demo_full.py
-
-# Multi-node simulation
-python scripts/demo_membrane.py
-
-# Run all tests
-pytest tests/ -q
-```
+Every `membrane serve` flag has a `MEMBRANE_*` environment variable
+(`membrane serve --help` lists them; [`.env.example`](../.env.example)
+is a starting point). The container image, Compose file, Kubernetes
+manifests, and systemd unit are all configured this way.
 
 ## 3. Security model in one paragraph
 
@@ -50,7 +43,24 @@ tenant the key reads and writes:
 c42d...9a:membrane-peers:admin
 ```
 
-## 4. Docker
+## 4. Durability
+
+By default a node keeps everything in memory and restarts empty (its
+peers still hold replicas). To survive restarts, give each node both:
+
+| Flag | Env | Stores |
+|------|-----|--------|
+| `--redis redis://host:6379/0` | `MEMBRANE_REDIS_URL` | Fragment metadata, written through on every store and removal |
+| `--data-dir /var/lib/membrane` | `MEMBRANE_DATA_DIR` | KV bytes, AES-256-GCM encrypted, under `<data-dir>/blobs` |
+
+The data key is generated into `<data-dir>/master.key` (mode 0600) on
+first start; in production mount it from a secret manager with
+`--data-key-file` / `MEMBRANE_DATA_KEY_FILE` (32 raw bytes or 64 hex
+characters). A node refuses to start if `--redis` is set but Redis is
+unreachable, rather than silently running without durability. See
+[Backup & restore](operations/backup-restore.md).
+
+## 5. Docker
 
 ```bash
 docker build -t membrane:latest .
@@ -67,22 +77,23 @@ a read-only root filesystem (it needs a writable `/tmp` only when mTLS is
 on), and shuts down gracefully on `SIGTERM`. All settings are
 `MEMBRANE_*` environment variables (`membrane serve --help`).
 
-## 5. Docker Compose
+## 6. Docker Compose
 
 [`docker-compose.yml`](../docker-compose.yml) runs one node behind an
 nginx TLS edge with Redis persistence. Create the keyfile and an nginx
 certificate first (commands are in the file header), then:
 
 ```bash
-docker compose up --build -d
+docker compose up --build -d   # Membrane + Redis + nginx, durable by default
 curl -k -H "Authorization: Bearer <key>" https://localhost/inventory
 ```
 
-## 6. Kubernetes
+## 7. Kubernetes
 
 [`deployment/k8s/`](../deployment/k8s/) holds a 3-replica StatefulSet
 with a headless Service for peer discovery, a PodDisruptionBudget, a
-NetworkPolicy, and a ServiceMonitor.
+NetworkPolicy, and a ServiceMonitor. Each pod gets a 10 GiB
+PersistentVolumeClaim (`data-membrane-N`) for its data directory.
 
 1. Create the `membrane-secrets` Secret (`api-keys`, `peer-api-key`,
    `metrics-token`; see the template in `configmap.yaml`). The peer key
@@ -98,7 +109,7 @@ With the defaults (`MEMBRANE_QUORUM_COUNT=2`) a strong write is
 acknowledged once one peer holds a copy, and fails closed with `503`
 when no peer is healthy.
 
-## 7. Systemd Service (Linux)
+## 8. Systemd Service (Linux)
 
 ```bash
 sudo cp deployment/membrane.service /etc/systemd/system/
@@ -111,7 +122,7 @@ sudo systemctl enable --now membrane
 sudo journalctl -u membrane -f
 ```
 
-## 8. Multi-node checklist
+## 9. Multi-node checklist
 
 - Every node needs a unique `MEMBRANE_NODE_ID` and an
   `MEMBRANE_ADVERTISE_HOST` its peers can resolve.
@@ -124,8 +135,9 @@ sudo journalctl -u membrane -f
 - Set `MEMBRANE_PEER_NETWORKS` to the peer CIDR.
 - Size `MEMBRANE_QUORUM_COUNT` to at most the number of nodes.
 
-## 9. PyPI Package
+## 10. Releases
 
-Releases are published by `.github/workflows/release.yml` when a
-`vX.Y.Z` tag matching `pyproject.toml` is pushed, after the full CI
-suite passes.
+Membrane is installed from source; it is not on PyPI. Tagged releases
+(`.github/workflows/release.yml`) attach a wheel and sdist to the
+GitHub Release and push `ghcr.io/sachncs/membrane:X.Y.Z`. See
+[Release process](release.md).

@@ -13,17 +13,17 @@ internal.
 The following names are **stable** from v3.0.0 onward:
 
 * Memory objects: :class:`~membrane.fragment.Fragment`,
-  :class:`~membrane.fragment.Prefix`,
-  :class:`~membrane.fragment.Segment`,
-  :class:`~membrane.fragment.Artifact`,
-  :class:`~membrane.fragment.Trace`, and the discriminator
+  :class:`~membrane.prefix.Prefix`,
+  :class:`~membrane.segment.Segment`,
+  :class:`~membrane.artifact.Artifact`,
+  :class:`~membrane.trace.Trace`, and the discriminator
   :class:`~membrane.fragment_kind.FragmentKind`.
 * Stable fragment identity: :class:`~membrane.identity.PayloadIdentity`
   (the durable ten-field fingerprint; this supersedes the removed
   ``membrane.types.Signature`` alias, which was deleted in 0.2.0).
 * Serving plane: :class:`~membrane.node.Node`,
-  :class:`~membrane.node.Origin`,
-  :class:`~membrane.node.Replica`.
+  :class:`~membrane.origin.Origin`,
+  :class:`~membrane.replica.Replica`.
 * Placement: :class:`~membrane.ring.Ring`,
   :class:`~membrane.shard.Shard`.
 * Reconstruction: :class:`~membrane.reconstructor.Reconstructor`.
@@ -45,8 +45,16 @@ The following names are **stable** from v3.0.0 onward:
 * Composition: :class:`~membrane.server.Server`.
 * Auth: the :class:`~membrane.auth.Authenticator` protocol
   (concrete ``APIKeyAuthenticator`` lives at
-  ``membrane.auth.apikey``; ``TLSConfig`` at
-  ``membrane.transport.tls``).
+  ``membrane.auth.apikey``, ``MTLSAuthenticator`` at
+  ``membrane.auth.mtls``; ``MTLSConfig`` at ``membrane.transport.tls``).
+* HTTP API: the routes, request bodies, status codes, and route
+  scopes documented in [Security](security.md) and served by
+  ``membrane serve``.
+* Client: :class:`~membrane.client.MembraneClient`,
+  :class:`~membrane.client.AsyncMembraneClient`, and the
+  ``MembraneClientError`` hierarchy.
+* CLI: ``membrane`` subcommands, their flags, and the
+  ``MEMBRANE_*`` environment variables.
 * Errors: the :class:`~membrane.errors.Error` hierarchy
   (``NetworkError``, ``SchemaError``, ``MigrationError``, etc.).
 * Logging: :func:`~membrane.logging.configure_logging`.
@@ -74,8 +82,8 @@ The following names are **stable** from v3.0.0 onward:
 | ``membrane.compute.remote`` | **stable** (3.0+) | Shared HTTP-LLM base class. |
 | ``membrane.transport.fastapi`` | **stable** (3.0+) | |
 | ``membrane.transport.ops`` | **experimental** | Per-op surface is being stabilised; helpers may move. |
-| ``membrane.transport.grpc`` | **stable** (3.0+) | gRPC servicer + stubs. |
-| ``membrane.transport.tls`` | **stable** (3.0+) | mTLS / TLS rotation helpers. |
+| ``membrane.transport.tls`` | **stable** (3.0+) | mTLS configuration and SSL contexts. |
+| ``membrane.client`` | **stable** (3.0+) | Sync and async HTTP clients. |
 | ``membrane.persistence.redis`` | **stable** (3.0+) | |
 | ``membrane.persistence.memory`` | **stable** (3.0+) | |
 | ``membrane.persistence.cache`` | **stable** (3.0+) | |
@@ -87,9 +95,9 @@ The following names are **stable** from v3.0.0 onward:
 | ``membrane.audit`` | **stable** (3.0+) | Append-only audit log. |
 | ``membrane.transport.authz`` | **stable** (3.0+) | Per-route scope check. |
 | ``membrane.secrets`` | **stable** (3.0+) | Backend-agnostic secrets vault. |
-| ``membrane.wire.v3`` | **stable** (3.0+) | Generated gRPC stubs. |
+| ``membrane.wire.v3`` | **experimental** | Generated protobuf / gRPC stubs; not used by ``membrane serve``. |
 | ``membrane.otel_tracer`` | **experimental** | Subject to minor-version renames. |
-| ``membrane.disagg`` | **stable** (3.0+) | Prefill/decode disaggregation. |
+| ``membrane.disagg`` | **experimental** | Prefill/decode disaggregation (REST + gRPC, ``[disagg]`` extra). |
 | ``membrane.adapters`` | **stable** (3.0+) | Engine integration adapters. |
 | ``membrane.quantization`` | **stable** (2.0+) | K/V tensor quantization. |
 | ``membrane.metrics`` | **stable** (3.0+) | Prometheus collectors. |
@@ -114,7 +122,7 @@ by this promise and may move without notice.
 
 ## Wire format versioning
 
-The on-wire format (HTTP and gRPC) carries a ``schema_version``
+The on-wire JSON format carries a ``schema_version``
 field managed by
 :data:`membrane.serialization.SCHEMA_VERSION` (= 5). Bumping
 the version is a breaking change and requires a major version

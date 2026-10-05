@@ -1,128 +1,122 @@
 # Architecture
 
-## System Overview
+Membrane separates the KV cache from GPU memory. KV segments become
+immutable, content-addressed **fragments** held by a cluster of nodes;
+serving engines look fragments up instead of recomputing prefill, and
+only prefill the spans nobody holds.
 
-Membrane is a distributed memory fabric designed for LLM inference serving. It separates the KV cache from GPU memory and distributes it across a cluster of storage/compute nodes.
-
-```
-                    ┌─────────────────────────────┐
-                    │        Load Balancer         │
-                    │          (nginx)              │
-                    └──────────┬──────────────────┘
-                               │
-                    ┌──────────▼──────────────────┐
-                    │     Membrane Server          │
-                    │  ┌────────┐  ┌───────────┐  │
-                    │  │ HTTP   │  │ gRPC      │  │
-                    │  │ Server │  │ Server    │  │
-                    │  └────┬───┘  └─────┬─────┘  │
-                    │       │            │         │
-                    │  ┌────▼────────────▼─────┐  │
-                    │  │   Reconstruction       │  │
-                    │  │   Engine               │  │
-                    │  └────────────┬───────────┘  │
-                    │               │              │
-                    │  ┌────────────▼───────────┐  │
-                    │  │   Index System          │  │
-                    │  │ ┌──────┐ ┌───────────┐ │  │
-                    │  │ │Exact │ │ Semantic  │ │  │
-                    │  │ │Index │ │ Index     │ │  │
-                    │  │ ├──────┤ ├───────────┤ │  │
-                    │  │ │Posit.│ │ Co-Access │ │  │
-                    │  │ │Index │ │ Index     │ │  │
-                    │  │ └──────┘ └───────────┘ │  │
-                    │  └────────────┬───────────┘  │
-                    │               │              │
-                    │  ┌────────────▼───────────┐  │
-                    │  │   Fragment Store        │  │
-                    │  │ (Memory / Redis)        │  │
-                    │  └────────────────────────┘  │
-                    └─────────────────────────────┘
-                               │
-              ┌────────────────┼────────────────┐
-              │                │                │
-     ┌────────▼──────┐ ┌──────▼───────┐ ┌──────▼───────┐
-     │  Node A       │ │  Node B      │ │  Node C      │
-     │  (Origin)     │ │  (Replica)   │ │  (Replica)   │
-     └───────────────┘ └──────────────┘ └──────────────┘
+```text
+  clients / engine adapters (vLLM · SGLang · TensorRT-LLM)
+                     │  HTTP or HTTPS (mTLS), bearer keys
+                     ▼
+ ┌──────────────────────── membrane serve ────────────────────────┐
+ │  FastAPI routes ── authz (route scopes) ── ops (store/retrieve) │
+ │        │                                        │               │
+ │  compute backend (prefill)          Node: fragments + indices   │
+ │                                     content store (KV bytes)    │
+ │        │                                        │               │
+ │  Cluster: membership · heartbeat · gossip · ring/shard · quorum │
+ └──────────────────────────────┬──────────────────────────────────┘
+                                │ peer HTTP(S) with credentials
+                     other nodes (same process layout)
 ```
 
-## Module Breakdown
+## Request path
 
-### Model Layer (`membrane/model/`)
+1. **Authenticate.** Every route except `/livez` and `/readyz` runs
+   `enforce_route_scope` (`membrane/transport/authz.py`) against the
+   configured API-key or mTLS authenticator, then checks the route's
+   scope (`read`, `write`, `admin`).
+2. **Operate.** Route handlers in `membrane/transport/routes_fastapi.py`
+   delegate to transport-agnostic functions in
+   `membrane/transport/ops.py` and `ops_cluster.py`.
+3. **Store.** `op_store` checks that the fragment's payload bytes are in
+   the node's content store, applies the tenant check, writes locally,
+   and for `strong` / `quorum` writes fans out to replicas and waits
+   for acknowledgements (`membrane/quorum.py`). A failed quorum rolls
+   back the local write and returns `503`.
+4. **Retrieve.** `op_retrieve` returns the fragment's metadata only if
+   the caller's tenant may read it and its bytes are readable;
+   undecryptable bytes are reported as `corrupt`.
+5. **Prefill.** `op_prefill` runs the compute backend over the prompt
+   and stores the resulting fragments as primaries.
 
-Analytical throughput model from the "Prefill-as-a-Service" paper:
+## Components
 
-- **ThroughputModel** — Equations (1)–(6) for per-instance and system throughput
-- **Optimizer** — Grid search over routing threshold `t` and PD split ratio
-- **Scheduler** — Dual-timescale scheduling (short-term routing, long-term reallocation)
-- **Simulator** — End-to-end discrete-event simulation for baseline comparison
+### Memory objects
 
-### Core Data Model
+| Class | Module | Role |
+|-------|--------|------|
+| `PayloadIdentity` | `membrane/identity.py` | Ten-field content address: model, tokenizer, layer / head / token ranges, dtype, shape, payload hash |
+| `Fragment` | `membrane/fragment.py` | Immutable KV segment: identity, `payload_ref`, size, TTL, reuse score, tenant, consistency |
+| `Prefix`, `Segment`, `Artifact`, `Trace` | `membrane/*.py` | Higher-level memory objects built from fragments |
 
-- **Fragment** — Immutable, content-addressed KV segment
-- **KVSegment** — Low-level key-value tensor pair
-- **StructuralSignature** — Model/layer/token span metadata
-- **Prefix** — Prompt prefix with version tracking
+### Node and storage
 
-### Compute Backends (`membrane/compute/`)
+| Class | Module | Role |
+|-------|--------|------|
+| `Node` | `membrane/node.py` | Holds fragments in memory; TTL expiry, weighted-LRU and graph-aware eviction, tenant checks |
+| `Index` | `membrane/index.py` | Facade over exact, semantic, positional, and co-access indices |
+| `ContentStore` implementations | `membrane/content_store.py` | KV bytes: `InProcessBytes`, `FilesystemBlob` (AES-256-GCM), `LMCacheDiskStore`; `EncryptedInProcessBytes` in `content_store_encrypted.py` |
+| `Memory`, `Redis`, `CachingPersistence` | `membrane/persistence/` | Persistence backends for node state |
+| `Sweeper`, `TombstoneTable` | `membrane/gc.py` | Periodic TTL sweep and soft-delete propagation |
 
-| Backend | Use Case |
-|---------|----------|
-| `CPUBackend` | Default, no GPU required |
-| `GPUBackend` | PyTorch CUDA acceleration |
-| `TransformersBackend` | HuggingFace model inference |
-| `OpenAIBackend` | OpenAI API |
-| `AnthropicBackend` | Anthropic API |
-| `OllamaBackend` | Local Ollama server |
+### Compute backends (`membrane/compute/`)
 
-### Persistence (`membrane/persistence/`)
+All subclass `Backend` (`base.py`) and are selected with
+`membrane serve --compute`:
 
-| Backend | Use Case |
-|---------|----------|
-| `InMemoryBackend` | Development, testing |
-| `RedisBackend` | Production with LRU eviction |
+| Name | Class | Notes |
+|------|-------|-------|
+| `cpu` | `CPU` | Deterministic simulator; default |
+| `gpu` | `GPU` | PyTorch CUDA (`[gpu]` extra) |
+| `transformers` | `Transformers` | HuggingFace models (`[local-llm]` extra) |
+| `openai`, `anthropic`, `ollama` | `OpenAI`, `Anthropic`, `Ollama` | Remote APIs; KV bytes are simulated because the APIs do not expose them |
 
-### Transport (`membrane/transport/`)
+`KVBackend` (`kv.py`) extracts real KV tensors from a local model and
+writes them to a `ContentStore`.
 
-| Transport | Use Case |
-|-----------|----------|
-| `HTTPServer` | Standard REST API (stdlib or FastAPI) |
-| `GrpcServer` | High-performance gRPC |
+### Cluster (`membrane/network/`)
 
-### Network (`membrane/network/`)
+| Class | Role |
+|-------|------|
+| `Cluster` | Owns the subsystems below and the background threads |
+| `Membership` | Peer table; seed bootstrap with retry |
+| `Heartbeat`, `ThresholdDetector` | Liveness and failure detection |
+| `Gossip`, `GossipState` | Membership, fragment locations, Bloom / Merkle inventory digests, tombstones |
+| `Ring`, `Shard` | Consistent-hash placement of primaries and replicas |
+| `Peer`, `PeerCredentials` | Outbound HTTP(S) client; bearer key or mTLS client cert |
+| `Replicator` | Anti-entropy repair |
 
-- **ClusterManager** — Node discovery and health monitoring
-- **GossipState** — Gossip-based state replication
-- **PeerClient** — Inter-node communication
-- **RemoteTransferService** — Cross-node fragment transfer
+Outbound peer URLs pass the SSRF guard
+(`membrane/security/url_allowlist.py`): seed hosts and the configured
+`--peer-network` CIDRs are allowed; other private addresses are not.
 
-### Routing
+### Routing and the analytical model
 
-- **LatencyRouter** — Latency-aware request routing
-- **EconomicRouter** — Cost-aware routing
-- **HashRing** — Consistent hashing for shard assignment
+| Module | Contents |
+|--------|----------|
+| `membrane/model/throughput.py` | Eqs. (1)–(6) of the Prefill-as-a-Service paper |
+| `membrane/model/optimizer.py` | Grid search over routing threshold and PD split |
+| `membrane/model/scheduler.py` | `DualTimescaleScheduler`: short-term routing, long-term reallocation |
+| `membrane/model/simulator.py` | Case-study simulation (`python scripts/demo.py`) |
+| `membrane/latency.py`, `economic.py`, `joint.py` | Latency, cost, and joint placement routers |
 
-### Multi-Tenancy
+### Engine adapters (`membrane/adapters/`)
 
-- **CanonicalStore** — Deduplicated fragment storage
-- **TenantIsolation** — Per-tenant policy enforcement
-- **TenantPolicy** — Access and resource policies
+`MembraneVLLMAdapter`, `MembraneSGLangAdapter`, and
+`MembraneTrtAdapter` connect serving engines' KV pools to a Membrane
+cluster. Each ships an in-memory client for tests.
 
-## Data Flow
+## Design principles
 
-1. **Ingest**: A prompt is received by the server
-2. **Fragment**: The `FragmentationEngine` splits the prompt into fragments
-3. **Index**: Fragments are indexed in all four indices
-4. **Store**: Fragments are persisted (memory or Redis)
-5. **Reconstruct**: On future requests, `rebuild_context()` assembles context from fragments
-6. **Transfer**: Fragments can be synced across nodes via the transfer plane
-7. **Route**: The scheduler routes requests based on load and cost
-
-## Design Principles
-
-1. **Content-Addressed**: Fragments are identified by their content hash, enabling automatic deduplication.
-2. **Immutable**: Fragments are never modified after creation; updates create new versions.
-3. **Reconstruction-Driven**: Context is rebuilt from fragments, not stored monolithically.
-4. **Multi-Tenant**: First-class tenant isolation with configurable policies.
-5. **Pluggable**: Compute, storage, and transport backends are interchangeable.
+1. **Content-addressed.** Identical KV segments have identical
+   identities, so work is shared across requests, tenants, and regions.
+2. **Immutable.** Fragments are never modified; new versions get new
+   identities.
+3. **Reconstruction-driven.** Context is rebuilt from fragments, and
+   only uncovered spans are prefilled.
+4. **Secure by default.** Public binds require authentication; reads
+   are tenant-scoped; peers authenticate to each other.
+5. **Fail closed.** Strong writes that cannot reach quorum are rolled
+   back and reported, never silently downgraded.

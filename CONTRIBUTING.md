@@ -56,8 +56,11 @@ pip install -e ".[dev]"
 ### Optional extras
 
 ```bash
-# Server dependencies (FastAPI, gRPC, Redis)
+# Server dependencies (FastAPI, Redis client, cryptography)
 pip install -e ".[server]"
+
+# KV transfer engine and quantization (numpy, lz4, zstandard)
+pip install -e ".[transfer]"
 
 # GPU backend (PyTorch CUDA)
 pip install -e ".[gpu]"
@@ -124,11 +127,14 @@ chore: update pytest to 8.x
    git rebase upstream/master
    ```
 
-2. **Run the full test suite** before submitting:
+2. **Run the checks CI runs** before submitting:
    ```bash
-   pytest tests/ -v
-   python -m mypy membrane/
+   pytest tests/
+   ruff check membrane tests scripts examples
+   ruff format --check membrane tests scripts examples
+   mypy membrane
    ```
+   CI's `CI passed` check must be green before merge.
 
 3. **Push your branch** and open a Pull Request against `master`.
 
@@ -152,10 +158,10 @@ chore: update pytest to 8.x
 - Use type hints for all function signatures.
 - Write docstrings for public APIs using Google-style format.
 
-### Formatting
+### Formatting and linting
 
-- Use [Black](https://github.com/psf/black) for code formatting.
-- Use [isort](https://pycqa.github.io/isort/) with the `black` profile for import sorting.
+- Format with `ruff format` and lint with `ruff check` (configured in
+  `pyproject.toml`; import sorting is part of the lint).
 
 ### Type Checking
 
@@ -176,8 +182,12 @@ pytest tests/ -v
 # Run with coverage
 pytest tests/ --cov=membrane --cov-report=term-missing
 
-# Run specific test file
-pytest tests/test_fragment.py -v
+# Run one test file
+pytest tests/membrane/test_fragment.py -v
+
+# Redis integration tests (skip without a server on localhost:6379)
+docker run -d --rm -p 6379:6379 redis:7-alpine
+pytest tests/membrane/persistence
 
 # Run type checking
 python -m mypy membrane/
@@ -188,7 +198,9 @@ python -m mypy membrane/
 - Update documentation when changing public APIs.
 - Add docstrings to new public functions and classes.
 - Update `CHANGELOG.md` under the `[Unreleased]` section.
-- Keep `README.md` current with new features or setup changes.
+- Keep `README.md` and `docs/` current with new features or setup
+  changes. `docs/` is published to the website; `cd site && npm ci &&
+  npm run dev` previews it.
 
 ## Questions?
 

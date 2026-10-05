@@ -1,75 +1,78 @@
 # Consistency levels
 
-Membrane offers three write-consistency levels for
-``op_store`` (the canonical ``POST /fragment`` write path):
+Every fragment written with `POST /store` carries a consistency level
+(`Fragment.consistency`, part of the v5 wire envelope). A single node
+always writes locally; in a cluster the level decides whether the write
+also waits for replicas.
 
-| Level        | Default? | Acks required                      | Failure mode                                       |
-|--------------|----------|------------------------------------|----------------------------------------------------|
-| ``strong``   | yes      | all configured replicas            | 503 + ``Retry-After`` on timeout (fail closed)     |
-| ``quorum``   | no       | ``quorum_count`` replicas          | 503 + ``Retry-After`` if quorum not met            |
-| ``eventual`` | no       | local write, gossip propagates     | silent convergence; no typed failure               |
+| Level | Acknowledged when | On failure |
+|-------|-------------------|------------|
+| `strong` (default) | `quorum_count` copies exist, the local one included | `503` + `Retry-After: 1`; the local write is rolled back |
+| `quorum` | same as `strong` | same as `strong` |
+| `eventual` | the local write succeeds | none; replication and gossip converge in the background |
 
-The ``Fragment.consistency`` field carries the literal level
-in the v5 wire envelope; the cluster's
-``ClusterConfig.default_consistency`` (default ``"strong"``)
-is applied by ``op_store`` when the incoming fragment's
-field is missing.
+`strong` and `quorum` currently behave identically; `strong` is the
+name the wire format uses by default. A fragment sent as `strong` is
+written with the node's `--consistency` setting when that is `quorum` or
+`eventual`, so operators can relax a cluster without changing clients.
 
-## Defaults and timing
+## How a strong write works
 
-The relationship between the failure-detection timing and
-the quorum timeout is enforced by configuration:
+1. The node checks the caller's tenant and that the payload bytes are
+   in its content store, then writes locally.
+2. It sends the fragment to up to `replica_count` healthy peers
+   (`POST /replicate`) and waits for `quorum_count - 1` acknowledgements,
+   at most `cluster_quorum_timeout_sec`.
+3. Enough acks: `200`. Otherwise the local copy is removed (unless it
+   already existed before this write) and the caller gets `503` with
+   `ack_count` and `required` in the body.
 
-| Field                         | Default | Meaning                                                  |
-|-------------------------------|---------|----------------------------------------------------------|
-| ``heartbeat_interval_sec``    | 2.0     | Seconds between heartbeats.                              |
-| ``failure_remove_threshold``  | 4       | Missed heartbeats before a peer is removed.              |
-| ``failure_suspect_threshold`` | 2       | Missed heartbeats before a peer is marked suspect.       |
-| ``quorum_count``              | 2       | Required replica acks for ``strong`` / ``quorum``.       |
-| ``cluster_quorum_timeout_sec``| 5.0     | Wall-clock budget for the quorum fan-out wait.          |
+A node with fewer than `quorum_count - 1` healthy peers rejects strong
+writes immediately instead of acknowledging a copy it cannot replicate.
 
-The defaults satisfy ``failure_remove_threshold *
-heartbeat_interval_sec`` (= 8 s) **>** ``cluster_quorum_timeout_sec``
-(= 5 s); in practice a peer is held around long enough for
-the quorum write to either succeed or fail-closed with a
-typed error.
+## Configuration
 
-## Failure modes
+| `membrane serve` flag | `ClusterConfig` field | Default | Meaning |
+|-----------------------|-----------------------|---------|---------|
+| `--consistency` | `default_consistency` | `strong` | Level applied to writes sent as `strong` |
+| `--quorum-count` | `quorum_count` | `2` | Copies required, including the local one |
+| `--replica-count` | `replica_count` | `2` | Peers a write fans out to |
+| — | `cluster_quorum_timeout_sec` | `9.0` | Budget for collecting acks |
+| `--heartbeat-interval` | `heartbeat_interval_sec` | `2.0` | Seconds between heartbeats |
+| `--failure-remove-threshold` | `failure_remove_threshold` | `4` | Missed heartbeats before a peer is removed |
 
-* ``strong`` timeout: the writer returns ``503`` with a
-  ``Retry-After`` header; the local write is rolled back so
-  gossip does not propagate an un-acked fragment. This is
-  the cluster's fail-closed contract.
-* ``quorum`` timeout: same behaviour as ``strong`` except
-  the number of required acks is ``quorum_count`` instead of
-  the full replica set.
-* ``eventual``: the local write succeeds immediately. There
-  is no typed error; convergence happens on the next gossip
-  round (within ``gossip_interval_sec`` seconds).
+The quorum timeout (9 s) is deliberately longer than the time it takes
+to remove a dead peer (4 × 2 s = 8 s), so a write in flight either
+completes or fails with a clear error rather than racing membership
+changes.
 
-The cluster state machine consumes these outcomes and
-either accepts the fragment, retries on the next write, or
-suspects the offending peer (incrementing the
-``membrane_gossip_failures_total`` counter).
+Sizing rules:
 
-## Relationship to security surfaces
+- `quorum_count` must not exceed the number of nodes, or every strong
+  write fails. A two-node cluster can use the default of 2; it then
+  rejects strong writes while either node is down.
+- `quorum_count: 1` makes strong writes local-only.
+- Peers authenticate to each other for `/replicate`, so API-key
+  clusters need `--peer-api-key-file` with an `admin` key (see
+  [Security](security.md)).
 
-* ``MTLSConfig.allowed_cns`` controls which peer CNs may
-  participate in the quorum fan-out. A peer not in the
-  allow-list is rejected at the TLS handshake before the
-  consistency timer starts.
-* ``TenantAuthorizer`` gates the per-op authorisation on
-  every ``op_store`` regardless of the consistency level;
-  ``strong`` does not bypass tenant scoping.
-* The Prometheus counters
-  ``membrane_quorum_failures_total{level="strong|quorum"}``
-  and ``membrane_gossip_failures_total{reason="timeout|5xx|4xx"}``
-  are the only operational signals; they are not exposed as
-  typed errors to callers.
+## Observability
+
+The node exports Prometheus metrics on `/metrics` (requires the `read`
+scope). The ones relevant here:
+
+| Metric | Meaning |
+|--------|---------|
+| `membrane_requests_total` / `membrane_errors_total` | Per-route request and error counts (a failed strong write is an error on `store`) |
+| `membrane_replications_total` / `membrane_replication_failures_total` | Replica pushes and failures |
+| `membrane_replication_lag_seconds` | Replication lag per peer |
+| `membrane_peers_healthy` / `membrane_peers_total` | Cluster membership |
+| `membrane_gossip_failures_total` | Failed gossip rounds |
 
 ## See also
 
-* ``membrane/network/config.py`` — ``ClusterConfig`` defaults
-* ``membrane/transport/ops.py`` — ``op_store`` handler
-* ``docs/wire-format.md`` — on-wire envelope
-* ``docs/operations/slo.md`` — operational targets
+- `membrane/transport/ops.py`: `op_store`
+- `membrane/quorum.py`: the ack fan-out
+- `membrane/network/config.py`: `ClusterConfig`
+- [Wire format](wire-format.md)
+- [SLOs](operations/slo.md)

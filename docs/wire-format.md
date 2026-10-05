@@ -95,16 +95,14 @@ envelope and :func:`membrane.serialization.from_dict` does not
 constrain it (the typed enforcement lives on the cluster side
 in :class:`membrane.network.config.ClusterConfig`).
 
-### gRPC variant
+### Protobuf definitions
 
-The gRPC envelope is defined by ``membrane/wire/v3/wire_v3.proto``
-(``Envelope``, ``TensorPayload``, ``ChunkRequest``, ``Chunk``).
-The protobuf stub is generated into
-``membrane/wire/v3/wire_v3_pb2.py`` and the servicer is
-implemented at ``membrane.transport.grpc``. gRPC servers set
-``max_receive_message_length`` and ``max_send_message_length``
-to ``DEFAULT_MAX_BODY_BYTES`` (100 MiB) so inline payloads can
-carry large frames without truncation.
+``membrane/wire/v3/wire_v3.proto`` defines a protobuf form of the
+envelope (``Envelope``, ``TensorPayload``, ``ChunkRequest``,
+``Chunk``), generated into ``membrane/wire/v3/wire_v3_pb2.py``. It is
+experimental: ``membrane serve`` speaks only the JSON envelope over
+HTTP. The prefill/decode disaggregation surface
+(``membrane.disagg``) has its own gRPC service.
 
 ## 3. Canonical byte framing — ``canonicalize`` / ``parse_canonical``
 

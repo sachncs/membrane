@@ -4,90 +4,129 @@
 
 ### What is Membrane?
 
-Membrane is a **Global Contextual Memory Fabric** for LLM inference. It provides a distributed, content-addressed memory system that enables cross-datacenter LLM serving by separating the KV cache from GPU memory and distributing it across a cluster.
+A distributed, content-addressed KV-cache fabric for LLM serving. It
+separates the KV cache from GPU memory and shares it across a cluster,
+so prefill work done once can be reused by other requests, tenants,
+and regions.
 
 ### What is the relationship to the paper?
 
-This repository is a reproduction and extension of:
+Membrane implements the analytical model of:
 
-> **Prefill-as-a-Service: KVCache of Next-Generation Models Could Go Cross-Datacenter**  
-> Ruoyu Qin, Weiran He, Yaoyu Wang, Zheming Li, Xinran Xu, Yongwei Wu, Weimin Zheng, Mingxing Zhang  
+> **Prefill-as-a-Service: KVCache of Next-Generation Models Could Go Cross-Datacenter**
+> Ruoyu Qin, Weiran He, Yaoyu Wang, Zheming Li, Xinran Xu, Yongwei Wu, Weimin Zheng, Mingxing Zhang
 > arXiv:2604.15039v2
 
-The analytical throughput model (Equations 1–6) and case-study baselines are reproduced verbatim. The codebase extends the paper with fragment data models, multiple indices, reconstruction engine, and multi-node networking.
+Equations (1)–(6) and the Section 4 case study are reproduced
+(`python scripts/demo.py`). The runtime around them (fragments,
+indices, reconstruction, clustering, auth) is this project's own.
 
-### Is this production-ready?
+### How mature is it?
 
-Membrane is in **alpha** (version 0.1.x). The core data model and analytical model are stable. The server and networking components are functional but may change. See [Deployment Guide](deployment.md) for production considerations.
+Membrane is versioned 3.x and classified as **alpha**. The HTTP API,
+authentication, single-node serving, and local / Kubernetes clustering
+are tested end to end in CI; see the
+[CHANGELOG](../CHANGELOG.md) for what changed recently. Expect
+breaking changes between minor versions until 4.0, and read
+[API stability](api-stability.md) before depending on internals.
 
-## Setup & Installation
+### Can I `pip install membrane`?
 
-### What Python versions are supported?
+No. The `membrane` name on PyPI belongs to an unrelated project.
+Install from source as shown in the [Quickstart](getting-started.md),
+or install straight from Git:
 
-Python 3.10, 3.11, 3.12, and 3.13.
+```bash
+pip install "membrane[server] @ git+https://github.com/sachncs/membrane.git"
+```
+
+Tagged releases also attach a wheel to each
+[GitHub release](https://github.com/sachncs/membrane/releases) and
+publish a container image to `ghcr.io/sachncs/membrane`.
+
+## Setup
+
+### Which Python versions are supported?
+
+3.10, 3.11, 3.12, and 3.13 (all tested in CI).
 
 ### Do I need Redis?
 
-No. Redis is optional and only required for the production persistence backend. For development and testing, the in-memory backend is the default.
+No. Nodes keep state in memory by default. Pass `--redis
+redis://host:6379/0` (or set `MEMBRANE_REDIS_URL`) to persist node
+state in Redis.
 
 ### Do I need a GPU?
 
-No. Membrane includes a CPU compute backend by default. GPU support (via PyTorch CUDA) and remote LLM API support (OpenAI, Anthropic, Ollama) are optional extras.
+No. The default `cpu` compute backend simulates prefill, which is
+enough to run the API, clustering, and examples. Real KV extraction
+needs the `gpu` or `transformers` backend and their extras.
+
+### Why does `membrane serve --host 0.0.0.0` refuse to start?
+
+A node reachable from the network must authenticate callers. Configure
+`--api-key-file` or mTLS (see [Security](security.md)), or pass
+`--allow-unauthenticated` for a throwaway development setup.
+
+## Using it
+
+### Why does `/store` return 422?
+
+The fragment's `payload_ref` points at bytes that are not in the node's
+content store. KV bytes reach the store out of band (through an engine
+adapter, a shared store, or `/prefill`); `/store` publishes metadata
+for bytes that already exist. A fragment with `payload_ref: null` is
+metadata-only and is always accepted.
+
+### Why does a `strong` write return 503?
+
+It could not reach `--quorum-count` copies (local plus peers) before
+the timeout, so it was rolled back. Check `membrane cluster-status`,
+or lower `--quorum-count` / use `--consistency eventual`. See
+[Consistency levels](consistency.md).
+
+### Why can't my peers reach each other in Kubernetes?
+
+Peer calls to private addresses are blocked unless they are seeds or in
+`MEMBRANE_PEER_NETWORKS`. Set it to your pod CIDR. See
+[Deployment](deployment.md#7-kubernetes).
+
+### Why does `retrieve` say `found: false` for a fragment I stored as another key?
+
+Reads are tenant-scoped. A key whose subject is `acme` cannot read
+`globex` fragments, and the node answers exactly as if the fragment did
+not exist.
 
 ## Development
 
-### How do I run tests?
+### How do I run the tests?
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v
+pytest tests/
+ruff check membrane tests && ruff format --check membrane tests
+mypy membrane
 ```
 
-### How do I run type checking?
+### How do I add a compute backend?
 
-```bash
-python -m mypy membrane/
-```
-
-### How do I add a new compute backend?
-
-1. Create a new file in `membrane/compute/` (e.g., `my_backend.py`)
-2. Implement the `ComputeBackend` protocol from `membrane/compute/backend.py`
-3. Register it in the CLI's backend selection logic
-4. Add tests in `tests/membrane/compute/`
-
-## Deployment
-
-### How do I deploy with Docker?
-
-See the [Deployment Guide](deployment.md#3-docker-deployment).
-
-### How do I scale horizontally?
-
-Membrane supports multi-node operation. Use the `ClusterManager` and consistent hashing to distribute fragments across nodes. For Kubernetes, consider StatefulSets with persistent volumes.
-
-### How do I configure Redis?
-
-Set the `MEMBRANE_REDIS_URL` environment variable:
-
-```bash
-export MEMBRANE_REDIS_URL=redis://:password@redis-host:6379/0
-```
+1. Subclass `Backend` from `membrane/compute/base.py` and implement
+   `prefill`, `generate`, `available`, and `device_name`.
+2. If the backend cannot write real KV bytes, leave
+   `simulated_payload` as is; otherwise write the bytes to a
+   `ContentStore` and override it to return `None`.
+3. Register a factory in `COMPUTE_BACKENDS` in `membrane/server.py`.
+4. Add tests under `tests/membrane/compute/`.
 
 ## Troubleshooting
 
-### "ModuleNotFoundError: No module named 'membrane'"
+### `cannot reach Membrane at http://localhost:8080`
 
-Make sure you've installed the package in editable mode:
+No node is listening there. Start one with `membrane serve --daemon`,
+or point the client at the right URL (`--base-url`, or `MEMBRANE_URL`
+for the examples).
 
-```bash
-pip install -e ".[dev]"
-```
+### `401 unauthorized` / `403 forbidden`
 
-### Tests fail with import errors
-
-Ensure your Python version is 3.10+ and you've activated your virtual environment.
-
-### Docker build fails
-
-Check that Docker and Docker Compose are installed and running. Run `docker compose build --no-cache` to force a clean build.
+`401`: the key is missing or unknown. `403`: the key is valid but lacks
+the route's scope (for example a `read` key calling `/store`).

@@ -4,7 +4,8 @@
 
 | Version | Supported          |
 |---------|--------------------|
-| 0.1.x   | :white_check_mark: |
+| 3.x     | :white_check_mark: |
+| < 3.0   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -35,8 +36,9 @@ Instead, please report them via [GitHub Security Advisories](https://github.com/
 
 When deploying Membrane in production:
 
-- Use TLS/SSL for all network transports (HTTP and gRPC).
-- Enable authentication on the public API surface.
+- Enable authentication: `membrane serve` refuses public binds without an API keyfile or mTLS.
+- Use mTLS (or TLS at a reverse proxy) for all network traffic, including between peers.
+- Keep the `--data-dir` key in a secret manager (`--data-key-file`), not on the data volume.
 - Run the service as a non-root user (the Docker image already does this).
 - Use Redis authentication and TLS when connecting to external Redis instances.
 - Keep dependencies updated regularly.

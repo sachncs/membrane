@@ -1,98 +1,61 @@
 # Upgrade Procedure
 
-This document covers Membrane version upgrades with a focus
-on zero-downtime rollouts and clean rollback paths. The
-canonical manifest is a **StatefulSet** (see
-`deployment/k8s/statefulset.yaml`); rolling-upgrade and
-rollback commands therefore target `statefulset/membrane`,
-not `deployment/membrane`.
+Membrane follows [Semantic Versioning](https://semver.org/). Read the
+[CHANGELOG](../../CHANGELOG.md) before every upgrade: it lists breaking
+changes under a **Breaking** heading.
 
-## Versioning
+| Release | What changes | Procedure |
+|---------|--------------|-----------|
+| Patch | Bug fixes | Rolling upgrade |
+| Minor | Features; operator-visible changes are called out | Rolling upgrade after reading **Breaking** |
+| Major | Wire format (`SCHEMA_VERSION`) or API | Planned migration below |
 
-Membrane follows [Semantic Versioning](https://semver.org/):
+Nodes of adjacent minor versions interoperate during a rolling upgrade.
 
-* **Major** — breaking wire-format or API changes; requires
-  migration window.
-* **Minor** — backward-compatible feature additions; safe
-  rolling upgrade.
-* **Patch** — backward-compatible bug fixes; safe rolling
-  upgrade.
-
-The compatibility window is the current and previous minor
-(`N` and `N-1`).
-
-## Rolling upgrade (minor/patch)
-
-For a 3-replica StatefulSet (`metadata.name: membrane`):
+## Rolling upgrade (Kubernetes)
 
 ```bash
-# 1. Update the image tag. The StatefulSet preserves the
-#    PVCs bound to each pod so the encrypted blob store
-#    survives the rolling restart.
-kubectl set image statefulset/membrane \
-    membrane=membrane:vX.Y.Z \
-    -n membrane
-
-# 2. Watch the rollout. Each pod terminates only after the
-#    new pod is healthy and has joined the cluster.
+kubectl set image statefulset/membrane membrane=ghcr.io/sachncs/membrane:X.Y.Z -n membrane
 kubectl rollout status statefulset/membrane -n membrane
 ```
 
-Membrane's cluster layer uses an AP merge policy
-(`Fragment.merge` with `max(version_id)`), so concurrent
-writes from old + new nodes converge without loss. Gossip
-propagates the new view within one gossip interval.
+The StatefulSet replaces one pod at a time, highest ordinal first.
+Each pod shuts down gracefully on `SIGTERM`, keeps its data volume
+(`data-membrane-N`), restores its fragments from Redis on start, and
+rejoins its peers. The PodDisruptionBudget keeps two pods available.
+
+During the rollout one node is briefly missing. With the default
+`quorum_count: 2` and three nodes, strong writes keep succeeding.
+
+## Rolling upgrade (Docker Compose / systemd)
+
+```bash
+git fetch --tags && git checkout vX.Y.Z
+docker compose up -d --build membrane          # Compose
+pip install -e ".[server]" && sudo systemctl restart membrane   # systemd
+```
 
 ## Major upgrade
 
-Major upgrades include wire-format or schema-version changes
-(e.g. v2 -> v5). Steps:
-
-1. Read `CHANGELOG.md` for the breaking changes.
-2. Run `tools/upgrade_v2_to_v5.py` (and the JSON helper
-   `tools/upgrade_v2_to_v5_json.py`) against the cluster's
-   storage backend to convert any pre-v5 envelopes.
-3. Drain traffic from the cluster (`kubectl cordon` then
-   `kubectl drain`).
-4. Upgrade the Redis schema if applicable (see
-   `membrane.serialization.SCHEMA_VERSION`).
-5. Bring up the new pods (`kubectl apply -f
-   deployment/k8s/statefulset.yaml`).
-6. Verify fragment hashes against the schema version
-   (`from_dict` will raise `SchemaError` if mismatched).
-7. Uncordon.
+1. Take a backup ([Backup & restore](backup-restore.md)).
+2. Read the CHANGELOG's migration notes.
+3. Stop all nodes. Mixed majors do not interoperate.
+4. Convert stored envelopes if the notes say so (for v2 to v5:
+   `python tools/upgrade_v2_to_v5.py`).
+5. Deploy the new version and verify with `membrane client inventory`.
 
 ## Rollback
 
-For a failed rollout, Kubernetes keeps the previous
-StatefulSet revision:
-
 ```bash
 kubectl rollout undo statefulset/membrane -n membrane
-kubectl rollout status statefulset/membrane -n membrane
 ```
 
-For a major-version rollback, also restore Redis from the
-pre-upgrade snapshot (see `backup-restore.md`). The
-StatefulSet's stable pod identities (`membrane-0`,
-`membrane-1`, …) mean a rollback preserves the PVC bindings
-for the encrypted blob store; only the running image changes.
+Within a major version, data written by the newer version is readable
+by the older one. Across majors, restore the pre-upgrade backup.
 
-## Persistent volume caveat
+## Checklist
 
-A StatefulSet upgrade preserves the PVCs, so the
-encrypted-blob store at `/var/lib/membrane/blobs` (mounted
-from each pod's `membrane-data-membrane-N` PVC) survives the
-rolling restart. Operators rolling a **Deployment** instead
-of the StatefulSet must export the blob root separately or
-the new pods will come up empty.
-
-## Pre-upgrade checklist
-
-- [ ] Backup taken (see `backup-restore.md`)
-- [ ] CHANGELOG reviewed
-- [ ] Schema version verified
-- [ ] Compatibility window checked (current + previous minor
-      supported)
-- [ ] Smoke test plan documented
-- [ ] Rollback plan documented and reviewed
+- [ ] CHANGELOG **Breaking** section read
+- [ ] Backup taken (major upgrades)
+- [ ] `quorum_count` leaves headroom for one node being replaced
+- [ ] Rollback command ready
