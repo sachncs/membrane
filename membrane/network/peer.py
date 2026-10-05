@@ -27,13 +27,11 @@ from typing import Any, Protocol, runtime_checkable
 
 from membrane.errors import NetworkError
 from membrane.fragment import Fragment
-from membrane.serialization import from_dict, to_dict
+from membrane.serialization import JsonDict, from_dict, to_dict
 
 logger = logging.getLogger(__name__)
 
 
-#: A JSON object (used for every Membrane wire payload).
-JsonDict = dict[str, Any]
 
 
 @dataclass(frozen=True)

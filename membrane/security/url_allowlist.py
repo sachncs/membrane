@@ -46,6 +46,9 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 
+type IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
 class SSRFError(ValueError):
     """Raised when an outbound URL fails the allow-list check."""
 
@@ -53,7 +56,7 @@ class SSRFError(ValueError):
 _ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
 
-def _is_blocked_ip(ip: ipaddress._BaseAddress) -> bool:
+def _is_blocked_ip(ip: IPAddress) -> bool:
     """Return True if ``ip`` falls in a blocked private range.
 
     Args:
@@ -99,7 +102,7 @@ class URLAllowlist:
     resolve_timeout: float = 2.0
     allowed_networks: frozenset[ipaddress.IPv4Network | ipaddress.IPv6Network] = field(default_factory=frozenset)
 
-    def is_ip_allowed(self, ip: ipaddress._BaseAddress) -> bool:
+    def is_ip_allowed(self, ip: IPAddress) -> bool:
         """Return True if ``ip`` is inside one of :attr:`allowed_networks`."""
         return any(ip.version == net.version and ip in net for net in self.allowed_networks)
 
@@ -153,7 +156,7 @@ def reset_default_allowlist() -> None:
     _DEFAULT_ALLOWLIST = URLAllowlist()
 
 
-def _resolve_addresses(hostname: str) -> list[ipaddress._BaseAddress]:
+def _resolve_addresses(hostname: str) -> list[IPAddress]:
     """Resolve ``hostname`` and return every IP it points at.
 
     Args:

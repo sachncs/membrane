@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 # installed fall back to RuntimeError at construction time when
 # the CLI tries to instantiate them — same behavior as the
 # previous inline string-dispatch code.
-ComputeBackendFactory = Callable[[str, str, str], Backend]
+type ComputeBackendFactory = Callable[[str, str, str], Backend]
 
 COMPUTE_BACKENDS: dict[str, ComputeBackendFactory] = {}
 

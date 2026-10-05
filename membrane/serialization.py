@@ -31,13 +31,13 @@ SCHEMA_VERSION: int = 5
 #: ``dict[str, int]`` is not assignable to a
 #: ``dict[str, JsonValue]`` even though every int is JSON).
 #: Callers should re-validate the values they consume.
-JsonValue = Any
+type JsonValue = Any
 
 #: A JSON object (used for every Membrane wire payload).
 #: Same rationale as :data:`JsonValue`; the runtime shape is
 #: ``dict[str, object]`` but the alias is named for
 #: documentation purposes only.
-JsonDict = dict[str, JsonValue]
+type JsonDict = dict[str, JsonValue]
 
 
 def to_dict(fragment: Fragment) -> dict[str, Any]:

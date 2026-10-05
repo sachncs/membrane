@@ -232,7 +232,7 @@ class _EvictCallback(Protocol):
 
 
 #: Callback signature for opportunistic hooks that observe sweep results.
-SweepHook = Callable[[list[str]], None]
+type SweepHook = Callable[[list[str]], None]
 
 
 @dataclass

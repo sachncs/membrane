@@ -13,7 +13,7 @@ import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-LabelKey = tuple[str, ...]
+type LabelKey = tuple[str, ...]
 INF_LABEL = 'le="+Inf"'
 
 
