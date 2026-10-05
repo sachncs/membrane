@@ -1,4 +1,4 @@
-"""TensorRT-LLM KV transfer adapter (Phase 6).
+"""TensorRT-LLM KV transfer adapter.
 
 Wires :class:`~membrane.adapters.KVAdapter` onto
 TensorRT-LLM's :class:`KVCacheManager` and
@@ -132,7 +132,7 @@ class InMemoryTrtClient(TrtClusterClient):
 
 
 class MembraneTrtAdapter(BaseAdapter):
-    """TensorRT-LLM-flavored :class:`KVAdapter` (Phase 6).
+    """TensorRT-LLM-flavored :class:`KVAdapter`.
 
     TRT-LLM's :class:`KVCacheManager` addresses K/V by block
     id; the adapter translates between a contiguous

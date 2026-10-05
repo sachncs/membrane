@@ -1,6 +1,6 @@
-"""Prefix cache + KV handle (Phase 7).
+"""Prefix cache + KV handle.
 
-The vLLM connector (Phase 5) answers
+The vLLM connector answers
 :func:`get_num_new_matched_tokens` by asking the cluster how
 many tokens of an incoming request are already cached. The
 v1 of this module is the in-process component that backs
@@ -9,7 +9,7 @@ that answer: a content-addressed LRU keyed on a SHA-256
 
 The cache is the single-process / single-node primitive. A
 distributed deployment composes this cache with a
-:class:`MembraneClusterClient` (Phase 5) so the
+:class:`MembraneClusterClient` so the
 :class:`MembraneVLLMConnector` can ask the local cache first
 and fall back to the cluster. The :func:`lookup` method
 finds the longest matching prefix in O(N) over the entries

@@ -1,4 +1,4 @@
-"""Chunk manifest with per-chunk SHA-256 (Phase 3.3.3).
+"""Chunk manifest with per-chunk SHA-256.
 
 The v3.0.0 wire protocol chunks a payload into fixed-size
 bodies and ships a manifest carrying the SHA-256 of every

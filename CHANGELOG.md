@@ -12,6 +12,30 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Changed (structure)
+
+- One configuration source: `ServerSettings.cluster_config()` derives the
+  `ClusterConfig`; `ClusterConfig` validates every field when it is
+  constructed (all problems in one `ValueError`), and the duplicate
+  pydantic model behind `validate_config` is gone.
+- `membrane.transport.context.AppContext`: typed access to everything the
+  FastAPI app carries, replacing scattered `getattr(app.state, ...)`.
+- Routes live in `membrane.transport.routes` (`probes`, `data`, `cluster`,
+  `deletes`, `models`, `common`); `routes_fastapi` re-exports them.
+- `Node` is a facade over `membrane.store`: `FragmentTable` (resident
+  fragments and bookkeeping), an `EvictionPolicy` (`WeightedLRU`,
+  `FrequencyLRU`), and `TenantGuard`.
+- Docstrings describe behaviour instead of roadmap phases;
+  `tools/check_naming.py` also checks names bound inside `try`/`if`/
+  `with`/loop/`match` blocks.
+
+### Fixed (structure)
+
+- A `TinyLFU` passed as `Node(eviction_strategy=...)` was ignored by
+  eviction; it now orders victims by frequency (`FrequencyLRU`).
+- `POST /sync` without a transfer service failed instead of using a
+  default one, as documented.
+
 ### Fixed (replication)
 
 - **Replication copied metadata only, never the KV bytes**, so replicas

@@ -1,4 +1,4 @@
-"""KV adapter API (Phase 2).
+"""KV adapter API.
 
 Every engine integration in :mod:`membrane.engines` (Hugging
 Face, vLLM, SGLang, TensorRT-LLM) speaks a uniform
@@ -462,7 +462,7 @@ def placeholder_fingerprint() -> ModelCompatibilityFingerprint:
 
 
 class MembraneAdapter(BaseAdapter, KVAdapter):
-    """Hugging Face causal LM adapter (Phase 2.4).
+    """Hugging Face causal LM adapter.
 
     Concrete :class:`KVAdapter` that reads K/V tensors from a
     HuggingFace ``AutoModelForCausalLM`` instance via the
@@ -532,9 +532,8 @@ class MembraneAdapter(BaseAdapter, KVAdapter):
             dtype=self.kv_backend.dtype,
             config_hash=compute_config_hash(identity),
         )
-        # The v1 of the adapter returns an empty bundle when the
-        # backend hasn't yet produced a window; Phase 5+ fills
-        # this in once the engine integration is wired.
+        # Without an engine integration there is no captured window,
+        # so the bundle is empty.
         return KVTensor(
             layers=(),
             layer_range=layer_range,
@@ -558,11 +557,10 @@ class MembraneAdapter(BaseAdapter, KVAdapter):
             tensor: Bundle produced by :func:`extract`.
             layer_range: Inclusive ``(start, end)``.
         """
-        # Phase 2 keeps the import_into path as a thin
-        # placeholder; Phase 5+ wires the vLLM-aligned
-        # ``KVCacheManager`` importer.
+        # Not implemented: importing into a HuggingFace model needs
+        # an engine-specific KV cache manager.
         logger.debug(
-            "MembraneAdapter.import_into: deferred to Phase 5+ for %d layers",
+            "MembraneAdapter.import_into is not implemented; ignoring %d layers",
             len(tensor.layers),
         )
         return None

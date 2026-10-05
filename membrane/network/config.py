@@ -1,28 +1,56 @@
 """Cluster configuration for Membrane peer-to-peer networking.
 
-This module defines :class:`ClusterConfig`, the single source of
-truth for the runtime parameters that govern a Membrane node's
-participation in a cluster: bind addresses, peer seeds, heartbeat
-and gossip intervals, failure thresholds, retry policy, and
-replication knobs.
+:class:`ClusterConfig` holds the runtime parameters that govern a node's
+participation in a cluster: bind addresses, peer seeds, heartbeat and
+gossip intervals, failure thresholds, retry policy, and replication
+knobs. ``membrane serve`` derives it from
+:class:`~membrane.runtime.settings.ServerSettings`
+(:meth:`ServerSettings.cluster_config`); library users construct it
+directly.
 
-Callers typically construct a :class:`ClusterConfig` once at
-process start (often loading values from environment variables)
-and pass it to the :class:`~membrane.network.cluster.Cluster` constructor.
-
-The v3.0.0 release introduces :func:`validate_config` which
-uses :mod:`pydantic` to surface useful diagnostics on
-configuration errors (Phase 3.6.5). The
-:class:`~membrane.network.cluster.Cluster` constructor calls
-the validator before touching state so a misconfigured node
-fails at start-up rather than mid-gossip.
+Every construction is validated: :meth:`ClusterConfig.__post_init__`
+checks each field against :data:`CONSTRAINTS` and raises one
+``ValueError`` listing every problem, so a misconfigured node fails at
+start-up rather than mid-gossip.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from membrane.transport.tls import MTLSConfig
+
+
+CONSISTENCY_LEVELS = frozenset({"strong", "quorum", "eventual"})
+
+#: Field -> (check, description). A field fails when ``check(value)`` is False.
+CONSTRAINTS: dict[str, tuple[Callable[[Any], bool], str]] = {
+    "node_id": (lambda v: 1 <= len(v) <= 128, "must be 1-128 characters"),
+    "host": (lambda v: 1 <= len(v) <= 255, "must be 1-255 characters"),
+    "port": (lambda v: 0 <= v <= 65535, "must be 0-65535 (0 picks a free port)"),
+    "peers": (lambda v: len(v) <= 4096, "at most 4096 seeds"),
+    "heartbeat_interval_sec": (lambda v: v > 0, "must be > 0"),
+    "heartbeat_timeout_sec": (lambda v: v > 0, "must be > 0"),
+    "gossip_interval_sec": (lambda v: v > 0, "must be > 0"),
+    "failure_suspect_threshold": (lambda v: v >= 1, "must be >= 1"),
+    "failure_remove_threshold": (lambda v: v >= 1, "must be >= 1"),
+    "max_retries": (lambda v: v >= 0, "must be >= 0"),
+    "retry_delay_sec": (lambda v: v >= 0, "must be >= 0"),
+    "replica_count": (lambda v: v >= 0, "must be >= 0"),
+    "gossip_fanout": (lambda v: v >= 1, "must be >= 1"),
+    "gossip_max_fragment_entries": (lambda v: v >= 1, "must be >= 1"),
+    "advertise_host": (lambda v: len(v) <= 255, "at most 255 characters"),
+    "default_consistency": (lambda v: v in CONSISTENCY_LEVELS, "must be strong, quorum, or eventual"),
+    "quorum_count": (lambda v: v >= 1, "must be >= 1"),
+    "cluster_quorum_timeout_sec": (lambda v: v > 0, "must be > 0"),
+    "repair_interval_sec": (lambda v: v > 0, "must be > 0"),
+    "inventory_summary_interval_sec": (lambda v: v > 0, "must be > 0"),
+    "lease_timeout_sec": (lambda v: v > 0, "must be > 0"),
+    "gossip_payload_expected_items": (lambda v: v >= 1, "must be >= 1"),
+    "gossip_payload_fpr": (lambda v: 0 < v < 1, "must be between 0 and 1"),
+    "cross_region_penalty": (lambda v: v >= 1, "must be >= 1"),
+}
 
 
 @dataclass
@@ -158,69 +186,41 @@ class ClusterConfig:
     gossip_payload_fpr: float = 0.001
     cross_region_penalty: float = 1.5
 
+    def __post_init__(self) -> None:
+        """Validate every field against :data:`CONSTRAINTS`.
 
-def validate_config(
-    config: ClusterConfig | dict,
-) -> ClusterConfig:
-    """Validate ``config`` and return a normalized :class:`ClusterConfig`.
+        Raises:
+            ValueError: Listing every field that fails its constraint.
+        """
+        problems = [
+            f"  - {name}: {description} (got {getattr(self, name)!r})"
+            for name, (check, description) in CONSTRAINTS.items()
+            if not check(getattr(self, name))
+        ]
+        if problems:
+            raise ValueError("ClusterConfig validation failed:\n" + "\n".join(problems))
+
+
+def validate_config(config: ClusterConfig | dict) -> ClusterConfig:
+    """Return ``config`` as a validated :class:`ClusterConfig`.
 
     Args:
-        config: Either an existing :class:`ClusterConfig` (passed
-            through unchanged) or a dict carrying the same
-            fields. ``pydantic`` enforces the type / range
-            constraints and surfaces a useful diagnostic when
-            a value is invalid.
+        config: An existing :class:`ClusterConfig` (already validated at
+            construction) or a dict of its fields.
 
     Returns:
-        ClusterConfig: The validated, normalized config.
+        ClusterConfig: The validated config.
 
     Raises:
-        ValueError: When validation fails. The message lists
-            every offending field so operators can fix multiple
-            misconfigurations at once.
+        ValueError: When a field is unknown or out of range; the message
+            lists every offending field.
     """
     if isinstance(config, ClusterConfig):
         return config
-    from pydantic import BaseModel, Field, ValidationError
-
-    class _ConfigModel(BaseModel):
-        node_id: str = Field(min_length=1, max_length=128)
-        host: str = Field(default="0.0.0.0", min_length=1, max_length=255)
-        port: int = Field(default=8080, ge=1, le=65535)
-        peers: list[str] = Field(default_factory=list, max_length=4096)
-        heartbeat_interval_sec: float = Field(default=2.0, gt=0.0)
-        heartbeat_timeout_sec: float = Field(default=10.0, gt=0.0)
-        gossip_interval_sec: float = Field(default=5.0, gt=0.0)
-        failure_suspect_threshold: int = Field(default=2, ge=1)
-        failure_remove_threshold: int = Field(default=4, ge=1)
-        max_retries: int = Field(default=3, ge=0)
-        retry_delay_sec: float = Field(default=1.0, ge=0.0)
-        replica_count: int = Field(default=2, ge=0)
-        enable_gossip: bool = True
-        enable_replication: bool = True
-        gossip_fanout: int = Field(default=2, ge=1)
-        gossip_max_fragment_entries: int = Field(default=50, ge=1)
-        local_peer_cn: str = ""
-        advertise_host: str = Field(default="", max_length=255)
-        default_consistency: str = Field(default="strong")
-        quorum_count: int = Field(default=2, ge=1)
-        cluster_quorum_timeout_sec: float = Field(default=9.0, gt=0.0)
-        repair_interval_sec: float = Field(default=60.0, gt=0.0)
-        inventory_summary_interval_sec: float = Field(default=30.0, gt=0.0)
-        lease_timeout_sec: float = Field(default=30.0, gt=0.0)
-        gossip_payload_expected_items: int = Field(default=10_000, ge=1)
-        gossip_payload_fpr: float = Field(default=0.001, gt=0.0, lt=1.0)
-        cross_region_penalty: float = Field(default=1.5, ge=1.0)
-
-    try:
-        model = _ConfigModel(**(config or {}))
-    except ValidationError as exc:
-        msg_lines = ["ClusterConfig validation failed:"]
-        for err in exc.errors():
-            field = ".".join(str(p) for p in err.get("loc", []))
-            msg_lines.append(f"  - {field}: {err.get('msg')}")
-        raise ValueError("\n".join(msg_lines)) from exc
-    return ClusterConfig(**model.model_dump())
+    unknown = sorted(set(config or {}) - set(ClusterConfig.__dataclass_fields__))
+    if unknown:
+        raise ValueError(f"ClusterConfig validation failed:\n  - unknown fields: {', '.join(unknown)}")
+    return ClusterConfig(**(config or {}))
 
 
-__all__ = ["ClusterConfig", "validate_config"]
+__all__ = ["CONSISTENCY_LEVELS", "CONSTRAINTS", "ClusterConfig", "validate_config"]

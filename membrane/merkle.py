@@ -1,6 +1,6 @@
 """Merkle tree over (hash, owner_node_id) inventory entries.
 
-Phase 5 exchanges a Merkle root alongside the Bloom filter so
+Gossip exchanges a Merkle root alongside the Bloom filter so
 receivers can locate divergent subtrees in O(log n) without
 shipping the full inventory. A peer that observes a different
 root asks the sender for a path-walk; the sender returns the
@@ -128,7 +128,7 @@ class MerkleTree:
         # Items added on the other side: these are not in our
         # items list so we cannot return an index; the receiver
         # has to ask the sender to walk its own leaf list. The
-        # gossip layer (Phase 5.3) handles that.
+        # gossip layer handles that.
         return out
 
 

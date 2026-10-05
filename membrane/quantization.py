@@ -1,5 +1,5 @@
 # mypy: ignore-errors
-"""K/V tensor quantization (Phase 3).
+"""K/V tensor quantization.
 
 The v2.0+ transfer path supports three quantization formats
 behind a uniform :class:`Quantizer` protocol:

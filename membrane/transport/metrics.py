@@ -1,4 +1,4 @@
-"""Transport metrics instrumentation (Phase 3.2.1).
+"""Transport metrics instrumentation.
 
 The v2.0 release constructed :class:`TransportMetrics`,
 :class:`ClusterMetrics`, :class:`PersistenceMetrics`, and

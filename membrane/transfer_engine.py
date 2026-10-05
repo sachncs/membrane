@@ -1,7 +1,6 @@
-"""GPU-aware memory management for KV transfers (Phase 4).
+"""GPU-aware memory management for KV transfers.
 
-This module is the Phase 4 contract that ties the v2.0+ transfer
-path together:
+This module ties the transfer path together:
 
 * :class:`MemoryPool` -- the abstract byte source / sink
   interface. The v1 of this arc ships two concrete pools:
@@ -14,10 +13,9 @@ path together:
   negotiate the slow path can pick compression; GPUDirect
   paths skip it.
 * :class:`KVTransferEngine` -- a thin orchestrator that wires
-  a :class:`KVAdapter` (Phase 2) + a quantizer (Phase 3) + a
-  memory pool (this phase) into a single ``transfer_kv``
-  call. Phase 5+ adapters can compose these into their engine
-  integrations.
+  a :class:`KVAdapter` + a quantizer + a
+  memory pool into a single ``transfer_kv`` call that engine
+  adapters can compose into their integrations.
 """
 
 import logging

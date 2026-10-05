@@ -226,7 +226,7 @@ class FilesystemBlob:
     ``fsync``-ed so the rename is durable across a crash.
 
     Every put is encrypted with AES-256-GCM under a per-
-    (tenant, content_hash) derived key (Phase 3.4.7). Plain
+    (tenant, content_hash) derived key. Plain
     writes are not exposed; the v3.0.0 release drops the
     plaintext ``FilesystemBlob`` constructor in favor of
     ``FilesystemBlob(root, tenant_id, key_provider)``.
@@ -250,7 +250,7 @@ class FilesystemBlob:
                 written. Created when missing.
             tenant_id: Tenant namespace the store keeps files
                 on behalf of. Different tenants get different
-                derived keys (Phase 3.4.7).
+                derived keys.
             key_provider: Optional :class:`KeyProvider`. When
                 ``None``, a :class:`StaticKeyProvider` is
                 constructed and a fresh random master key is

@@ -1,4 +1,4 @@
-"""VaultSecretProvider (Phase 3.4.5b).
+"""VaultSecretProvider.
 
 Pulls secrets from HashiCorp Vault via the :mod:`hvac`
 client. The provider is installed via ``pip install

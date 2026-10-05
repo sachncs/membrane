@@ -1,4 +1,4 @@
-"""SGLang KV transfer adapter (Phase 6).
+"""SGLang KV transfer adapter.
 
 Wires :class:`~membrane.adapters.KVAdapter` onto SGLang's
 :mod:`sglang.srt.mem_cache.radix_cache` plus the
@@ -136,7 +136,7 @@ class InMemorySGLangClient(SGLangClusterClient):
 
 
 class MembraneSGLangAdapter(BaseAdapter):
-    """SGLang-flavored :class:`KVAdapter` (Phase 6).
+    """SGLang-flavored :class:`KVAdapter`.
 
     SGLang's radix-cache stores K/V rows in a
     :class:`TokenToKVPool` indexed by token position. The

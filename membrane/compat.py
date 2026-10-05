@@ -1,4 +1,4 @@
-"""Compatibility fingerprint for fragment reuse (Phase 1.1).
+"""Compatibility fingerprint for fragment reuse.
 
 At 2.0+ every fragment carries a :class:`ModelCompatibilityFingerprint`
 that uniquely identifies the model and tokenizer that produced

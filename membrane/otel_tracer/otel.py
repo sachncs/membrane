@@ -1,4 +1,4 @@
-"""OpenTelemetry tracer + OTLP exporter (Phase 3.2.4).
+"""OpenTelemetry tracer + OTLP exporter.
 
 The v3.0.0 release adopts OpenTelemetry as the canonical
 distributed tracing layer. The :func:`configure` helper reads

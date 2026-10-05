@@ -1,4 +1,4 @@
-"""Tier migration on eviction (Phase 3.5.6 follow-up).
+"""Tier migration on eviction.
 
 The v3.0.0 release ships a :class:`TierMigration` helper that
 demotes fragments from one tier to another on eviction.

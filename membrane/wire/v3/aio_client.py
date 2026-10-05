@@ -1,4 +1,4 @@
-"""Async httpx + grpc.aio client with structured cancellation (Phase 3.3.5 + 3.3.6).
+"""Async httpx + grpc.aio client with structured cancellation.
 
 The v3.0.0 release replaces the v2.0 synchronous urllib-based
 HTTP client with an async client built on

@@ -1,4 +1,4 @@
-"""GCP Secret Manager provider (Phase 3.4.5d).
+"""GCP Secret Manager provider.
 
 Pulls secrets from Google Secret Manager via
 ``google-cloud-secret-manager``. The provider is installed

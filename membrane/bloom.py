@@ -1,6 +1,6 @@
 """Bloom filter for gossip inventory checks.
 
-Phase 5 exchanges a compact Bloom filter alongside every gossip
+Gossip exchanges a compact Bloom filter alongside every gossip
 state so receivers can answer ``contains?(hash)`` in O(k)
 without the cost of a full inventory digest. The filter is sized
 to a target false-positive rate at construction time and is

@@ -1,4 +1,4 @@
-"""OpenTelemetry observability (Phase 3.2.4)."""
+"""OpenTelemetry observability."""
 
 from membrane.otel_tracer.otel import (
     SERVICE_NAME,

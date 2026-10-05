@@ -1,4 +1,4 @@
-"""ACME / Let's Encrypt bootstrap (Phase 3.4.3).
+"""ACME / Let's Encrypt bootstrap.
 
 The v3.0.0 release ships an :class:`ACMEClient` skeleton
 compatible with the ACME v2 protocol (RFC 8555). Production

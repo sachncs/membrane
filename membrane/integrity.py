@@ -1,4 +1,4 @@
-"""Data-integrity gauge (Phase 3.2.3).
+"""Data-integrity gauge.
 
 The v3.0.0 release surfaces two new integrity signals that the
 v2.0 release computed internally but never reported:

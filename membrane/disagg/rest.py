@@ -1,4 +1,4 @@
-"""REST surface for the prefill / decode services (Phase 8).
+"""REST surface for the prefill / decode services.
 
 The :func:`create_router` factory returns a FastAPI
 :class:`APIRouter` with two endpoints:

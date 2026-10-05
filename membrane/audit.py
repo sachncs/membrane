@@ -1,4 +1,4 @@
-"""Tamper-evident hash-chained audit log (Phase 3.2.8).
+"""Tamper-evident hash-chained audit log.
 
 The v2.0 release carried a Server.events in-memory buffer
 that was never persisted or chained. The v3.0.0 release
@@ -10,10 +10,7 @@ tampered entry, ``None`` when the chain verifies.
 
 The :class:`FileAuditStorage` writes one entry per line in
 JSON Lines format; the in-memory :class:`InMemoryAuditStorage`
-is reserved for tests and the Phase 3.2 commit deliberately
-avoids shipping a sibling in-memory backend the way the 3.2
-plan called out (the original memory variant was a test-only
-shim). The :data:`AuditStorage` Protocol is the swap point for
+is meant for tests. The :data:`AuditStorage` Protocol is the swap point for
 operators that want to back the chain with a relational store.
 """
 

@@ -1,4 +1,4 @@
-"""Per-peer replication-lag gauge (Phase 3.2.2).
+"""Per-peer replication-lag gauge.
 
 The v2.0 release stamped ``PeerInfo.last_heartbeat`` at every
 successful heartbeat round but never surfaced the lag in a

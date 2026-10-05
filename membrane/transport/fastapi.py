@@ -58,7 +58,7 @@ from membrane.node import Node
 from membrane.transfer import TransferService
 from membrane.transport.limits import ConcurrencyLimitMiddleware, RateLimitMiddleware, TransportLimits
 from membrane.transport.request_id import RequestIdMiddleware
-from membrane.transport.routes_fastapi import register_routes
+from membrane.transport.routes import register_routes
 from membrane.transport.tls import MTLSConfig, build_server_context
 from membrane.transport.tls_protocol import PeerCertH11Protocol
 
@@ -147,7 +147,7 @@ def create_app(
         from membrane.transport.admin import create_admin_router
 
         app.include_router(create_admin_router(), prefix="")
-    except ImportError:  # pragma: no cover - admin is a Phase 3.2.6 surface
+    except ImportError:  # pragma: no cover - the admin router is optional
         pass
     return app
 

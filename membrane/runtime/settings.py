@@ -22,7 +22,7 @@ from pathlib import Path
 
 from membrane.auth import Authenticator
 from membrane.auth.apikey import APIKeyAuthenticator
-from membrane.network.config import ClusterConfig
+from membrane.network.config import CONSISTENCY_LEVELS, ClusterConfig
 from membrane.node import Node
 from membrane.runtime.plugins import AUTHENTICATORS, COMPUTE_BACKENDS, CONTENT_STORES, UnknownPluginError
 from membrane.security.files import InsecureFileError, require_private_file
@@ -31,8 +31,6 @@ from membrane.transport.limits import TransportLimits
 from membrane.transport.tls import MTLSConfig
 
 logger = logging.getLogger(__name__)
-
-CONSISTENCY_LEVELS = frozenset({"strong", "quorum", "eventual"})
 
 
 class SettingsError(ValueError):
@@ -128,9 +126,6 @@ class ServerSettings:
             (self.compute in COMPUTE_BACKENDS, f"unknown compute backend {self.compute!r}"),
             (self.max_memory > 0, "max memory must be positive"),
             (self.consistency in CONSISTENCY_LEVELS, f"consistency must be one of {sorted(CONSISTENCY_LEVELS)}"),
-            (self.replica_count >= 1, "replica count must be at least 1"),
-            (self.quorum_count >= 1, "quorum count must be at least 1"),
-            (self.heartbeat_interval > 0 and self.gossip_interval > 0, "intervals must be positive"),
             (self.drain_timeout >= 0, "drain timeout must not be negative"),
             (self.limits.max_concurrency >= 0, "max concurrency must not be negative"),
             (self.limits.rate_limit_per_sec >= 0, "rate limit must not be negative"),
@@ -139,11 +134,39 @@ class ServerSettings:
         for ok, message in checks:
             if not ok:
                 raise SettingsError(message)
+        try:
+            self.cluster_config(tls=None)
+        except ValueError as exc:
+            raise SettingsError(str(exc)) from exc
         for cidr in self.peer_networks:
             try:
                 ipaddress.ip_network(cidr, strict=False)
             except ValueError as exc:
                 raise SettingsError(f"peer network {cidr!r} is not a CIDR") from exc
+
+    def cluster_config(self, tls: MTLSConfig | None) -> ClusterConfig:
+        """Derive the cluster configuration from these settings.
+
+        Args:
+            tls: The mTLS configuration peers use, if any.
+
+        Returns:
+            ClusterConfig: The validated cluster configuration.
+        """
+        return ClusterConfig(
+            node_id=self.node_id,
+            host=self.host,
+            port=self.port,
+            peers=list(self.peers),
+            heartbeat_interval_sec=self.heartbeat_interval,
+            gossip_interval_sec=self.gossip_interval,
+            replica_count=self.replica_count,
+            failure_remove_threshold=self.failure_remove_threshold,
+            mtls=tls,
+            advertise_host=self.advertise_host,
+            default_consistency=self.consistency,
+            quorum_count=self.quorum_count,
+        )
 
     @property
     def loopback_only(self) -> bool:
@@ -341,22 +364,7 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
     mode = auth_mode(settings, authenticator, tls)
     peer_api_key = peer_key(settings, authenticator, tls)
 
-    cluster_config = None
-    if settings.peers:
-        cluster_config = ClusterConfig(
-            node_id=settings.node_id,
-            host=settings.host,
-            port=settings.port,
-            peers=list(settings.peers),
-            heartbeat_interval_sec=settings.heartbeat_interval,
-            gossip_interval_sec=settings.gossip_interval,
-            replica_count=settings.replica_count,
-            failure_remove_threshold=settings.failure_remove_threshold,
-            mtls=tls,
-            advertise_host=settings.advertise_host,
-            default_consistency=settings.consistency,
-            quorum_count=settings.quorum_count,
-        )
+    cluster_config = settings.cluster_config(tls) if settings.peers else None
 
     content_store = None
     if settings.data_dir:
@@ -392,7 +400,6 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
 
 
 __all__ = [
-    "CONSISTENCY_LEVELS",
     "ServerSettings",
     "SettingsError",
     "auth_mode",

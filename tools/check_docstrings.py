@@ -171,7 +171,7 @@ def check_file(path: Path) -> list[str]:
         list[str]: ``path:line: message`` entries.
     """
     tree = ast.parse(path.read_text(), filename=str(path))
-    rel = path.relative_to(ROOT)
+    rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
     problems: list[str] = []
     if not ast.get_docstring(tree):
         problems.append(f"{rel}:1: module has no docstring")

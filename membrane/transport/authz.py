@@ -1,4 +1,4 @@
-"""Per-route scope wiring for the HTTP transport (Phase 3.1.1).
+"""Per-route scope wiring for the HTTP transport.
 
 The v2.0 release defined :class:`membrane.auth.Authenticator` and
 the scope hierarchy but left
@@ -66,7 +66,7 @@ ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("POST", "/gossip"): "write",
     ("POST", "/join"): "write",
     ("POST", "/leave"): "write",
-    # Admin (Phase 3.2 wires the routes; the scope mapping is in
+    # Admin. (The scope mapping is in
     # place so the first admin commit doesn't need a second pass).
     ("POST", "/delete"): "admin",
     ("POST", "/tombstone"): "admin",

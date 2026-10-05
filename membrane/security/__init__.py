@@ -1,4 +1,4 @@
-"""Security utilities (Phase 3.1).
+"""Security utilities.
 
 * :mod:`membrane.security.url_allowlist`: outbound URL policy
   for the :func:`membrane.transport.ops.op_sync` and

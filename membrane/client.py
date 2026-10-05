@@ -1,4 +1,4 @@
-"""Typed Membrane client (Phase 3.6.1).
+"""Typed Membrane client.
 
 The v3.0.0 release ships a typed MembraneClient that wraps the
 ``/store``, ``/retrieve``, ``/prefill``, ``/decode``,

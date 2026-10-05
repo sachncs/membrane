@@ -22,7 +22,17 @@ class TestValidateConfig:
 
     def test_rejects_invalid_port(self):
         with pytest.raises(ValueError, match="ClusterConfig validation failed"):
-            validate_config({"node_id": "n1", "port": 0})
+            validate_config({"node_id": "n1", "port": 70000})
+
+    def test_construction_validates_and_lists_every_problem(self):
+        with pytest.raises(ValueError) as info:
+            ClusterConfig(node_id="", quorum_count=0, default_consistency="maybe")
+        message = str(info.value)
+        assert "node_id" in message and "quorum_count" in message and "default_consistency" in message
+
+    def test_rejects_unknown_fields(self):
+        with pytest.raises(ValueError, match="unknown fields: bogus"):
+            validate_config({"node_id": "n1", "bogus": 1})
 
     def test_rejects_negative_interval(self):
         with pytest.raises(ValueError, match="ClusterConfig validation failed"):

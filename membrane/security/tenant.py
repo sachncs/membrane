@@ -1,4 +1,4 @@
-"""Tenant scope authorization (Phase 3.1.6).
+"""Tenant scope authorization.
 
 The v2.0 release carried :class:`~membrane.analytical.Tenant` only
 as a cross-tenant sharing-policy dataclass with no callers in

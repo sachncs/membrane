@@ -51,7 +51,7 @@ class PeerInfo:
             expires. Refreshed to ``now() + ClusterConfig.lease_timeout_sec``
             on every successful heartbeat. ``0.0`` means no
             explicit lease is held (single-node deployments).
-            Phase 4 uses this field as the canonical source of
+            The membership table uses this field as the canonical source of
             truth for the membership table freshness, in tandem
             with the heartbeat-miss counter.
     """
@@ -302,7 +302,7 @@ class Membership:
         """Reset heartbeat counters for ``node_id``.
 
         Optionally stamp the lease deadline returned by the
-        peer (Phase 4). ``lease_until <= 0`` is ignored so
+        peer. ``lease_until <= 0`` is ignored so
         peers that do not advertise leases keep ``lease_until = 0``
         and rely on the missed-heartbeats counter only.
 

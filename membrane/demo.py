@@ -1,4 +1,4 @@
-"""`python -m membrane.demo` one-command demo (Phase 3.6.4).
+"""`python -m membrane.demo` one-command demo.
 
 The :func:`main` entry point builds an in-process Membrane node
 with the v3.0.0 default :class:`EncryptedInProcessBytes` store

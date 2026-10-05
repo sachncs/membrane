@@ -1,7 +1,6 @@
-"""Cost-aware routing & admission (Phase 3.5).
+"""Cost-aware routing & admission.
 
-Phase 3.5 wires the v2.0 decision classes into the v3.0+ serving
-plane. The v3.0.0 release adds:
+Decision classes used by the serving plane:
 
 * :class:`AdmissionPolicy` + the deny-by-default gate
   (3.5.1).

@@ -1,4 +1,4 @@
-"""mTLS cert rotation + X.509 notAfter enforcement (Phase 3.4.1 + 3.4.2).
+"""mTLS cert rotation + X.509 notAfter enforcement.
 
 The v3.0.0 release adds hot-reload of the cert chain at runtime:
 
