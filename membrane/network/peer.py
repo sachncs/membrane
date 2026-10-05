@@ -22,6 +22,7 @@ import json
 import logging
 import ssl
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -30,6 +31,11 @@ from membrane.fragment import Fragment
 from membrane.serialization import JsonDict, from_dict, to_dict
 
 logger = logging.getLogger(__name__)
+
+#: Monotonic deadline for peer requests made in the current context.
+#: Callers with a budget (e.g. the quorum fan-out) set it so retries stop
+#: once the result can no longer be used; ``None`` means no deadline.
+peer_deadline: ContextVar[float | None] = ContextVar("membrane_peer_deadline", default=None)
 
 
 @dataclass(frozen=True)
@@ -563,22 +569,33 @@ class Peer:
             headers.update(extra_headers)
         last_error: Exception | None = None
 
+        deadline = peer_deadline.get()
         for attempt in range(self.max_retries):
+            timeout = self.timeout_sec
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                timeout = min(timeout, remaining)
             try:
                 resp = self.transport.request(
                     method=method,
                     url=url,
                     body=data,
                     headers=headers,
-                    timeout_sec=self.timeout_sec,
+                    timeout_sec=timeout,
                 )
                 if resp is not None:
                     return resp
             except NetworkError as exc:
                 last_error = exc
 
+            if attempt == self.max_retries - 1:
+                break  # no point sleeping after the last attempt
             # Exponential backoff: 1x, 2x, 4x, ...
             delay = self.retry_delay_sec * (2**attempt)
+            if deadline is not None and time.monotonic() + delay >= deadline:
+                break  # the caller has already given up
             logger.debug(
                 "Request to %s%s failed (attempt %s/%s), retrying in %.1fs",
                 self.base_url,
@@ -599,4 +616,13 @@ class Peer:
         return None
 
 
-__all__ = ["HTTPTransport", "Peer", "Transport"]
+__all__ = [
+    "HTTPTransport",
+    "Peer",
+    "PeerCredentials",
+    "Transport",
+    "get_default_peer_credentials",
+    "peer_deadline",
+    "peer_url",
+    "set_default_peer_credentials",
+]

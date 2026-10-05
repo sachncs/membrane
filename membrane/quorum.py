@@ -1,36 +1,33 @@
 """Quorum fan-out for strong / quorum-consistency writes.
 
-When :func:`op_store` accepts a fragment with
-``consistency = "strong"`` or ``consistency = "quorum"`` it must
-block the caller until at least ``quorum_count`` replicas have
-acknowledged the write or the cluster
-``cluster_quorum_timeout_sec`` budget elapses. The actual fan-out
-to peers is handled by :func:`attempt_quorum_acks`.
+When :func:`~membrane.transport.ops.op_store` accepts a ``strong`` or
+``quorum`` write it blocks until enough replicas acknowledge it or the
+``cluster_quorum_timeout_sec`` budget elapses.
 
-The implementation intentionally stays simple:
+:class:`QuorumReplicator` does the fan-out:
 
-* Each peer call is a synchronous ``client.request_replicate``
-  POST; the bytes ride the canonical wire path so the receiver
-  accepts them via the same op_store machinery.
-* The function uses a :class:`concurrent.futures.ThreadPoolExecutor`
-  with a fixed-size worker pool of ``quorum_count`` threads so a
-  cluster-wide surge does not consume unbounded memory.
-* The :class:`QuorumResult` reports ``success`` (>= quorum_count
-  acks), ``ack_count`` (the actual number), and ``timed_out``
-  so the caller's failure message is accurate.
+* every replica is contacted **in parallel** on one shared, bounded
+  thread pool (no pool is created per write);
+* it returns as soon as the quorum is reached or the deadline passes,
+  and never waits for stragglers;
+* the deadline is published to the peer client through
+  :data:`peer_deadline`, so a slow replica stops retrying once the write
+  has been decided.
 
-The caller (``op_store``) deletes the locally-stored fragment on
-failure to keep the cluster from being left with a partial-write
-footprint that gossip would otherwise propagate.
+The caller removes the local copy when the quorum is not met, so the
+cluster never keeps a write it did not acknowledge.
 """
 
 import concurrent.futures
+import contextvars
 import logging
+import threading
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 from membrane.fragment import Fragment
-from membrane.network.peer import Peer
+from membrane.network.peer import Peer, peer_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -54,92 +51,124 @@ class QuorumResult:
     replica_count: int
 
 
+class QuorumReplicator:
+    """Parallel, deadline-bounded replica fan-out on a shared thread pool.
+
+    Attributes:
+        max_workers: Upper bound on concurrent replica calls across all
+            writes on this node.
+    """
+
+    def __init__(self, max_workers: int = 32) -> None:
+        """Create the replicator; the pool is created on first use.
+
+        Args:
+            max_workers: Upper bound on concurrent replica calls.
+        """
+        self.max_workers = max_workers
+        self.__pool: concurrent.futures.ThreadPoolExecutor | None = None
+        self.__lock = threading.Lock()
+
+    def pool(self) -> concurrent.futures.ThreadPoolExecutor:
+        """Return the shared pool, creating it on first use.
+
+        Returns:
+            concurrent.futures.ThreadPoolExecutor: The pool.
+        """
+        with self.__lock:
+            if self.__pool is None:
+                self.__pool = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=self.max_workers, thread_name_prefix="membrane-quorum"
+                )
+            return self.__pool
+
+    def __call__(
+        self,
+        fragment: Fragment,
+        peers: Iterable[Peer],
+        quorum_count: int,
+        timeout_sec: float,
+    ) -> QuorumResult:
+        """Send ``fragment`` to every peer and wait for ``quorum_count`` acks.
+
+        Args:
+            fragment: The fragment to replicate (already stored locally).
+            peers: Replica peers; all are contacted in parallel.
+            quorum_count: Peer acknowledgements required.
+            timeout_sec: Wall-clock budget for the whole fan-out.
+
+        Returns:
+            QuorumResult: Outcome and counters. Calls still in flight when
+            this returns finish (or give up at the deadline) in the
+            background; their results are ignored.
+        """
+        peer_list = list(peers)
+        if quorum_count <= 0 or not peer_list:
+            return QuorumResult(success=False, ack_count=0, timed_out=True, replica_count=len(peer_list))
+
+        payload = {"fragment": wire_dict_for(fragment), "is_primary": False}
+        deadline = now() + timeout_sec
+        pending: set[concurrent.futures.Future[bool]] = set()
+        for peer in peer_list:
+            # Each call runs in its own context carrying the deadline; a
+            # Context cannot be entered by two threads at once.
+            context = contextvars.copy_context()
+            context.run(peer_deadline.set, deadline)
+            pending.add(self.pool().submit(context.run, post_replicate, peer, payload))
+
+        ack_count = 0
+        while pending and ack_count < quorum_count:
+            remaining = deadline - now()
+            if remaining <= 0:
+                break
+            done, pending = concurrent.futures.wait(
+                pending, timeout=remaining, return_when=concurrent.futures.FIRST_COMPLETED
+            )
+            for future in done:
+                try:
+                    if future.result():
+                        ack_count += 1
+                except PeerError as exc:
+                    logger.debug("quorum replica failed: %s", exc)
+        for future in pending:
+            future.cancel()  # only stops calls that have not started
+        success = ack_count >= quorum_count
+        return QuorumResult(
+            success=success,
+            ack_count=ack_count,
+            timed_out=not success and now() >= deadline,
+            replica_count=len(peer_list),
+        )
+
+    def shutdown(self) -> None:
+        """Stop accepting work and release the pool's threads."""
+        with self.__lock:
+            if self.__pool is not None:
+                self.__pool.shutdown(wait=False, cancel_futures=True)
+                self.__pool = None
+
+
+DEFAULT_REPLICATOR = QuorumReplicator()
+
+
 def attempt_quorum_acks(
     fragment: Fragment,
     peers: Iterable[Peer],
     quorum_count: int,
     timeout_sec: float,
 ) -> QuorumResult:
-    """Synchronously fan-out a fragment to peers and wait for `quorum_count` acks.
-
-    Concurrent futures so a slow peer does not block the rest.
+    """Fan out ``fragment`` on the process-wide :data:`DEFAULT_REPLICATOR`.
 
     Args:
-        fragment: The fragment to replicate. The local node has
-            already stored it; peers are additional replicas.
-        peers: Iterable of :class:`~membrane.network.peer.Peer`
-            clients. The function does not deduplicate; the
-            caller is responsible for selecting which peers to
-            contact based on the shard map.
-        quorum_count: Number of acks required. ``quorum_count <=
-            len(peers)`` (otherwise the function returns a
-            QuorumResult with ``success=False`` immediately).
-        timeout_sec: Total wall-clock budget.
+        fragment: The fragment to replicate (already stored locally).
+        peers: Replica peers; all are contacted in parallel.
+        quorum_count: Peer acknowledgements required.
+        timeout_sec: Wall-clock budget for the whole fan-out.
 
     Returns:
-        QuorumResult: Status + counters. ``success=True`` means
-        the cluster reached the configured write threshold.
+        QuorumResult: Outcome and counters.
     """
-    peer_list = list(peers)
-    if quorum_count <= 0:
-        # Even when the caller asks for zero acks the function
-        # still records the configured replica set so that
-        # error responses (telemetry, audit logs) can show which
-        # peers would have been contacted.
-        return QuorumResult(
-            success=False,
-            ack_count=0,
-            timed_out=True,
-            replica_count=len(peer_list),
-        )
-    if not peer_list:
-        return QuorumResult(success=False, ack_count=0, timed_out=True, replica_count=0)
-
-    payload = {"fragment": wire_dict_for(fragment), "is_primary": False}
-    submitted: list[concurrent.futures.Future[bool]] = []
-    ack_count = 0
-    timed_out = False
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(quorum_count, len(peer_list)))) as pool:
-        for peer in peer_list:
-            submitted.append(pool.submit(post_replicate, peer, payload))
-
-        deadline = now() + timeout_sec
-        try:
-            for future in concurrent.futures.as_completed(submitted, timeout=timeout_sec):
-                remaining = max(0.0, deadline - now())
-                if remaining <= 0:
-                    timed_out = True
-                    break
-                try:
-                    if future.result(timeout=remaining):
-                        ack_count += 1
-                        if ack_count >= quorum_count:
-                            # Done early; cancel outstanding requests
-                            # so we don't pile writes on a fast
-                            # deadline.
-                            for outstanding in submitted:
-                                if not outstanding.done():
-                                    outstanding.cancel()
-                            break
-                except (concurrent.futures.TimeoutError, PeerError) as exc:
-                    timed_out = True
-                    logger.debug("quorum peer ack errored: %s", exc)
-        except concurrent.futures.TimeoutError:
-            # The outer timeout fired while there were still
-            # futures in flight.
-            timed_out = True
-
-        # If the deadline hit before quorum, mark timeout.
-        if ack_count < quorum_count and now() >= deadline:
-            timed_out = True
-
-    return QuorumResult(
-        success=ack_count >= quorum_count,
-        ack_count=ack_count,
-        timed_out=timed_out,
-        replica_count=len(peer_list),
-    )
+    return DEFAULT_REPLICATOR(fragment, peers, quorum_count, timeout_sec)
 
 
 def now() -> float:
@@ -148,8 +177,6 @@ def now() -> float:
     Returns:
         float: A monotonic timestamp in seconds.
     """
-    import time
-
     return time.monotonic()
 
 
@@ -213,4 +240,4 @@ class PeerError(Exception):
     """Out-of-band error raised by :func:`post_replicate`."""
 
 
-__all__ = ["QuorumResult", "attempt_quorum_acks"]
+__all__ = ["DEFAULT_REPLICATOR", "PeerError", "QuorumReplicator", "QuorumResult", "attempt_quorum_acks"]

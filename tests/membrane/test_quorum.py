@@ -398,3 +398,69 @@ class TestOpStoreConsistency:
         assert status == 503
         assert body["detail"] == "not enough healthy peers"
         assert frag.identity.payload_hash not in node.fragments
+
+
+class TestQuorumReplicatorDeadlines:
+    """The fan-out must honour its budget and contact replicas in parallel."""
+
+    def test_returns_at_deadline_despite_hung_replica(self):
+        from membrane.quorum import QuorumReplicator
+
+        replicator = QuorumReplicator(max_workers=4)
+        frag = _make_fragment_with_consistency("strong")
+        start = time.monotonic()
+        result = replicator(frag, [_FakePeer(ok=True, delay_sec=5.0)], quorum_count=1, timeout_sec=0.3)
+        elapsed = time.monotonic() - start
+        replicator.shutdown()
+        assert result.success is False
+        assert result.timed_out is True
+        assert elapsed < 1.0, f"waited {elapsed:.2f}s for a hung replica"
+
+    def test_replicas_are_contacted_in_parallel(self):
+        from membrane.quorum import QuorumReplicator
+
+        replicator = QuorumReplicator(max_workers=4)
+        frag = _make_fragment_with_consistency("strong")
+        peers = [_FakePeer(ok=True, delay_sec=0.3) for _ in range(3)]
+        start = time.monotonic()
+        result = replicator(frag, peers, quorum_count=3, timeout_sec=2.0)
+        elapsed = time.monotonic() - start
+        replicator.shutdown()
+        assert result.success is True
+        assert result.ack_count == 3
+        assert elapsed < 0.8, f"replicas were contacted serially ({elapsed:.2f}s)"
+
+    def test_quorum_returns_without_waiting_for_slow_extra_replica(self):
+        from membrane.quorum import QuorumReplicator
+
+        replicator = QuorumReplicator(max_workers=4)
+        frag = _make_fragment_with_consistency("strong")
+        start = time.monotonic()
+        result = replicator(
+            frag, [_FakePeer(ok=True), _FakePeer(ok=True, delay_sec=5.0)], quorum_count=1, timeout_sec=3.0
+        )
+        elapsed = time.monotonic() - start
+        replicator.shutdown()
+        assert result.success is True
+        assert elapsed < 1.0
+
+    def test_peer_retries_stop_at_the_deadline(self):
+        import contextvars
+
+        from membrane.errors import NetworkError
+        from membrane.network.peer import Peer, peer_deadline
+
+        class Failing:
+            calls = 0
+
+            def request(self, **_kwargs):
+                Failing.calls += 1
+                raise NetworkError("down")
+
+        peer = Peer("http://10.0.0.9:8080", transport=Failing(), max_retries=5, retry_delay_sec=0.2)
+        context = contextvars.copy_context()
+        context.run(peer_deadline.set, time.monotonic() + 0.3)
+        start = time.monotonic()
+        assert context.run(peer.request_with_retry, "GET", "/heartbeat") is None
+        assert time.monotonic() - start < 0.6
+        assert Failing.calls < 5
