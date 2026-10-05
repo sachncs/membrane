@@ -31,10 +31,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
         with:
-          python-version: "3.13"
+          python-version-file: .python-version
           activate-environment: true
           enable-cache: true
-      - run: uv pip install -e ".[dev]"
+      - run: uv sync --frozen --extra dev
       - name: ruff check
         run: ruff check --output-format=github membrane/ tests/ scripts/ examples/
       - name: ruff format
@@ -43,28 +43,23 @@ jobs:
         run: mypy membrane/
 
   test:
-    name: Tests (py${{ matrix.python-version }})
+    name: Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version-file: .python-version
           activate-environment: true
           enable-cache: true
-      - run: uv pip install -e ".[dev]"
+      - run: uv sync --frozen --extra dev
       - name: pytest
         run: >-
           pytest tests/ -m "not stress and not chaos" --timeout=300 -q
           --cov=membrane --cov-report=term-missing:skip-covered --cov-report=xml
           --cov-fail-under=80
       - name: Upload coverage report
-        if: matrix.python-version == '3.13'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-xml
@@ -89,10 +84,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
         with:
-          python-version: "3.13"
+          python-version-file: .python-version
           activate-environment: true
           enable-cache: true
-      - run: uv pip install -e ".[dev]"
+      - run: uv sync --frozen --extra dev
       # The Redis tests skip when no server answers; fail here instead
       # so this job cannot pass vacuously.
       - name: Verify Redis is reachable
@@ -107,10 +102,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
         with:
-          python-version: "3.13"
+          python-version-file: .python-version
           activate-environment: true
           enable-cache: true
-      - run: uv pip install -e ".[dev]"
+      - run: uv sync --frozen --extra dev
       - name: Stress (64-thread)
         run: pytest tests/membrane/stress -m stress -q --timeout=600
       - name: Chaos (in-process proxy; toxiproxy tests skip without a server)
@@ -128,20 +123,17 @@ jobs:
           fetch-depth: 0  # gitleaks scans history
       - uses: astral-sh/setup-uv@v10.2.0
         with:
-          python-version: "3.13"
+          python-version-file: .python-version
           activate-environment: true
           enable-cache: true
-      # Audit exactly what the server image ships. membrane itself is
-      # removed again: a local build is not on PyPI, which --strict
-      # would treat as an audit failure.
-      - name: Install runtime dependencies
-        run: |
-          uv pip install ".[server]" pip-audit bandit
-          uv pip uninstall membrane
+      # Audit exactly what the server image ships: the hash-pinned
+      # [server] dependency set exported from uv.lock.
       - name: pip-audit
-        run: pip-audit --strict --vulnerability-service osv
+        run: |
+          uv export --frozen --extra server --no-emit-project --format requirements-txt > requirements-server.txt
+          uvx pip-audit --strict --disable-pip --vulnerability-service osv -r requirements-server.txt
       - name: bandit (high severity)
-        run: bandit -q -r membrane/ -lll
+        run: uvx bandit -q -r membrane/ -lll
       - name: gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:

@@ -57,7 +57,7 @@ only prefill the spans nobody holds.
 |-------|--------|------|
 | `Node` | `membrane/node.py` | Holds fragments in memory; TTL expiry, weighted-LRU and graph-aware eviction, tenant checks |
 | `Index` | `membrane/index.py` | Facade over exact, semantic, positional, and co-access indices |
-| `ContentStore` implementations | `membrane/content_store.py` | KV bytes: `InProcessBytes`, `FilesystemBlob` (AES-256-GCM), `LMCacheDiskStore`; `EncryptedInProcessBytes` in `content_store_encrypted.py` |
+| `ContentStore` implementations | `membrane/content_store.py` | KV bytes: `InProcessBytes`, `FilesystemBlob` (AES-256-GCM); `EncryptedInProcessBytes` in `content_store_encrypted.py` |
 | `Memory`, `Redis`, `CachingPersistence` | `membrane/persistence/` | Persistence backends for node state |
 | `Sweeper`, `TombstoneTable` | `membrane/gc.py` | Periodic TTL sweep and soft-delete propagation |
 

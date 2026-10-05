@@ -92,7 +92,7 @@ class WarmTier:
 
 
 class ColdTier:
-    """Cold tier (e.g., LMCache or an S3-compatible object store)."""
+    """Cold tier (e.g., an S3-compatible object store)."""
 
     def __init__(self, storage: Any | None = None) -> None:
         """Initialize the cold tier.

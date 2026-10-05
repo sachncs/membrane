@@ -3,7 +3,7 @@
 The v3.0.0 release ships a :class:`TierMigration` helper that
 demotes fragments from one tier to another on eviction.
 Production deployments use this to flow cold fragments to a
-warm tier (e.g. LMCache) when the local node's hot tier is
+warm tier (e.g. a disk or object store) when the local node's hot tier is
 under memory pressure.
 
 The :func:`on_evict` callback on :class:`Node` is invoked
@@ -32,7 +32,7 @@ class TierMigration:
         on_demote: Callable invoked with ``(fragment, tier_name)``
             for every demoted fragment. Production deployments
             attach a callable that moves the fragment to the
-            down-stream tier (e.g. LMCache).
+            down-stream tier (e.g. a disk or object store).
     """
 
     policy: TierPolicy
