@@ -123,6 +123,7 @@ Outbound peer URLs pass the SSRF guard
 | `memory.py` | `MemoryService`: `/reconstruct` (`Reconstructor`, tenant-scoped and token-verified), `/prefix/lookup` (`PrefixCache`, invalidated on removal), sessions, typed objects, and the write guard (`MembraneValidator`, `IdentityIndex`) |
 | `placement.py` | `PlacementService` behind `/route`: `ClusterView` (holders, ring owners, heartbeat telemetry), the placement plugins, `Router` with the `DualTimescaleScheduler`, and the `CostModel` |
 | `policies.py` | `Promoter` (`Promotion`, `Selector`), `RolePolicy` (`Roles`), and `OriginLink` (regional read-through for a `Replica` node) |
+| `disagg.py` | `Disaggregation`: `/disagg` prefill (reuse, prefill, KV manifest) and decode (find the manifest, pull the KV from the prefill node, generate); the gRPC surface (`membrane/disagg/grpc.py`) serves the same calls |
 
 See [Memory API and routing](memory-api.md).
 
@@ -141,7 +142,9 @@ See [Memory API and routing](memory-api.md).
 
 `MembraneVLLMAdapter`, `MembraneSGLangAdapter`, and
 `MembraneTrtAdapter` connect serving engines' KV pools to a Membrane
-cluster. Each ships an in-memory client for tests.
+cluster. Each ships an in-memory client for tests; `adapters/remote.py`
+has HTTP clients that keep the KV in a node through `/kv/{handle}`
+([Prefill / decode](disaggregation.md)).
 
 ## Design principles
 

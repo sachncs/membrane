@@ -179,6 +179,7 @@ class MembraneClusterClient:
         layer: LayerKV,
         model_id: str,
         token_span: tuple[int, int],
+        token_ids: tuple[int, ...] = (),
     ) -> None:
         """Push a freshly-computed layer to the cluster.
 
@@ -187,6 +188,7 @@ class MembraneClusterClient:
             model_id: Model identity the layer was produced under.
             token_span: Inclusive ``(start, end)`` of token
                 positions this layer covers.
+            token_ids: The prompt the layer belongs to (``()`` when unknown).
         """
         raise NotImplementedError
 
@@ -340,6 +342,7 @@ class InMemoryClusterClient(MembraneClusterClient):
         layer: LayerKV,
         model_id: str,
         token_span: tuple[int, int],
+        token_ids: tuple[int, ...] = (),
     ) -> None:
         """Store one layer's K/V tensors for later lookups.
 
@@ -348,8 +351,9 @@ class InMemoryClusterClient(MembraneClusterClient):
             model_id: Model identifier.
             token_span: Inclusive ``(start, end)`` of token positions this layer
                 covers.
+            token_ids: The prompt (unused in memory).
         """
-        del model_id, token_span
+        del model_id, token_span, token_ids
         handle = f"mem:{layer.layer_idx}"
         payload = tensor_payload(layer.k)
         with self.lock:
@@ -391,6 +395,23 @@ def tensor_payload(tensor: Any) -> bytes:
     if hasattr(tensor, "tobytes"):
         return tensor.tobytes()
     return bytes(tensor)
+
+
+def select_blocks(tensor: Any, block_table: tuple[int, ...]) -> Any:
+    """Take a request's blocks from one layer of a paged KV cache.
+
+    Args:
+        tensor: K or V of shape ``(1, num_blocks, block_size, heads, dim)``
+            (torch or numpy); other objects are returned whole.
+        block_table: The request's block ids.
+
+    Returns:
+        Any: The request's blocks, or ``tensor`` when it cannot be indexed.
+    """
+    shape = getattr(tensor, "shape", None)
+    if not block_table or shape is None or len(shape) < 2:
+        return tensor
+    return tensor[:, list(block_table)]
 
 
 # ---------------------------------------------------------------------------
@@ -600,15 +621,31 @@ def build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
                 attn_metadata: vLLM attention metadata.
             """
             k_tensor, v_tensor = self.__split_kv(kv_caches, layer)
-            for tensor in (k_tensor, v_tensor):
+            with self.lock:
+                pending = [
+                    state
+                    for state in self.__requests.values()
+                    if state.token_ids and state.matched.prefix_len < len(state.token_ids)
+                ]
+            if not pending:
+                # No request to file the layer under: hand it over as is.
+                layer_kv = LayerKV(layer_idx=layer, k=k_tensor, v=v_tensor, head_range=(-1, -1), dtype=self.dtype)
+                self.client.save_layer(layer_kv, self.model_id, (0, 0))
+                return
+            for state in pending:
+                # Each request's KV lives in its own blocks of the paged cache.
                 layer_kv = LayerKV(
                     layer_idx=layer,
-                    k=tensor,
-                    v=tensor,
+                    k=select_blocks(k_tensor, state.block_table),
+                    v=select_blocks(v_tensor, state.block_table),
                     head_range=(-1, -1),
                     dtype=self.dtype,
                 )
-                self.client.save_layer(layer_kv, self.model_id, (0, 0))
+                span = (0, len(state.token_ids) - 1)
+                self.client.save_layer(layer_kv, state.model_id, span, token_ids=state.token_ids)
+                if layer == self.n_layers - 1:
+                    with self.lock:
+                        state.matched = MatchedPrefix(len(state.token_ids), state.matched.kv_handle)
 
         # ----- internal helpers -----
 
@@ -673,9 +710,12 @@ def build_connector(cls: type[Any], vllm_base: type[Any] | None) -> type[Any]:
             if not kv_caches:
                 return b"", b""
             cache = kv_caches[layer] if layer < len(kv_caches) else kv_caches[0]
-            if hasattr(cache, "split"):
+            if hasattr(cache, "split") and hasattr(cache, "contiguous"):  # torch
                 k, v = cache.split(1, dim=0)
                 return k.contiguous(), v.contiguous()
+            shape = getattr(cache, "shape", None)
+            if shape is not None and len(shape) >= 1 and shape[0] == 2:  # numpy and friends
+                return cache[0:1], cache[1:2]
             if isinstance(cache, (tuple, list)) and len(cache) >= 2:
                 return cache[0], cache[1]
             return cache, cache
@@ -805,6 +845,7 @@ __all__ = [
     "MembraneClusterClient",
     "MembraneVLLMAdapter",
     "MembraneVLLMConnector",
+    "select_blocks",
 ]
 
 

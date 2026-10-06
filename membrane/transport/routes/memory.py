@@ -1,4 +1,4 @@
-"""Memory API and routing routes: reconstruct, prefix lookup, sessions, objects, route."""
+"""Memory API and routing routes: reconstruct, prefix lookup, sessions, objects, KV bundles, route."""
 
 import asyncio
 
@@ -9,7 +9,8 @@ from membrane.services import Services
 from membrane.services.memory import SESSION_HEADER, StoreRejectedError
 from membrane.transport.context import app_context
 from membrane.transport.metrics import record_transport
-from membrane.transport.routes.common import respond, route_scope, transport_metrics_for
+from membrane.transport.ops import MAX_BODY_BYTES
+from membrane.transport.routes.common import read_limited_body, respond, route_scope, transport_metrics_for
 from membrane.transport.routes.models import PrefixLookupRequest, ReconstructRequest, RouteRequest
 
 MAX_QUERY_TOKENS = 4096
@@ -215,6 +216,58 @@ def handle_route(app: FastAPI, req: RouteRequest, request: Request) -> Response:
     return respond(status, body)
 
 
+async def handle_put_kv(app: FastAPI, handle: str, model_id: str, request: Request) -> Response:
+    """Serve ``PUT /kv/{handle}?model_id=``: store engine KV bytes under a name.
+
+    Args:
+        app: The FastAPI application.
+        handle: Client-chosen name.
+        model_id: Model the bytes were produced by.
+        request: The raw bytes.
+
+    Returns:
+        Response: ``{"content_hash"}``; ``400`` for a bad name, ``413`` when too large.
+    """
+    context = route_scope(request, "PUT", "/kv")
+    services = services_for(app)
+    if services is None:
+        return unavailable()
+    if app_context(app).draining:
+        return JSONResponse({"error": "node draining"}, status_code=503, headers={"Retry-After": "1"})
+    data = await read_limited_body(request, MAX_BODY_BYTES)
+    if data is None:
+        return JSONResponse({"error": "payload too large", "limit": MAX_BODY_BYTES}, status_code=413)
+    try:
+        content_hash = await asyncio.to_thread(services.bundles.put, model_id, handle, data, context)
+    except StoreRejectedError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=exc.status)
+    return JSONResponse({"content_hash": content_hash})
+
+
+async def handle_get_kv(app: FastAPI, handle: str, model_id: str, request: Request) -> Response:
+    """Serve ``GET`` / ``HEAD /kv/{handle}?model_id=``.
+
+    Args:
+        app: The FastAPI application.
+        handle: Client-chosen name.
+        model_id: Model the bytes were produced by.
+        request: The inbound request.
+
+    Returns:
+        Response: The bytes (``HEAD``: headers only), or ``404``.
+    """
+    context = route_scope(request, request.method, "/kv")
+    services = services_for(app)
+    if services is None:
+        return unavailable()
+    data = await asyncio.to_thread(services.bundles.get, model_id, handle, context)
+    if data is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if request.method == "HEAD":
+        return Response(status_code=200, headers={"Content-Length": str(len(data))})
+    return Response(content=data, media_type="application/octet-stream")
+
+
 def register_memory_routes(app: FastAPI) -> None:
     """Register the memory API and routing routes.
 
@@ -249,6 +302,12 @@ def register_memory_routes(app: FastAPI) -> None:
     def route_handler(req: RouteRequest, request: Request):
         return handle_route(app, req, request)
 
+    async def put_kv_handler(handle: str, request: Request, model_id: str = "default"):
+        return await handle_put_kv(app, handle, model_id, request)
+
+    async def get_kv_handler(handle: str, request: Request, model_id: str = "default"):
+        return await handle_get_kv(app, handle, model_id, request)
+
     app.add_api_route("/reconstruct", reconstruct_handler, methods=["POST"], response_model=None)
     app.add_api_route("/prefix/lookup", prefix_lookup_get, methods=["GET"], response_model=None)
     app.add_api_route(
@@ -271,12 +330,19 @@ def register_memory_routes(app: FastAPI) -> None:
     app.add_api_route("/objects", put_object_handler, methods=["POST"], response_model=None)
     app.add_api_route("/objects/{content_hash}", get_object_handler, methods=["GET"], response_model=None)
     app.add_api_route("/route", route_handler, methods=["POST"], response_model=None)
+    app.add_api_route("/kv/{handle}", put_kv_handler, methods=["PUT"], response_model=None)
+    app.add_api_route("/kv/{handle}", get_kv_handler, methods=["GET"], response_model=None)
+    app.add_api_route(
+        "/kv/{handle}", get_kv_handler, methods=["HEAD"], response_model=None, name="head_kv", operation_id="head_kv"
+    )
 
 
 __all__ = [
     "MAX_QUERY_TOKENS",
+    "handle_get_kv",
     "handle_get_object",
     "handle_prefix_lookup",
+    "handle_put_kv",
     "handle_put_object",
     "handle_reconstruct",
     "handle_route",

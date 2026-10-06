@@ -344,6 +344,64 @@ class MembraneClient:
         """
         return self.__json("GET", f"/sessions/{session_id}")
 
+    def put_kv(self, handle: str, data: bytes, model_id: str = "default") -> str:
+        """Call ``PUT /kv/{handle}``: store engine KV bytes under a name.
+
+        Args:
+            handle: Name (1-256 of ``[A-Za-z0-9._:-]``).
+            data: The bytes.
+            model_id: Model the bytes were produced by.
+
+        Returns:
+            str: The bundle's content hash.
+        """
+        resp = self.__call(
+            self.__client.put,
+            f"{self.base_url}/kv/{handle}",
+            params={"model_id": model_id},
+            content=data,
+            headers=self.__headers | {"content-type": "application/octet-stream"},
+        )
+        if resp.status_code >= 400:
+            raise_for_status(resp.status_code, resp.text)
+        return str(resp.json()["content_hash"])
+
+    def get_kv(self, handle: str, model_id: str = "default") -> bytes | None:
+        """Call ``GET /kv/{handle}``.
+
+        Args:
+            handle: Name.
+            model_id: Model the bytes were produced by.
+
+        Returns:
+            bytes | None: The bytes, or ``None`` when absent.
+        """
+        resp = self.__call(
+            self.__client.get, f"{self.base_url}/kv/{handle}", params={"model_id": model_id}, headers=self.__headers
+        )
+        if resp.status_code == 404:
+            return None
+        if resp.status_code >= 400:
+            raise_for_status(resp.status_code, resp.text)
+        return resp.content
+
+    def has_kv(self, handle: str, model_id: str = "default") -> bool:
+        """Call ``HEAD /kv/{handle}``.
+
+        Args:
+            handle: Name.
+            model_id: Model the bytes were produced by.
+
+        Returns:
+            bool: True when the bundle exists.
+        """
+        resp = self.__call(
+            self.__client.head, f"{self.base_url}/kv/{handle}", params={"model_id": model_id}, headers=self.__headers
+        )
+        if resp.status_code not in (200, 404):
+            raise_for_status(resp.status_code, resp.text)
+        return resp.status_code == 200
+
     def __json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         """Issue a request and return its JSON body.
 

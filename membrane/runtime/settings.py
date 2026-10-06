@@ -50,6 +50,7 @@ from membrane.secrets import (
 from membrane.security.files import InsecureFileError, require_private_file
 from membrane.server import Server
 from membrane.services import ServiceOptions
+from membrane.services.disagg import ROLES as DISAGG_ROLES
 from membrane.store.quantizing import FORMATS as QUANTIZATION_FORMATS
 from membrane.store.quantizing import QuantizingStore
 from membrane.store.tiered import WarmTier
@@ -64,6 +65,24 @@ logger = logging.getLogger(__name__)
 
 class SettingsError(ValueError):
     """Raised when settings are invalid or violate the startup policy."""
+
+
+GRPC_UNSUPPORTED = (
+    "--grpc-port needs grpcio (install membrane[disagg]); grpcio has no free-threaded build, "
+    "so use the /disagg REST routes on a free-threaded Python"
+)
+
+
+def grpc_supported() -> bool:
+    """Whether the gRPC surface can run here (grpcio importable, GIL build).
+
+    Returns:
+        bool: True when grpcio is installed and the GIL is enabled.
+    """
+    import sys
+
+    gil = getattr(sys, "_is_gil_enabled", lambda: True)()
+    return gil and importlib.util.find_spec("grpc") is not None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -110,6 +129,10 @@ class ServerSettings:
             are read through to it and kept as non-primary copies.
         require_compat: ``MODEL[:DTYPE]``: refuse fragments stamped for
             another model; prefilled fragments are stamped.
+        role: Disaggregation phases served under ``/disagg``: ``prefill``,
+            ``decode``, or ``both``.
+        grpc_port: Also serve the prefill / decode RPCs on this port
+            (needs ``membrane[disagg]`` on a GIL build); ``None`` for off.
         max_memory: Node memory limit in bytes.
         peers: Seed peers as ``host:port``; empty for a single node.
         advertise_host: Host peers use to reach this node.
@@ -172,6 +195,8 @@ class ServerSettings:
     region: str = ""
     origin: str = ""
     require_compat: str = ""
+    role: str = "both"
+    grpc_port: int | None = None
     transfer_compression: str = "zstd"
     kv_quantization: str = "none"
     warm_tier_bytes: int = 0
@@ -224,6 +249,9 @@ class ServerSettings:
             (self.eviction in EVICTION, f"unknown eviction policy {self.eviction!r}"),
             (self.secret_provider in SECRET_PROVIDERS, f"unknown secret provider {self.secret_provider!r}"),
             (self.placement in PLACEMENT, f"unknown placement policy {self.placement!r}"),
+            (self.role in DISAGG_ROLES, f"role must be one of {sorted(DISAGG_ROLES)}"),
+            (self.grpc_port is None or 0 <= self.grpc_port <= 65535, f"gRPC port {self.grpc_port} is out of range"),
+            (self.grpc_port is None or grpc_supported(), GRPC_UNSUPPORTED),
             (self.route_threshold >= 0, "route threshold must not be negative"),
             (self.promote_replicas >= 0, "promote replicas must not be negative"),
             (not (self.origin and self.peers), "a regional cache (--origin) runs without --peer"),
@@ -662,7 +690,9 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
             dynamic_roles=settings.dynamic_roles,
             origin=settings.origin,
             require_compat=settings.require_compat,
+            role=settings.role,
         ),
+        grpc_port=settings.grpc_port,
     )
     if settings.redis_url and not server.durable:
         raise SettingsError(

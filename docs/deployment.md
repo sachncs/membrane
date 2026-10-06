@@ -70,6 +70,8 @@ server refuses to start otherwise.
 | `--region` | `MEMBRANE_REGION` | none | Region advertised to peers (routing and replica locality) |
 | `--origin` | `MEMBRANE_ORIGIN` | none | Run as a regional cache that reads misses through from this origin `HOST:PORT` |
 | `--require-compat` | `MEMBRANE_REQUIRE_COMPAT` | none | Refuse fragments not stamped for `MODEL[:DTYPE]` |
+| `--role` | `MEMBRANE_ROLE` | `both` | Disaggregation phases served under `/disagg`: `prefill`, `decode`, or `both` ([Prefill / decode](disaggregation.md)) |
+| `--grpc-port` | `MEMBRANE_GRPC_PORT` | off | Also serve the prefill / decode RPCs on this port (needs `membrane[disagg]`; image: `--build-arg EXTRAS=disagg`) |
 
 On `SIGTERM` (or Ctrl+C) a node drains: `/readyz` returns 503 so load
 balancers stop routing to it, writes get 503 + `Retry-After`, primaries

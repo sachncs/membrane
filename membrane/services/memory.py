@@ -33,6 +33,7 @@ import hashlib
 import itertools
 import json
 import logging
+import re
 import threading
 from collections import Counter, deque
 from typing import Any, override
@@ -43,6 +44,7 @@ from membrane.compute.base import Backend
 from membrane.constants import SESSION_HEADER
 from membrane.fragment import Fragment
 from membrane.fragment_kind import FragmentKind
+from membrane.identity import PayloadIdentity
 from membrane.identity_index import IdentityIndex
 from membrane.prefilling import Adapter, PrefillResult
 from membrane.prefix import Prefix
@@ -645,6 +647,119 @@ class MemoryService:
         }
 
 
+#: Characters allowed in a KV bundle handle.
+BUNDLE_HANDLE = re.compile(r"[A-Za-z0-9._:-]{1,256}")
+
+
+def bundle_hash(model_id: str, handle: str, tenant: str) -> str:
+    """The content hash a tenant's named KV bundle is stored under.
+
+    Args:
+        model_id: Model the bytes were produced by.
+        handle: Client-chosen name.
+        tenant: Caller's tenant.
+
+    Returns:
+        str: SHA-256 hex digest.
+    """
+    return hashlib.sha256(f"kv-bundle\x00{tenant}\x00{model_id}\x00{handle}".encode()).hexdigest()
+
+
+class BundleStore:
+    """Engine KV bytes stored under a client-chosen name, per tenant and model.
+
+    The engine adapters (vLLM, SGLang, TensorRT-LLM) address KV by their
+    own handles; a bundle maps such a handle to bytes held like any other
+    fragment (replicated, evicted, persisted).
+
+    Attributes:
+        memory: The memory service (node access and write guard).
+    """
+
+    def __init__(self, memory: MemoryService) -> None:
+        """Create the store.
+
+        Args:
+            memory: The memory service.
+        """
+        self.memory = memory
+
+    def put(
+        self, model_id: str, handle: str, data: bytes, auth_context: AuthContext | None = None, ttl: float = 3600.0
+    ) -> str:
+        """Store ``data`` under ``handle``, replacing an earlier bundle.
+
+        Args:
+            model_id: Model the bytes were produced by.
+            handle: Client-chosen name.
+            data: The bytes.
+            auth_context: Authenticated caller.
+            ttl: Seconds the bundle lives.
+
+        Returns:
+            str: The bundle's content hash.
+
+        Raises:
+            StoreRejectedError: On an invalid handle or model (``status`` 400).
+        """
+        if not BUNDLE_HANDLE.fullmatch(handle) or not model_id or len(model_id) > 256:
+            raise StoreRejectedError("handle must be 1-256 of [A-Za-z0-9._:-] and model_id 1-256 chars", status=400)
+        tenant, scopes = caller_of(auth_context)
+        content_hash = bundle_hash(model_id, handle, tenant)
+        identity = PayloadIdentity(
+            payload_hash=content_hash,
+            model_id=FragmentKind.KV_BUNDLE,
+            model_revision="",
+            tokenizer_name=model_id,
+            tokenizer_revision="",
+            layer_range=(0, 0),
+            head_range=(-1, -1),
+            token_span=(0, 0),
+            dtype="uint8",
+            shape=(len(data),),
+        )
+        fragment = Fragment(
+            identity=identity,
+            payload_ref=content_hash,
+            payload_size=len(data),
+            ttl=ttl,
+            reuse_score=0.5,
+            version_id=1,
+        )
+        if tenant:
+            fragment = fragment.with_tenant(tenant)
+        node = self.memory.node
+        with node.lock:
+            if content_hash in node.fragments:
+                node.remove_fragment(content_hash)  # a new version replaces the old
+        node.content_store.put(content_hash, data)
+        node.store(fragment, is_primary=True, caller_tenant=tenant, caller_scopes=scopes)
+        return content_hash
+
+    def get(self, model_id: str, handle: str, auth_context: AuthContext | None = None) -> bytes | None:
+        """Read a bundle.
+
+        Args:
+            model_id: Model the bytes were produced by.
+            handle: Client-chosen name.
+            auth_context: Authenticated caller.
+
+        Returns:
+            bytes | None: The bytes, or ``None`` when absent or not visible.
+        """
+        if not BUNDLE_HANDLE.fullmatch(handle):
+            return None
+        tenant, scopes = caller_of(auth_context)
+        content_hash = bundle_hash(model_id, handle, tenant)
+        node = self.memory.node
+        if node.retrieve(content_hash, caller_tenant=tenant, caller_scopes=scopes) is None:
+            return None
+        data = node.content_store.get(content_hash)
+        if data is not None:
+            self.memory.record_access(content_hash, tenant=tenant)
+        return data
+
+
 class NoPrefill(Adapter):
     """Adapter that never prefills (lookups and reads only)."""
 
@@ -663,13 +778,16 @@ class NoPrefill(Adapter):
 
 
 __all__ = [
+    "BUNDLE_HANDLE",
     "MAX_PROMPT_TOKENS",
     "OBJECT_KINDS",
     "RECENT_READS",
     "SESSION_HEADER",
     "BackendPrefill",
+    "BundleStore",
     "MemoryService",
     "NoPrefill",
     "StoreRejectedError",
+    "bundle_hash",
     "caller_of",
 ]

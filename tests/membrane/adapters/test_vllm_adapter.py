@@ -124,7 +124,7 @@ class TestMembraneVLLMConnector:
         connector.client = _CapturingClient()
         kv_cache = _SplitFakeTensor(b"k0k0v0v0")
         connector.save_kv(0, [kv_cache], None)
-        assert captured == [0, 0]
+        assert captured == [0]  # K and V travel together
         assert 0 in connector.client.by_handle.get("mem:0", {})
 
     def test_make_connector_returns_vllm_subclass(self):
