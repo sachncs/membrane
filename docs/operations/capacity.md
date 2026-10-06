@@ -76,13 +76,16 @@ Read capacity grows with the node count. `scripts/kind_capacity.sh`
 (250m, requests = limits), drives every pod to that limit with reads of
 fragments it holds, and compares 3 nodes with 5 after rebalancing:
 
-| Run | 3 nodes | 5 nodes | 5 / 3 |
-|-----|---------|---------|-------|
-| 1 | 1,906 reads/s | 3,293 reads/s | 1.73x |
-| 2 | 2,170 reads/s | 3,620 reads/s | 1.67x |
+| Nodes | Reads/s | Per pod |
+|-------|---------|---------|
+| 3 | 1,848 | 616 / 612 / 620 |
+| 5 | 2,955 | 579 / 583 / 613 / 590 / 590 |
 
-Both runs are linear in the CPU added (5/3 = 1.67x), on a 4-CPU Docker
-VM with no failed reads; the job fails below 1.5x. A pod's read rate depends on its CPU budget, not on
+That is 1.60x for 5/3 = 1.67x more CPU, with no failed reads, measured
+on a 4-CPU Docker VM while another workload shared the host. The job
+also checks that primary ownership settles before it measures (here
+within 15 s, 600 primaries split 105-147 per pod), and fails below
+1.5x. A pod's read rate depends on its CPU budget, not on
 the cluster size, so plan read capacity per pod and add pods for more.
 
 ## Network

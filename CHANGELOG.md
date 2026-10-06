@@ -101,8 +101,8 @@ upgrading.
 
 - `scripts/kind_capacity.sh` and the `kind-capacity` CI job measure read
   capacity on kind, with every pod limited to 250m CPU. 5 nodes served
-  1.67x-1.73x the reads of 3 over two runs (3,620 vs 2,170 and 3,293 vs
-  1,906 reads/s; linear is 1.67x); the job fails below 1.5x. `kind_load.py` gains `seed` and `capacity` modes, and both kind
+  1.60x the reads of 3 (2,955 vs 1,848 reads/s; linear is 1.67x); the
+  job fails below 1.5x, or when primary ownership does not settle. `kind_load.py` gains `seed` and `capacity` modes, and both kind
   scripts share `scripts/kind_lib.sh`.
 - Coverage gates: CI fails below 84% total or when any module is under
   70% (`tools/check_coverage.py`). Generated protobuf modules are left
@@ -110,6 +110,14 @@ upgrading.
 
 ### Fixed (found by the new tests)
 
+- A node was never on its own hash ring: `Membership` added peers only.
+  Every node therefore saw each of its primaries as owned by a peer and
+  handed it off, and ownership circulated forever. Around 20 of every 40
+  sampled fragments had a primary that was not the ring owner, some had
+  two, and each node moved 100-250 primaries a minute with no membership
+  change. Primaries now settle on their ring owners. The kind e2e's
+  4 -> 5 share check passed only because the circulating counts happened
+  to dip below 30%.
 - `/delete`, `/tombstone`, and `/purge` never saw the server's tombstone
   table: deletes left no tombstone, and `/tombstone` always answered
   "no tombstone table configured".

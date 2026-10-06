@@ -138,8 +138,12 @@ class Membership:
     ) -> None:
         """Create an empty membership table.
 
+        The local node is placed on the ring here: it owns its share of the
+        hashes like every peer. Without it, each node would see every one
+        of its primaries as belonging to a peer and hand them off forever.
+
         Args:
-            node_id: Id of the local node (never added as a peer).
+            node_id: Id of the local node (on the ring, never a peer).
             ring: Consistent-hash ring updated as peers join and leave.
             shard: Shard manager updated as peers join and leave.
             directory: Fragment location registry cleaned up when peers leave.
@@ -148,6 +152,9 @@ class Membership:
         self.ring = ring
         self.shard = shard
         self.directory = directory or Registry()
+        ring.add_node(node_id)
+        if shard.hash_ring is not ring:
+            shard.hash_ring.add_node(node_id)
 
         self.peers: dict[str, PeerInfo] = {}
         self.clients: dict[str, Peer] = {}

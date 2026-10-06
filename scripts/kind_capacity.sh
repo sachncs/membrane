@@ -56,15 +56,19 @@ $K scale statefulset/membrane --replicas=5 >/dev/null
 $K rollout status statefulset/membrane --timeout=300s >/dev/null
 deadline=$((SECONDS + 400))
 previous=""
+settled=0
 while (( SECONDS < deadline )); do
     counts="$(primary_counts)"
     log "primaries per pod: $counts"
     read -r -a c <<< "$counts"
-    if [ "${#c[@]}" -eq 5 ] && [ "${c[3]}" -gt 0 ] && [ "${c[4]}" -gt 0 ] && [ "$counts" == "$previous" ]; then break; fi
+    if [ "${#c[@]}" -eq 5 ] && [ "${c[3]}" -gt 0 ] && [ "${c[4]}" -gt 0 ] && [ "$counts" == "$previous" ]; then
+        settled=1
+        break
+    fi
     previous="$counts"
     sleep 15
 done
-[ "$counts" == "$previous" ] || { log "FAIL: rebalancing did not settle"; exit 1; }
+(( settled )) || { log "FAIL: primary ownership did not settle within 400s"; exit 1; }
 
 log "measuring 5 nodes"
 five="$(measure 5 capacity-5)"
