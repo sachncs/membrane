@@ -206,7 +206,35 @@ class Node:
         self.__on_store: Callable[[Fragment, bool], None] | None = None
         self.__on_remove: Callable[[str], None] | None = None
         self.__eviction_counter: Callable[[str, int], None] | None = None
+        self.share_hot_objects()
         logger.info("Initialized node %s with %s bytes", node_id, max_memory_bytes)
+
+    def share_hot_objects(self) -> int:
+        """Let every request thread read this node without refcount contention.
+
+        On a free-threaded Python, switches the node and the objects each
+        read reaches (table, its maps, content store, eviction policy) to
+        deferred reference counting (:func:`~membrane.runtime.concurrency.share`).
+        Call again after replacing one of them.
+
+        Returns:
+            int: Objects switched (0 on a GIL build).
+        """
+        from membrane.runtime.concurrency import share
+
+        store_map = getattr(self.content_store, "store", None)
+        return share(
+            self,
+            self.table,
+            self.table.fragments,
+            self.table.access_times,
+            self.table.insertion_times,
+            self.table.primary_hashes,
+            self.content_store,
+            store_map if isinstance(store_map, dict) else None,
+            self.eviction_policy,
+            self.index_system,
+        )
 
     @property
     def fragments(self) -> dict[str, Fragment]:
@@ -220,8 +248,8 @@ class Node:
 
     @property
     def access_times(self) -> dict[str, float]:
-        """Last access time per resident hash."""
-        return self.table.access_times
+        """Last access time per resident hash, with every thread's buffered reads merged."""
+        return self.table.recency()
 
     @property
     def insertion_times(self) -> dict[str, float]:
@@ -395,23 +423,25 @@ class Node:
         """
         if self.lower_tier is not None and content_hash not in self.table:
             self.__promote(content_hash)
-        with self.lock:
-            fragment = self.fragments.get(content_hash)
-            if fragment is None:
-                return None
-            if not TenantGuard.can_read(fragment.tenant_id, caller_tenant, caller_scopes):
-                return None
-            now = time.time()
-            if self.table.is_expired(content_hash, now):
-                # Background TTL cleanup: remove the expired entry
-                # rather than returning a stale fragment.
-                logger.debug("Evicting expired fragment %s from %s", content_hash, self.node_id)
-                self.remove_fragment(content_hash)
-                return None
-
-            self.table.touch(content_hash, now)
-            logger.debug("Retrieved fragment %s from %s", content_hash, self.node_id)
-            return fragment
+        # A hit takes no lock (single dict reads and one write), so reads
+        # run in parallel on a free-threaded Python; only removing an
+        # expired fragment does.
+        fragment = self.table.get(content_hash)
+        if fragment is None:
+            return None
+        if not TenantGuard.can_read(fragment.tenant_id, caller_tenant, caller_scopes):
+            return None
+        now = time.time()
+        if now - self.table.inserted_at(content_hash, now) > fragment.ttl:
+            with self.lock:
+                if self.table.is_expired(content_hash, now):
+                    # Background TTL cleanup: remove the expired entry
+                    # rather than returning a stale fragment.
+                    logger.debug("Evicting expired fragment %s from %s", content_hash, self.node_id)
+                    self.remove_fragment(content_hash)
+            return None
+        self.table.record_access(content_hash, now)
+        return fragment
 
     def remove_fragment(self, content_hash: str) -> Fragment:
         """Remove a fragment from internal state and return it.

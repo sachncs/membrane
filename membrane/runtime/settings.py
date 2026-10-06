@@ -30,6 +30,7 @@ from membrane.node import Node, NodeAttributes
 from membrane.otel_tracer.otel import TRACING
 from membrane.replica import Replica
 from membrane.runtime.components import load_data_key
+from membrane.runtime.concurrency import gil_enabled
 from membrane.runtime.plugins import (
     AUTHENTICATORS,
     COMPUTE_BACKENDS,
@@ -68,21 +69,19 @@ class SettingsError(ValueError):
 
 
 GRPC_UNSUPPORTED = (
-    "--grpc-port needs grpcio (install membrane[disagg]); grpcio has no free-threaded build, "
-    "so use the /disagg REST routes on a free-threaded Python"
+    "--grpc-port needs grpcio (install membrane[disagg]); on a free-threaded Python grpcio turns the "
+    "GIL back on for the whole process, so use the /disagg REST routes there"
 )
 
 
 def grpc_supported() -> bool:
-    """Whether the gRPC surface can run here (grpcio importable, GIL build).
+    """Whether the gRPC surface can run here without costing the process its parallelism.
 
     Returns:
-        bool: True when grpcio is installed and the GIL is enabled.
+        bool: True when grpcio is installed and the GIL is already on (a
+        GIL build, or a free-threaded build running with the GIL).
     """
-    import sys
-
-    gil = getattr(sys, "_is_gil_enabled", lambda: True)()
-    return gil and importlib.util.find_spec("grpc") is not None
+    return gil_enabled() and importlib.util.find_spec("grpc") is not None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -274,6 +273,7 @@ class ServerSettings:
             (self.consistency in CONSISTENCY_LEVELS, f"consistency must be one of {sorted(CONSISTENCY_LEVELS)}"),
             (self.drain_timeout >= 0, "drain timeout must not be negative"),
             (self.limits.max_concurrency >= 0, "max concurrency must not be negative"),
+            (1 <= self.limits.http_threads <= 256, "http threads must be between 1 and 256"),
             (self.limits.rate_limit_per_sec >= 0, "rate limit must not be negative"),
             (not (self.api_key_file and self.auth_config), "use --api-key-file or --auth-config, not both"),
             (

@@ -70,6 +70,30 @@ jobs:
           path: coverage.xml
           retention-days: 14
 
+  test-free-threaded:
+    name: Tests (free-threaded 3.14t)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      # grpcio would turn the GIL back on, so this environment leaves it
+      # out (the gRPC tests skip); everything else is the server stack.
+      - name: Free-threaded environment
+        run: |
+          uv python install 3.14t
+          uv venv --python 3.14t .venv-ft
+          uv pip install --python .venv-ft -e ".[server,transfer]" \
+            pytest pytest-timeout pytest-benchmark hypothesis opentelemetry-sdk protobuf
+      - name: The server stack keeps the GIL off
+        run: >-
+          .venv-ft/bin/python -c "import membrane.server, membrane.runtime.settings, sys;
+          assert not sys._is_gil_enabled(), 'an extension re-enabled the GIL'"
+      - name: pytest (includes the multi-core retrieve benchmark)
+        run: .venv-ft/bin/python -m pytest tests/ -m "not stress and not chaos" --timeout=300 -q -p no:cacheprovider
+
   integration:
     name: Redis integration
     runs-on: ubuntu-latest
@@ -223,6 +247,38 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
 
+  docker-ft:
+    name: Container image (free-threaded)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.ft
+          push: false
+          load: true
+          tags: membrane:ci-ft
+          cache-from: type=gha,scope=ft
+          cache-to: type=gha,mode=max,scope=ft
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke-ft -p 8081:8080 -e MEMBRANE_ALLOW_UNAUTHENTICATED=true membrane:ci-ft
+          for _ in $(seq 1 30); do curl -fsS localhost:8081/readyz && break; sleep 1; done
+          curl -fsS localhost:8081/metrics | grep -q '^membrane_gil_enabled 0.0'
+          curl -fsS localhost:8081/metrics | grep -q '^membrane_http_event_loops 4.0'
+          curl -fsS -H 'Content-Type: application/json' -d '{"prompt_tokens":[1,2,3,4],"model_id":"ci"}' \
+            localhost:8081/prefill
+          docker stop -t 40 smoke-ft
+          test "$(docker inspect -f '{{.State.ExitCode}}' smoke-ft)" = 0
+      - name: Container logs
+        if: always()
+        run: docker logs smoke-ft 2>&1 || true
+
   kind:
     name: Cluster e2e (kind)
     runs-on: ubuntu-latest
@@ -282,7 +338,7 @@ jobs:
     # Single required status check for branch protection.
     name: CI passed
     if: always()
-    needs: [lint, test, integration, extended, security, docker, kind, site, links]
+    needs: [lint, test, test-free-threaded, integration, extended, security, docker, docker-ft, kind, site, links]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@v1.3.0

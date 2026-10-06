@@ -408,6 +408,18 @@ class PeerHealthMetrics:
         return self.registry.gauge("membrane_audit_chain_valid", "1 when the audit log hash chain verifies.")
 
     @property
+    def gil_enabled(self) -> Gauge:
+        """1 while the interpreter runs with the GIL (requests cannot run in parallel)."""
+        return self.registry.gauge(
+            "membrane_gil_enabled", "1 when the GIL is enabled; 0 on a free-threaded Python running without it."
+        )
+
+    @property
+    def http_loops(self) -> Gauge:
+        """Event loops serving HTTP (``--http-threads``)."""
+        return self.registry.gauge("membrane_http_event_loops", "Event loops serving HTTP, one thread each.")
+
+    @property
     def circuit_open(self) -> Gauge:
         """1 while calls to a peer fail fast (its circuit breaker is open)."""
         return self.registry.gauge(

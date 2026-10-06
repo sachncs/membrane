@@ -5,6 +5,8 @@ from collections.abc import Iterator
 
 import pytest
 
+pytest.importorskip("grpc", reason="the wire v3 gRPC stubs need grpcio")
+
 from membrane.wire.v3 import (
     ChunkManifest,
     ResumableReceiver,

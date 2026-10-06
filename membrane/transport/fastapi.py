@@ -138,6 +138,7 @@ def create_app(
             queue_timeout_sec=limits.queue_timeout_sec,
             on_reject=on_reject,
             in_flight=app.state.in_flight,
+            loops=limits.http_threads,
         )
     if limits.rate_limit_per_sec > 0:
         app.add_middleware(
@@ -226,6 +227,7 @@ class FastAPIServer:
         self.metrics_registry = metrics_registry
         self.tls = tls
         self.server: Any | None = None
+        self.servers: list[Any] = []
         self.tls_tmpdir: Any | None = None
         self.app = create_app(
             node=node,
@@ -237,65 +239,103 @@ class FastAPIServer:
             limits=self.limits,
         )
 
-    def start(self) -> None:
-        """Start uvicorn serving the configured app.
+    def ssl_options(self) -> dict[str, Any]:
+        """Uvicorn TLS options, writing the PEMs to a private temporary directory.
 
-        Blocks until :meth:`stop` is called.
+        Returns:
+            dict[str, Any]: Keyword arguments for :class:`uvicorn.Config`
+            (empty without TLS).
         """
         import tempfile
 
+        if self.tls is None:
+            return {}
+        # Build a real SSLContext first to validate the chain
+        # eagerly — uvicorn surfaces later, opaque errors.
+        build_server_context(self.tls)
+        # uvicorn.Config takes file paths for the cert chain and CA bundle;
+        # the directory lives as long as the server (removed in start()).
+        self.tls_tmpdir = tempfile.TemporaryDirectory(prefix="membrane-tls-")
+        cert_path = f"{self.tls_tmpdir.name}/server.crt.pem"
+        key_path = f"{self.tls_tmpdir.name}/server.key.pem"
+        ca_path = f"{self.tls_tmpdir.name}/ca-bundle.pem"
+        with open(cert_path, "w") as f:
+            f.write(self.tls.server_cert_pem)
+        fd = os.open(key_path, os.O_WRONLY | os.O_TRUNC | os.O_CREAT, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(self.tls.server_key_pem)
+        with open(ca_path, "w") as f:
+            f.write(self.tls.ca_bundle_pem)
+        logger.info("FastAPI mTLS enabled: require_client_cert=%s", self.tls.require_client_cert)
+        return {
+            "ssl_certfile": cert_path,
+            "ssl_keyfile": key_path,
+            "ssl_ca_certs": ca_path if self.tls.ca_bundle_pem else None,
+            "ssl_cert_reqs": 2 if self.tls.require_client_cert else 0,
+            # Surfaces the verified peer cert CN to the authenticator.
+            "http": PeerCertH11Protocol,
+        }
+
+    def start(self) -> None:
+        """Start uvicorn serving the configured app; blocks until :meth:`stop`.
+
+        The listening socket is bound once. With ``limits.http_threads``
+        above one, that many uvicorn servers, each with its own event loop
+        in its own thread, accept on it: on a free-threaded Python they
+        serve requests on separate cores against the one shared node.
+        """
+        import threading
+
         import uvicorn
 
-        ssl_kwargs: dict[str, Any] = {}
-        if self.tls is not None:
-            # Build a real SSLContext first to validate the chain
-            # eagerly — uvicorn surfaces later, opaque errors.
-            build_server_context(self.tls)
-            # uvicorn.Config takes file paths for the cert chain
-            # and CA bundle. We write the configured PEMs to a
-            # short-lived tmpdir; cleanup happens in ``stop`` so
-            # the lifetime matches the running server.
-            self.tls_tmpdir = tempfile.TemporaryDirectory(prefix="membrane-tls-")
-            cert_path = f"{self.tls_tmpdir.name}/server.crt.pem"
-            key_path = f"{self.tls_tmpdir.name}/server.key.pem"
-            ca_path = f"{self.tls_tmpdir.name}/ca-bundle.pem"
-            with open(cert_path, "w") as f:
-                f.write(self.tls.server_cert_pem)
-            with open(key_path, "w") as f:
-                f.write(self.tls.server_key_pem)
-            with open(ca_path, "w") as f:
-                f.write(self.tls.ca_bundle_pem)
-            ssl_kwargs = {
-                "ssl_certfile": cert_path,
-                "ssl_keyfile": key_path,
-                "ssl_ca_certs": ca_path if self.tls.ca_bundle_pem else None,
-                "ssl_cert_reqs": 2 if self.tls.require_client_cert else 0,
-                # Surfaces the verified peer cert CN to the authenticator.
-                "http": PeerCertH11Protocol,
-            }
-            logger.info(
-                "FastAPI mTLS enabled: require_client_cert=%s",
-                self.tls.require_client_cert,
+        ssl_kwargs = self.ssl_options()
+        configs = [
+            uvicorn.Config(
+                self.app,
+                host=self.host,
+                port=self.port,
+                log_level="info",
+                # Keep uvicorn's records on Membrane's handlers (text or JSON).
+                log_config=None,
+                access_log=False,
+                limit_concurrency=self.limits.max_connections,
+                timeout_keep_alive=int(self.limits.keep_alive_timeout_sec),
+                timeout_graceful_shutdown=10,
+                **ssl_kwargs,
             )
-        config = uvicorn.Config(
-            self.app,
-            host=self.host,
-            port=self.port,
-            log_level="info",
-            # Keep uvicorn's records on Membrane's handlers (text or JSON).
-            log_config=None,
-            access_log=False,
-            limit_concurrency=self.limits.max_connections,
-            timeout_keep_alive=int(self.limits.keep_alive_timeout_sec),
-            timeout_graceful_shutdown=10,
-            **ssl_kwargs,
-        )
-        self.server = uvicorn.Server(config)
+            for _ in range(max(1, self.limits.http_threads))
+        ]
+        listener = configs[0].bind_socket()
+        self.port = int(listener.getsockname()[1])
+        self.servers = [uvicorn.Server(config) for config in configs]
+        self.server = self.servers[0]
         scheme = "https" if ssl_kwargs else "http"
-        logger.info("FastAPI server listening on %s://%s:%s", scheme, self.host, self.port)
+        logger.info(
+            "FastAPI server listening on %s://%s:%s (%s event loop%s)",
+            scheme,
+            self.host,
+            self.port,
+            len(self.servers),
+            "s" if len(self.servers) > 1 else "",
+        )
+        # Each loop gets its own descriptor for the shared listening socket,
+        # so one loop closing its server does not close the others'.
+        sockets = [listener] + [listener.dup() for _ in self.servers[1:]]
+        threads = [
+            threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True, name=f"membrane-http-{i}")
+            for i, (server, sock) in enumerate(zip(self.servers[1:], sockets[1:], strict=True), start=1)
+        ]
+        for thread in threads:
+            thread.start()
         try:
-            self.server.run()
+            self.servers[0].run(sockets=[listener])
         finally:
+            for server in self.servers[1:]:
+                server.should_exit = True
+            for thread in threads:
+                thread.join(timeout=15)
+            for sock in sockets:
+                sock.close()
             tmp = getattr(self, "tls_tmpdir", None)
             if tmp is not None:
                 tmp.cleanup()
@@ -312,9 +352,9 @@ class FastAPIServer:
             bool: True when the live listener now uses the new chain; False
             when TLS is off or the server has not started.
         """
-        config = getattr(self.server, "config", None)
-        context = getattr(config, "ssl", None)
-        if self.tls_tmpdir is None or context is None:
+        found = (getattr(getattr(server, "config", None), "ssl", None) for server in self.servers)
+        contexts = [c for c in found if c is not None]
+        if self.tls_tmpdir is None or not contexts:
             return False
         cert_path = f"{self.tls_tmpdir.name}/server.crt.pem"
         key_path = f"{self.tls_tmpdir.name}/server.key.pem"
@@ -323,7 +363,8 @@ class FastAPIServer:
         fd = os.open(key_path, os.O_WRONLY | os.O_TRUNC | os.O_CREAT, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(key_pem)
-        context.load_cert_chain(cert_path, key_path)
+        for context in contexts:  # one per event loop
+            context.load_cert_chain(cert_path, key_path)
         logger.info("listener certificate reloaded")
         return True
 
@@ -333,8 +374,9 @@ class FastAPIServer:
         Sets ``should_exit = True`` on the underlying server; the
         blocking ``run()`` returns shortly thereafter.
         """
-        if self.server:
-            self.server.should_exit = True
+        for server in self.servers:
+            server.should_exit = True
+        if self.servers:
             logger.info("FastAPI server stopped")
 
     def run_in_thread(self) -> None:

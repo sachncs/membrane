@@ -349,6 +349,12 @@ def main(
         envvar="MEMBRANE_DRAIN_TIMEOUT",
         help="Seconds SIGTERM may spend draining (503 readiness, hand off primaries) before exit",
     ),
+    http_threads: int = typer.Option(
+        1,
+        "--http-threads",
+        envvar="MEMBRANE_HTTP_THREADS",
+        help="Event loops serving HTTP, one thread each; scales across cores on free-threaded Python (python3.14t)",
+    ),
     max_concurrency: int = typer.Option(
         64,
         "--max-concurrency",
@@ -462,6 +468,7 @@ def main(
         allow_unauthenticated: Serve without authentication on a
             non-loopback address (unsafe).
         drain_timeout: Seconds SIGTERM may spend draining.
+        http_threads: Event loops serving HTTP, one thread each.
         max_concurrency: Requests handled at once (0: unbounded).
         rate_limit: Requests per second per credential (0: off).
         rate_limit_burst: Rate-limit burst size (0: twice the rate).
@@ -578,6 +585,7 @@ def main(
                 max_connections=max_connections or None,
                 keep_alive_timeout_sec=keep_alive_timeout,
                 enable_api_docs=enable_api_docs,
+                http_threads=http_threads,
             ),
         )
         server, auth_mode = build_server(settings)
