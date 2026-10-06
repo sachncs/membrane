@@ -248,7 +248,10 @@ class PrefixCache:
                 if entry.handle.model_id != model_id:
                     continue
                 prefix_len = self.__matching_prefix_len(entry.token_ids, token_ids)
-                if prefix_len == 0:
+                # Only an entry that is wholly a prefix of the query is
+                # reusable; a partial overlap would report the entry's
+                # length, not the tokens that actually match.
+                if prefix_len == 0 or prefix_len != len(entry.token_ids):
                     continue
                 if best is None or prefix_len > best.handle.token_len:
                     best = entry

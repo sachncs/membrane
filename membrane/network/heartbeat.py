@@ -68,11 +68,14 @@ class Heartbeat:
                 if client is None:
                     continue
                 try:
+                    started = time.monotonic()
                     resp = client.heartbeat()
                     if resp:
                         self.membership.record_heartbeat(
                             p.node_id,
                             lease_until=deadline,
+                            report=resp if isinstance(resp, dict) else None,
+                            round_trip_ms=(time.monotonic() - started) * 1000.0,
                         )
                 except Exception as exc:
                     self.membership.record_miss(p.node_id)

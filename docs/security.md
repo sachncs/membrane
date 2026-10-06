@@ -116,8 +116,8 @@ and `enforce_route_scope` runs it at the top of every handler:
 | Scope | Routes |
 |-------|--------|
 | public | `GET /livez`, `GET /readyz` |
-| `read` | `GET /retrieve`, `/inventory`, `/peers`, `/heartbeat`, `/metrics`, `/metrics.json`, `/openapi.json` (with `--enable-api-docs`) |
-| `write` | `POST /store`, `/replicate`, `/prefill`, `/gossip`, `/join`, `/leave` |
+| `read` | `GET /retrieve`, `/inventory`, `/peers`, `/heartbeat`, `/metrics`, `/metrics.json`, `/openapi.json` (with `--enable-api-docs`), `/prefix/lookup`, `/sessions/{id}`, `/objects/{hash}`; `POST /reconstruct` (without `prefill`), `/prefix/lookup`, `/route` |
+| `write` | `POST /store`, `/replicate`, `/prefill`, `/gossip`, `/join`, `/leave`, `/objects`, `/reconstruct` with `prefill`; `DELETE /sessions/{id}` |
 | `admin` | `POST /sync`, `/delete`, `/tombstone`, `/purge`, `/verify`, `PUT`/`GET`/`HEAD /blobs/{payload_ref}` (peer-to-peer KV bytes), and everything under `/admin/` |
 
 `admin` implies `write` implies `read`. Unlisted routes default to

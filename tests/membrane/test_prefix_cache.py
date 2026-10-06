@@ -159,3 +159,10 @@ class TestPrefixMatch:
         assert match.handle is None
         assert match.token_len == 0
         assert match.is_full is False
+
+
+def test_partial_overlap_is_not_a_match():
+    cache = PrefixCache()
+    cache.insert("m", (1, 2, 3, 4, 5), layer_range=(0, 0))
+    # Shares three tokens, but the cached entry covers five: not reusable.
+    assert cache.lookup("m", (1, 2, 3, 9)).handle is None

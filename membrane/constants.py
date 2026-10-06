@@ -37,6 +37,10 @@ CAPACITY_PRESSURE_THRESHOLD: float = 0.90
 EVICTION_REUSE_EPSILON: float = 0.01
 
 
+#: Request header naming the session a read belongs to (``/sessions/{id}``).
+SESSION_HEADER = "X-Membrane-Session"
+
+
 __all__ = [
     "CAPACITY_PRESSURE_THRESHOLD",
     "DEFAULT_FAILURE_REMOVE_THRESHOLD",
@@ -61,4 +65,5 @@ __all__ = [
     "DEFAULT_TTL",
     "DEFAULT_TTL_SWEEP_INTERVAL",
     "EVICTION_REUSE_EPSILON",
+    "SESSION_HEADER",
 ]

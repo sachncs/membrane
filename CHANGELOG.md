@@ -12,6 +12,44 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Added (memory API and routing)
+
+- `POST /reconstruct`: the cached fragments covering a prompt, tenant
+  scoped, with prefetch hints; `"prefill": true` computes the gaps.
+- `GET`/`POST /prefix/lookup` (memoized, invalidated when a fragment
+  leaves), `/sessions/{id}` (reads tagged `X-Membrane-Session`), and
+  `/objects` for typed prefixes, KV segments, documents, and tool traces.
+- `POST /route`: where to fetch cached KV across the cluster, where to
+  prefill and store, whether reuse beats recompute, and (with
+  `--route-threshold`) whether to offload prefill. `--placement ring|latency|selector|economic|joint`
+  selects a `membrane.placement` plugin.
+- Heartbeats carry round-trip latency, memory pressure, GPU load, region,
+  and role; routing reads them.
+- `--promote-replicas N` copies hot fragments to the least-loaded peers;
+  `--dynamic-roles` re-evaluates the node's role; `--region`;
+  `--origin HOST:PORT` runs a regional read-through cache.
+- `--require-compat MODEL[:DTYPE]` refuses fragments stamped for another
+  model; prefilled fragments are stamped.
+- `MembraneClient` / `AsyncMembraneClient`: `reconstruct`, `prefix_lookup`,
+  `route`, `put_object`, `get_object`, `session`.
+
+### Fixed (memory API)
+
+- The reconstructor never matched fragments from the compute backends
+  (two different token hashes) and accepted positional or semantic
+  candidates whose tokens differed from the prompt; candidates must now
+  hash to the tokens they cover. Prefilled gap fragments kept spans
+  relative to the gap; they are rebased onto the prompt.
+- `PrefixCache.lookup` reported a cached entry's full length when the
+  prompt matched only part of it.
+- `Replica.store` dropped the caller's tenant, skipping the tenant check.
+- `Sessions` grew without bound and was not thread-safe.
+
+### Breaking (memory API)
+
+- `POST /store` answers 409 for a fragment whose content hash is already
+  bound to a different identity (another layer range or token span).
+
 ### Added (data path)
 
 - Blob transfers are compressed (`--transfer-compression`, zstd by

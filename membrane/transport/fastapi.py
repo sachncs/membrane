@@ -57,7 +57,7 @@ from membrane.metrics import MetricsCollector
 from membrane.network.cluster import Cluster
 from membrane.node import Node
 from membrane.transfer import TransferService
-from membrane.transport.limits import ConcurrencyLimitMiddleware, RateLimitMiddleware, TransportLimits
+from membrane.transport.limits import ConcurrencyLimitMiddleware, InFlight, RateLimitMiddleware, TransportLimits
 from membrane.transport.request_id import RequestIdMiddleware
 from membrane.transport.routes import register_routes
 from membrane.transport.tls import MTLSConfig, build_server_context
@@ -130,12 +130,14 @@ def create_app(
     # Starlette runs the last-added middleware first: request IDs wrap
     # everything (so 429 / 503 responses carry one), then rate limiting,
     # then the concurrency bound.
+    app.state.in_flight = InFlight()
     if limits.max_concurrency > 0:
         app.add_middleware(
             ConcurrencyLimitMiddleware,
             max_concurrency=limits.max_concurrency,
             queue_timeout_sec=limits.queue_timeout_sec,
             on_reject=on_reject,
+            in_flight=app.state.in_flight,
         )
     if limits.rate_limit_per_sec > 0:
         app.add_middleware(

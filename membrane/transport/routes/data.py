@@ -39,26 +39,39 @@ from membrane.transport.uploads import MAX_CHUNK_BYTES, UploadError, UploadRegis
 from membrane.wire.v3.chunks import sha256_hex
 
 
-def handle_retrieve(app: FastAPI, content_hash: str, context: AuthContext):
+def handle_retrieve(app: FastAPI, content_hash: str, context: AuthContext, session_id: str = ""):
     """Serve ``GET /retrieve`` for the authenticated caller.
+
+    A hit is recorded (reuse score, promotion demand, and the session's
+    history). On a regional cache, a miss is fetched from the origin.
 
     Args:
         app: The FastAPI application.
         content_hash: Content hash of the fragment.
         context: Authenticated caller.
+        session_id: The ``X-Membrane-Session`` header, if sent.
 
     Returns:
         object: The HTTP response.
     """
-    status, body = record_transport(
-        transport_metrics_for(app),
-        "retrieve",
-        "GET",
-        lambda: op_retrieve(app_context(app).node, content_hash, auth_context=context),
-    )
+    services = app_context(app).services
+
+    def retrieve() -> tuple[int, object]:
+        node = app_context(app).node
+        status, body = op_retrieve(node, content_hash, auth_context=context)
+        found = isinstance(body, dict) and body.get("found")
+        origin = services.origin if services is not None else None
+        if status == 200 and not found and origin is not None and origin.fetch(content_hash):
+            status, body = op_retrieve(node, content_hash, auth_context=context)
+        return status, body
+
+    status, body = record_transport(transport_metrics_for(app), "retrieve", "GET", retrieve)
     registry = app_context(app).metrics_registry
+    hit = status == 200 and isinstance(body, dict) and bool(body.get("found"))
+    if hit and services is not None:
+        services.memory.record_access(content_hash, session_id[:256], context.subject)
     if registry is not None and status == 200 and isinstance(body, dict):
-        result = "hit" if body.get("found") else "corrupt" if body.get("corrupt") else "miss"
+        result = "hit" if hit else "corrupt" if body.get("corrupt") else "miss"
         NodeMetrics(registry).cache_lookups.inc(result=result)
         if result == "corrupt":
             record_corrupt_payload(registry)
@@ -78,6 +91,7 @@ def handle_store(app: FastAPI, req: StoreRequest, request: Request):
     """
     context = route_scope(request, "POST", "/store")
     cluster_metrics_obj = app_context(app).cluster_metrics
+    services = app_context(app).services
     status, body = record_transport(
         transport_metrics_for(app),
         "store",
@@ -91,6 +105,7 @@ def handle_store(app: FastAPI, req: StoreRequest, request: Request):
             draining=app_context(app).draining,
             auth_context=context,
             cluster_metrics=cluster_metrics_obj,
+            store_guard=services.memory.check_store if services is not None else None,
         ),
     )
     return respond(status, body)
@@ -129,6 +144,7 @@ def handle_prefill(app: FastAPI, req: PrefillRequest, request: Request):
         object: The HTTP response.
     """
     context = route_scope(request, "POST", "/prefill")
+    services = app_context(app).services
     status, body = record_transport(
         transport_metrics_for(app),
         "prefill",
@@ -139,6 +155,7 @@ def handle_prefill(app: FastAPI, req: PrefillRequest, request: Request):
             req.prompt_tokens,
             req.model_id,
             auth_context=context,
+            stamp=services.memory.stamp if services is not None else None,
         ),
     )
     return respond(status, body)

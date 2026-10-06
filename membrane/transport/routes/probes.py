@@ -58,6 +58,10 @@ def handle_heartbeat(app: FastAPI, request: Request):
         object: The HTTP response.
     """
     context = route_scope(request, "GET", "/heartbeat")
+    services = app_context(app).services
+    advertised = {}
+    if services is not None:
+        advertised = {"role": services.role, "gpu_load": services.view.telemetry()[services.view.local_id].gpu_load}
     status, body = record_transport(
         transport_metrics_for(app),
         "heartbeat",
@@ -67,6 +71,7 @@ def handle_heartbeat(app: FastAPI, request: Request):
             cluster=app_context(app).cluster,
             headers=peer_headers(request),
             auth_context=context,
+            advertised=advertised,
         ),
     )
     return respond(status, body)

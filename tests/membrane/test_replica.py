@@ -50,3 +50,20 @@ class TestReplicaNode:
         origin.store(f2, is_primary=True)
         warmed = replica.warm_from_origin(origin, ["a", "b"])
         assert len(warmed) >= 1
+
+
+def test_replica_enforces_the_callers_tenant():
+    from membrane.errors import TenantScopeError
+
+    replica = Replica("r1")
+    frag = make_fragment("t1").with_tenant("alice")
+    with pytest.raises(TenantScopeError):
+        replica.store(frag, caller_tenant="bob", caller_scopes=frozenset({"write"}))
+    assert replica.store(frag, caller_tenant="alice", caller_scopes=frozenset({"write"}))
+
+
+def test_replica_accepts_node_options():
+    from membrane.content_store import InProcessBytes
+
+    store = InProcessBytes()
+    assert Replica("r1", content_store=store).content_store is store

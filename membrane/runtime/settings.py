@@ -26,8 +26,9 @@ from membrane.auth.apikey import APIKeyAuthenticator
 from membrane.auth.spiffe import SPIFFEAuthenticator, parse_id_scopes
 from membrane.codec import method_available
 from membrane.network.config import CONSISTENCY_LEVELS, ClusterConfig
-from membrane.node import Node
+from membrane.node import Node, NodeAttributes
 from membrane.otel_tracer.otel import TRACING
+from membrane.replica import Replica
 from membrane.runtime.components import load_data_key
 from membrane.runtime.plugins import (
     AUTHENTICATORS,
@@ -35,6 +36,7 @@ from membrane.runtime.plugins import (
     CONTENT_STORES,
     EVICTION,
     PERSISTENCE,
+    PLACEMENT,
     SECRET_PROVIDERS,
     UnknownPluginError,
 )
@@ -47,6 +49,7 @@ from membrane.secrets import (
 )
 from membrane.security.files import InsecureFileError, require_private_file
 from membrane.server import Server
+from membrane.services import ServiceOptions
 from membrane.store.quantizing import FORMATS as QUANTIZATION_FORMATS
 from membrane.store.quantizing import QuantizingStore
 from membrane.store.tiered import WarmTier
@@ -95,6 +98,18 @@ class ServerSettings:
             ``lz4``, ``deflate``, or ``raw``.
         otel_endpoint: OTLP/gRPC endpoint for traces; empty uses
             ``OTEL_EXPORTER_OTLP_ENDPOINT`` when set, else tracing is off.
+        placement: Placement policy plugin answering ``/route``.
+        route_threshold: Uncached prompt tokens above which ``/route`` says to
+            offload prefill to Membrane; adapts to load. ``0`` leaves it out.
+        promote_replicas: Copies a frequently read fragment may reach;
+            ``0`` disables promotion.
+        dynamic_roles: Re-evaluate the node's role from load and advertise it.
+        region: Region this node runs in (advertised; used by routing and
+            replica placement).
+        origin: ``host:port`` of an origin this node caches for; local misses
+            are read through to it and kept as non-primary copies.
+        require_compat: ``MODEL[:DTYPE]``: refuse fragments stamped for
+            another model; prefilled fragments are stamped.
         max_memory: Node memory limit in bytes.
         peers: Seed peers as ``host:port``; empty for a single node.
         advertise_host: Host peers use to reach this node.
@@ -150,6 +165,13 @@ class ServerSettings:
     eviction: str = "weighted-lru"
     load_hooks: bool = True
     otel_endpoint: str = ""
+    placement: str = "ring"
+    route_threshold: int = 0
+    promote_replicas: int = 0
+    dynamic_roles: bool = False
+    region: str = ""
+    origin: str = ""
+    require_compat: str = ""
     transfer_compression: str = "zstd"
     kv_quantization: str = "none"
     warm_tier_bytes: int = 0
@@ -201,6 +223,11 @@ class ServerSettings:
             ),
             (self.eviction in EVICTION, f"unknown eviction policy {self.eviction!r}"),
             (self.secret_provider in SECRET_PROVIDERS, f"unknown secret provider {self.secret_provider!r}"),
+            (self.placement in PLACEMENT, f"unknown placement policy {self.placement!r}"),
+            (self.route_threshold >= 0, "route threshold must not be negative"),
+            (self.promote_replicas >= 0, "promote replicas must not be negative"),
+            (not (self.origin and self.peers), "a regional cache (--origin) runs without --peer"),
+            (not self.origin or ":" in self.origin, "--origin must be HOST:PORT"),
             (self.warm_tier_bytes >= 0, "warm tier bytes must not be negative"),
             (not self.warm_tier_bytes or bool(self.data_dir), "the warm tier needs --data-dir"),
             (
@@ -586,11 +613,14 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
         from membrane.content_store import InProcessBytes
 
         content_store = QuantizingStore(content_store or InProcessBytes(), settings.kv_quantization)
-    node = Node(
+    # A regional cache never owns primaries: it holds read-through copies.
+    node_class = Replica if settings.origin else Node
+    node = node_class(
         node_id=settings.node_id,
         max_memory_bytes=settings.max_memory,
         content_store=content_store,
         eviction_policy=EVICTION.get(settings.eviction)(),
+        attributes=NodeAttributes(region=settings.region) if settings.region else None,
     )
     if settings.warm_tier_bytes:
         from membrane.content_store import FilesystemBlob
@@ -625,6 +655,14 @@ def build_server(settings: ServerSettings) -> tuple[Server, str]:
         spiffe=spiffe_config(settings),
         audit_path=str(Path(settings.data_dir) / "audit.jsonl") if settings.data_dir else None,
         transfer_compression=settings.transfer_compression,
+        services=ServiceOptions(
+            placement=settings.placement,
+            route_threshold=settings.route_threshold,
+            promote_replicas=settings.promote_replicas,
+            dynamic_roles=settings.dynamic_roles,
+            origin=settings.origin,
+            require_compat=settings.require_compat,
+        ),
     )
     if settings.redis_url and not server.durable:
         raise SettingsError(

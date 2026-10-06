@@ -164,11 +164,12 @@ def build_authenticator(mtls: MTLSConfig | None) -> Authenticator | None:
 
 
 def configure_peer_access(
-    cluster_config: ClusterConfig,
+    cluster_config: ClusterConfig | None,
     mtls: MTLSConfig | None,
     peer_api_key: str,
     peer_networks: tuple[str, ...],
     compression: str = "zstd",
+    extra_peers: tuple[str, ...] = (),
 ) -> None:
     """Install process-wide peer credentials and the outbound URL policy.
 
@@ -177,13 +178,14 @@ def configure_peer_access(
 
     Args:
         cluster_config: Cluster configuration (its seed peers are allowed by
-            name).
+            name); ``None`` for a node without a cluster.
         mtls: mTLS configuration, or ``None`` when TLS is off.
         peer_api_key: Bearer key this node presents to its peers (needs the
             ``admin`` scope).
         peer_networks: CIDR ranges of the peer network, exempt from the SSRF
             private-address block.
         compression: How KV bytes travel to peers.
+        extra_peers: Further ``host:port`` peers to allow (an origin).
     """
     from membrane.network.peer import PeerCredentials, set_default_peer_credentials
     from membrane.security.url_allowlist import configure as configure_allowlist
@@ -197,7 +199,8 @@ def configure_peer_access(
             compression=compression,
         )
     )
-    seed_hosts = [seed.rsplit(":", 1)[0].strip("[]") for seed in cluster_config.peers]
+    seeds = (tuple(cluster_config.peers) if cluster_config is not None else ()) + extra_peers
+    seed_hosts = [seed.rsplit(":", 1)[0].strip("[]") for seed in seeds]
     networks = list(peer_networks)
     # A local (loopback) cluster advertises 127.0.0.1 / ::1 rather than
     # the seed hostnames, so admit loopback peers when the operator

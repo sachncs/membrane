@@ -36,3 +36,15 @@ class TestSessionTracker:
         st.record_access("s1", "h1")
         assert "s1" in st.sessions
         assert isinstance(st.sessions["s1"], Session)
+
+
+def test_sessions_are_bounded():
+    st = Sessions(max_sessions=2, max_history=3)
+    for name in ("a", "b", "c"):
+        st.record_access(name, "h")
+    assert list(st.sessions) == ["b", "c"]  # least recently active dropped
+    for i in range(5):
+        st.record_access("c", f"h{i}")
+    assert st.get_session_history("c") == ["h2", "h3", "h4"]
+    assert st.forget("c") is True
+    assert len(st) == 1

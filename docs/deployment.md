@@ -63,6 +63,13 @@ server refuses to start otherwise.
 | `--kv-quantization` | `MEMBRANE_KV_QUANTIZATION` | `none` | Store KV tensors as `int8`, `fp8_e4m3`, `fp8_e5m2`, or `nf4` (lossy; 2-4x smaller; needs `membrane[transfer]`) |
 | `--warm-tier-bytes` | `MEMBRANE_WARM_TIER_BYTES` | 0 | Keep fragments evicted from memory in an encrypted on-disk tier (`<data-dir>/warm`) up to this size; reads promote them back |
 | `--content-store` | `MEMBRANE_CONTENT_STORE` | `filesystem` | `filesystem` (encrypted, durable), `encrypted-memory`, `memory`, or a plugin |
+| `--placement` | `MEMBRANE_PLACEMENT` | `ring` | Policy answering `POST /route`: `ring`, `latency`, `selector`, `economic`, `joint`, or a plugin ([Memory API](memory-api.md)) |
+| `--route-threshold` | `MEMBRANE_ROUTE_THRESHOLD` | 0 | Uncached prompt tokens above which `/route` says to offload prefill to Membrane; adapts to load (0: off) |
+| `--promote-replicas` | `MEMBRANE_PROMOTE_REPLICAS` | 0 | Copy frequently read fragments to more peers, up to this many copies (0: off) |
+| `--dynamic-roles` | `MEMBRANE_DYNAMIC_ROLES` | off | Re-evaluate and advertise the node's role from load |
+| `--region` | `MEMBRANE_REGION` | none | Region advertised to peers (routing and replica locality) |
+| `--origin` | `MEMBRANE_ORIGIN` | none | Run as a regional cache that reads misses through from this origin `HOST:PORT` |
+| `--require-compat` | `MEMBRANE_REQUIRE_COMPAT` | none | Refuse fragments not stamped for `MODEL[:DTYPE]` |
 
 On `SIGTERM` (or Ctrl+C) a node drains: `/readyz` returns 503 so load
 balancers stop routing to it, writes get 503 + `Retry-After`, primaries

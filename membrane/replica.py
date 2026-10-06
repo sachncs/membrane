@@ -20,7 +20,7 @@ transport used for gossip can also be used for warming.
 """
 
 import logging
-from typing import override
+from typing import Any, override
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ class Replica(Node):
         node_id: str,
         max_memory_bytes: int = 1 << 30,
         transfer_service: TransferService | None = None,
+        **node_options: Any,
     ) -> None:
         """Initialize the replica node.
 
@@ -57,8 +58,10 @@ class Replica(Node):
             transfer_service: Optional transfer service for
                 origin fetches. A default
                 :class:`TransferService` is created when ``None``.
+            **node_options: Further :class:`~membrane.node.Node` options
+                (content store, eviction policy, ...).
         """
-        super().__init__(node_id, max_memory_bytes)
+        super().__init__(node_id, max_memory_bytes, **node_options)
         self.transfer_service = transfer_service or TransferService()
 
     def warm_from_origin(
@@ -92,7 +95,7 @@ class Replica(Node):
         is_primary: bool = False,
         caller_tenant: str = "",
         caller_scopes: frozenset[str] = frozenset(),
-    ) -> bool:  # type: ignore[override]
+    ) -> bool:
         """Store a fragment. Replicas never own primary shards.
 
         The ``is_primary`` argument is accepted for API symmetry
@@ -110,7 +113,7 @@ class Replica(Node):
         Returns:
             bool: True if the fragment is stored.
         """
-        return super().store(fragment, is_primary=False)
+        return super().store(fragment, is_primary=False, caller_tenant=caller_tenant, caller_scopes=caller_scopes)
 
 
 __all__ = [
