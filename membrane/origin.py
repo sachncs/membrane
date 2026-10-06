@@ -72,11 +72,11 @@ class Origin(Node):
             bool: True if the transfer succeeded, False
             otherwise.
         """
-        if fragment.identity.payload_hash not in self.fragments:
+        if fragment.key not in self.fragments:
             # Ensure the origin is the source of truth for the
             # fragment before pushing it downstream.
             self.store(fragment, is_primary=True)
-        return self.transfer_service.transfer_fragment(self, replica, fragment.identity.payload_hash)
+        return self.transfer_service.transfer_fragment(self, replica, fragment.key)
 
     def bulk_promote(
         self,

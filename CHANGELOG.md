@@ -12,6 +12,31 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Fixed (tenants)
+
+- Two tenants storing byte-identical content each keep their own copy,
+  and both hit. Previously the node kept the first tenant's copy and the
+  second tenant's reads missed.
+  - A fragment is stored under its key: the bare content hash for the
+    `public` tenant, `<tenant>:<hash>` otherwise.
+  - `/retrieve` by bare hash returns the caller's copy, then the `public`
+    one; callers without a tenant or with `admin` fall back to any copy.
+  - The copies share one KV blob, deleted with the last copy (in memory
+    and in the warm tier).
+  - The ring places a key by its content hash.
+- `docs/security.md` claimed a `tenant:<id>` scope grants reads of that
+  tenant; no such scope exists, and the text now says so.
+
+### Breaking (tenants)
+
+- `/inventory`, persistence records, warm-tier entries, and the
+  `FragmentStored`/`FragmentRemoved` events name a non-`public` tenant's
+  fragment by `<tenant>:<hash>`. Records persisted by an earlier version
+  under the bare hash still restore (they are re-keyed on load); the
+  old record expires with its TTL.
+- Request models accept a `content_hash` of up to 256 characters (was
+  128), to fit a key.
+
 ### Added (scale out)
 
 - Incremental inventory digests:
@@ -72,7 +97,83 @@ upgrading.
   startup warning when a free-threaded node runs with the GIL.
 - `scripts/bench_http.py` measures `/retrieve` throughput of one node.
 
+### Added (capacity and coverage)
+
+- `scripts/kind_capacity.sh` and the `kind-capacity` CI job measure read
+  capacity on kind, with every pod limited to 250m CPU. 5 nodes served
+  1.60x the reads of 3 (2,955 vs 1,848 reads/s; linear is 1.67x); the
+  job fails below 1.5x, or when primary ownership does not settle. `kind_load.py` gains `seed` and `capacity` modes, and both kind
+  scripts share `scripts/kind_lib.sh`.
+- Coverage gates: CI fails below 84% total or when any module is under
+  70% (`tools/check_coverage.py`). Generated protobuf modules are left
+  out of coverage. Now 92.8% total; the lowest module is above 70%.
+
+### Fixed (found by the new tests)
+
+- A node was never on its own hash ring: `Membership` added peers only.
+  Every node therefore saw each of its primaries as owned by a peer and
+  handed it off, and ownership circulated forever. Around 20 of every 40
+  sampled fragments had a primary that was not the ring owner, some had
+  two, and each node moved 100-250 primaries a minute with no membership
+  change. Primaries now settle on their ring owners. The kind e2e's
+  4 -> 5 share check passed only because the circulating counts happened
+  to dip below 30%.
+- `/delete`, `/tombstone`, and `/purge` never saw the server's tombstone
+  table: deletes left no tombstone, and `/tombstone` always answered
+  "no tombstone table configured".
+- `/admin/policy` was a stub: GET returned zeros and POST changed nothing.
+  It now reads and sets the live promotion thresholds, and answers 409
+  when promotion is off.
+- `/verify` hashed the blob named by the content hash instead of the
+  fragment's `payload_ref`.
+- `TransferService.pull_from_remote` stored a pulled fragment without
+  its KV bytes.
+- `CachingPersistence.inventory_digest` called its backend without the
+  node id the backends require, and reported the resulting error as an
+  outage.
+- The Vault provider's default prefix `secret/data` produced
+  `/v1/secret/data/data/<name>` for KV v2; the default is now the
+  `secret` mount (a `secret/data` prefix still works).
+- The AWS provider passed `profile_name` to `boto3.client()`, which does
+  not accept it, so `AWS_PROFILE` broke every lookup.
+- `KVBackend(device="auto")` without CUDA used the device `"auto"`
+  instead of the CPU.
+- `membrane llm-status` always showed backend "unknown": `/metrics.json`
+  now includes `backend_name`.
+- The setup wizard accepted the `grpc` transport, which the server does
+  not offer; the remote dashboard ended with a traceback on Ctrl+C, and
+  its footer offered a `Q` key that did nothing.
+
+### Breaking (found by the new tests)
+
+- `GET`/`POST /admin/policy` answer 409 when promotion is off
+  (`--promote-replicas 0` or no cluster); they used to answer 200 with
+  values that had no effect. The body adds `max_replicas`.
+- `VaultSecretProvider.path_prefix` defaults to `secret` (the mount
+  point) instead of `secret/data`.
+
+### Changed (scale up)
+
+- Node reads scale with cores for real request keys. Every request
+  parses its own key string, and on 3.14t comparing it with the shared
+  table's key briefly took a reference to that key, so four threads read
+  only 1.6x as fast as one. Each thread now reads through its own cache
+  (at most 65,536 entries), and removals invalidate every cache.
+  - In-process retrieve with 4 long-lived threads, each with its own key
+    strings, runs 3.2x one thread on a 12-core laptop (was 1.6x), and
+    8.1M reads/s (was 3.3M/s).
+  - The scaling test now measures that way (it used to reuse the stored
+    key objects, which hid the effect). It requires 3.0x on hosts with at
+    least 8 logical CPUs, and 1.8x on smaller ones such as a 4-vCPU CI
+    runner.
+  - The default `caller_scopes` of node reads is one shared, deferred
+    object (`NO_SCOPES`), and `time.time` joins the objects
+    `share_hot_objects` defers.
+
 ### Fixed (scale up)
+
+- `test_concurrent_store_then_remove` checked and removed without the node
+  lock, so on 3.14t two threads could remove the same fragment.
 
 - `InProcessBytes.put` and `delete` re-summed every stored blob, which
   was O(n) per write.

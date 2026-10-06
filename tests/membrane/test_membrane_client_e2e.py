@@ -80,7 +80,10 @@ class TestMembraneClientAgainstRealServer:
             result = client.store(to_dict(frag), is_primary=True)
             assert result.get("success") is True
 
-            # 4. Verify the inventory reflects the store.
+            # 4. Verify the inventory reflects the store (under acme's key).
             inventory = client.inventory()
-            assert ident.payload_hash in inventory["digest"]
-            assert inventory["digest"][ident.payload_hash] == frag.version_id
+            assert frag.key in inventory["digest"]
+            assert inventory["digest"][frag.key] == frag.version_id
+
+            # 5. Without authentication the bare hash still finds it.
+            assert client.retrieve(ident.payload_hash)["found"] is True

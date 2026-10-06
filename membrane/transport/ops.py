@@ -432,7 +432,7 @@ def op_store(
     caller_scopes = auth_context.scopes if auth_context is not None else frozenset()
     # A failed quorum only rolls back a copy this call created; an
     # idempotent re-store must not delete an already-acknowledged one.
-    existed_before = frag.identity.payload_hash in node.fragments
+    existed_before = frag.key in node.fragments
     try:
         ok = node.store(
             frag,
@@ -473,7 +473,7 @@ def op_store(
     if len(replica_peers) < required_peer_acks:
         # Fail closed: an isolated node must not acknowledge a strong
         # write it cannot replicate.
-        rollback_local_write(node, frag.identity.payload_hash, existed_before)
+        rollback_local_write(node, frag.key, existed_before)
         return 503, {
             "error": "quorum not met",
             "detail": "not enough healthy peers",
@@ -497,7 +497,7 @@ def op_store(
         # Roll back the local write so gossip does not propagate
         # a fragment that the cluster never acked. This is the
         # fail-closed contract.
-        rollback_local_write(node, frag.identity.payload_hash, existed_before)
+        rollback_local_write(node, frag.key, existed_before)
         return (
             503,
             {

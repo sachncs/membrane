@@ -42,7 +42,7 @@ from membrane.auth import AuthContext
 from membrane.compat import MembraneIncompatibleError, MembraneValidator, ModelCompatibilityFingerprint
 from membrane.compute.base import Backend
 from membrane.constants import SESSION_HEADER
-from membrane.fragment import Fragment
+from membrane.fragment import Fragment, split_key
 from membrane.fragment_kind import FragmentKind
 from membrane.identity import PayloadIdentity
 from membrane.identity_index import IdentityIndex
@@ -199,13 +199,15 @@ class MemoryService:
         """Forget a fragment that left the node, and every lookup that used it.
 
         Args:
-            content_hash: The removed fragment's hash.
+            content_hash: The removed fragment's storage key.
         """
-        for entry in self.identities.lookup_by_hash(content_hash):
-            self.identities.remove(entry.identity)
+        key, (_tenant, content_hash) = content_hash, split_key(content_hash)
+        if self.node.locate(content_hash) is None:  # no tenant still holds the content
+            for entry in self.identities.lookup_by_hash(content_hash):
+                self.identities.remove(entry.identity)
         with self.__lock:
             handles = self.__dependents.pop(content_hash, set())
-            self.hits.pop(content_hash, None)
+            self.hits.pop(key, None)
             for handle in handles:
                 self.__covers.pop(handle, None)
         for handle in handles:
@@ -234,6 +236,24 @@ class MemoryService:
                 raise StoreRejectedError(
                     f"payload hash {fragment.identity.payload_hash} is already bound to a different identity"
                 )
+
+    def own_copy(self, fragment: Fragment, tenant: str, scopes: frozenset[str]) -> Fragment | None:
+        """The resident copy of ``fragment``'s content that the caller reads.
+
+        Args:
+            fragment: A fragment found through the index (any tenant's copy).
+            tenant: Caller's tenant.
+            scopes: Caller's scopes.
+
+        Returns:
+            Fragment | None: The caller's copy, or ``None`` when none is
+            resident and readable.
+        """
+        key = self.node.locate(fragment.identity.payload_hash, tenant, scopes)
+        copy = self.node.fragments.get(key) if key is not None else None
+        if copy is None or not TenantGuard.can_read(copy.tenant_id, tenant, scopes):
+            return None
+        return copy
 
     def stamp(self, fragment: Fragment) -> Fragment:
         """Stamp the configured compatibility fingerprint on a fragment the node produced.
@@ -274,9 +294,10 @@ class MemoryService:
             tenant: Caller's tenant (scopes the session).
         """
         self.node.record_hit(content_hash)
+        key = self.node.locate(content_hash, tenant) or content_hash
         with self.__lock:
             self.recent.append(content_hash)
-            self.hits[content_hash] += 1
+            self.hits[key] += 1
             if len(self.hits) > MAX_TRACKED_HITS:
                 for key, _count in self.hits.most_common()[MAX_TRACKED_HITS // 2 :]:
                     del self.hits[key]
@@ -287,7 +308,7 @@ class MemoryService:
         """Return and reset the read counts since the last call.
 
         Returns:
-            Counter[str]: Reads per hash.
+            Counter[str]: Reads per storage key.
         """
         with self.__lock:
             hits, self.hits = self.hits, Counter()
@@ -306,9 +327,9 @@ class MemoryService:
         tenant, scopes = caller_of(auth_context)
 
         def visible(fragment: Fragment) -> bool:
-            if fragment.identity.payload_hash not in self.node.fragments:
-                return False  # in the index but evicted
-            return TenantGuard.can_read(fragment.tenant_id, tenant, scopes)
+            # The index holds one copy per content hash; the caller needs
+            # a resident copy of its own (or a readable one).
+            return self.own_copy(fragment, tenant, scopes) is not None
 
         def store_prefilled(fragment: Fragment) -> None:
             fragment = self.stamp(fragment.with_tenant(tenant) if tenant else fragment)
@@ -351,27 +372,30 @@ class MemoryService:
             ``missing`` spans, ``prefilled``, and ``prefetch`` hints.
         """
         result = self.reconstructor(auth_context, prefill).rebuild_context(list(tokens), model_id)
-        hashes = [f.identity.payload_hash for f in result.fragments]
-        tenant, _scopes = caller_of(auth_context)
+        tenant, scopes = caller_of(auth_context)
+        copies = [self.own_copy(f, tenant, scopes) or f for f in result.fragments]
+        hashes = [f.identity.payload_hash for f in copies]
         for content_hash in hashes:
             self.record_access(content_hash, session_id, tenant)
         for first, second in itertools.pairwise(hashes):
             previous = self.coaccess.get_edge_weight(first, second, "co_access")
             self.coaccess.add_weighted_edge(first, second, "co_access", min(1.0, previous + 0.1))
-        prefetch = self.prefetch_hints(hashes[-1]) if hashes else []
+        prefetch = self.prefetch_hints(hashes[-1], tenant, scopes) if hashes else []
         return {
-            "fragments": [to_dict(f) for f in result.fragments],
+            "fragments": [to_dict(f) for f in copies],
             "coverage": result.coverage_ratio,
             "missing": [list(span) for span in result.missing_segments],
             "prefilled": result.prefill_invoked,
             "prefetch": [h for h in prefetch if h not in hashes],
         }
 
-    def prefetch_hints(self, content_hash: str) -> list[str]:
-        """Fragments often read after ``content_hash`` that the node holds.
+    def prefetch_hints(self, content_hash: str, tenant: str = "", scopes: frozenset[str] = frozenset()) -> list[str]:
+        """Fragments often read after ``content_hash`` that the node holds for the caller.
 
         Args:
             content_hash: The last fragment read.
+            tenant: Caller's tenant.
+            scopes: Caller's scopes.
 
         Returns:
             list[str]: Up to :data:`PREFETCH_HINTS` hashes.
@@ -379,7 +403,7 @@ class MemoryService:
         if not self.coaccess.has_node(content_hash):
             return []
         neighbours = self.coaccess.get_strong_neighbors(content_hash, "co_access", min_weight=0.3)
-        return sorted(h for h in neighbours if h in self.node.fragments)[:PREFETCH_HINTS]
+        return sorted(h for h in neighbours if self.node.locate(h, tenant, scopes) is not None)[:PREFETCH_HINTS]
 
     def prefix_lookup(
         self, tokens: list[int], model_id: str, auth_context: AuthContext | None = None
@@ -396,14 +420,14 @@ class MemoryService:
             ``fragments`` (hashes covering the matched prefix), and ``cached``
             (answered from the prefix cache).
         """
-        tenant, _scopes = caller_of(auth_context)
+        tenant, scopes = caller_of(auth_context)
         key = f"{tenant}\x00{model_id}"
         prompt = tuple(tokens)
         match = self.prefix_cache.lookup(key, prompt)
         if match.handle is not None:
             with self.__lock:
                 hashes = list(self.__covers.get(match.handle.handle, ()))
-            if hashes and all(h in self.node.fragments for h in hashes):
+            if hashes and all(self.node.locate(h, tenant, scopes) is not None for h in hashes):
                 return self.lookup_answer(match.token_len, len(prompt), hashes, cached=True)
         result = self.reconstructor(auth_context, prefill=False).rebuild_context(list(prompt), model_id)
         matched, hashes = 0, []
@@ -730,8 +754,8 @@ class BundleStore:
             fragment = fragment.with_tenant(tenant)
         node = self.memory.node
         with node.lock:
-            if content_hash in node.fragments:
-                node.remove_fragment(content_hash)  # a new version replaces the old
+            if fragment.key in node.fragments:
+                node.remove_fragment(fragment.key)  # a new version replaces the old
         node.content_store.put(content_hash, data)
         node.store(fragment, is_primary=True, caller_tenant=tenant, caller_scopes=scopes)
         return content_hash

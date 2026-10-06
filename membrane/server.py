@@ -280,6 +280,7 @@ class Server:
             queue_depth=self.queue_depth,
         )
         self.transport.app.state.services = self.services
+        self.transport.app.state.tombstones = self.tombstones
         mount_disagg(self.transport.app, self.services.disagg)
         self.grpc_port = grpc_port
         self.grpc_server: Any = None
@@ -338,7 +339,7 @@ class Server:
             self.persistence_writer.store(fragment, is_primary)
         if self.services is not None:
             self.services.memory.on_stored(fragment)
-        self.event_bus.publish(FragmentStored(fragment.identity.payload_hash, fragment.tenant_id, is_primary))
+        self.event_bus.publish(FragmentStored(fragment.key, fragment.tenant_id, is_primary))
 
     def on_fragment_removed(self, content_hash: str) -> None:
         """Forget and announce a fragment that left the node (node hook).

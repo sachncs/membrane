@@ -27,7 +27,8 @@ class FragmentStored:
     """A fragment became resident on this node.
 
     Attributes:
-        content_hash: Content hash.
+        content_hash: Storage key (:attr:`~membrane.fragment.Fragment.key`):
+            the content hash, prefixed with the tenant outside the default one.
         tenant_id: Owning tenant.
         is_primary: Whether this node owns the primary copy.
     """
@@ -42,7 +43,7 @@ class FragmentRemoved:
     """A fragment left this node (eviction, expiry, delete, or rollback).
 
     Attributes:
-        content_hash: Content hash.
+        content_hash: Storage key, as in :class:`FragmentStored`.
     """
 
     content_hash: str

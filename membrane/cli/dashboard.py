@@ -245,7 +245,7 @@ def footer_remote() -> Panel:
         Panel: Footer for the remote dashboard.
     """
     return Panel(
-        Align.center(Text("[Q]uit  |  Refresh: ", style="dim")),
+        Align.center(Text("[Ctrl+C] Quit  |  Remote Dashboard", style="dim")),
         style="dim",
     )
 
@@ -323,13 +323,16 @@ def run_remote_dashboard(
 
     output.info("Connecting to Membrane server...")
     with Live(layout, refresh_per_second=1 / refresh, screen=True):
-        while True:
-            data = fetch_json(host, port, "/heartbeat")
-            layout["header"].update(header_panel_remote(data))
-            layout["left"].update(metrics_panel_remote(data))
-            layout["right"].update(diagnostics_panel())
-            layout["footer"].update(footer_remote())
-            time.sleep(refresh)
+        try:
+            while True:
+                data = fetch_json(host, port, "/heartbeat")
+                layout["header"].update(header_panel_remote(data))
+                layout["left"].update(metrics_panel_remote(data))
+                layout["right"].update(diagnostics_panel())
+                layout["footer"].update(footer_remote())
+                time.sleep(refresh)
+        except KeyboardInterrupt:
+            pass
 
 
 __all__ = ["fetch_json", "run_dashboard", "run_remote_dashboard"]

@@ -391,8 +391,9 @@ def op_verify_received(
         )
     try:
         store = getattr(node, "content_store", None)
-        if store is not None and store.has(content_hash):
-            actual = store.get(content_hash) or b""
+        ref = frag.payload_ref
+        if store is not None and ref is not None and store.has(ref):
+            actual = store.get(ref) or b""
             actual_hex = hashlib.sha256(actual).hexdigest()
             return ok(
                 {

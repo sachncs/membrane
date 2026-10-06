@@ -114,7 +114,7 @@ class PersistenceWriter:
             fragment: The fragment.
             is_primary: Whether this node owns the fragment's primary copy.
         """
-        self.__enqueue(PersistenceOperation("store", fragment.identity.payload_hash, fragment, is_primary))
+        self.__enqueue(PersistenceOperation("store", fragment.key, fragment, is_primary))
 
     def forget(self, content_hash: str) -> None:
         """Queue removal of a fragment from this node's persisted set; never blocks.

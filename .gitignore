@@ -29,6 +29,7 @@ MANIFEST
 .coveragecov
 .coverage.xml
 coverage.xml
+coverage.json
 .pytest_cache/
 .tox/
 .nox/

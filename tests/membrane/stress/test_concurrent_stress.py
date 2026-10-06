@@ -88,10 +88,11 @@ class TestConcurrentEvict:
 
         def worker() -> None:
             try:
-                # Stores interleave with removals.
+                # Removals race each other; check-and-remove must be atomic.
                 for i in range(64):
-                    if node.fragments.get(_fragment(i).identity.payload_hash):
-                        node.remove_fragment(_fragment(i).identity.payload_hash)
+                    with node.lock:
+                        if node.fragments.get(_fragment(i).identity.payload_hash):
+                            node.remove_fragment(_fragment(i).identity.payload_hash)
             except Exception as exc:
                 errors.append(exc)
 

@@ -20,6 +20,7 @@ Operations:
 * ``GET /admin/audit`` -- query the audit log.
 """
 
+import dataclasses
 import logging
 from typing import Any
 
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 class PlacementOverride(BaseModel):
     """``POST /admin/placement`` body."""
 
-    content_hash: str = Field(min_length=1, max_length=128)
+    content_hash: str = Field(min_length=1, max_length=256)
     primary_node_id: str = Field(min_length=1, max_length=128)
 
 
@@ -55,7 +56,7 @@ class BackupRequest(BaseModel):
 class EvictRequest(BaseModel):
     """``POST /admin/evict`` body."""
 
-    content_hash: str = Field(min_length=1, max_length=128)
+    content_hash: str = Field(min_length=1, max_length=256)
 
 
 class RepairRequest(BaseModel):
@@ -102,8 +103,9 @@ def create_admin_router() -> APIRouter:
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
         with node.lock:
-            fragment = node.fragments.get(content_hash)
-            if fragment is None:
+            key = node.locate(content_hash)
+            fragment = node.fragments.get(key) if key is not None else None
+            if key is None or fragment is None:
                 raise HTTPException(status_code=404, detail="not_found")
             request_audit_log(request).record(
                 actor=context.subject,
@@ -120,7 +122,8 @@ def create_admin_router() -> APIRouter:
                 "consistency": fragment.consistency,
                 "hlc": fragment.hlc,
                 "fingerprint_compat": fragment.fingerprint_compat,
-                "primary": content_hash in node.primary_hashes,
+                "key": key,
+                "primary": key in node.primary_hashes,
             }
 
     @router.post("/placement")
@@ -152,9 +155,10 @@ def create_admin_router() -> APIRouter:
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
         with node.lock:
-            if payload.content_hash not in node.fragments:
+            key = node.locate(payload.content_hash)
+            if key is None:
                 raise HTTPException(status_code=404, detail="not_found")
-            node.remove_fragment(payload.content_hash)
+            node.remove_fragment(key)
         request_audit_log(request).record(
             actor=context.subject,
             action="admin.evict",
@@ -179,20 +183,39 @@ def create_admin_router() -> APIRouter:
         )
         return {"peer_node_id": payload.peer_node_id, "repair_started": True}
 
+    def promoter(request: Request) -> Any:
+        """The live hot-fragment promoter.
+
+        Raises:
+            HTTPException: 409 when promotion is off.
+        """
+        services = getattr(app_context(request.app).server, "services", None)
+        found = getattr(services, "promoter", None)
+        if found is None:
+            raise HTTPException(status_code=409, detail="promotion is off (--promote-replicas 0, or no cluster)")
+        return found
+
+    def policy_view(config: Any) -> dict[str, Any]:
+        return {
+            "min_reuse_score": config.reuse_threshold,
+            "demand_threshold": config.demand_threshold,
+            "max_replicas": config.max_replicas,
+        }
+
     @router.get("/policy")
     async def admin_get_policy(request: Request) -> dict[str, Any]:
-        """Return the current :class:`Promotion` knobs."""
+        """Return the live promotion thresholds (:class:`~membrane.policy.PromotionConfig`)."""
         admin_scope(request, "GET", "/admin/policy")
-        return {
-            "min_reuse_score": 0.0,
-            "demand_threshold": 0,
-            "note": "policy surface is read-write in 3.1; the live Promotion instance is composed at Server construction",
-        }
+        return policy_view(promoter(request).policy.config)
 
     @router.post("/policy")
     async def admin_set_policy(payload: PolicyUpdate, request: Request) -> dict[str, Any]:
-        """Set the :class:`Promotion` knobs."""
+        """Change the live promotion thresholds; the next promotion pass uses them."""
         context = admin_scope(request, "POST", "/admin/policy")
+        policy = promoter(request).policy
+        policy.config = dataclasses.replace(
+            policy.config, reuse_threshold=payload.min_reuse_score, demand_threshold=payload.demand_threshold
+        )
         request_audit_log(request).record(
             actor=context.subject,
             action="admin.policy.update",
@@ -201,10 +224,7 @@ def create_admin_router() -> APIRouter:
                 "demand_threshold": payload.demand_threshold,
             },
         )
-        return {
-            "min_reuse_score": payload.min_reuse_score,
-            "demand_threshold": payload.demand_threshold,
-        }
+        return policy_view(policy.config)
 
     @router.get("/audit")
     async def admin_audit(request: Request) -> dict[str, Any]:

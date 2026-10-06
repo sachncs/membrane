@@ -44,10 +44,10 @@ def interactive_setup() -> dict[str, Any]:
     host = ask("Bind host", "127.0.0.1")
     port = int(ask("Listen port", "8080"))
 
-    transport = ask("Transport (http/grpc)", "http")
-    while transport not in ("http", "grpc"):
+    transport = ask("Transport (http)", "http")
+    while transport != "http":
         output.error("Invalid transport. Only 'http' is supported.")
-        transport = ask("Transport (http/grpc)", "http")
+        transport = ask("Transport (http)", "http")
 
     valid_backends = ("cpu", "gpu", "ollama", "openai", "anthropic", "transformers")
     compute = ask("Compute backend (cpu/gpu/ollama/openai/anthropic/transformers)", "cpu")

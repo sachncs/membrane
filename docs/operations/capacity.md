@@ -71,6 +71,23 @@ changes, not on how much the cluster holds:
   kind e2e test scales 4 → 5 nodes and fails if any node still owns more
   than 30% of the primaries after rebalancing.
 
+Read capacity grows with the node count. `scripts/kind_capacity.sh`
+(the `kind-capacity` CI job) gives every pod the same CPU limit
+(250m, requests = limits), drives every pod to that limit with reads of
+fragments it holds, and compares 3 nodes with 5 after rebalancing:
+
+| Nodes | Reads/s | Per pod |
+|-------|---------|---------|
+| 3 | 1,848 | 616 / 612 / 620 |
+| 5 | 2,955 | 579 / 583 / 613 / 590 / 590 |
+
+That is 1.60x for 5/3 = 1.67x more CPU, with no failed reads, measured
+on a 4-CPU Docker VM while another workload shared the host. The job
+also checks that primary ownership settles before it measures (here
+within 15 s, 600 primaries split 105-147 per pod), and fails below
+1.5x. A pod's read rate depends on its CPU budget, not on
+the cluster size, so plan read capacity per pod and add pods for more.
+
 ## Network
 
 - Gossip: a few KiB per peer every `--gossip-interval` (5 s).

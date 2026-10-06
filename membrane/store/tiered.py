@@ -54,6 +54,8 @@ class WarmTier:
         self.demotions = 0
         self.promotions = 0
         self.__index: OrderedDict[str, int] = OrderedDict()
+        # payload_ref -> entries using it; tenants with identical content share a blob.
+        self.__refs: dict[str, int] = {}
         self.__bytes = 0
         self.__lock = threading.Lock()
         self.__pending: dict[str, tuple[Fragment, bytes | None]] = {}
@@ -63,8 +65,9 @@ class WarmTier:
             if key.startswith(META_PREFIX):
                 fragment = self.__load(key.removeprefix(META_PREFIX))
                 if fragment is not None:
-                    self.__index[fragment.identity.payload_hash] = fragment.payload_size
+                    self.__index[fragment.key] = fragment.payload_size
                     self.__bytes += fragment.payload_size
+                    self.__reference(fragment.payload_ref, 1)
 
     @property
     def size_bytes(self) -> int:
@@ -91,11 +94,11 @@ class WarmTier:
             payload: Its KV bytes.
         """
         with self.__lock:
-            self.__pending[fragment.identity.payload_hash] = (fragment, payload)
+            self.__pending[fragment.key] = (fragment, payload)
             if self.__worker is None or not self.__worker.is_alive():
                 self.__worker = threading.Thread(target=self.__drain, daemon=True, name="membrane-warm-tier")
                 self.__worker.start()
-        self.__queue.put(fragment.identity.payload_hash)
+        self.__queue.put(fragment.key)
 
     def flush(self) -> None:
         """Wait until queued demotions are written."""
@@ -134,13 +137,14 @@ class WarmTier:
             return False
         if fragment.payload_size > self.capacity_bytes:
             return False
-        content_hash = fragment.identity.payload_hash
+        content_hash = fragment.key
         if fragment.payload_ref is not None and payload is not None:
             self.store.put(fragment.payload_ref, payload)
         self.store.put(META_PREFIX + content_hash, json.dumps(to_dict(fragment)).encode())
         with self.__lock:
             if content_hash not in self.__index:
                 self.__bytes += fragment.payload_size
+                self.__reference(fragment.payload_ref, 1)
             self.__index[content_hash] = fragment.payload_size
             self.__index.move_to_end(content_hash)
             self.demotions += 1
@@ -217,13 +221,34 @@ class WarmTier:
             content_hash: Content hash.
         """
         fragment = self.__load(content_hash)
-        if fragment is not None and fragment.payload_ref is not None:
-            self.store.delete(fragment.payload_ref)
-        self.store.delete(META_PREFIX + content_hash)
+        ref = fragment.payload_ref if fragment is not None else None
         with self.__lock:
             size = self.__index.pop(content_hash, None)
             if size is not None:
                 self.__bytes -= size
+            shared = size is not None and self.__reference(ref, -1) > 0
+        if ref is not None and not shared:
+            self.store.delete(ref)
+        self.store.delete(META_PREFIX + content_hash)
+
+    def __reference(self, payload_ref: str | None, delta: int) -> int:
+        """Adjust how many entries use a blob (caller holds the lock, or is ``__init__``).
+
+        Args:
+            payload_ref: The blob, or ``None`` for a metadata-only entry.
+            delta: +1 or -1.
+
+        Returns:
+            int: Entries still using it.
+        """
+        if payload_ref is None:
+            return 0
+        count = self.__refs.get(payload_ref, 0) + delta
+        if count > 0:
+            self.__refs[payload_ref] = count
+        else:
+            self.__refs.pop(payload_ref, None)
+        return max(count, 0)
 
 
 __all__ = ["DEMOTED_TIERS", "META_PREFIX", "WarmTier"]

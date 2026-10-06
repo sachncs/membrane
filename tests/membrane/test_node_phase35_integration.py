@@ -130,7 +130,7 @@ class TestNodeRecordHit:
         frag = _fragment("acme", reuse=0.0)
         node.store(frag)
         node.record_hit(frag.identity.payload_hash)
-        assert node.fragments[frag.identity.payload_hash].reuse_score > 0.0
+        assert node.fragments[frag.key].reuse_score > 0.0
 
     def test_record_hit_touches_tinylfu(self):
         cache = TinyLFU(capacity=10)
@@ -139,4 +139,4 @@ class TestNodeRecordHit:
         node.store(frag)
         node.record_hit(frag.identity.payload_hash)
         # The TinyLFU sketch bucket should now be incremented.
-        assert cache.estimate(frag.identity.payload_hash) >= 1
+        assert cache.estimate(frag.key) >= 1

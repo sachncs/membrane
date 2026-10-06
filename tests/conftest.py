@@ -101,3 +101,21 @@ def make_fragment(*args: Any, **kwargs: Any) -> Fragment:
 
 
 __all__ = ["make_fragment"]
+
+
+def with_promoter(app: Any) -> Any:
+    """Give a bare FastAPI app a live promotion policy for ``/admin/policy``.
+
+    Args:
+        app: The application.
+
+    Returns:
+        Any: The :class:`~membrane.policy.Promotion` the routes read and change.
+    """
+    from types import SimpleNamespace
+
+    from membrane.policy import Promotion
+
+    policy = Promotion()
+    app.state.server = SimpleNamespace(services=SimpleNamespace(promoter=SimpleNamespace(policy=policy)))
+    return policy

@@ -51,6 +51,17 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The Redis-backed persistence tests run here too, so coverage counts them.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -62,7 +73,10 @@ jobs:
         run: >-
           pytest tests/ -m "not stress and not chaos" --timeout=300 -q
           --cov=membrane --cov-report=term-missing:skip-covered --cov-report=xml
-          --cov-fail-under=80
+          --cov-report=json --cov-fail-under=84
+      # No module may fall below 70% (generated protobuf code is omitted).
+      - name: Coverage gates
+        run: python tools/check_coverage.py coverage.json
       - name: Upload coverage report
         uses: actions/upload-artifact@v7
         with:
@@ -305,6 +319,30 @@ jobs:
       - name: Cluster end-to-end
         run: IMAGE=membrane:ci scripts/kind_e2e.sh
 
+  kind-capacity:
+    name: Cluster capacity (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          tags: membrane:ci
+          cache-from: type=gha
+      - uses: helm/kind-action@v1.15.0
+        with:
+          install_only: true
+      - uses: astral-sh/setup-uv@v10.2.0
+      # Each pod gets 250m CPU (requests = limits); 5 nodes must serve at
+      # least 1.5x the reads of 3 (linear is 1.67x).
+      - name: Read capacity, 3 -> 5 nodes
+        run: IMAGE=membrane:ci scripts/kind_capacity.sh
+
   site:
     name: Site build
     runs-on: ubuntu-latest
@@ -340,7 +378,7 @@ jobs:
     # Single required status check for branch protection.
     name: CI passed
     if: always()
-    needs: [lint, test, test-free-threaded, integration, extended, security, docker, docker-ft, kind, site, links]
+    needs: [lint, test, test-free-threaded, integration, extended, security, docker, docker-ft, kind, kind-capacity, site, links]
     runs-on: ubuntu-latest
     steps:
       - uses: re-actors/alls-green@v1.3.0

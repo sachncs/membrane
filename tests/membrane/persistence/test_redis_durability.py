@@ -72,3 +72,27 @@ def test_data_dir_key_is_private_and_stable(tmp_path) -> None:
     first_key = key.read_bytes()
     build_content_store(str(tmp_path))
     assert key.read_bytes() == first_key
+
+
+def test_records_from_before_tenant_keys_are_rekeyed_on_restore(tmp_path) -> None:
+    first = _server(str(tmp_path))
+    acme = AuthContext(subject="acme", scopes=frozenset({"read", "write"}))
+    _, body = op_prefill(first.node, CPU(), list(range(10)), "m", auth_context=acme)
+    content_hash = body["fragments"][0]["identity"]["payload_hash"]
+    assert first.persistence_writer.flush()
+
+    # Rewrite the record the way an earlier version kept it: under the bare hash.
+    backend = Redis(REDIS_URL)
+    key = f"acme:{content_hash}"
+    client = backend.client
+    record = client.hgetall(backend.key_for(f"frag:{key}"))
+    client.delete(backend.key_for(f"frag:{key}"))
+    client.hset(backend.key_for(f"frag:{content_hash}"), mapping=record)
+    client.srem(backend.key_for("node:durable-0:fragments"), key)
+    client.sadd(backend.key_for("node:durable-0:fragments"), content_hash)
+
+    second = _server(str(tmp_path))
+    assert second.restore_fragments() == 1
+    assert key in second.node.fragments
+    _, found = op_retrieve(second.node, content_hash, auth_context=acme)
+    assert found["found"] is True and found["fragment"]["tenant_id"] == "acme"

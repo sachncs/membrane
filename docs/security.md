@@ -86,8 +86,10 @@ The secret settings `--api-key-file`, `--peer-api-key-file`,
 `--api-key` accept `secret://NAME` in place of a file or value. It is
 resolved through `--secret-provider`:
 `env` (environment variables, the default), `aws` (Secrets Manager;
-`AWS_REGION`), `gcp` (Secret Manager; `GOOGLE_CLOUD_PROJECT`), or
-`vault` (`VAULT_ADDR`, `VAULT_TOKEN`), or an installed
+`AWS_REGION`, and `AWS_PROFILE` for a named profile), `gcp` (Secret
+Manager; `GOOGLE_CLOUD_PROJECT`), or `vault` (`VAULT_ADDR`,
+`VAULT_TOKEN`; reads the `value` field of a KV v2 secret on the `secret`
+mount), or an installed
 `membrane.secret_providers` plugin. The secret never touches disk.
 
 Authentication failures return `401` with `WWW-Authenticate: Bearer`;
@@ -125,9 +127,9 @@ and `enforce_route_scope` runs it at the top of every handler:
 
 `TenantAuthorizer` (`membrane.security.tenant`) layers a second
 check: a fragment carrying `tenant_id="acme"` is readable only by
-callers whose `AuthContext.subject` matches `acme`, who carry an
-explicit `tenant:acme` scope, or who hold `admin`. A cross-tenant read
-is indistinguishable from a miss.
+callers whose `AuthContext.subject` matches `acme`, or who hold
+`admin`. Fragments of the default tenant, `public`, are readable by
+everyone. A cross-tenant read is indistinguishable from a miss.
 
 ### Peer-to-peer calls
 
@@ -142,14 +144,27 @@ the key from `--peer-api-key-file`, which must carry `admin`.
 certificate CN) on every fragment it creates, so one tenant's prefill
 is not readable by another.
 
-### Known limitation: identical content across tenants
+### Identical content across tenants
 
-A node keys fragments by content hash alone. When two tenants store or
-prefill byte-identical content, the node keeps the first tenant's copy;
-the second tenant's write succeeds but its reads miss, exactly as if the
-fragment were absent. Nothing is exposed across tenants, but the second
-tenant gets no cache benefit for that content. Tenant-scoped fragment
-keys are planned.
+Each tenant keeps its own copy of a content hash. A node stores a
+fragment under its *key*: the bare content hash for the `public`
+tenant, `<tenant>:<hash>` for every other tenant (tenant ids cannot
+contain `:`). When two tenants store or prefill byte-identical content,
+both copies are resident and both tenants hit.
+
+* `GET /retrieve?content_hash=<hash>` returns the caller's own copy,
+  else the `public` copy. A caller without a tenant (authentication
+  off) or with `admin` falls back to any tenant's copy.
+* `<tenant>:<hash>` names one copy directly; the tenant check still
+  applies, so it does not open another tenant's copy to a non-admin.
+* `/inventory`, the persistence backends, the warm tier, and the
+  `FragmentStored`/`FragmentRemoved` events use keys. `/admin/fragments/{key}`
+  and `/admin/evict` take a key or a bare hash.
+* The copies share one KV blob (the bytes are identical). The blob is
+  deleted when the last copy referencing it leaves the node, or the
+  warm tier.
+* The ring places a key by its content hash, so every tenant's copy
+  lives on the same owners.
 
 ## Abuse and overload protection
 

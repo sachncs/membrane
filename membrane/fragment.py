@@ -53,6 +53,47 @@ from membrane.identity import PayloadIdentity
 #: at the moment of :func:`op_store`.
 CONSISTENCY_LEVELS: tuple[str, ...] = ("strong", "quorum", "eventual")
 
+#: Tenant a fragment belongs to when none is given; its fragments are
+#: keyed by their bare content hash.
+DEFAULT_TENANT: str = "public"
+
+#: Separates the tenant from the content hash in a tenant-scoped key.
+#: Tenant ids may not contain it (:func:`validate_tenant_id`).
+KEY_SEPARATOR: str = ":"
+
+
+def fragment_key(tenant_id: str, payload_hash: str) -> str:
+    """The key a node stores a fragment under.
+
+    Fragments of the default tenant keep their bare content hash. Every
+    other tenant's are prefixed with the tenant (``"acme:<hash>"``), so two
+    tenants that store byte-identical content each keep their own copy.
+
+    Args:
+        tenant_id: Tenant of the fragment.
+        payload_hash: Content hash of the fragment.
+
+    Returns:
+        str: The storage key.
+    """
+    if tenant_id == DEFAULT_TENANT:
+        return payload_hash
+    return f"{tenant_id}{KEY_SEPARATOR}{payload_hash}"
+
+
+def split_key(key: str) -> tuple[str, str]:
+    """Split a storage key into its tenant and content hash.
+
+    Args:
+        key: A key from :func:`fragment_key` (or a bare content hash).
+
+    Returns:
+        tuple[str, str]: ``(tenant_id, payload_hash)``; the tenant is
+        :data:`DEFAULT_TENANT` for a bare hash.
+    """
+    tenant, sep, payload_hash = key.rpartition(KEY_SEPARATOR)
+    return (tenant, payload_hash) if sep else (DEFAULT_TENANT, key)
+
 
 def validate_tenant_id(tenant_id: str) -> None:
     """Validate a tenant id at construction time.
@@ -151,7 +192,7 @@ class Fragment:
     consistency: str = "strong"
     hlc: int = 0
     fingerprint_compat: str = ""
-    tenant_id: str = "public"
+    tenant_id: str = DEFAULT_TENANT
 
     def __post_init__(self) -> None:
         """Validate invariants after construction.
@@ -190,6 +231,11 @@ class Fragment:
             raise ValueError(
                 f"fingerprint_compat must be the empty string or a 64-char hex digest, got {self.fingerprint_compat!r}"
             )
+
+    @property
+    def key(self) -> str:
+        """The key a node stores this fragment under (:func:`fragment_key`)."""
+        return fragment_key(self.tenant_id, self.identity.payload_hash)
 
     def hlc_state(self) -> HLC:
         """Decode :attr:`hlc` into its :class:`HLC` components.
@@ -314,4 +360,4 @@ class Fragment:
         )
 
 
-__all__ = ["Fragment"]
+__all__ = ["DEFAULT_TENANT", "KEY_SEPARATOR", "Fragment", "fragment_key", "split_key"]

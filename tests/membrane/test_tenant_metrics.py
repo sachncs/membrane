@@ -101,7 +101,7 @@ class TestNodeMetricsWithTenant:
             tenant_id="acme",
         )
         node.store(frag)
-        node.remove_fragment(frag.identity.payload_hash)
+        node.remove_fragment(frag.key)
         assert node_metrics.tenant.fragment_count == {"acme": 0}
 
     def test_node_stores_across_tenants(self):

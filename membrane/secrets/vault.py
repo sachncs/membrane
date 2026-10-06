@@ -4,7 +4,7 @@ Pulls secrets from HashiCorp Vault via the :mod:`hvac`
 client. The provider is installed via ``pip install
 membrane[secrets-vault]``; the import is lazy so the
 absence of :mod:`hvac` raises a clear error only when a
-:calss:`VaultSecretProvider` is actually instantiated.
+:class:`VaultSecretProvider` is actually instantiated.
 
 Attributes:
     url: Vault server URL.
@@ -12,7 +12,9 @@ Attributes:
     Kubernetes auth backends should swap this for the
     matching hvac client auth path; v3.0 ships the token
     backend only.
-    path_prefix: KV v2 path prefix; default ``"secret/data"``.
+    path_prefix: The KV engine's mount point; default ``"secret"``. hvac
+    adds KV v2's ``/data`` segment itself, so a ``"secret/data"`` prefix
+    (the old default) is read as the ``secret`` mount.
     kv_version: KV engine version (``1`` or ``2``); default ``2``.
 """
 
@@ -32,13 +34,13 @@ class VaultSecretProvider(SecretProvider):
     Attributes:
         url: Vault server URL.
         token: Vault token.
-        path_prefix: KV v2 path prefix; default ``"secret/data"``.
+        path_prefix: KV mount point; default ``"secret"``.
         kv_version: KV engine version (``1`` or ``2``); default ``2``.
     """
 
     url: str = ""
     token: str = ""
-    path_prefix: str = "secret/data"
+    path_prefix: str = "secret"
     kv_version: int = 2
 
     def __post_init__(self) -> None:
@@ -71,7 +73,8 @@ class VaultSecretProvider(SecretProvider):
         client: Any = hvac.Client(url=self.url, token=self.token)
         try:
             if self.kv_version == 2:
-                response = client.secrets.kv.v2.read_secret(path=secret_name, mount_point=self.path_prefix)
+                mount = self.path_prefix.removesuffix("/data")
+                response = client.secrets.kv.v2.read_secret(path=secret_name, mount_point=mount)
                 data = response.get("data", {}).get("data", {})
             else:
                 response = client.secrets.kv.v1.read_secret(path=secret_name, mount_point=self.path_prefix)

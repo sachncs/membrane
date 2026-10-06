@@ -58,10 +58,9 @@ class AWSSecretsProvider(SecretProvider):
             from botocore.exceptions import ClientError
         except ImportError as exc:  # pragma: no cover - guarded above
             raise SecretBackendError("boto3 not installed") from exc
-        kwargs: dict[str, object] = {"region_name": self.region_name}
-        if self.profile_name is not None:
-            kwargs["profile_name"] = self.profile_name
-        client = boto3.client("secretsmanager", **kwargs)
+        # A profile is a Session setting; boto3.client() does not accept one.
+        session = boto3.session.Session(profile_name=self.profile_name or None, region_name=self.region_name or None)
+        client = session.client("secretsmanager")
         try:
             response = client.get_secret_value(SecretId=secret_name)
         except ClientError as exc:
