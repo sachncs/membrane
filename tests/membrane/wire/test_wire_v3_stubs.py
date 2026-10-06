@@ -1,5 +1,7 @@
 """Tests for the wire_v3 generated stubs (Phase 3.3.2)."""
 
+import pytest
+
 
 class TestWireV3Stubs:
     def test_envelope_message_class(self):
@@ -53,6 +55,7 @@ class TestWireV3Stubs:
         assert r.length == 4096
 
     def test_grpc_stub_class_exists(self):
+        pytest.importorskip("grpc")
         from membrane.wire.v3 import wire_v3_pb2_grpc
 
         assert hasattr(wire_v3_pb2_grpc, "TransferStub")

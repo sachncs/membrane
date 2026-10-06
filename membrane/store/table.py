@@ -5,13 +5,25 @@ the fragment map, insertion and access times, the primary set, and the
 memory total. :class:`~membrane.node.Node` composes it with an index,
 a graph, an eviction policy, and a tenant guard.
 
-Every method takes the table's re-entrant lock, so callers that need
-several operations to be atomic can hold ``table.lock`` around them.
+Writes take the table's re-entrant lock, so callers that need several
+operations to be atomic can hold ``table.lock`` around them. Single-key
+reads (:meth:`get`, ``in``, :meth:`inserted_at`) do not: one dict
+operation is atomic (and, on a free-threaded Python, internally
+synchronized), so the read path scales across threads without serializing
+on the lock. A reader may see a fragment that a concurrent writer is about
+to remove, exactly as if the read had happened first.
+
+:meth:`record_access` writes to a per-thread buffer rather than the shared
+``access_times`` map, so concurrent reads do not contend on one dict.
+Buffers are merged into ``access_times`` whenever it is read through
+:meth:`recency` (eviction, snapshots). A read recorded concurrently with a
+merge can be lost; recency is a heuristic, so that is harmless.
 """
 
 import threading
 
 from membrane.fragment import Fragment
+from membrane.runtime.concurrency import share
 
 
 class FragmentTable:
@@ -34,6 +46,9 @@ class FragmentTable:
         self.insertion_times: dict[str, float] = {}
         self.memory_usage = 0
         self.lock = threading.RLock()
+        self.__local = threading.local()
+        self.__buffers: list[dict[str, float]] = []
+        share(self.__local)
 
     def __contains__(self, content_hash: object) -> bool:
         """Whether ``content_hash`` is resident.
@@ -44,8 +59,7 @@ class FragmentTable:
         Returns:
             bool: True when resident.
         """
-        with self.lock:
-            return content_hash in self.fragments
+        return content_hash in self.fragments
 
     def __len__(self) -> int:
         """Number of resident fragments.
@@ -53,11 +67,10 @@ class FragmentTable:
         Returns:
             int: The fragment count.
         """
-        with self.lock:
-            return len(self.fragments)
+        return len(self.fragments)
 
     def get(self, content_hash: str) -> Fragment | None:
-        """Return a resident fragment.
+        """Return a resident fragment (no lock: one dict read).
 
         Args:
             content_hash: Content hash.
@@ -65,8 +78,48 @@ class FragmentTable:
         Returns:
             Fragment | None: The fragment, or ``None`` when absent.
         """
+        return self.fragments.get(content_hash)
+
+    def inserted_at(self, content_hash: str, default: float) -> float:
+        """Return when a fragment was inserted (no lock: one dict read).
+
+        Args:
+            content_hash: Content hash.
+            default: Returned when unknown.
+
+        Returns:
+            float: Insertion time.
+        """
+        return self.insertion_times.get(content_hash, default)
+
+    def record_access(self, content_hash: str, now: float) -> None:
+        """Record a read in this thread's buffer (no lock, no shared write).
+
+        Args:
+            content_hash: Content hash.
+            now: Access time.
+        """
+        buffer = getattr(self.__local, "accesses", None)
+        if buffer is None:
+            buffer = self.__local.accesses = {}
+            with self.lock:
+                self.__buffers.append(buffer)
+        buffer[content_hash] = now
+
+    def recency(self) -> dict[str, float]:
+        """Merge every thread's buffered reads and return ``access_times``.
+
+        Returns:
+            dict[str, float]: Last access per resident hash.
+        """
         with self.lock:
-            return self.fragments.get(content_hash)
+            for buffer in self.__buffers:
+                pending = buffer.copy()
+                buffer.clear()
+                for content_hash, at in pending.items():
+                    if content_hash in self.fragments and at > self.access_times.get(content_hash, 0.0):
+                        self.access_times[content_hash] = at
+            return self.access_times
 
     def add(self, fragment: Fragment, now: float) -> None:
         """Insert a new fragment (the caller has checked capacity).

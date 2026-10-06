@@ -352,6 +352,25 @@ class Server:
             self.services.memory.on_removed(content_hash)
         self.event_bus.publish(FragmentRemoved(content_hash))
 
+    def report_parallelism(self) -> None:
+        """Log and export whether requests can run on several cores."""
+        from membrane.runtime.concurrency import FREE_THREADED, gil_enabled
+
+        gil = gil_enabled()
+        self.metrics_peers.gil_enabled.set(1.0 if gil else 0.0)
+        self.metrics_peers.http_loops.set(float(self.limits.http_threads))
+        if FREE_THREADED and gil:
+            logger.warning(
+                "free-threaded Python is running with the GIL enabled (an extension re-enabled it, or "
+                "PYTHON_GIL=1): requests will not run in parallel"
+            )
+        elif gil and self.limits.http_threads > 1:
+            logger.info(
+                "with the GIL enabled, --http-threads %s adds little; use python3.14t", self.limits.http_threads
+            )
+        elif not gil:
+            logger.info("free-threaded: %s HTTP event loop(s) share this node", self.limits.http_threads)
+
     def queue_depth(self) -> tuple[int, int]:
         """Requests waiting for a slot, and the depth that counts as saturated.
 
@@ -496,6 +515,7 @@ class Server:
             self.spiffe_task.start()
         if self.services is not None:
             self.services.start()
+        self.report_parallelism()
         if self.grpc_port is not None and self.services is not None:
             from membrane.disagg.grpc import serve as serve_grpc
 

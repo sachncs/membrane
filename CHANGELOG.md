@@ -12,6 +12,33 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Added (scale up)
+
+- Free-threaded Python 3.14 support:
+  - `Dockerfile.ft` builds on `python3.14t` and fails the build if an
+    extension would re-enable the GIL;
+  - CI runs the test suite and a container smoke test on 3.14t.
+- `--http-threads N`: N event loops, one thread each, share the listener
+  and the node. On 3.14t, `/retrieve` went from 8.2k to 15.4k req/s with
+  2 loops on a 12-core laptop.
+- A node read takes no lock:
+  - reads are recorded in per-thread buffers, merged when eviction needs
+    recency;
+  - hot objects use deferred reference counting.
+
+  In-process retrieve from 4 threads runs 2.7x one thread on 3.14t (it was
+  0.8x). A CI benchmark enforces at least 1.8x.
+- `membrane_gil_enabled` and `membrane_http_event_loops` gauges, and a
+  startup warning when a free-threaded node runs with the GIL.
+- `scripts/bench_http.py` measures `/retrieve` throughput of one node.
+
+### Fixed (scale up)
+
+- `InProcessBytes.put` and `delete` re-summed every stored blob, which
+  was O(n) per write.
+- The rate limiter's bucket update was a check-then-set race between
+  concurrent requests.
+
 ### Added (disaggregation)
 
 - `--role prefill|decode|both` and `POST /disagg/prefill`, `/disagg/prefill/batch`,

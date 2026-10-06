@@ -54,7 +54,8 @@ server refuses to start otherwise.
 
 | Flag | Env | Default | Effect |
 |------|-----|---------|--------|
-| `--max-concurrency` | `MEMBRANE_MAX_CONCURRENCY` | 64 | Requests handled at once; excess get `503` + `Retry-After` |
+| `--http-threads` | `MEMBRANE_HTTP_THREADS` | 1 (4 in the free-threaded image) | Event loops serving HTTP, one thread each, sharing the node; scales across cores on free-threaded Python (below) |
+| `--max-concurrency` | `MEMBRANE_MAX_CONCURRENCY` | 64 | Requests handled at once, shared by all event loops; excess get `503` + `Retry-After` |
 | `--rate-limit` / `--rate-limit-burst` | `MEMBRANE_RATE_LIMIT` / `..._BURST` | off | Requests per second per credential; excess get `429` |
 | `--max-connections` | `MEMBRANE_MAX_CONNECTIONS` | unlimited | Open connections accepted |
 | `--drain-timeout` | `MEMBRANE_DRAIN_TIMEOUT` | 30 | Seconds a `SIGTERM` drain may take |
@@ -118,6 +119,37 @@ JSON, works with a read-only root filesystem (it needs a writable
 membrane.healthcheck` (mTLS-aware), and drains on `SIGTERM`; stop it
 with `docker stop -t 40`. All settings are `MEMBRANE_*` environment
 variables (`membrane serve --help`).
+
+### Using many cores: the free-threaded image
+
+On a standard (GIL) Python, one node uses about one core for request
+handling. `Dockerfile.ft` builds the same server on free-threaded Python
+3.14 (`python3.14t`, PEP 703), where `--http-threads` event loops serve
+requests in parallel against one shared node:
+
+```bash
+docker build -f Dockerfile.ft -t membrane:ft .
+docker run -p 8080:8080 -e MEMBRANE_HTTP_THREADS=4 ... membrane:ft
+```
+
+Measured on a 12-core laptop:
+
+| Workload | GIL build | Free-threaded |
+|----------|-----------|---------------|
+| `GET /retrieve` over HTTP (ApacheBench, keep-alive) | 6.1k req/s with 1 or 4 loops | 8.2k req/s with 1 loop, 15.4k with 2 (the load generator saturates beyond) |
+| `Node.retrieve` from 4 threads vs 1 (in process) | 1.0x | 2.7x |
+
+The read path takes no lock. Each request thread records reads in its own
+buffer, and long-lived objects use deferred reference counting
+(`membrane.runtime.concurrency.share`), so threads do not contend on a
+shared reference count. `membrane_gil_enabled` (0 or 1) and
+`membrane_http_event_loops` report what a node is running with. A
+free-threaded node logs a warning if an extension turns the GIL back on.
+grpcio is one such extension, so the free-threaded image serves `/disagg`
+over REST only.
+
+On a GIL build, scale up by running one node per core as cluster peers
+rather than by adding event loops.
 
 ## 7. Docker Compose
 

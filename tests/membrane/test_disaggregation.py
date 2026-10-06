@@ -24,7 +24,7 @@ from membrane.network.peer import Peer, RawResponse
 from membrane.node import Node
 from membrane.registry import Registry
 from membrane.ring import Ring
-from membrane.runtime.settings import ServerSettings, SettingsError
+from membrane.runtime.settings import ServerSettings, SettingsError, grpc_supported
 from membrane.server import Server
 from membrane.services import ServiceOptions
 from membrane.shard import Shard
@@ -157,7 +157,7 @@ def test_disagg_routes_authenticate_and_isolate_tenants() -> None:
 
 
 def test_grpc_surface_authenticates_and_serves() -> None:
-    import grpc
+    grpc = pytest.importorskip("grpc")
 
     server, _client = make_node("g", authenticator=APIKeyAuthenticator(keyfile_text=KEYS))
     disagg = server.services.disagg
@@ -191,7 +191,7 @@ def test_grpc_surface_authenticates_and_serves() -> None:
 
 
 def test_server_starts_grpc_on_its_port() -> None:
-    import grpc
+    grpc = pytest.importorskip("grpc")
 
     server = Server(node=Node("gs"), port=0, load_hooks=False, grpc_port=0, services=ServiceOptions(role="prefill"))
     server.start()
@@ -211,7 +211,11 @@ def test_disagg_settings() -> None:
         ServerSettings(role="mixer")
     with pytest.raises(SettingsError, match="gRPC port"):
         ServerSettings(grpc_port=70000)
-    assert ServerSettings(role="decode", grpc_port=9090).grpc_port == 9090
+    if grpc_supported():
+        assert ServerSettings(role="decode", grpc_port=9090).grpc_port == 9090
+    else:  # no grpcio, or a free-threaded Python where it would re-enable the GIL
+        with pytest.raises(SettingsError, match="grpcio"):
+            ServerSettings(role="decode", grpc_port=9090)
 
 
 def test_kv_bundles_are_named_and_tenant_scoped() -> None:

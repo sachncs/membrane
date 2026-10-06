@@ -62,6 +62,7 @@ cluster, and HTTP transport together. The pieces live in
 | `components.py` | Builders for persistence, the content store, authentication, and peer access |
 | `persistence_writer.py` | Ordered, bounded write-behind queue that keeps Redis off the node lock, retries through outages, and flushes on shutdown |
 | `lifecycle.py` | `PeriodicTask` (checkpoint, sweeper) and `run_until_signalled`, which turns `SIGTERM` into a drain |
+| `concurrency.py` | Free-threaded support: `FREE_THREADED`, `gil_enabled()`, and `share()` (deferred reference counting for objects every request thread reads) |
 | `observability.py` | Dashboard events (ring buffer) and diagnostics |
 
 `membrane serve` parses flags into `ServerSettings`, calls
@@ -79,7 +80,7 @@ cluster, and HTTP transport together. The pieces live in
 
 | Class | Module | Role |
 |-------|--------|------|
-| `Node` | `membrane/node.py` | Holds fragments in memory; TTL expiry, weighted-LRU and graph-aware eviction, tenant checks |
+| `Node` | `membrane/node.py` | Holds fragments in memory; TTL expiry, weighted-LRU and graph-aware eviction, tenant checks. Reads take no lock (per-thread access buffers merged on eviction); writes hold the table lock |
 | `Index` | `membrane/index.py` | Facade over exact, semantic, positional, and co-access indices |
 | `ContentStore` implementations | `membrane/content_store.py` | KV bytes: `InProcessBytes`, `FilesystemBlob` (AES-256-GCM); `EncryptedInProcessBytes` in `content_store_encrypted.py` |
 | `Memory`, `Redis`, `CachingPersistence` | `membrane/persistence/` | Persistence backends for node state, written behind by `PersistenceWriter` |

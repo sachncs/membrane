@@ -1,5 +1,6 @@
 """The engine adapters and the gRPC surface against a live ``membrane serve`` process."""
 
+import os
 import socket
 import subprocess
 import sys
@@ -15,8 +16,12 @@ from membrane.adapters.remote import HTTPClusterClient, HTTPSGLangClient, HTTPTr
 from membrane.adapters.sglang import SGLangKVEntry
 from membrane.adapters.trtllm import TrtKVBlock
 from membrane.adapters.vllm import LayerLoad, MembraneVLLMConnector
+from membrane.runtime.concurrency import FREE_THREADED
 
 ROOT = Path(__file__).resolve().parents[3]
+#: The server child refuses --grpc-port on a free-threaded build (grpcio
+#: would turn the GIL back on), so the gRPC check runs on GIL builds only.
+GRPC = not FREE_THREADED or os.environ.get("PYTHON_GIL") == "1"
 
 
 def free_port() -> int:
@@ -38,10 +43,9 @@ def live() -> Iterator[tuple[str, int]]:
             "--daemon",
             "--port",
             str(port),
-            "--grpc-port",
-            str(grpc_port),
             "--role",
             "both",
+            *(["--grpc-port", str(grpc_port)] if GRPC else []),
         ],
         cwd=ROOT,
         stdout=subprocess.DEVNULL,
@@ -113,6 +117,7 @@ def test_sglang_and_trtllm_clients_round_trip(live) -> None:
     assert trt.get("llama", "seq-9") == blocks
 
 
+@pytest.mark.skipif(not GRPC, reason="gRPC is refused on a free-threaded build")
 def test_grpc_prefill_and_decode(live) -> None:
     from membrane.disagg.grpc import (
         build_decode_request_message,

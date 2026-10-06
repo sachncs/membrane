@@ -15,6 +15,7 @@ overloaded node keeps answering health checks.
 import asyncio
 import json
 import math
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -46,6 +47,10 @@ class TransportLimits:
         keep_alive_timeout_sec: Idle keep-alive connection timeout.
         enable_api_docs: Serve ``/openapi.json`` (behind the ``read``
             scope). Off by default: the schema maps the attack surface.
+        http_threads: Event loops accepting on the listener, each in its own
+            thread. On a free-threaded Python they parse and answer requests
+            in parallel on separate cores; ``max_concurrency`` is shared
+            between them.
     """
 
     max_concurrency: int = 64
@@ -55,6 +60,7 @@ class TransportLimits:
     max_connections: int | None = None
     keep_alive_timeout_sec: float = 5.0
     enable_api_docs: bool = False
+    http_threads: int = 1
 
 
 async def send_json(send: Send, status: int, body: dict[str, str], retry_after: int) -> None:
@@ -96,8 +102,8 @@ def is_exempt(scope: Scope) -> bool:
 class InFlight:
     """Requests being handled and requests waiting for a slot.
 
-    Read by the routing scheduler as the node's queue depth. Updated
-    only from the event loop thread, so plain integers suffice.
+    Read by the routing scheduler as the node's queue depth. Several event
+    loops (``http_threads``) update it, so changes take a lock.
 
     Attributes:
         active: Requests holding a concurrency slot.
@@ -108,6 +114,18 @@ class InFlight:
         """Start at zero."""
         self.active = 0
         self.waiting = 0
+        self.__lock = threading.Lock()
+
+    def add(self, active: int = 0, waiting: int = 0) -> None:
+        """Adjust the counters.
+
+        Args:
+            active: Change in requests holding a slot.
+            waiting: Change in requests queued for a slot.
+        """
+        with self.__lock:
+            self.active += active
+            self.waiting += waiting
 
 
 class ConcurrencyLimitMiddleware:
@@ -120,23 +138,45 @@ class ConcurrencyLimitMiddleware:
         queue_timeout_sec: float,
         on_reject: RejectHook | None = None,
         in_flight: InFlight | None = None,
+        loops: int = 1,
     ) -> None:
         """Wrap ``app``.
 
         Args:
             app: The downstream ASGI application.
-            max_concurrency: Requests handled at once.
+            max_concurrency: Requests handled at once, across all loops.
             queue_timeout_sec: Seconds to wait for a slot.
             on_reject: Called with ``"overloaded"`` for each shed request.
             in_flight: Counters updated as requests wait and run.
+            loops: Event loops serving the app; each gets an equal share of
+                ``max_concurrency``.
         """
         self.app = app
         self.max_concurrency = max_concurrency
         self.queue_timeout_sec = queue_timeout_sec
         self.in_flight = in_flight or InFlight()
+        self.per_loop = max(1, math.ceil(max_concurrency / max(1, loops)))
         self.__on_reject = on_reject
-        self.__slots = asyncio.Semaphore(max_concurrency)
-        self.__pool_sized = False
+        # An asyncio semaphore belongs to one event loop.
+        self.__slots: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
+        self.__lock = threading.Lock()
+
+    def slots(self) -> asyncio.Semaphore:
+        """The running loop's semaphore, created (and its thread pool sized) on first use.
+
+        Returns:
+            asyncio.Semaphore: This loop's share of the concurrency bound.
+        """
+        loop = asyncio.get_running_loop()
+        semaphore = self.__slots.get(loop)
+        if semaphore is None:
+            with self.__lock:
+                semaphore = self.__slots.setdefault(loop, asyncio.Semaphore(self.per_loop))
+            # Sync handlers run on AnyIO's worker threads (40 by default, per
+            # loop); size the pool so admitted requests are not queued again.
+            limiter = anyio.to_thread.current_default_thread_limiter()
+            limiter.total_tokens = max(limiter.total_tokens, self.per_loop)
+        return semaphore
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Handle one ASGI connection scope.
@@ -149,28 +189,23 @@ class ConcurrencyLimitMiddleware:
         if is_exempt(scope):
             await self.app(scope, receive, send)
             return
-        if not self.__pool_sized:
-            # Sync handlers run on AnyIO's worker threads (40 by default);
-            # size the pool so admitted requests are not queued again there.
-            limiter = anyio.to_thread.current_default_thread_limiter()
-            limiter.total_tokens = max(limiter.total_tokens, self.max_concurrency)
-            self.__pool_sized = True
-        self.in_flight.waiting += 1
+        slots = self.slots()
+        self.in_flight.add(waiting=1)
         try:
-            await asyncio.wait_for(self.__slots.acquire(), timeout=self.queue_timeout_sec)
+            await asyncio.wait_for(slots.acquire(), timeout=self.queue_timeout_sec)
         except TimeoutError:
             if self.__on_reject is not None:
                 self.__on_reject("overloaded")
             await send_json(send, 503, {"error": "overloaded"}, retry_after=1)
             return
         finally:
-            self.in_flight.waiting -= 1
-        self.in_flight.active += 1
+            self.in_flight.add(waiting=-1)
+        self.in_flight.add(active=1)
         try:
             await self.app(scope, receive, send)
         finally:
-            self.in_flight.active -= 1
-            self.__slots.release()
+            self.in_flight.add(active=-1)
+            slots.release()
 
 
 def caller_key(scope: Scope) -> str:
@@ -207,6 +242,8 @@ class RateLimitMiddleware:
         self.burst = float(burst)
         self.__on_reject = on_reject
         self.__buckets: dict[str, tuple[float, float]] = {}
+        # Several event loops may take tokens at once.
+        self.__lock = threading.Lock()
 
     def take(self, key: str, now: float) -> float:
         """Take one token from ``key``'s bucket.
@@ -219,20 +256,21 @@ class RateLimitMiddleware:
             float: ``0`` when allowed; otherwise seconds until a token is
             available.
         """
-        tokens, last = self.__buckets.get(key, (self.burst, now))
-        tokens = min(self.burst, tokens + (now - last) * self.rate_per_sec)
-        if tokens >= 1.0:
-            self.__buckets[key] = (tokens - 1.0, now)
-            wait = 0.0
-        else:
-            self.__buckets[key] = (tokens, now)
-            wait = (1.0 - tokens) / self.rate_per_sec
-        if len(self.__buckets) > MAX_TRACKED_CALLERS:
-            self.__forget_idle(now)
+        with self.__lock:
+            tokens, last = self.__buckets.get(key, (self.burst, now))
+            tokens = min(self.burst, tokens + (now - last) * self.rate_per_sec)
+            if tokens >= 1.0:
+                self.__buckets[key] = (tokens - 1.0, now)
+                wait = 0.0
+            else:
+                self.__buckets[key] = (tokens, now)
+                wait = (1.0 - tokens) / self.rate_per_sec
+            if len(self.__buckets) > MAX_TRACKED_CALLERS:
+                self.__forget_idle(now)
         return wait
 
     def __forget_idle(self, now: float) -> None:
-        """Drop buckets that have refilled completely (their callers went idle).
+        """Drop buckets that have refilled completely (caller holds the lock).
 
         Args:
             now: Monotonic time in seconds.

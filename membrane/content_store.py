@@ -151,8 +151,9 @@ class InProcessBytes:
         with self.lock:
             if self.capacity_bytes is not None and len(data) > self.capacity_bytes:
                 raise ValueError(f"payload {len(data)} bytes exceeds capacity_bytes {self.capacity_bytes}")
+            previous = self.store.get(key)
             self.store[key] = data
-            self.__used_bytes = sum(len(b) for b in self.store.values())
+            self.__used_bytes += len(data) - (len(previous) if previous is not None else 0)
 
     def get(self, key: str) -> bytes | None:
         """Return the bytes stored under ``key`` or ``None``.
@@ -163,8 +164,7 @@ class InProcessBytes:
         Returns:
             bytes | None: The bytes stored under ``key`` or ``None``.
         """
-        with self.lock:
-            return self.store.get(key)
+        return self.store.get(key)  # a single dict read: safe without the lock
 
     def has(self, key: str) -> bool:
         """Return whether ``key`` is present.
@@ -175,8 +175,7 @@ class InProcessBytes:
         Returns:
             bool: Whether ``key`` is present.
         """
-        with self.lock:
-            return key in self.store
+        return key in self.store
 
     def delete(self, key: str) -> bool:
         """Remove and return whether the removal actually happened.
@@ -188,11 +187,11 @@ class InProcessBytes:
             bool: True when an entry was removed.
         """
         with self.lock:
-            if key in self.store:
-                del self.store[key]
-                self.__used_bytes = sum(len(b) for b in self.store.values())
-                return True
-            return False
+            removed = self.store.pop(key, None)
+            if removed is None:
+                return False
+            self.__used_bytes -= len(removed)
+            return True
 
     def size(self) -> int:
         """Return total bytes currently held.
