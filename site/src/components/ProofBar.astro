@@ -1,0 +1,26 @@
+---
+// Measured in this repository; each figure is enforced or reproduced by CI
+// (see docs/deployment.md and docs/operations/capacity.md).
+const stats = [
+  { value: '3.2×', label: 'Reads on 4 cores vs 1', note: 'Free-threaded Python 3.14, one node' },
+  { value: '1.6×', label: 'Read capacity, 3 → 5 nodes', note: 'Linear is 1.67×; fixed CPU per pod' },
+  { value: '92.8%', label: 'Test coverage', note: '1,700+ tests; no module under 70%' },
+  { value: 'mTLS', label: 'Authenticated by default', note: 'Or API keys; required off localhost' },
+];
+---
+
+<section aria-label="Measured results" class="pt-20 sm:pt-24">
+  <div class="container-page">
+    <dl class="grid grid-cols-2 overflow-hidden rounded-2xl border border-white/[0.08] bg-ink-900/60 lg:grid-cols-4">
+      {
+        stats.map((s, i) => (
+          <div class={`px-5 py-6 sm:px-7 ${i % 2 === 1 ? 'border-l' : ''} ${i >= 2 ? 'border-t lg:border-t-0' : ''} ${i === 2 ? 'lg:border-l' : ''} border-white/[0.08]`}>
+            <dt class="text-[0.875rem] font-medium text-ink-100">{s.label}</dt>
+            <dd class="mt-2 font-display text-[2rem] font-semibold leading-none tracking-tight text-white">{s.value}</dd>
+            <dd class="mt-2 text-[0.8125rem] text-ink-400">{s.note}</dd>
+          </div>
+        ))
+      }
+    </dl>
+  </div>
+</section>

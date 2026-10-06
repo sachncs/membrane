@@ -1,4 +1,5 @@
 ---
+import Logo from './Logo.astro';
 import { BLOB_URL, REPO_URL, VERSION, withBase } from '../lib/site';
 
 const sections = [
@@ -34,27 +35,15 @@ const sections = [
 const year = new Date().getFullYear();
 ---
 
-<footer class="relative border-t border-white/[0.06] bg-ink-950">
-  <div class="container-page py-16 sm:py-20">
+<footer class="border-t border-white/[0.06] bg-ink-950">
+  <div class="container-page py-14 sm:py-16">
     <div class="grid gap-12 lg:grid-cols-12">
       <!-- Brand -->
       <div class="lg:col-span-5">
-        <a href={withBase('/')} class="inline-flex items-center gap-2.5">
-          <span
-            class="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-accent-violet via-indigo-500 to-accent-cyan shadow-glow-sm"
-            aria-hidden="true"
-          >
-            <svg viewBox="0 0 24 24" class="h-4 w-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <ellipse cx="12" cy="12" rx="8" ry="3.5"/>
-              <ellipse cx="12" cy="12" rx="8" ry="3.5" transform="rotate(60 12 12)" opacity="0.55"/>
-              <ellipse cx="12" cy="12" rx="8" ry="3.5" transform="rotate(-60 12 12)" opacity="0.55"/>
-            </svg>
-          </span>
-          <span class="text-[0.95rem] font-semibold tracking-tight text-white">Membrane</span>
-        </a>
+        <a href={withBase('/')} aria-label="Membrane home"><Logo /></a>
         <p class="mt-5 max-w-sm text-[0.92rem] leading-relaxed text-ink-300">
-          Global contextual memory fabric for distributed, content-addressed
-          KV-cache sharing across LLM serving clusters.
+          The shared KV-cache for LLM serving: prefill once, serve every node.
+          Open source under the MIT License.
         </p>
         <div class="mt-6 flex items-center gap-2">
           <a
@@ -76,7 +65,7 @@ const year = new Date().getFullYear();
         {
           sections.map((s) => (
             <div>
-              <h4 class="text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-ink-200">
+              <h4 class="text-[0.8125rem] font-semibold text-white">
                 {s.title}
               </h4>
               <ul class="mt-4 space-y-2.5">

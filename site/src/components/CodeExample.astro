@@ -80,90 +80,86 @@ function highlight(src: string, isShell: boolean): string {
       .split('\n')
       .map((line) =>
         line.startsWith('#')
-          ? `<span class="text-ink-400">${line}</span>`
+          ? `<span class="text-ink-500">${line}</span>`
           : line
-              .replace(/^(\$)/, '<span class="text-accent-mint">$1</span>')
-              .replace(/(\s)(--?[a-z][a-z-]*)/g, '$1<span class="text-accent-cyan">$2</span>')
+              .replace(/^(\$)/, '<span class="text-brand-400">$1</span>')
+              .replace(/(\s)(--?[a-z][a-z-]*)/g, '$1<span class="text-signal-sky">$2</span>')
       )
       .join('\n');
   }
   return escapeHtml(src)
-    .replace(/(&quot;[^&]*?&quot;)/g, '<span class="text-accent-mint">$1</span>')
-    .replace(/\b(from|import|for|in|print)\b/g, '<span class="text-accent-violet">$1</span>')
-    .replace(/\b(MembraneClient)\b/g, '<span class="text-accent-cyan">$1</span>');
+    .replace(/(&quot;[^&]*?&quot;)/g, '<span class="text-brand-300">$1</span>')
+    .replace(/\b(from|import|for|in)\b/g, '<span class="text-signal-rose">$1</span>')
+    .replace(/\b(MembraneClient)\b/g, '<span class="text-signal-sky">$1</span>');
 }
+
+const points = [
+  { title: 'One CLI', body: 'Serve, query, inspect, evict, and repair from the same `membrane` command.' },
+  { title: 'Typed Python client', body: 'Sync and async clients, plus an OpenAPI 3 schema for every route.' },
+  { title: 'Secure container', body: 'Python 3.14, non-root, read-only root filesystem, drains on SIGTERM.' },
+];
 ---
 
-<section id="code" class="relative py-24 sm:py-32 lg:py-40">
-  <div class="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
-    <div class="absolute left-1/2 top-0 h-[400px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-cyan/[0.06] blur-[120px]"></div>
-  </div>
-
-  <div class="container-page">
-    <div class="mx-auto max-w-2xl text-center">
-      <span data-reveal class="eyebrow">Developer experience</span>
-      <h2
-        data-reveal
-        data-reveal-delay="1"
-        class="mt-4 text-balance font-display text-display-lg font-semibold tracking-tighter text-white"
-      >
-        From <span class="gradient-text-static">git clone</span> to a running node in minutes.
-      </h2>
-      <p
-        data-reveal
-        data-reveal-delay="2"
-        class="mx-auto mt-5 max-w-xl text-pretty text-[1.0625rem] leading-relaxed text-ink-200"
-      >
-        One CLI for serving, clients, and admin; a typed Python client; an
-        OpenAPI surface; and a container image that refuses to run insecurely.
-      </p>
+<section id="code" class="section">
+  <div class="container-page grid gap-12 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16">
+    <div class="min-w-0">
+      <p class="eyebrow">Developer experience</p>
+      <h2 class="h-section mt-3">From git clone to a running node in minutes.</h2>
+      <p class="lede mt-4">Every snippet here is copied from the quickstart and runs in CI.</p>
+      <ul class="mt-8 space-y-5">
+        {
+          points.map((p) => (
+            <li class="flex gap-3">
+              <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-400" />
+              <div>
+                <div class="text-[0.9375rem] font-medium text-white">{p.title}</div>
+                <div class="mt-0.5 text-[0.9375rem] text-ink-300" set:html={p.body.replace(/`([^`]+)`/g, '<code class="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[0.85em] text-ink-100">$1</code>')} />
+              </div>
+            </li>
+          ))
+        }
+      </ul>
     </div>
 
-    <div data-reveal data-reveal-delay="3" class="relative mx-auto mt-16 max-w-5xl">
-      <div class="glass relative overflow-hidden rounded-[24px]">
-        <div role="tablist" aria-label="Code examples" class="flex items-center gap-1 overflow-x-auto border-b border-white/[0.06] bg-ink-950/40 px-3 py-2" data-tabs>
-          {
-            snippets.map((s, i) => (
-              <button
-                type="button"
-                role="tab"
-                id={`tab-${s.id}`}
-                aria-controls={`panel-${s.id}`}
-                aria-selected={i === 0 ? 'true' : 'false'}
-                data-tab={s.id}
-                class={`group inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition-all duration-200 ${
-                  i === 0 ? 'bg-white/[0.06] text-white' : 'text-ink-300 hover:bg-white/[0.04] hover:text-ink-100'
-                }`}
-              >
-                <span class={`h-1.5 w-1.5 rounded-full ${i === 0 ? 'bg-accent-violet' : 'bg-ink-400 group-hover:bg-ink-200'}`} />
-                <span class="code-block">{s.label}</span>
-              </button>
-            ))
-          }
-          <div class="ml-auto flex items-center gap-2 pr-2">
-            <button type="button" data-copy class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.72rem] font-medium text-ink-300 transition-colors hover:bg-white/[0.05] hover:text-white" aria-label="Copy code">
-              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="5" y="5" width="9" height="9" rx="1.5" />
-                <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" />
-              </svg>
-              <span data-copy-label>copy</span>
+    <div class="window min-w-0 self-start">
+      <div role="tablist" aria-label="Code examples" class="flex items-center gap-1 overflow-x-auto border-b border-white/[0.06] bg-white/[0.02] px-2 py-1.5" data-tabs>
+        {
+          snippets.map((s, i) => (
+            <button
+              type="button"
+              role="tab"
+              id={`tab-${s.id}`}
+              aria-controls={`panel-${s.id}`}
+              aria-selected={i === 0 ? 'true' : 'false'}
+              data-tab={s.id}
+              class={`shrink-0 rounded-md px-3 py-1.5 font-mono text-[0.78rem] transition-colors ${
+                i === 0 ? 'bg-white/[0.07] text-white' : 'text-ink-400 hover:text-ink-100'
+              }`}
+            >
+              {s.label}
             </button>
-          </div>
-        </div>
-
-        <div class="relative">
-          {
-            snippets.map((s, i) => (
-              <pre
-                role="tabpanel"
-                id={`panel-${s.id}`}
-                aria-labelledby={`tab-${s.id}`}
-                data-panel={s.id}
-                class={`code-block overflow-x-auto px-6 py-7 text-[0.85rem] leading-[1.7] ${i === 0 ? '' : 'hidden'}`}
-              ><code set:html={highlight(s.code, s.shell)} /></pre>
-            ))
-          }
-        </div>
+          ))
+        }
+        <button type="button" data-copy class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[0.75rem] text-ink-400 transition-colors hover:text-white" aria-label="Copy code">
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="5" y="5" width="9" height="9" rx="1.5" />
+            <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" />
+          </svg>
+          <span data-copy-label>Copy</span>
+        </button>
+      </div>
+      <div class="min-h-[13rem]">
+        {
+          snippets.map((s, i) => (
+            <pre
+              role="tabpanel"
+              id={`panel-${s.id}`}
+              aria-labelledby={`tab-${s.id}`}
+              data-panel={s.id}
+              class={`code-block overflow-x-auto px-5 py-5 text-[0.8125rem] leading-[1.75] text-ink-200 ${i === 0 ? '' : 'hidden'}`}
+            ><code set:html={highlight(s.code, s.shell)} /></pre>
+          ))
+        }
       </div>
     </div>
   </div>
@@ -180,14 +176,9 @@ function highlight(src: string, isShell: boolean): string {
         tabs.forEach((t) => {
           const active = t === tab;
           t.setAttribute('aria-selected', active ? 'true' : 'false');
-          t.classList.toggle('bg-white/[0.06]', active);
+          t.classList.toggle('bg-white/[0.07]', active);
           t.classList.toggle('text-white', active);
-          t.classList.toggle('text-ink-300', !active);
-          const dot = t.querySelector('span');
-          if (dot) {
-            dot.classList.toggle('bg-accent-violet', active);
-            dot.classList.toggle('bg-ink-400', !active);
-          }
+          t.classList.toggle('text-ink-400', !active);
         });
         panels.forEach((p) => {
           p.classList.toggle('hidden', p.dataset.panel !== target);
@@ -207,10 +198,10 @@ function highlight(src: string, isShell: boolean): string {
       try {
         await navigator.clipboard.writeText(text);
         const prev = copyLabel.textContent;
-        copyLabel.textContent = 'copied';
+        copyLabel.textContent = 'Copied';
         setTimeout(() => (copyLabel.textContent = prev), 1400);
       } catch {
-        copyLabel.textContent = 'select & copy';
+        copyLabel.textContent = 'Select & copy';
       }
     });
   }

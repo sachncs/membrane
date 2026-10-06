@@ -1,130 +1,99 @@
 ---
-import { REPO_URL } from '../lib/site';
+import { BLOB_URL } from '../lib/site';
+
+// Measured in this repository (docs/deployment.md, docs/operations/capacity.md).
+const measured = [
+  { value: '8.1M', unit: 'reads/s', label: 'One node, 4 threads', detail: '3.2× one thread on free-threaded Python 3.14. CI requires ≥ 3.0× on 8+ CPU hosts.' },
+  { value: '1.6×', unit: '', label: 'Read capacity, 3 → 5 nodes', detail: '1,848 → 2,955 reads/s on kind with 250m CPU per pod. CI fails below 1.5×.' },
+  { value: '15.4k', unit: 'req/s', label: 'HTTP /retrieve, one node', detail: 'Two event loops on free-threaded Python, keep-alive; the load generator saturates beyond.' },
+];
 
 // Output of `python scripts/demo.py`: the analytical model on the paper's
 // Section 4 case study (20,000 requests, mean input 27.5K tokens).
 // Update these when the model changes; the demo is run in CI.
-const metrics = [
-  { value: 1.39, suffix: '×', decimals: 2, label: 'Max sustainable request rate', detail: '3.12 vs 2.25 req/s against homogeneous PD.' },
-  { value: 42, suffix: '%', decimals: 0, label: 'Lower mean TTFT', detail: '2.31 s vs 4.00 s against homogeneous PD.' },
-  { value: 10, suffix: '%', decimals: 0, label: 'Lower P90 TTFT', detail: '3.62 s vs 4.00 s against homogeneous PD.' },
-  { value: 4.8, suffix: 'Gbps', decimals: 1, label: 'Average egress', detail: 'Cross-datacenter KV traffic the routing threshold induces.' },
+const modeled = [
+  { value: '1.39×', label: 'Max sustainable request rate', detail: '3.12 vs 2.25 req/s' },
+  { value: '42%', label: 'Lower mean TTFT', detail: '2.31 s vs 4.00 s' },
+  { value: '10%', label: 'Lower P90 TTFT', detail: '3.62 s vs 4.00 s' },
 ];
-
 const configs = [
   { name: 'Homogeneous PD', lambda: 2.25, ttft: 4.0 },
   { name: 'Naive heterogeneous PD', lambda: 2.5, ttft: 1.65 },
   { name: 'Membrane-PD', lambda: 3.12, ttft: 2.31, highlight: true },
 ];
 const maxLambda = Math.max(...configs.map((c) => c.lambda));
-const maxTtft = Math.max(...configs.map((c) => c.ttft));
 ---
 
-<section id="performance" class="relative py-24 sm:py-32 lg:py-40">
+<section id="performance" class="section border-t border-white/[0.06]">
   <div class="container-page">
-    <div class="grid items-start gap-16 lg:grid-cols-12 lg:gap-12">
-      <div class="min-w-0 lg:col-span-5">
-        <span data-reveal class="eyebrow">Performance model</span>
-        <h2
-          data-reveal
-          data-reveal-delay="1"
-          class="mt-4 text-balance font-display text-display-lg font-semibold tracking-tighter text-white"
-        >
-          The paper's case study, <br />
-          <span class="gradient-text-static">reproduced in one command.</span>
-        </h2>
-        <p
-          data-reveal
-          data-reveal-delay="2"
-          class="mt-5 max-w-md text-pretty text-[1.0625rem] leading-relaxed text-ink-200"
-        >
-          <code class="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[0.85em] text-ink-100">membrane/model/throughput.py</code>
-          implements Eqs. (1)–(6) of the Prefill-as-a-Service paper with a
-          piecewise-linear Table-5 fit. These numbers are the model's output for
-          the paper's Section 4 workload, not a benchmark of a live cluster.
-        </p>
-        <div data-reveal data-reveal-delay="3" class="mt-6 overflow-hidden rounded-xl border border-white/[0.08] bg-ink-950/60">
-          <pre class="code-block overflow-x-auto px-4 py-3 text-[0.82rem] text-ink-100"><span class="text-accent-mint">$</span> python scripts/demo.py</pre>
-        </div>
+    <div class="max-w-2xl">
+      <p class="eyebrow">Performance</p>
+      <h2 class="h-section mt-3">Scales with cores. Scales with nodes.</h2>
+      <p class="lede mt-4">
+        Measured numbers come from this repository's benchmarks and CI jobs. The modeled numbers
+        reproduce the Prefill-as-a-Service paper's case study, and are labelled as such.
+      </p>
+    </div>
 
-        <div data-reveal data-reveal-delay="3" class="mt-6 flex flex-wrap gap-3">
-          <a href="https://arxiv.org/abs/2604.15039" target="_blank" rel="noreferrer noopener" class="btn-secondary">
-            Read the paper
-          </a>
-          <a href={`${REPO_URL}/blob/master/scripts/demo.py`} target="_blank" rel="noreferrer noopener" class="btn-ghost">
-            View the script
-          </a>
+    <div class="mt-14 grid gap-5 lg:grid-cols-2">
+      <div class="card p-6 sm:p-8">
+        <div class="flex items-center justify-between">
+          <h3 class="text-[0.9375rem] font-semibold text-white">Measured</h3>
+          <span class="chip">Benchmarks and CI</span>
         </div>
-      </div>
-
-      <div class="min-w-0 lg:col-span-7">
-        <div class="grid gap-3 sm:grid-cols-2">
+        <dl class="mt-6 divide-y divide-white/[0.06]">
           {
-            metrics.map((m, i) => (
-              <div data-reveal data-reveal-delay={i + 1} class="card relative overflow-hidden p-7">
-                <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gradient-to-br from-accent-violet/20 to-transparent blur-2xl" aria-hidden="true" />
-                <div class="relative">
-                  <div class="flex items-baseline gap-1.5">
-                    <span
-                      class="font-display text-[2.75rem] font-semibold leading-none tracking-tightest text-white"
-                      data-counter={m.value}
-                      data-decimals={m.decimals}
-                    >
-                      {m.value.toFixed(m.decimals)}
-                    </span>
-                    <span class="font-display text-2xl font-semibold text-ink-300">{m.suffix}</span>
-                  </div>
-                  <div class="mt-3 text-[0.9rem] font-medium text-ink-100">{m.label}</div>
-                  <div class="mt-1.5 text-[0.82rem] leading-relaxed text-ink-300">{m.detail}</div>
+            measured.map((m) => (
+              <div class="grid gap-1 py-5 first:pt-0 last:pb-0 sm:grid-cols-[9.5rem_minmax(0,1fr)] sm:gap-6">
+                <dd class="font-display text-[1.875rem] font-semibold leading-none tracking-tight text-white">
+                  {m.value}
+                  {m.unit && <span class="ml-1 text-[0.875rem] font-medium tracking-normal text-ink-400">{m.unit}</span>}
+                </dd>
+                <div>
+                  <dt class="text-[0.9375rem] font-medium text-ink-100">{m.label}</dt>
+                  <dd class="mt-1 text-[0.875rem] leading-relaxed text-ink-400">{m.detail}</dd>
                 </div>
               </div>
             ))
           }
-        </div>
+        </dl>
+      </div>
 
-        <div data-reveal data-reveal-delay="3" class="card mt-3 p-6 sm:p-8">
-          <div class="text-[0.78rem] font-medium text-ink-300">Configurations compared by the model</div>
-          <div class="mt-4 overflow-x-auto">
-          <table class="w-full min-w-[420px] text-left text-[0.82rem]">
-            <thead class="text-ink-400">
-              <tr>
-                <th class="pb-2 font-medium">Configuration</th>
-                <th class="pb-2 font-medium">Max rate (req/s)</th>
-                <th class="pb-2 font-medium">Mean TTFT (s)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {
-                configs.map((c) => (
-                  <tr class="border-t border-white/[0.06]">
-                    <td class={`py-2.5 pr-4 ${c.highlight ? 'font-medium text-white' : 'text-ink-200'}`}>{c.name}</td>
-                    <td class="py-2.5 pr-4">
-                      <div class="flex items-center gap-2">
-                        <div class="h-1.5 w-24 rounded-full bg-white/[0.06]">
-                          <div class={`h-1.5 rounded-full ${c.highlight ? 'bg-accent-cyan' : 'bg-white/25'}`} style={`width: ${(c.lambda / maxLambda) * 100}%`} />
-                        </div>
-                        <span class="font-mono text-ink-100">{c.lambda.toFixed(2)}</span>
-                      </div>
-                    </td>
-                    <td class="py-2.5">
-                      <div class="flex items-center gap-2">
-                        <div class="h-1.5 w-24 rounded-full bg-white/[0.06]">
-                          <div class={`h-1.5 rounded-full ${c.highlight ? 'bg-accent-violet' : 'bg-white/25'}`} style={`width: ${(c.ttft / maxTtft) * 100}%`} />
-                        </div>
-                        <span class="font-mono text-ink-100">{c.ttft.toFixed(2)}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              }
-            </tbody>
-          </table>
-          </div>
-          <p class="mt-4 text-[0.75rem] leading-relaxed text-ink-400">
-            Naive heterogeneous PD has the lowest TTFT but saturates at 2.50 req/s; Membrane-PD's
-            length-threshold routing trades some latency for the highest sustainable rate.
-          </p>
+      <div class="card p-6 sm:p-8">
+        <div class="flex items-center justify-between">
+          <h3 class="text-[0.9375rem] font-semibold text-white">Modeled: the paper’s case study</h3>
+          <code class="chip font-mono text-[0.75rem]">scripts/demo.py</code>
         </div>
+        <dl class="mt-6 grid grid-cols-3 gap-4">
+          {
+            modeled.map((m) => (
+              <div>
+                <dd class="font-display text-[1.75rem] font-semibold leading-none tracking-tight text-white">{m.value}</dd>
+                <dt class="mt-2 text-[0.8125rem] font-medium text-ink-200">{m.label}</dt>
+                <dd class="mt-0.5 text-[0.8125rem] text-ink-400">{m.detail}</dd>
+              </div>
+            ))
+          }
+        </dl>
+        <div class="mt-8 space-y-3">
+          <div class="flex justify-between text-[0.75rem] text-ink-400"><span>Max request rate (req/s)</span><span>vs homogeneous PD</span></div>
+          {
+            configs.map((c) => (
+              <div class="grid grid-cols-[10.5rem_minmax(0,1fr)_2.5rem] items-center gap-3 text-[0.8125rem]">
+                <span class={c.highlight ? 'font-medium text-white' : 'text-ink-300'}>{c.name}</span>
+                <span class="h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                  <span class={`block h-full rounded-full ${c.highlight ? 'bg-brand-400' : 'bg-ink-500'}`} style={`width:${(c.lambda / maxLambda) * 100}%`} />
+                </span>
+                <span class="text-right font-mono text-ink-200">{c.lambda.toFixed(2)}</span>
+              </div>
+            ))
+          }
+        </div>
+        <p class="mt-6 text-[0.8125rem] leading-relaxed text-ink-500">
+          Eqs. (1)–(6) of the paper with a piecewise-linear Table-5 fit, run on its Section 4
+          workload. A model, not a benchmark of a live cluster.{' '}
+          <a class="text-ink-300 underline decoration-white/20 underline-offset-2 hover:text-white" href={`${BLOB_URL}/membrane/model/throughput.py`}>Source</a>
+        </p>
       </div>
     </div>
   </div>
