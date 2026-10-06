@@ -52,7 +52,19 @@ client, authentication, a three-node cluster, and the container image.
   prefills only the gaps.
 - **Clustering.** Gossip membership, heartbeat failure detection,
   consistent-hash placement, and strong writes that wait for replicas
-  and fail closed when they cannot get them.
+  (KV bytes included) and fail closed when they cannot get them.
+  Primaries hand off with verification on drain and rebalance when
+  nodes join; repair pages only the inventory buckets that changed.
+- **Memory API and routing.** `/reconstruct` assembles the cached KV for
+  a prompt, `/prefix/lookup` reports how much is cached, and `/route`
+  says where to fetch, prefill, and store, with pluggable placement
+  policies ([Memory API](docs/memory-api.md)).
+- **Prefill / decode disaggregation.** `--role prefill|decode`: decode
+  nodes pull the KV a prefill node computed, over REST or gRPC
+  ([Prefill / decode](docs/disaggregation.md)).
+- **Scales up and out.** On free-threaded Python 3.14 (`Dockerfile.ft`)
+  one node serves requests on several cores; adding nodes spreads
+  ownership, and per-node consistency costs follow what changed.
 - **Secure by default.** A node will not listen on a public address
   without API keys or mTLS; keyfiles hold only SHA-256 digests and must
   be private; every route checks a scope; reads are isolated per
@@ -62,17 +74,20 @@ client, authentication, a three-node cluster, and the container image.
   honour their deadline, and a `SIGTERM` drain that lets a 3-node
   cluster roll without a failed write.
 - **Durable when you want it.** `--redis` persists fragment metadata
-  and `--data-dir` keeps KV bytes on disk (AES-256-GCM), so nodes
-  survive restarts.
+  (a single server, Sentinel, or Redis Cluster) and `--data-dir` keeps
+  KV bytes on disk (AES-256-GCM, rotatable keys), so nodes survive
+  restarts. An encrypted warm tier and KV quantization stretch memory.
 - **Pluggable.** CPU simulator, PyTorch GPU, HuggingFace Transformers,
-  OpenAI, Anthropic, and Ollama compute backends, and third-party
-  compute backends, authenticators, and content stores through entry
-  points ([Plugins](docs/plugins.md)); adapters for vLLM, SGLang, and
-  TensorRT-LLM.
-- **Operable.** JSON logs with request IDs, Prometheus metrics with
-  per-endpoint and per-tenant labels, a TUI dashboard, admin commands,
-  a hardened Python 3.14 container image, and Docker Compose,
-  Kubernetes, and systemd configurations.
+  OpenAI, Anthropic, Ollama, and KV-extraction compute backends;
+  third-party compute backends, authenticators, content stores,
+  persistence, eviction, secret providers, placement policies, and event
+  hooks through entry points ([Plugins](docs/plugins.md)); adapters for
+  vLLM, SGLang, and TensorRT-LLM that keep their KV in Membrane.
+- **Operable.** JSON logs with request IDs, OpenTelemetry traces,
+  Prometheus metrics with per-endpoint and per-tenant labels, a
+  persistent hash-chained audit log, certificate hot reload, ACME and
+  SPIFFE, a TUI dashboard, admin commands, hardened Python 3.14 container
+  images, and Docker Compose, Kubernetes, and systemd configurations.
 
 ## Running it
 
@@ -82,6 +97,8 @@ client, authentication, a three-node cluster, and the container image.
 | Container, Compose, Kubernetes, systemd | [Deployment](docs/deployment.md) |
 | API keys, mTLS, scopes, tenants | [Security](docs/security.md) |
 | Write consistency and quorum | [Consistency levels](docs/consistency.md) |
+| Reconstruction, prefix lookup, routing | [Memory API & routing](docs/memory-api.md) |
+| Prefill / decode nodes, engine adapters | [Prefill / decode](docs/disaggregation.md) |
 | Monitoring and alerts | [SLOs](docs/operations/slo.md) |
 | Sizing | [Capacity planning](docs/operations/capacity.md) |
 | Backups, upgrades, incidents | [Backup & restore](docs/operations/backup-restore.md), [Upgrades](docs/operations/upgrade.md), [Incident response](docs/operations/incident-response.md) |
@@ -103,10 +120,15 @@ mypy membrane
 python tools/check_naming.py && python tools/check_docstrings.py
 ```
 
-CI runs these on Python 3.14 from the lockfile, plus a Redis integration job,
-stress / chaos / benchmark smoke tests, security scans (pip-audit,
-bandit, gitleaks, Trivy), a container smoke test, the documentation
-site build, and a docs link check. See
+CI runs these on Python 3.14 from the lockfile and again on
+free-threaded 3.14t, plus:
+- Redis integration, including Sentinel and Redis Cluster;
+- stress, chaos, and benchmark smoke tests;
+- security scans (pip-audit, bandit, gitleaks, Trivy);
+- smoke tests of both container images;
+- a 5-node Kubernetes (kind) end-to-end test: rolling restart, primary
+  loss, and scale-out;
+- the documentation site build and a docs link check. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and
 [docs/release.md](docs/release.md) for releases.
 
