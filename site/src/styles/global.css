@@ -243,6 +243,22 @@
   }
   .docs-prose :not(pre) > code {
     @apply rounded-md border border-white/[0.07] bg-white/[0.04] px-1.5 py-[0.1rem] font-mono text-[0.84em] text-ink-100;
+    /* Show exactly what to type: no "==" or "->" ligatures. */
+    font-variant-ligatures: none;
+  }
+
+  /* Checklists (- [ ] item) */
+  .docs-prose ul.contains-task-list {
+    @apply list-none pl-0;
+  }
+  .docs-prose li.task-list-item {
+    @apply relative pl-7;
+  }
+  .docs-prose li.task-list-item > input[type='checkbox'] {
+    @apply absolute left-0 top-[0.4em] m-0 h-4 w-4 cursor-default appearance-none rounded border border-white/25 bg-white/[0.03];
+  }
+  .docs-prose li.task-list-item > input[type='checkbox']:checked {
+    @apply border-brand-400 bg-brand-400;
   }
   .docs-prose hr {
     @apply my-12 border-white/[0.07];
@@ -256,9 +272,15 @@
 
   /* Tables */
   .docs-prose table {
-    @apply mt-6 block w-full overflow-x-auto rounded-xl border border-white/[0.08] text-left text-[0.875rem];
+    @apply mt-6 w-full overflow-hidden rounded-xl border border-white/[0.08] text-left text-[0.875rem];
     border-collapse: separate;
     border-spacing: 0;
+  }
+  /* Wide tables scroll horizontally on small screens. */
+  @media (max-width: 767px) {
+    .docs-prose table {
+      @apply block overflow-x-auto;
+    }
   }
   .docs-prose thead th {
     @apply whitespace-nowrap border-b border-white/[0.08] bg-white/[0.03] px-4 py-2.5 font-medium text-ink-100;

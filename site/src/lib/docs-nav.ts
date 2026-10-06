@@ -11,19 +11,19 @@ export const DOCS_NAV: { title: string; items: { id: string; label: string }[] }
     title: 'Guides',
     items: [
       { id: 'deployment', label: 'Deployment' },
-      { id: 'security', label: 'Security & auth' },
+      { id: 'security', label: 'Security' },
       { id: 'consistency', label: 'Consistency levels' },
       { id: 'memory-api', label: 'Memory API & routing' },
-      { id: 'disaggregation', label: 'Prefill / decode' },
+      { id: 'disaggregation', label: 'Prefill and decode' },
       { id: 'plugins', label: 'Plugins' },
     ],
   },
   {
     title: 'Operations',
     items: [
-      { id: 'operations/slo', label: 'SLOs' },
+      { id: 'operations/slo', label: 'SLOs and alerting' },
       { id: 'operations/capacity', label: 'Capacity planning' },
-      { id: 'operations/backup-restore', label: 'Backup & restore' },
+      { id: 'operations/backup-restore', label: 'Backup and restore' },
       { id: 'operations/upgrade', label: 'Upgrades' },
       { id: 'operations/incident-response', label: 'Incident response' },
     ],

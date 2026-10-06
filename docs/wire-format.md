@@ -1,18 +1,20 @@
-# Membrane wire & storage format (v5)
+# Wire and storage format
 
-This document specifies the on-wire / on-disk formats that
+The specification of Membrane's v5 formats: fragment identity, the wire message, canonical byte framing, cluster snapshots, and tombstones. It is the contract between nodes, clients, and storage, for anyone implementing a compatible client or reading stored data.
+
+This document specifies the on-wire and on-disk formats that
 Membrane uses for fragment payloads, identity fingerprints,
 canonical bytes, and per-cluster metadata. Everything in this
 document is part of the **v5** contract; breaking changes
-require a major version bump and a ``schema_version`` bump in
-:data:`membrane.serialization.SCHEMA_VERSION`.
+require a major version bump and a `schema_version` bump in
+`membrane.serialization.SCHEMA_VERSION`.
 
 The v5 contract was introduced in v3.0.0 and supersedes the
-v2 / v4 contracts. ``from_dict`` and ``parse_canonical``
-reject any other ``schema_version`` with
-:class:`membrane.errors.SchemaError`.
+v2 / v4 contracts. `from_dict` and `parse_canonical`
+reject any other `schema_version` with
+`membrane.errors.SchemaError`.
 
-## 1. Fragment identity — ``PayloadIdentity``
+## 1. Fragment identity — `PayloadIdentity`
 
 Stable ten-field fingerprint that uniquely identifies a
 fragment in storage, on the wire, and in gossip digests:
@@ -49,13 +51,13 @@ Serialised to JSON as a sub-dict:
 }
 ```
 
-``PayloadIdentity.fingerprint()`` returns the SHA-256 of the
-JSON-canonical form (``sort_keys=True``). Two fragments
+`PayloadIdentity.fingerprint()` returns the SHA-256 of the
+JSON-canonical form (`sort_keys=True`). Two fragments
 collide only when every field is identical; the ten fields
 combined disambiguate model / tokenizer revisions, layer /
 head spans, dtype, and tensor shape.
 
-## 2. Wire format — ``FragmentMessage``
+## 2. Wire format — `FragmentMessage`
 
 **Schema version 5.** Every request body that carries a
 fragment uses this shape:
@@ -78,33 +80,33 @@ fragment uses this shape:
 
 The body never carries the canonical bytes inline over HTTP /
 FastAPI: clients and servers stream the bytes through the
-separate ``ContentStore`` API (``PUT /payload/{key}`` style
+separate `ContentStore` API (`PUT /payload/{key}` style
 out of scope for the v5 wire). The bytes are addressable
-through ``payload_ref`` (the SHA-256 hex digest).
+through `payload_ref` (the SHA-256 hex digest).
 
-The fields added at v2.0 (``consistency``, ``hlc``) and
-v3.0.0 (``tenant_id``, ``fingerprint_compat``) are required:
-``from_dict`` raises ``SchemaError`` if any are missing.
+The fields added at v2.0 (`consistency`, `hlc`) and
+v3.0.0 (`tenant_id`, `fingerprint_compat`) are required:
+`from_dict` raises `SchemaError` if any are missing.
 
 ### Consistency levels
 
-The ``consistency`` field is one of ``"strong"``, ``"quorum"``,
-or ``"eventual"``. See ``docs/consistency.md`` for the full
+The `consistency` field is one of `"strong"`, `"quorum"`,
+or `"eventual"`. See `docs/consistency.md` for the full
 contract; the v5 wire carries the literal string in the
-envelope and :func:`membrane.serialization.from_dict` does not
+envelope and `membrane.serialization.from_dict` does not
 constrain it (the typed enforcement lives on the cluster side
-in :class:`membrane.network.config.ClusterConfig`).
+in `membrane.network.config.ClusterConfig`).
 
 ### Protobuf definitions
 
-``membrane/wire/v3/wire_v3.proto`` defines a protobuf form of the
-envelope (``Envelope``, ``TensorPayload``, ``ChunkRequest``,
-``Chunk``), generated into ``membrane/wire/v3/wire_v3_pb2.py``. It is
-experimental: ``membrane serve`` speaks only the JSON envelope over
+`membrane/wire/v3/wire_v3.proto` defines a protobuf form of the
+envelope (`Envelope`, `TensorPayload`, `ChunkRequest`,
+`Chunk`), generated into `membrane/wire/v3/wire_v3_pb2.py`. It is
+experimental: `membrane serve` speaks only the JSON envelope over
 HTTP. The prefill/decode disaggregation surface
-(``membrane.disagg``) has its own gRPC service.
+(`membrane.disagg`) has its own gRPC service.
 
-## 3. Canonical byte framing — ``canonicalize`` / ``parse_canonical``
+## 3. Canonical byte framing — `canonicalize` / `parse_canonical`
 
 Frames on disk:
 
@@ -129,19 +131,19 @@ Frames on disk:
 ```
 
 Header = 14 bytes. Total size =
-``14 + identity_len + 8 + payload_len + 8``.
+`14 + identity_len + 8 + payload_len + 8`.
 
-``parse_canonical(buf)`` reverses the round-trip and rejects
+`parse_canonical(buf)` reverses the round-trip and rejects
 any trailer / magic / header mismatch with:
 
-* ``SchemaError`` — magic, schema, or identity length is wrong.
-* ``CorruptPayloadError`` — magic + schema + length match but
+* `SchemaError` — magic, schema, or identity length is wrong.
+* `CorruptPayloadError` — magic + schema + length match but
   the truncated trailer disagrees with the payload's hash.
 
 ## 4. Cluster metadata — Snapshot
 
-Durable cluster state is written by ``Server.checkpoint_state()``
-and read by ``Server.restore_state()`` to a single JSON file
+Durable cluster state is written by `Server.checkpoint_state()`
+and read by `Server.restore_state()` to a single JSON file
 per node:
 
 ```
@@ -168,65 +170,68 @@ per node:
 ```
 
 The file is rewritten atomically
-(``tempfile.NamedTemporaryFile + os.fsync + os.replace +
-fsync on the parent dir``). A ``cluster_epoch`` more than one
+(`tempfile.NamedTemporaryFile + os.fsync + os.replace + fsync on the parent dir`). A `cluster_epoch` more than one
 step behind the live value is rejected on restore (see
-``ClusterEpochGuard``); the stale file is then deleted.
+`ClusterEpochGuard`); the stale file is then deleted.
 
 ## 5. Tombstone propagation
 
-Every soft-delete writes a ``Tombstone(content_hash, until,
-nodes)`` to the local ``TombstoneTable`` *before* removing the
+Every soft-delete writes a `Tombstone(content_hash, until, nodes)` to the local `TombstoneTable` *before* removing the
 fragment. Gossip piggybacks the active tombstone set on its
 next state delivery so peers can:
 
 * refuse to re-add the hash via stale store requests,
 * converge on a single expiry across replicas (the larger
-  ``until`` wins),
-* sweep expired entries via the daemon ``Sweeper``.
+  `until` wins),
+* sweep expired entries via the daemon `Sweeper`.
 
-The default ``tombstone_until`` is **60 s** after the delete
-and the wire op ``op_tombstone`` carries the value explicitly
+The default `tombstone_until` is **60 s** after the delete
+and the wire op `op_tombstone` carries the value explicitly
 so the deadline survives truncation on the producer side.
 
 ## 6. Ref-count semantics
 
-In-process ``RefCount`` tracks the set of node identifiers
-holding each ``payload_hash``. ``release(hash, node_id)``
-returns ``True`` only when the last reference is gone; the
+In-process `RefCount` tracks the set of node identifiers
+holding each `payload_hash`. `release(hash, node_id)`
+returns `True` only when the last reference is gone; the
 caller decides what to do with that signal (typically a
-``ContentStore.delete``) so the wire contract stays free of
+`ContentStore.delete`) so the wire contract stays free of
 hidden side effects.
 
+Within a node, KV blobs shared by several tenants' copies of the same
+content are reference-counted by the fragment table (and by the warm
+tier): a blob is deleted only when the last copy that references it is
+removed.
+
 Cross-process ref counts are out of scope for v5; the
-``InventoryDigest`` returned by ``op_inventory`` plus
+`InventoryDigest` returned by `op_inventory` plus
 tombstone gossip carry the equivalent information at the
 cluster level.
 
 ## 7. Backward compatibility & migration
 
-The current contract is **v5** (magic ``0xC0DE0105``, schema
-``5``). Older wire breaks and their migration paths:
+The current contract is **v5** (magic `0xC0DE0105`, schema
+`5`). Older wire breaks and their migration paths:
 
 | From | To | Migration | Tool |
 |------|----|-----------|------|
 | v0.x | v1.0 | Fleet restart with the v1.0 image. | none |
-| v1.x | v2.0 | Additive: ``consistency`` + ``hlc`` introduced; v2 readers accept v1 envelopes with the defaults applied at write time. | ``tools/upgrade_v1_to_v2.py`` |
-| v2.x | v5 (3.0.0) | Breaking: ``tenant_id`` and ``fingerprint_compat`` added; v5 readers reject v2 envelopes outright. Convert at the proxy or in a one-shot migration pass. | ``tools/upgrade_v2_to_v5.py`` |
-| v4    | v5 (3.0.0) | Breaking: same as v2 -> v5; v4 was an internal pre-release schema that the public never used. | ``tools/upgrade_v2_to_v5.py`` |
-| v3    | v5 (3.0.0) | Breaking: v3 was a transient schema that the public never used; conversion follows the v2 -> v5 path. | ``tools/upgrade_v2_to_v5.py`` |
+| v1.x | v2.0 | Additive: `consistency` + `hlc` introduced; v2 readers accept v1 envelopes with the defaults applied at write time. | none |
+| v2.x | v5 (3.0.0) | Breaking: `tenant_id` and `fingerprint_compat` added; v5 readers reject v2 envelopes outright. Convert at the proxy or in a one-shot migration pass. | `tools/upgrade_v2_to_v5.py` |
+| v4    | v5 (3.0.0) | Breaking: same as v2 -> v5; v4 was an internal pre-release schema that the public never used. | `tools/upgrade_v2_to_v5.py` |
+| v3    | v5 (3.0.0) | Breaking: v3 was a transient schema that the public never used; conversion follows the v2 -> v5 path. | `tools/upgrade_v2_to_v5.py` |
 
 Operators upgrading from a 2.x or earlier deployment must run
-``tools/upgrade_v2_to_v5.py`` (and the equivalent JSON
-helper ``tools/upgrade_v2_to_v5_json.py`` for stored
+`tools/upgrade_v2_to_v5.py` (and the equivalent JSON
+helper `tools/upgrade_v2_to_v5_json.py` for stored
 payloads) before booting a 3.0.0 cluster. The conversion
-tool reads v2 / v4 envelopes, fills in ``tenant_id`` (default
-``"public"``) and ``fingerprint_compat`` (recomputed from
+tool reads v2 / v4 envelopes, fills in `tenant_id` (default
+`"public"`) and `fingerprint_compat` (recomputed from
 the identity), and writes v5 envelopes back to the same
 storage backend.
 
 See also:
 
-* ``docs/compat-matrix.md`` — runtime / engine compat
-* ``CHANGELOG.md`` — release history of every wire break
-* ``tools/upgrade_v2_to_v5.py`` — one-shot migration tool
+* `docs/compat-matrix.md` — runtime / engine compat
+* `CHANGELOG.md` — release history of every wire break
+* `tools/upgrade_v2_to_v5.py` — one-shot migration tool

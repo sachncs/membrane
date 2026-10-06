@@ -1,119 +1,72 @@
-# Security & authentication model
+# Security
 
-This page describes how Membrane authenticates callers, authorizes
-them, isolates tenants, and protects data at rest.
+How Membrane authenticates callers, authorizes every request, isolates tenants, protects data in transit and at rest, and records administrative actions. Membrane is secure by default: a node refuses to serve unauthenticated traffic on any address other than loopback.
 
-## Module map
+## Security at a glance
 
-| Concern | Module | Key names |
-|---------|--------|-----------|
-| Authentication protocol | `membrane.auth` | `Authenticator`, `AuthContext`, `require_scope` |
-| API keys | `membrane.auth.apikey` | `APIKeyAuthenticator`, `generate_key`, `hash_key` |
-| mTLS | `membrane.auth.mtls`, `membrane.transport.tls`, `membrane.transport.tls_protocol` | `MTLSAuthenticator`, `MTLSConfig`, `PeerCertH11Protocol` |
-| Route scopes | `membrane.transport.authz` | `ROUTE_SCOPES`, `enforce_route_scope` |
-| Tenant isolation | `membrane.security.tenant` | `TenantAuthorizer` |
-| Secret file permissions | `membrane.security.files` | `require_private_file` |
-| Backpressure and rate limits | `membrane.transport.limits` | `TransportLimits`, `ConcurrencyLimitMiddleware`, `RateLimitMiddleware` |
-| Request IDs | `membrane.transport.request_id` | `RequestIdMiddleware` |
-| Outbound URL guard (SSRF) | `membrane.security.url_allowlist` | `URLAllowlist`, `validate_outbound_url` |
-| Encryption at rest | `membrane.security.encryption`, `membrane.content_store` | `encrypt_payload`, `FilesystemBlob`, `DecryptError` |
-| Key rotation | `membrane.security.key_rotation` | versioned master keys |
-| Secret backends | `membrane.secrets` | AWS, GCP, Vault |
-| Audit log | `membrane.audit` | `AuditLog`, `FileAuditStorage`, `verify_chain` |
-| Data keys and rotation | `membrane.security.keyring` | `DirectoryKeyring`, `write_next_key` |
-| ACME certificates | `membrane.transport.acme` | `ACMEClient`, `ensure_certificate` |
-| SPIFFE identity | `membrane.transport.spiffe`, `membrane.auth.spiffe` | `SPIFFEClient`, `SPIFFEAuthenticator` |
-| Certificate hot reload | `membrane.transport.tls_rotation` | `CertRotationWatcher` |
+| Control | What Membrane does |
+|---------|--------------------|
+| **Authentication** | API keys (stored as SHA-256 digests), mTLS, or SPIFFE workload identity on every route except health probes |
+| **Authorization** | Every route requires a scope (`read`, `write`, `admin`); unlisted routes fail closed |
+| **Tenant isolation** | Each tenant keeps and reads its own fragments; a cross-tenant read is indistinguishable from a miss |
+| **Encryption in transit** | TLS with hot-reloaded certificates, ACME, or SPIFFE SVIDs |
+| **Encryption at rest** | AES-256-GCM per blob, with versioned, rotatable data keys |
+| **Secrets** | Read from AWS Secrets Manager, Google Secret Manager, Vault, or the environment; never written to disk |
+| **Audit** | A hash-chained, tamper-evident log of every administrative action |
+| **Abuse protection** | Concurrency limits, per-credential rate limits, and connection caps |
+| **Outbound requests** | An SSRF guard on every request a node makes to a peer |
+
+## Hardening checklist
+
+- [ ] Use mTLS (or SPIFFE) between nodes, and API keys or mTLS for clients.
+- [ ] Give each service its own key with the narrowest scope it needs.
+- [ ] Keep keyfiles, TLS keys, and data keys `chmod 600`, or load them with `secret://` from a secret manager.
+- [ ] Mount the data key from outside the data volume (`--data-key-file`).
+- [ ] Rotate the data key periodically with `membrane keys rotate-data-key`.
+- [ ] Set `--rate-limit` on nodes shared by several clients.
+- [ ] Keep `MEMBRANE_PEER_NETWORKS` as narrow as the deployment allows.
+- [ ] Alert on `membrane_audit_chain_valid == 0` and on certificate expiry.
 
 ## Authentication
 
-`membrane serve` refuses to listen on a non-loopback address unless
-one of these modes is configured (or `--allow-unauthenticated` is
-passed explicitly):
+`membrane serve` refuses to listen on a non-loopback address unless one of these modes is configured. `--allow-unauthenticated` overrides the check for throwaway development setups only.
 
-* **API key**: `APIKeyAuthenticator` (`membrane.auth.apikey`),
-  enabled with `--api-key-file`. Clients send
-  `Authorization: Bearer <key>`. Keyfile lines are
-  `sha256:<hex digest of the key>:<subject>:<scope,...>`, so a leaked
-  keyfile holds no usable credentials. `membrane keys generate
-  --subject S --scope read` prints a new key and its line. Plaintext
-  `<key>:<subject>:<scope,...>` lines are still accepted, with a
-  warning. Only digests are kept in memory, and a presented key is
-  compared against them in constant time (`hmac.compare_digest`).
-  Lines with an empty subject are ignored, because an empty subject
-  would bypass the tenant check.
-* **Plugin**: `--authenticator NAME --auth-config PATH` loads an
-  authenticator registered under the `membrane.authenticators` entry
-  point ([Plugins](plugins.md)).
-* **mTLS**: `MTLSConfig` (`membrane.transport.tls`), enabled with
-  `--tls-cert/--tls-key/--tls-ca`. Every connection must present a
-  certificate signed by the CA bundle, and `MTLSAuthenticator` admits
-  only CNs in `allowed_cns`. The CN is read from the **verified peer
-  certificate** of the TLS handshake
-  (`membrane.transport.tls_protocol`); a client-supplied
-  `X-SSL-Client-CN` header is always discarded. Scopes come from the CN
-  prefix (`admin-`, `write-`, `read-`). On `/join` the CN must equal
-  the joining node id, optionally with a role prefix.
-* **SPIFFE**: `--tls-spiffe-socket /run/spire/agent.sock` takes the
-  node's certificate, key, and trust bundle from the SPIFFE Workload
-  API (SPIRE). Callers present SVIDs; `SPIFFEAuthenticator` admits the
-  SPIFFE IDs listed with `--tls-spiffe-allow spiffe://td/path=read,write`
-  and grants those scopes. SVIDs are re-fetched every 5 minutes and a
-  renewed one is served without a restart. Peers trust each other through
-  the bundle (their certificates name workloads, not hosts). Install
-  `membrane[tls-spiffe]`.
+### API keys
 
-### TLS certificates
+Enable with `--api-key-file`. Clients send `Authorization: Bearer <key>`.
 
-* **Hot reload.** With `--tls-cert/--tls-key`, the files are checked
-  every minute and on `SIGHUP`; a changed pair is served on new
-  connections and presented to peers without a restart. An expired
-  certificate is refused at startup and on reload, and
-  `membrane_tls_cert_expiry_seconds` tracks the time left.
-* **ACME.** `--tls-acme-domain example.com` (repeatable) gets the
-  listener certificate from an ACME CA (Let's Encrypt by default,
-  `--tls-acme-directory` for others) through HTTP-01 challenges, keeps
-  the account and certificate in `--tls-acme-state-dir` (default
-  `<data-dir>/acme`, mode 0600), and renews it when less than 30 days
-  remain. The domain's port 80 must reach `--tls-acme-http-port`.
-  ACME certificates serve clients that authenticate with API keys;
-  they are for single-node public listeners (peers use mTLS or SPIFFE).
+- Keyfile lines have the form `sha256:<hex digest>:<subject>:<scope,...>`, so a leaked keyfile contains no usable credentials. `membrane keys generate --subject S --scope read` prints a new key and its line.
+- The server keeps only digests in memory and compares a presented key against them in constant time.
+- The subject is the tenant the key reads and writes. Lines with an empty subject are ignored, because an empty subject would bypass the tenant check.
+- Legacy plaintext lines (`<key>:<subject>:<scope,...>`) are still accepted, with a warning.
 
-### Secrets from a secret manager
+### mTLS
 
-The secret settings `--api-key-file`, `--peer-api-key-file`,
-`--tls-cert`, `--tls-key`, `--tls-ca`, `--data-key-file`, and the LLM
-`--api-key` accept `secret://NAME` in place of a file or value. It is
-resolved through `--secret-provider`:
-`env` (environment variables, the default), `aws` (Secrets Manager;
-`AWS_REGION`, and `AWS_PROFILE` for a named profile), `gcp` (Secret
-Manager; `GOOGLE_CLOUD_PROJECT`), or `vault` (`VAULT_ADDR`,
-`VAULT_TOKEN`; reads the `value` field of a KV v2 secret on the `secret`
-mount), or an installed
-`membrane.secret_providers` plugin. The secret never touches disk.
+Enable with `--tls-cert`, `--tls-key`, and `--tls-ca`. Every connection must present a certificate signed by the CA bundle, and only allowed common names (CNs) are admitted.
 
-Authentication failures return `401` with `WWW-Authenticate: Bearer`;
-a valid caller without the required scope gets `403`.
+- The CN is read from the **verified peer certificate** of the TLS handshake. A client-supplied `X-SSL-Client-CN` header is always discarded.
+- Scopes come from the CN prefix: `admin-`, `write-`, or `read-`.
+- When a node joins a cluster, its CN must equal its node id, optionally with a role prefix.
 
-### Secret files
+### SPIFFE
 
-The server refuses to start when the API keyfile, the TLS private key,
-the `--auth-config` file, or the data key can be read by other users
-or written by anyone but their owner. The error tells you to run
-`chmod 600`. Group read is allowed for the Kubernetes `fsGroup`
-pattern (secret volumes mounted 0440); it is logged when the file's
-group is not one of the server's own groups.
+Enable with `--tls-spiffe-socket /run/spire/agent.sock` (install `membrane[tls-spiffe]`). The node takes its certificate, key, and trust bundle from the SPIFFE Workload API (SPIRE).
 
-### API schema
+- Callers present SVIDs. Only the SPIFFE IDs listed with `--tls-spiffe-allow spiffe://td/path=read,write` are admitted, with the scopes given.
+- SVIDs are refreshed every 5 minutes, and a renewed one is served without a restart.
+- Peers trust each other through the bundle, because their certificates name workloads rather than hosts.
 
-FastAPI's interactive docs (`/docs`, `/redoc`) and `/openapi.json` are
-disabled, because FastAPI serves them outside route authentication.
-`--enable-api-docs` serves `/openapi.json` behind the `read` scope.
+### Custom authenticators
 
-## Authorisation
+`--authenticator NAME --auth-config PATH` loads an authenticator registered under the `membrane.authenticators` entry point. See [Plugins](plugins.md).
 
-`membrane.transport.authz.ROUTE_SCOPES` maps every route to a scope,
-and `enforce_route_scope` runs it at the top of every handler:
+### Responses
+
+An authentication failure returns `401` with `WWW-Authenticate: Bearer`. A valid caller without the required scope gets `403`.
+
+## Authorization
+
+Every route maps to a scope, enforced at the top of every handler. `admin` implies `write`, which implies `read`. A route that is not listed defaults to `read`, so a new route fails closed.
 
 | Scope | Routes |
 |-------|--------|
@@ -122,148 +75,137 @@ and `enforce_route_scope` runs it at the top of every handler:
 | `write` | `POST /store`, `/replicate`, `/prefill`, `/gossip`, `/join`, `/leave`, `/objects`, `/reconstruct` with `prefill`, `/disagg/prefill`, `/disagg/prefill/batch`, `/disagg/decode` (and the matching gRPC calls); `PUT /kv/{handle}`; `DELETE /sessions/{id}` |
 | `admin` | `POST /sync`, `/delete`, `/tombstone`, `/purge`, `/verify`, `PUT`/`GET`/`HEAD /blobs/{payload_ref}` (peer-to-peer KV bytes), and everything under `/admin/` |
 
-`admin` implies `write` implies `read`. Unlisted routes default to
-`read`, so a new route fails closed.
-
-`TenantAuthorizer` (`membrane.security.tenant`) layers a second
-check: a fragment carrying `tenant_id="acme"` is readable only by
-callers whose `AuthContext.subject` matches `acme`, or who hold
-`admin`. Fragments of the default tenant, `public`, are readable by
-everyone. A cross-tenant read is indistinguishable from a miss.
+FastAPI's interactive API docs (`/docs`, `/redoc`, `/openapi.json`) are disabled, because FastAPI would serve them outside route authentication. `--enable-api-docs` serves `/openapi.json` behind the `read` scope.
 
 ### Peer-to-peer calls
 
-Nodes call each other's routes for join, heartbeat, gossip,
-replication, and delete propagation, so they authenticate like any
-client: with the mTLS client certificate, or in API-key clusters with
-the key from `--peer-api-key-file`, which must carry `admin`.
+Nodes call each other for joining, heartbeats, gossip, replication, and delete propagation, and they authenticate like any other client: with their mTLS client certificate, or in API-key clusters with the key from `--peer-api-key-file`. The peer key needs `admin`, because peers replicate every tenant's fragments.
 
-### Prefill and tenants
+## Tenant isolation
 
-`POST /prefill` stamps the caller's tenant (the key's subject or the
-certificate CN) on every fragment it creates, so one tenant's prefill
-is not readable by another.
+Every fragment belongs to a tenant. A fragment of tenant `acme` is readable only by callers whose identity is `acme`, or who hold `admin`. Fragments of the default tenant, `public`, are readable by everyone. A cross-tenant read returns exactly what a miss returns, so a caller cannot probe for another tenant's content.
+
+`POST /prefill` stamps the caller's tenant (the key's subject or the certificate CN) on every fragment it creates.
 
 ### Identical content across tenants
 
-Each tenant keeps its own copy of a content hash. A node stores a
-fragment under its *key*: the bare content hash for the `public`
-tenant, `<tenant>:<hash>` for every other tenant (tenant ids cannot
-contain `:`). When two tenants store or prefill byte-identical content,
-both copies are resident and both tenants hit.
+Each tenant keeps its own copy of a content hash, so two tenants that cache the same prompt both get cache hits without sharing access.
 
-* `GET /retrieve?content_hash=<hash>` returns the caller's own copy,
-  else the `public` copy. A caller without a tenant (authentication
-  off) or with `admin` falls back to any tenant's copy.
-* `<tenant>:<hash>` names one copy directly; the tenant check still
-  applies, so it does not open another tenant's copy to a non-admin.
-* `/inventory`, the persistence backends, the warm tier, and the
-  `FragmentStored`/`FragmentRemoved` events use keys. `/admin/fragments/{key}`
-  and `/admin/evict` take a key or a bare hash.
-* The copies share one KV blob (the bytes are identical). The blob is
-  deleted when the last copy referencing it leaves the node, or the
-  warm tier.
-* The ring places a key by its content hash, so every tenant's copy
-  lives on the same owners.
+- A node stores a fragment under its *key*: the bare content hash for the `public` tenant, and `<tenant>:<hash>` for every other tenant. Tenant ids cannot contain `:`.
+- `GET /retrieve?content_hash=<hash>` returns the caller's own copy, else the `public` copy. A caller without a tenant (authentication off) or with `admin` falls back to any tenant's copy.
+- `<tenant>:<hash>` names one copy directly. The tenant check still applies, so it does not expose another tenant's copy to a non-admin.
+- `/inventory`, the persistence backends, the warm tier, and fragment events use keys. `/admin/fragments/{key}` and `/admin/evict` accept a key or a bare hash.
+- The copies share one encrypted KV blob, because the bytes are identical. The blob is deleted when the last copy that references it is removed.
+- The hash ring places every tenant's copy of a hash on the same nodes.
 
-## Abuse and overload protection
+## Encryption in transit
 
-* **Backpressure.** At most `--max-concurrency` requests (default 64)
-  are handled at once. A request that cannot get a slot within 100 ms
-  gets `503` with `Retry-After: 1`, so a saturated node sheds load
-  instead of queueing it without bound.
-* **Rate limiting.** `--rate-limit R` (requests per second) and
-  `--rate-limit-burst B` apply a token bucket per credential: the
-  bearer key's digest, or the client address for unauthenticated
-  callers. A caller over its limit gets `429` with `Retry-After`.
-* **Connections.** `--max-connections` caps open connections, and
-  `--keep-alive-timeout` closes idle keep-alive connections.
+### Certificate hot reload
 
-Probes (`/livez`, `/readyz`) bypass these limits. Rejections are
-counted in `membrane_requests_rejected_total{reason}`. Every response
-carries an `X-Request-ID` (UUIDv7, or the caller's own if well formed),
-and every log line written while handling the request includes it.
+With `--tls-cert` and `--tls-key`, the files are checked every minute and on `SIGHUP`. A changed pair is served on new connections, and presented to peers, without a restart. An expired certificate is refused at startup and on reload, and `membrane_tls_cert_expiry_seconds` reports the time remaining.
 
-## SSRF / outbound URL guard
+### ACME
 
-Every outbound HTTP request from the cluster layer is
-routed through `validate_outbound_url`
-(`membrane.security.url_allowlist`). The check restricts
-the scheme to `http`/`https`, blocks RFC 1918 private
-ranges, link-local `169.254.0.0/16`, `127.0.0.0/8`,
-`::1`, and the IPv6 ULA `fc00::/7`, and resolves the
-hostname to confirm the resolved IP is not on the
-blocklist.
+`--tls-acme-domain example.com` (repeatable) obtains the listener certificate from an ACME CA through HTTP-01 challenges: Let's Encrypt by default, or another CA with `--tls-acme-directory`.
 
-The resolver pins the validated IP to the outbound socket
-so a DNS-rebinding attack cannot smuggle a private
-address into the second resolution (`urllib` /
-`httpx` would otherwise re-resolve on their own).
+- The account and certificate are kept in `--tls-acme-state-dir` (default `<data-dir>/acme`, mode 0600).
+- The certificate is renewed when fewer than 30 days remain.
+- The domain's port 80 must reach `--tls-acme-http-port`.
 
-The outbound client disables redirect-following; every
-3xx response is surfaced to the caller as an explicit
-redirect that must be re-validated.
-
-Cluster peers usually live on private addresses. Seed hosts given
-with `--peer` are allowed by name, and `--peer-network` (or
-`MEMBRANE_PEER_NETWORKS`) admits a CIDR such as the Kubernetes pod
-network for peers learned later. A host passes only when every address
-it resolves to is inside an allowed network. Keep the range as narrow
-as the deployment allows and never include `169.254.0.0/16`.
+> [!NOTE]
+> ACME certificates suit single-node public listeners whose clients authenticate with API keys. Peers use mTLS or SPIFFE.
 
 ## Encryption at rest
 
-With `--data-dir`, KV bytes are stored by `FilesystemBlob`: each blob
-is encrypted with AES-256-GCM under a key derived from the node's
-master key and the blob's content hash, and written atomically
-(temp file, `fsync`, rename). The master key comes from
-`--data-key-file` (a file, a key directory, or `secret://NAME`) or is
-generated once into `<data-dir>/master.key` with mode 0600; a key file
-other users can read is refused. Keep the
-key outside the volume in production; a
-snapshot that contains both the blobs and the key protects nothing.
+With `--data-dir`, KV bytes are encrypted with AES-256-GCM under a key derived from the node's master key and the blob's content hash, and written atomically (temporary file, `fsync`, rename).
 
-A blob that fails authentication (tampering, or the wrong key) is
-never returned: `/retrieve` reports it as `found: false`, and the
-in-memory encrypted store (`EncryptedInProcessBytes`) raises
-`DecryptError`, which `/retrieve` reports as `"corrupt": true`.
+- The master key comes from `--data-key-file` (a file, a key directory, or `secret://NAME`), or is generated once into `<data-dir>/master.key` with mode 0600. A key file that other users can read is refused.
+- A blob that fails authentication, because it was tampered with or the key is wrong, is never returned. `/retrieve` reports it as not found, or as `"corrupt": true` for the in-memory encrypted store.
+- Without `--data-dir`, KV bytes live only in process memory.
 
-Without `--data-dir`, KV bytes live only in process memory.
+> [!WARNING]
+> Keep the data key outside the data volume. A snapshot that contains both the blobs and the key protects nothing.
 
-## Key rotation
+### Rotating the data key
 
-Point `--data-key-file` at a directory of versioned keys (`v1.key`,
-`v2.key`, ...; move an existing key to `DIR/v1.key` to adopt this).
-The highest version encrypts new blobs and every version still
-decrypts. To rotate:
+Point `--data-key-file` at a directory of versioned keys (`v1.key`, `v2.key`, ...). To adopt this, move an existing key to `DIR/v1.key`. The highest version encrypts new blobs, and every version still decrypts.
 
-```bash
+```bash title="Rotate"
 membrane keys rotate-data-key /etc/membrane/data-keys   # writes v2.key (0600)
 ```
 
-Each node re-reads the directory every minute, switches to the new
-version, and re-encrypts its existing blobs under it in the background
-(logged as `re-encrypted N blobs under data key version 2`). After that
-the old `v1.key` can be deleted.
+Each node re-reads the directory every minute, switches to the new version, and re-encrypts its existing blobs in the background (logged as `re-encrypted N blobs under data key version 2`). After that, the old key can be deleted.
+
+## Secrets management
+
+Every secret setting accepts `secret://NAME` in place of a file or value: `--api-key-file`, `--peer-api-key-file`, `--tls-cert`, `--tls-key`, `--tls-ca`, `--data-key-file`, and the LLM `--api-key`. The secret is resolved in memory through `--secret-provider` and never touches disk.
+
+| Provider | Configuration |
+|----------|---------------|
+| `env` (default) | Environment variables |
+| `aws` | AWS Secrets Manager; `AWS_REGION`, and `AWS_PROFILE` for a named profile |
+| `gcp` | Google Secret Manager; `GOOGLE_CLOUD_PROJECT` |
+| `vault` | HashiCorp Vault; `VAULT_ADDR`, `VAULT_TOKEN`. Reads the `value` field of a KV v2 secret on the `secret` mount |
+| Plugin | Anything registered under the `membrane.secret_providers` entry point |
+
+### Secret file permissions
+
+The server refuses to start when the API keyfile, a TLS private key, the `--auth-config` file, or the data key can be read by other users or written by anyone but the owner, and the error says to run `chmod 600`. Group read is allowed, for the Kubernetes `fsGroup` pattern (secret volumes mounted 0440); it is logged when the file's group is not one of the server's own.
 
 ## Audit log
 
-Every `/admin/*` operation (inspect, placement, evict, repair, policy
-changes) is appended to a hash-chained `AuditLog`, which admins can
-read with `GET /admin/audit`. With `--data-dir` the log is persisted to
-`<data-dir>/audit.jsonl` (mode 0600) and survives restarts: on start the
-node reloads it, verifies the chain, and continues it. A broken chain
-(an edited, removed, or reordered entry) is logged at CRITICAL and
-`membrane_audit_chain_valid` drops to 0. Without `--data-dir` the log
-is in memory only.
+Every `/admin/*` operation (inspect, placement, evict, repair, and policy changes) is appended to a hash-chained audit log, which admins read with `GET /admin/audit`.
 
-## See also
+- With `--data-dir`, the log is persisted to `<data-dir>/audit.jsonl` (mode 0600) and survives restarts: on start, the node reloads it, verifies the chain, and continues it.
+- A broken chain, meaning an edited, removed, or reordered entry, is logged at CRITICAL, and `membrane_audit_chain_valid` drops to 0.
+- Without `--data-dir`, the log is held in memory only.
 
-* `docs/api-stability.md` — stability classification of the
-  security modules.
-* `docs/operations/incident-response.md` — what to do when
-  the audit chain reports a tamper or the URL allow-list
-  rejects an outbound call.
-* `membrane/security/url_allowlist.py` — outbound URL
-  policy.
-* `membrane/security/encryption.py` — encryption primitives.
+## Abuse and overload protection
+
+| Protection | Setting | Behavior |
+|------------|---------|----------|
+| Backpressure | `--max-concurrency` (64) | A request that cannot get a slot within 100 ms gets `503` with `Retry-After: 1`, so a saturated node sheds load instead of queueing it without bound |
+| Rate limiting | `--rate-limit`, `--rate-limit-burst` | A token bucket per credential (the key's digest, or the client address when unauthenticated); over-limit callers get `429` with `Retry-After` |
+| Connections | `--max-connections`, `--keep-alive-timeout` | Caps open connections and closes idle keep-alive connections |
+
+Health probes bypass these limits. Rejections are counted in `membrane_requests_rejected_total{reason}`.
+
+Every response carries an `X-Request-ID` (a UUIDv7, or the caller's own if well formed), and every log line written while handling the request includes it.
+
+## Outbound request guard
+
+Every outbound HTTP request a node makes passes an SSRF guard:
+
+- Only `http` and `https` are allowed.
+- Private (RFC 1918), loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`), and IPv6 unique-local (`fc00::/7`) addresses are blocked, after resolving the hostname.
+- The validated IP is pinned to the socket, so DNS rebinding cannot substitute a private address on a second resolution.
+- Redirects are not followed; each one must be validated again.
+
+Cluster peers usually live on private addresses. Seed hosts given with `--peer` are allowed by name, and `--peer-network` (or `MEMBRANE_PEER_NETWORKS`) admits a CIDR, such as the Kubernetes pod network, for peers learned later. A host passes only when every address it resolves to is inside an allowed network.
+
+> [!CAUTION]
+> Keep the peer network as narrow as the deployment allows, and never include `169.254.0.0/16`, which covers cloud metadata endpoints.
+
+## Reporting a vulnerability
+
+Report vulnerabilities privately as described in [SECURITY.md](../SECURITY.md), not in public issues.
+
+## Implementation reference
+
+| Concern | Module |
+|---------|--------|
+| Authentication protocol | `membrane.auth` (`Authenticator`, `AuthContext`, `require_scope`) |
+| API keys | `membrane.auth.apikey` |
+| mTLS | `membrane.auth.mtls`, `membrane.transport.tls`, `membrane.transport.tls_protocol` |
+| SPIFFE | `membrane.transport.spiffe`, `membrane.auth.spiffe` |
+| Route scopes | `membrane.transport.authz` (`ROUTE_SCOPES`) |
+| Tenant isolation | `membrane.security.tenant`, `membrane.store.tenant_guard` |
+| Secret file permissions | `membrane.security.files` |
+| Limits and request IDs | `membrane.transport.limits`, `membrane.transport.request_id` |
+| Outbound request guard | `membrane.security.url_allowlist` |
+| Encryption and key rotation | `membrane.security.encryption`, `membrane.security.keyring`, `membrane.content_store` |
+| Secret providers | `membrane.secrets` |
+| Audit log | `membrane.audit` |
+| ACME and certificate reload | `membrane.transport.acme`, `membrane.transport.tls_rotation` |
+
+See also [API stability](api-stability.md) for the stability of these modules, and [Incident response](operations/incident-response.md) for what to do when the audit chain breaks or the outbound guard rejects a call.
