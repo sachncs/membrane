@@ -134,6 +134,32 @@ class RolePolicy:
         return role
 
 
+def copy_fragment(peer: Any, node: Any, content_hash: str) -> Any:
+    """Copy one fragment, bytes verified, from a peer into the local node.
+
+    The copy is never primary and keeps the fragment's tenant.
+
+    Args:
+        peer: Client for the node holding it (:class:`~membrane.network.peer.Peer`).
+        node: The local node.
+        content_hash: Content hash.
+
+    Returns:
+        Fragment | None: The stored fragment, or ``None`` when the peer does
+        not have it or its bytes fail verification.
+    """
+    fragment = peer.retrieve_fragment(content_hash)
+    if fragment is None:
+        return None
+    if fragment.payload_ref is not None:
+        payload = peer.get_blob(fragment.payload_ref)  # digest-checked
+        if payload is None:
+            logger.warning("peer %s has no verified bytes for %s", getattr(peer, "base_url", "?"), content_hash)
+            return None
+        node.content_store.put(fragment.payload_ref, payload)
+    return fragment if node.store(fragment, is_primary=False) else None
+
+
 class OriginLink:
     """Read-through to an origin node for a regional cache.
 
@@ -165,19 +191,10 @@ class OriginLink:
         Returns:
             bool: True when the fragment is now held locally.
         """
-        fragment = self.peer.retrieve_fragment(content_hash)
-        if fragment is None:
-            return False
-        if fragment.payload_ref is not None:
-            payload = self.peer.get_blob(fragment.payload_ref)  # digest-checked
-            if payload is None:
-                logger.warning("origin %s has no bytes for %s", self.origin, content_hash)
-                return False
-            self.node.content_store.put(fragment.payload_ref, payload)
-        stored = bool(self.node.store(fragment, is_primary=False))
+        stored = copy_fragment(self.peer, self.node, content_hash) is not None
         if stored:
             self.fetched += 1
         return stored
 
 
-__all__ = ["PROMOTION_CANDIDATES", "OriginLink", "Promoter", "RolePolicy"]
+__all__ = ["PROMOTION_CANDIDATES", "OriginLink", "Promoter", "RolePolicy", "copy_fragment"]

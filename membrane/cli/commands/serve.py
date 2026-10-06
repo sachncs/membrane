@@ -179,6 +179,18 @@ def main(
         envvar="MEMBRANE_ORIGIN",
         help="Act as a regional cache for this origin HOST:PORT: misses are read through to it",
     ),
+    role: str = typer.Option(
+        "both",
+        "--role",
+        envvar="MEMBRANE_ROLE",
+        help="Disaggregation phases served under /disagg: prefill, decode, or both",
+    ),
+    grpc_port: int | None = typer.Option(
+        None,
+        "--grpc-port",
+        envvar="MEMBRANE_GRPC_PORT",
+        help="Also serve the prefill/decode RPCs on this port (needs membrane[disagg]; GIL builds only)",
+    ),
     require_compat: str = typer.Option(
         "",
         "--require-compat",
@@ -408,6 +420,8 @@ def main(
         region: Region this node runs in.
         origin: Origin ``HOST:PORT`` this node caches for.
         require_compat: ``MODEL[:DTYPE]`` every stored fragment must be stamped for.
+        role: Disaggregation phases served.
+        grpc_port: Port for the prefill / decode RPCs.
         max_memory: Max memory bytes.
         log_level: Logging level.
         log_format: Diagnostics format: text or json (one object per line).
@@ -522,6 +536,8 @@ def main(
             region=region,
             origin=origin,
             require_compat=require_compat,
+            role=role,
+            grpc_port=grpc_port,
             transfer_compression=transfer_compression,
             kv_quantization=kv_quantization,
             warm_tier_bytes=warm_tier_bytes,

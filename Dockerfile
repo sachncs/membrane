@@ -16,6 +16,9 @@ FROM ${UV_IMAGE} AS uv
 
 FROM ${PYTHON_IMAGE} AS builder
 
+# Optional extras on top of `server`, space-separated; e.g.
+# --build-arg EXTRAS=disagg adds grpcio for --grpc-port.
+ARG EXTRAS=""
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_PYTHON=/usr/local/bin/python3.14 \
@@ -27,13 +30,15 @@ WORKDIR /src
 # Dependencies first: this layer is reused until uv.lock changes.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra server --no-install-project
+    uv sync --frozen --no-dev --extra server $(for e in $EXTRAS; do printf -- '--extra %s ' "$e"; done) \
+        --no-install-project
 COPY README.md LICENSE ./
 COPY membrane/ membrane/
 # uv caches a local project's wheel until pyproject.toml changes, so
 # rebuild the project itself from the copied source every time.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra server --no-editable --reinstall-package membrane
+    uv sync --frozen --no-dev --extra server $(for e in $EXTRAS; do printf -- '--extra %s ' "$e"; done) \
+        --no-editable --reinstall-package membrane
 
 
 FROM ${PYTHON_IMAGE}

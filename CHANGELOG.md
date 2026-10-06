@@ -12,6 +12,29 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Added (disaggregation)
+
+- `--role prefill|decode|both` and `POST /disagg/prefill`, `/disagg/prefill/batch`,
+  `/disagg/decode`: prefill nodes compute and keep KV under a per-tenant
+  handle; decode nodes pull it from the prefill node (bytes verified) and
+  generate.
+- `--grpc-port`: the same calls over gRPC, authenticated like HTTP (bearer
+  metadata or the verified client certificate) and served over TLS when
+  the node runs mTLS. The image adds grpcio with
+  `--build-arg EXTRAS=disagg`.
+- Named KV bundles (`PUT`/`GET`/`HEAD /kv/{handle}`) and
+  `membrane.adapters.remote`: HTTP cluster clients for the vLLM, SGLang,
+  and TensorRT-LLM adapters, tested against a live `membrane serve`.
+
+### Fixed (disaggregation)
+
+- The `/disagg` services were stubs: decode returned no tokens and the
+  REST and gRPC surfaces had no authentication. Prefill ran under one lock,
+  serializing every prompt, and blocked the event loop.
+- The vLLM connector pushed K and V as two saves of the same tensor, did
+  not split numpy caches, and saved whole paged caches instead of the
+  request's blocks.
+
 ### Added (memory API and routing)
 
 - `POST /reconstruct`: the cached fragments covering a prompt, tenant

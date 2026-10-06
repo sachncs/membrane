@@ -11,13 +11,21 @@ it expects a prefill backend supplied by the caller. The
 backend protocol is intentionally small: the v1 only asks
 the backend for the cached prefix length. A real backend
 (a vLLM ModelRunner or an HF causal LM) plugs in here.
+
+``membrane serve`` wires both services to the node
+(:mod:`membrane.services.disagg`): prefill computes and stores KV with
+the node's compute backend, and decode fetches that KV from the
+prefill node before generating.
 """
 
 import logging
 import threading
+from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
+from membrane.auth import AuthContext
 from membrane.disagg.protocol import (
     DecodeRequest,
     DecodeResponse,
@@ -28,6 +36,16 @@ from membrane.disagg.protocol import (
 from membrane.prefix_cache import KVHandle, PrefixCache, PrefixMatch
 
 logger = logging.getLogger(__name__)
+
+
+#: The authenticated caller of the current prefill or decode request, set
+#: by the REST dependency and the gRPC interceptor (``None``: authentication
+#: off).
+CALLER: ContextVar[AuthContext | None] = ContextVar("membrane_disagg_caller", default=None)
+
+
+class RoleUnavailableError(RuntimeError):
+    """This node's role does not serve the requested phase (prefill or decode)."""
 
 
 # ---------------------------------------------------------------------------
@@ -107,12 +125,15 @@ class PrefillService:
         backend: The :class:`PrefillBackend` the service
             delegates prefill to.
         clock: Helper for elapsed-millisecond timing.
+        cached_prefix: How many leading tokens are already cached; the
+            service's own prefix cache answers when ``None``.
     """
 
     def __init__(
         self,
         cache: PrefixCache | None = None,
         backend: PrefillBackend | None = None,
+        cached_prefix: Callable[[PrefillRequest], int] | None = None,
     ) -> None:
         """Initialize the service.
 
@@ -121,9 +142,12 @@ class PrefillService:
                 ``PrefixCache(capacity=4096)``.
             backend: Optional prefill backend. Defaults to
                 :class:`NoopPrefillBackend`.
+            cached_prefix: Answers the cached prefix length (for example
+                from the node's tenant-scoped indexes).
         """
         self.cache = cache or PrefixCache(capacity=4096)
         self.backend: PrefillBackend = backend or NoopPrefillBackend()
+        self.cached_prefix = cached_prefix
         self.lock = threading.RLock()
 
     def prefill(self, request: PrefillRequest) -> PrefillResponse:
@@ -139,8 +163,10 @@ class PrefillService:
         from membrane.otel_tracer import membrane_span
 
         clock = WallClock()
-        match = self.cache.lookup(request.model_id, request.token_ids)
-        cached_prefix_len = match.token_len
+        if self.cached_prefix is not None:
+            cached_prefix_len = self.cached_prefix(request)
+        else:
+            cached_prefix_len = self.cache.lookup(request.model_id, request.token_ids).token_len
         with membrane_span(
             "disagg.prefill",
             model_id=request.model_id,
@@ -148,13 +174,15 @@ class PrefillService:
             cached_prefix_len=str(cached_prefix_len),
             request_id=request.request_id,
         ):
+            # The backend runs outside the lock: prefills of different
+            # prompts proceed in parallel.
+            prompt_len, backend_ms = self.backend.run_prefill(request, cached_prefix_len)
             with self.lock:
                 handle = self.cache.insert(
                     request.model_id,
                     request.token_ids,
                     layer_range=(0, 0),
                 )
-                prompt_len, backend_ms = self.backend.run_prefill(request, cached_prefix_len)
             total_ms = clock.elapsed_ms() + max(backend_ms, 0.0)
             return PrefillResponse(
                 request_id=request.request_id,
@@ -170,18 +198,43 @@ class PrefillService:
 # ---------------------------------------------------------------------------
 
 
+@runtime_checkable
+class DecodeBackend(Protocol):
+    """Continues generation from a prefill handle."""
+
+    def decode(self, request: DecodeRequest) -> DecodeResponse:
+        """Decode ``request``.
+
+        Args:
+            request: The decode request.
+
+        Returns:
+            DecodeResponse: The generated tokens.
+
+        Raises:
+            LookupError: When the handle is unknown.
+        """
+        ...
+
+
 class DecodeService:
     """Service that continues generation from a prefill handle.
 
-    The v1 implementation does not own a real model. It
-    emits an empty token stream and reports ``finished=True``
-    so callers can wire up the protocol and exercise the
-    decode path. Operators substitute a real backend via
-    :class:`DecodeBackend`.
+    Without a backend it emits an empty token stream and reports
+    ``finished=True`` so callers can exercise the protocol; a running
+    node supplies a backend that fetches the KV and generates.
+
+    Attributes:
+        backend: The decode backend, if any.
     """
 
-    def __init__(self) -> None:
-        """Create the decode service."""
+    def __init__(self, backend: DecodeBackend | None = None) -> None:
+        """Create the decode service.
+
+        Args:
+            backend: Generates from a handle; an empty stream when ``None``.
+        """
+        self.backend = backend
         self.lock = threading.RLock()
 
     def decode(self, request: DecodeRequest) -> DecodeResponse:
@@ -191,9 +244,11 @@ class DecodeService:
             request: The decode request.
 
         Returns:
-            DecodeResponse: An empty response with
-            ``finished=True``.
+            DecodeResponse: The backend's tokens, or an empty finished
+            response without a backend.
         """
+        if self.backend is not None:
+            return self.backend.decode(request)
         with self.lock:
             return DecodeResponse(
                 request_id=request.request_id,
@@ -240,11 +295,14 @@ def batch_prefill(
 
 
 __all__ = [
+    "CALLER",
     "BatchPrefillResult",
+    "DecodeBackend",
     "DecodeService",
     "NoopPrefillBackend",
     "PrefillBackend",
     "PrefillService",
+    "RoleUnavailableError",
     "batch_prefill",
 ]
 

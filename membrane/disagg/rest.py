@@ -16,7 +16,9 @@ real engine in production and call :func:`create_router`
 on the resulting app.
 """
 
+import asyncio
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from membrane.disagg.protocol import (
@@ -28,10 +30,39 @@ from membrane.disagg.protocol import (
 from membrane.disagg.service import (
     DecodeService,
     PrefillService,
+    RoleUnavailableError,
     batch_prefill,
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def run_service[T](call: Callable[[], T]) -> T:
+    """Run a service call off the event loop, mapping its errors to HTTP.
+
+    The call runs on a worker thread (with the request's context
+    variables), so a long prefill or decode does not stall other requests.
+
+    Args:
+        call: The service call.
+
+    Returns:
+        T: Its result.
+
+    Raises:
+        HTTPException: 404 for an unknown handle, 409 when this node's
+            role does not serve the phase, 400 for an invalid request.
+    """
+    from fastapi import HTTPException
+
+    try:
+        return await asyncio.to_thread(call)
+    except RoleUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def create_router(
@@ -73,7 +104,7 @@ def create_router(
             request = PrefillRequest.from_dict(payload)
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        response = prefill.prefill(request)
+        response = await run_service(lambda: prefill.prefill(request))
         return response.to_dict()
 
     @router.post("/prefill/batch", response_model=None)
@@ -94,7 +125,7 @@ def create_router(
             requests = [PrefillRequest.from_dict(item) for item in raw]
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        result = batch_prefill(prefill, requests)
+        result = await run_service(lambda: batch_prefill(prefill, requests))
         return {
             "responses": [r.to_dict() for r in result.responses],
             "elapsed_ms": result.elapsed_ms,
@@ -116,7 +147,7 @@ def create_router(
             request = DecodeRequest.from_dict(payload)
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        response = decode_service.decode(request)
+        response = await run_service(lambda: decode_service.decode(request))
         return response.to_dict()
 
     @router.get("/healthz")
@@ -131,4 +162,4 @@ def create_router(
     return router
 
 
-__all__ = ["DecodeResponse", "DecodeService", "PrefillResponse", "PrefillService", "create_router"]
+__all__ = ["DecodeResponse", "DecodeService", "PrefillResponse", "PrefillService", "create_router", "run_service"]

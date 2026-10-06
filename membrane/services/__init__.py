@@ -12,7 +12,8 @@ from typing import Any
 
 from membrane.compat import ModelCompatibilityFingerprint, compat_hash
 from membrane.runtime.lifecycle import PeriodicTask
-from membrane.services.memory import MemoryService
+from membrane.services.disagg import Disaggregation
+from membrane.services.memory import BundleStore, MemoryService
 from membrane.services.placement import ClusterView, PlacementService
 from membrane.services.policies import OriginLink, Promoter, RolePolicy
 
@@ -40,6 +41,7 @@ class ServiceOptions:
             stamped for another model; empty accepts any.
         prefix_cache_entries: Prefix lookups memoized.
         policy_interval_sec: Seconds between promotion and role passes.
+        role: Disaggregation phases served: ``prefill``, ``decode``, or ``both``.
     """
 
     placement: str = "ring"
@@ -50,6 +52,7 @@ class ServiceOptions:
     require_compat: str = ""
     prefix_cache_entries: int = 4096
     policy_interval_sec: float = 30.0
+    role: str = "both"
 
     def compat(self) -> ModelCompatibilityFingerprint | None:
         """The fingerprint written fragments must carry.
@@ -74,6 +77,8 @@ class Services:
         promoter: Hot-fragment promotion (``None``: off).
         roles: Dynamic role policy (``None``: off).
         origin: Read-through to an origin (``None``: not a regional cache).
+        disagg: Prefill / decode services (``/disagg``, gRPC).
+        bundles: Named engine KV bundles (``/kv/{handle}``).
     """
 
     def __init__(
@@ -118,6 +123,8 @@ class Services:
         )
         self.roles = RolePolicy(self.view) if options.dynamic_roles else None
         self.origin = OriginLink(node, options.origin) if options.origin else None
+        self.bundles = BundleStore(self.memory)
+        self.disagg = Disaggregation(self.memory, self.view, backend, role=options.role)
         self.queue_depth = queue_depth
         interval = options.policy_interval_sec
         self.tasks: list[PeriodicTask] = []
@@ -131,8 +138,8 @@ class Services:
 
     @property
     def role(self) -> str:
-        """The role this node advertises (``""`` without dynamic roles)."""
-        return self.roles.role.value if self.roles is not None else ""
+        """The role this node advertises: the dynamic role, else ``--role``."""
+        return self.roles.role.value if self.roles is not None else self.options.role
 
     def adjust_routing(self) -> int | None:
         """Feed the current queue depth to the routing scheduler.

@@ -37,6 +37,10 @@ class FragmentKind(StrEnum):
         TRACE: Tool invocation output.
         WEIGHTED: Synthesized by the weighted-graph layer for
             placeholder edges.
+        KV_MANIFEST: The fragments a disaggregated prefill produced,
+            looked up by the decode node.
+        KV_BUNDLE: Engine KV bytes stored under a client-chosen name
+            (``/kv/{handle}``), used by the engine adapters.
     """
 
     PREFIX = "prefix"
@@ -44,6 +48,8 @@ class FragmentKind(StrEnum):
     ARTIFACT = "artifact"
     TRACE = "tool"
     WEIGHTED = "weighted_graph"
+    KV_MANIFEST = "kv_manifest"
+    KV_BUNDLE = "kv_bundle"
 
 
 __all__ = ["FragmentKind"]

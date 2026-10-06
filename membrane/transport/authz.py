@@ -86,6 +86,14 @@ ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("POST", "/objects"): "write",
     ("GET", "/objects"): "read",
     ("POST", "/route"): "read",
+    ("PUT", "/kv"): "write",
+    ("GET", "/kv"): "read",
+    ("HEAD", "/kv"): "read",
+    # Disaggregated prefill / decode (REST and the matching RPCs).
+    ("POST", "/disagg/prefill"): "write",
+    ("POST", "/disagg/prefill/batch"): "write",
+    ("POST", "/disagg/decode"): "write",
+    ("GET", "/disagg/healthz"): "public",
 }
 """(method, path) -> required scope. ``public`` means no auth check."""
 

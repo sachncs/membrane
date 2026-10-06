@@ -68,6 +68,7 @@ from membrane.transfer import TransferService
 from membrane.transport.acme import ACMEConfig, ensure_certificate
 from membrane.transport.fastapi import FastAPIServer
 from membrane.transport.limits import TransportLimits
+from membrane.transport.routes.disagg import mount_disagg
 from membrane.transport.spiffe import REFRESH_INTERVAL_SEC, SPIFFEClient, SPIFFEConfig
 from membrane.transport.tls import MTLSConfig
 from membrane.transport.tls_rotation import CertRotationWatcher, cert_not_after
@@ -139,6 +140,7 @@ class Server:
         audit_path: str | None = None,
         transfer_compression: str = "zstd",
         services: ServiceOptions | None = None,
+        grpc_port: int | None = None,
     ) -> None:
         """Initialize the server with all configured subsystems.
 
@@ -189,6 +191,8 @@ class Server:
             transfer_compression: How KV bytes travel to peers (``zstd``,
                 ``lz4``, ``deflate``, ``raw``).
             services: Memory API, routing, and background-policy settings.
+            grpc_port: Serve the prefill / decode RPCs on this port (``0``
+                picks one); ``None`` leaves gRPC off.
         """
         self.node = node
         self.limits = limits or TransportLimits()
@@ -276,6 +280,9 @@ class Server:
             queue_depth=self.queue_depth,
         )
         self.transport.app.state.services = self.services
+        mount_disagg(self.transport.app, self.services.disagg)
+        self.grpc_port = grpc_port
+        self.grpc_server: Any = None
         self.audit_log = AuditLog.open(FileAuditStorage(Path(audit_path))) if audit_path else AuditLog()
         self.transport.app.state.audit_log = self.audit_log
         self.metrics_peers.audit_chain_valid.set(0.0 if self.audit_log.broken_at is not None else 1.0)
@@ -489,6 +496,18 @@ class Server:
             self.spiffe_task.start()
         if self.services is not None:
             self.services.start()
+        if self.grpc_port is not None and self.services is not None:
+            from membrane.disagg.grpc import serve as serve_grpc
+
+            disagg = self.services.disagg
+            self.grpc_server, self.grpc_port = serve_grpc(
+                disagg.prefill_service,
+                disagg.decode_service,
+                self.host,
+                self.grpc_port,
+                tls=self.tls,
+                authenticator=self.authenticator,
+            )
         self.log_event("info", f"Server started on {self.host}:{self.port}")
 
     def rotate_tls(self, cert_pem: str, key_pem: str) -> None:
@@ -595,6 +614,8 @@ class Server:
         self.spiffe_task.stop(deadline_sec)
         if self.services is not None:
             self.services.stop(deadline_sec)
+        if self.grpc_server is not None:
+            self.grpc_server.stop(grace=min(deadline_sec, 5.0)).wait(deadline_sec)
         if self.replicator is not None:
             self.replicator.shutdown()
         joined_cleanly = self.persistence_writer.stop(deadline_sec) and joined_cleanly
