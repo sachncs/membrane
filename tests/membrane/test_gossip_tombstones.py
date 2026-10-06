@@ -103,11 +103,14 @@ class TestGossipHandleTombstones:
 
 
 class _FakeNode:
-    """Minimal node stand-in: ``fragments`` is enough for ``build_state``."""
+    """Minimal node stand-in: an empty inventory is enough for ``build_state``."""
 
     def __init__(self) -> None:
+        from membrane.store.digest import InventoryDigest
+
         self.node_id = "local"
         self.fragments: dict[str, object] = {}
+        self.digest = InventoryDigest()
 
     def fragment_snapshot(self) -> dict:
         return dict(self.fragments)

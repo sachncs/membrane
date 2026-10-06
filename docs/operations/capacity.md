@@ -47,7 +47,29 @@ quantization halves or quarters these figures.
 Redis holds only fragment metadata (well under 1 KiB per fragment),
 never KV bytes. Records expire with each fragment's TTL. A single small
 Redis instance serves many nodes; enable AOF (`appendonly yes`) so the
-metadata survives a Redis restart.
+metadata survives a Redis restart. For failover, point every node at
+Sentinel (`redis+sentinel://...`); to spread the metadata over several
+servers, use Redis Cluster (`redis+cluster://...`), where each write
+is a non-transactional pipeline because its keys live in different
+slots.
+
+## Adding nodes
+
+Each node's cost of keeping the cluster consistent depends on what
+changes, not on how much the cluster holds:
+
+- **Inventory digests.** A node maintains a digest of its fragments in
+  1,024 buckets, updated on every store and removal. Gossip carries its
+  root at no extra cost. Repair compares a peer's bucket digests (one
+  small request) and pages only the buckets that changed since they
+  were last verified, so a quiet cluster repairs in one request per peer.
+- **Location registry.** A node remembers where at most
+  `max_location_entries` (200,000) hashes live, least recently recorded
+  forgotten first. A hash it no longer records is found through its ring
+  owners. Its memory does not grow with the cluster's data.
+- **Ownership.** The consistent-hash ring spreads primaries evenly. The
+  kind e2e test scales 4 → 5 nodes and fails if any node still owns more
+  than 30% of the primaries after rebalancing.
 
 ## Network
 

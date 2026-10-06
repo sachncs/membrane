@@ -24,6 +24,7 @@ import threading
 
 from membrane.fragment import Fragment
 from membrane.runtime.concurrency import share
+from membrane.store.digest import InventoryDigest
 
 
 class FragmentTable:
@@ -36,6 +37,7 @@ class FragmentTable:
         insertion_times: ``content_hash ->`` insertion (Unix time).
         memory_usage: Sum of resident ``payload_size`` in bytes.
         lock: Re-entrant lock guarding every field.
+        digest: Bucketed inventory digest, updated on every add and pop.
     """
 
     def __init__(self) -> None:
@@ -46,6 +48,7 @@ class FragmentTable:
         self.insertion_times: dict[str, float] = {}
         self.memory_usage = 0
         self.lock = threading.RLock()
+        self.digest = InventoryDigest()
         self.__local = threading.local()
         self.__buffers: list[dict[str, float]] = []
         share(self.__local)
@@ -133,6 +136,7 @@ class FragmentTable:
             self.fragments[content_hash] = fragment
             self.memory_usage += fragment.payload_size
             self.insertion_times[content_hash] = now
+            self.digest.add(content_hash, fragment.version_id)
 
     def touch(self, content_hash: str, now: float, is_primary: bool = False) -> None:
         """Record an access, and optionally primary ownership.
@@ -161,6 +165,7 @@ class FragmentTable:
         """
         with self.lock:
             fragment = self.fragments.pop(content_hash)
+            self.digest.remove(content_hash)
             self.memory_usage -= fragment.payload_size
             self.primary_hashes.discard(content_hash)
             self.access_times.pop(content_hash, None)

@@ -30,6 +30,7 @@ from membrane.network.cluster import Cluster
 from membrane.network.peer import JsonDict, Peer
 from membrane.node import Node
 from membrane.serialization import from_dict, to_dict
+from membrane.store.digest import BUCKETS, decode_cursor, encode_cursor
 from membrane.wire.v3.chunks import sha256_hex
 
 logger = logging.getLogger(__name__)
@@ -178,33 +179,78 @@ def op_metrics(
 
 
 def op_inventory(
-    node: Node | None, auth_context: AuthContext | None = None, after: str = "", limit: int = 0
+    node: Node | None,
+    auth_context: AuthContext | None = None,
+    after: str = "",
+    limit: int = 0,
+    bucket: int | None = None,
 ) -> tuple[int, JsonDict]:
     """``GET /inventory`` — node's inventory digest, optionally one page at a time.
+
+    Pages walk the inventory bucket by bucket
+    (:mod:`membrane.store.digest`), so a page costs in proportion to one
+    bucket, not to the whole inventory.
 
     Args:
         node: Local :class:`Node`.
         auth_context: Authenticated caller; ``None`` when authentication is
             off.
-        after: Return hashes sorting after this cursor (paged mode).
-        limit: Page size; ``0`` returns everything in one response.
+        after: Cursor returned as ``next`` by the previous page.
+        limit: Page size; ``0`` returns everything (or the whole bucket).
+        bucket: Only this bucket's fragments.
 
     Returns:
-        tuple[int, JsonDict]: ``(status, body)``; in paged mode ``next`` is
-        the cursor for the following page, empty on the last page.
+        tuple[int, JsonDict]: ``(status, body)``; ``next`` is the cursor for
+        the following page, empty on the last page.
     """
     if node is None:
         return ok_response({"node_id": "", "digest": {}, "next": ""})
-    snapshot = node.fragment_snapshot()
+    if bucket is not None:
+        if not 0 <= bucket < BUCKETS:
+            return 400, {"error": f"bucket must be in [0, {BUCKETS})"}
+        digest, cursor = node.digest.page(bucket, after, limit)
+        return ok_response({"node_id": node.node_id, "bucket": bucket, "digest": digest, "next": cursor})
     if limit <= 0:
+        snapshot = node.fragment_snapshot()
         return ok_response(
             {"node_id": node.node_id, "digest": {h: f.version_id for h, f in snapshot.items()}, "next": ""}
         )
-    page = sorted(h for h in snapshot if h > after)[: limit + 1]
-    more = len(page) > limit
-    page = page[:limit]
-    digest = {h: snapshot[h].version_id for h in page}
-    return ok_response({"node_id": node.node_id, "digest": digest, "next": page[-1] if more else ""})
+    current, last = decode_cursor(after)
+    page: dict[str, int] = {}
+    cursor = ""
+    while current < BUCKETS:
+        entries, more = node.digest.page(current, last, limit - len(page))
+        page.update(entries)
+        if more:
+            cursor = encode_cursor(current, more)
+            break
+        current, last = current + 1, ""
+        if len(page) >= limit:
+            cursor = encode_cursor(current, "") if current < BUCKETS else ""
+            break
+    return ok_response({"node_id": node.node_id, "digest": page, "next": cursor})
+
+
+def op_inventory_buckets(node: Node | None) -> tuple[int, JsonDict]:
+    """``GET /inventory/buckets`` — every bucket's digest and the root.
+
+    Args:
+        node: Local :class:`Node`.
+
+    Returns:
+        tuple[int, JsonDict]: ``{"node_id", "buckets": [hex, ...], "root", "count"}``.
+    """
+    if node is None:
+        return ok_response({"node_id": "", "buckets": [], "root": "", "count": 0})
+    digest = node.digest
+    return ok_response(
+        {
+            "node_id": node.node_id,
+            "buckets": [f"{value:016x}" for value in digest.buckets()],
+            "root": digest.root().hex(),
+            "count": len(digest),
+        }
+    )
 
 
 def op_peers(cluster: Cluster | None, auth_context: AuthContext | None = None) -> tuple[int, JsonDict]:
@@ -698,6 +744,7 @@ __all__ = [
     "op_get_blob",
     "op_heartbeat",
     "op_inventory",
+    "op_inventory_buckets",
     "op_metrics",
     "op_peers",
     "op_prefill",

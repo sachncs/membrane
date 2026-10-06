@@ -120,7 +120,7 @@ class Cluster:
         # response.
         if not shard_manager and node.attributes is not None:
             self.shard_manager.node_attributes[node.node_id] = node.attributes
-        self.directory = directory or Registry()
+        self.directory = directory or Registry(max_entries=config.max_location_entries)
         # TransferService is injected by Server after the Cluster
         # is constructed; default to None so tests that don't
         # care about cross-node byte motion still work.

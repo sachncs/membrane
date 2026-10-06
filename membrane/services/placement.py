@@ -181,6 +181,23 @@ class ClusterView:
             found += sorted(n for n in self.cluster.directory.locate_fragment(content_hash) if n in healthy)
         return list(dict.fromkeys(found))
 
+    def probable_holders(self, content_hash: str) -> list[str]:
+        """Known holders, else the hash's ring owners (other than this node).
+
+        The location registry is a bounded cache: a hash it no longer
+        records is found where the ring places it.
+
+        Args:
+            content_hash: Content hash.
+
+        Returns:
+            list[str]: Node identifiers.
+        """
+        known = self.holders(content_hash)
+        if known or self.cluster is None:
+            return known
+        return [n for n in self.owners(content_hash) if n != self.local_id]
+
     def owners(self, content_hash: str) -> list[str]:
         """Healthy ring owners of ``content_hash``, primary first.
 
@@ -273,7 +290,7 @@ class RingPlacement:
             Placement: The decision.
         """
         owners = view.owners(content_hash)
-        holders = view.holders(content_hash)
+        holders = view.probable_holders(content_hash)
         owning = [n for n in owners if n in holders]
         fetch = owning[0] if owning else nearest(view, holders)
         return Placement(fetch_from=fetch, store_on=owners[0], prefill_on=view.local_id, reason="ring owner")
@@ -294,7 +311,7 @@ class LatencyPlacement:
             Placement: The decision.
         """
         return Placement(
-            fetch_from=nearest(view, view.holders(content_hash)),
+            fetch_from=nearest(view, view.probable_holders(content_hash)),
             store_on=view.owners(content_hash)[0],
             prefill_on=view.local_id,
             reason="nearest holder",
@@ -320,7 +337,7 @@ class SelectorPlacement:
             Placement: The decision.
         """
         telemetry = view.telemetry()
-        holders = view.holders(content_hash)
+        holders = view.probable_holders(content_hash)
         owners = view.owners(content_hash)
         return Placement(
             fetch_from=self.selector.select(holders, telemetry) or nearest(view, holders),
@@ -353,7 +370,7 @@ class EconomicPlacement:
         owners = view.owners(content_hash)
         store_on = self.economic.route(fragment, list(telemetry), telemetry, history) if fragment else owners[0]
         return Placement(
-            fetch_from=nearest(view, view.holders(content_hash)),
+            fetch_from=nearest(view, view.probable_holders(content_hash)),
             store_on=store_on or owners[0],
             prefill_on=view.local_id,
             reason="value density minus cost" if fragment else "ring owner (fragment not held here)",
@@ -382,7 +399,7 @@ class JointPlacement:
         loads = [PeerLoad(node_id, t.memory_pressure) for node_id, t in telemetry.items()]
         decision = self.joint.optimize(view.fragment(content_hash), loads, telemetry)
         return Placement(
-            fetch_from=nearest(view, view.holders(content_hash)),
+            fetch_from=nearest(view, view.probable_holders(content_hash)),
             store_on=decision.memory_node_id or view.local_id,
             prefill_on=decision.compute_node_id or view.local_id,
             reason="joint compute and memory",
@@ -574,10 +591,11 @@ class PlacementService:
         while matched < len(tokens):
             window = tokens[matched : matched + WINDOW_TOKENS]
             content_hash = token_hash(window)
-            holder = self.policy.place(self.view, content_hash, history).fetch_from
-            if not holder:
+            holders = self.view.holders(content_hash)  # only recorded locations count as cached
+            if not holders:
                 break
-            located.append(self.located(content_hash, holder))
+            chosen = self.policy.place(self.view, content_hash, history).fetch_from
+            located.append(self.located(content_hash, chosen if chosen in holders else holders[0]))
             matched += len(window)
         return matched, located
 

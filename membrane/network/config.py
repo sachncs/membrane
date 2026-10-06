@@ -39,16 +39,14 @@ CONSTRAINTS: dict[str, tuple[Callable[[Any], bool], str]] = {
     "retry_delay_sec": (lambda v: v >= 0, "must be >= 0"),
     "replica_count": (lambda v: v >= 0, "must be >= 0"),
     "gossip_fanout": (lambda v: v >= 1, "must be >= 1"),
+    "max_location_entries": (lambda v: v >= 1, "must be >= 1"),
     "gossip_max_fragment_entries": (lambda v: v >= 1, "must be >= 1"),
     "advertise_host": (lambda v: len(v) <= 255, "at most 255 characters"),
     "default_consistency": (lambda v: v in CONSISTENCY_LEVELS, "must be strong, quorum, or eventual"),
     "quorum_count": (lambda v: v >= 1, "must be >= 1"),
     "cluster_quorum_timeout_sec": (lambda v: v > 0, "must be > 0"),
     "repair_interval_sec": (lambda v: v > 0, "must be > 0"),
-    "inventory_summary_interval_sec": (lambda v: v > 0, "must be > 0"),
     "lease_timeout_sec": (lambda v: v > 0, "must be > 0"),
-    "gossip_payload_expected_items": (lambda v: v >= 1, "must be >= 1"),
-    "gossip_payload_fpr": (lambda v: 0 < v < 1, "must be between 0 and 1"),
     "cross_region_penalty": (lambda v: v >= 1, "must be >= 1"),
 }
 
@@ -78,6 +76,8 @@ class ClusterConfig:
         enable_replication: Whether to auto-replicate on store.
         gossip_fanout: Number of peers to gossip with each
             round.
+        max_location_entries: Fragment hashes whose locations the
+            registry keeps (least recently recorded forgotten first).
         gossip_max_fragment_entries: Max fragment locations per
             gossip message.
         mtls: Optional
@@ -119,27 +119,12 @@ class ClusterConfig:
             continuously converged without flooding the wire.
             Tests and single-node deployments disable this by
             setting the field to a very large value.
-        inventory_summary_interval_sec: Seconds a large node reuses
-            its gossip inventory summary (Bloom filter and Merkle
-            root) before rebuilding it.
         lease_timeout_sec: Seconds a peer is considered live
             after its last successful heartbeat. Default
             ``30`` keeps the heartbeat-miss counter redundant
             for production clusters; the heartbeat loop
             refreshes :attr:`~membrane.network.membership.PeerInfo.lease_until`
             to ``now() + lease_timeout_sec`` on every ack.
-        gossip_payload_expected_items: Expected number of
-            items the Bloom filter will hold, used to size
-            ``m_bits`` and ``k_hashes``. Default ``10000`` keeps
-            the per-gossip-state payload under 2 KiB for
-            single-fragment-per-window workloads and around
-            17 KiB for one-million-fragment deployments. The
-            actual count overrides the configured value when
-            the local Node's fragment set is larger.
-        gossip_payload_fpr: Target false-positive rate for the
-            gossip Bloom filter. Default ``0.001`` (one in a
-            thousand) keeps the precision cost negligible while
-            bounding the false-divergence rate.
         cross_region_penalty: Multiplier applied when
             :class:`~membrane.shard.Shard`'s
             :meth:`locality_scored_assign` ranks a cross-region
@@ -165,6 +150,7 @@ class ClusterConfig:
     enable_replication: bool = True
     gossip_fanout: int = 2
     gossip_max_fragment_entries: int = 50
+    max_location_entries: int = 200_000
     mtls: MTLSConfig | None = None
     local_peer_cn: str = ""
     advertise_host: str = ""
@@ -180,10 +166,7 @@ class ClusterConfig:
     # quorum write is still in flight.
     cluster_quorum_timeout_sec: float = 9.0
     repair_interval_sec: float = 60.0
-    inventory_summary_interval_sec: float = 30.0
     lease_timeout_sec: float = 30.0
-    gossip_payload_expected_items: int = 10_000
-    gossip_payload_fpr: float = 0.001
     cross_region_penalty: float = 1.5
 
     def __post_init__(self) -> None:

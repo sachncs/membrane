@@ -12,8 +12,15 @@ prefix-length sub-hashes it already holds, adjusted by a small
 load penalty derived from the node's heart beat.
 
 Thread safety:
-    The class is **not thread-safe**. Provide external locking
-    when sharing across threads.
+    Location updates and lookups take an internal lock: gossip, the
+    replicator, and request handlers share one registry.
+
+Bounded size:
+    Locations are kept for at most ``max_entries`` hashes, least
+    recently recorded first out. A node knows its own fragments without
+    the registry, and a hash with no recorded location is looked up
+    through its ring owners, so the registry is a cache of hints and its
+    size does not grow with the cluster's data.
 
 Complexity:
     * :meth:`register_node`, :meth:`unregister_node`,
@@ -26,8 +33,13 @@ Complexity:
 """
 
 import logging
+import threading
+from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
+
+#: Hashes whose locations a registry keeps by default.
+MAX_LOCATION_ENTRIES = 200_000
 
 
 from membrane.fragmenter import compute_content_hash
@@ -44,14 +56,22 @@ class Registry:
         nodes: Mapping from ``node_id`` to the registered
             :class:`~membrane.node.Node`.
         fragment_locations: Mapping from ``content_hash`` to the
-            set of node IDs holding a replica.
+            set of node IDs holding a replica (least recently recorded
+            first).
+        max_entries: Hashes kept before the oldest are forgotten.
     """
 
-    def __init__(self) -> None:
-        """Initialize an empty directory."""
+    def __init__(self, max_entries: int = MAX_LOCATION_ENTRIES) -> None:
+        """Initialize an empty directory.
+
+        Args:
+            max_entries: Hashes whose locations are kept.
+        """
         logger.info("Initialized %s", self.__class__.__name__)
         self.nodes: dict[str, Node] = {}
-        self.fragment_locations: dict[str, set[str]] = {}
+        self.fragment_locations: OrderedDict[str, set[str]] = OrderedDict()
+        self.max_entries = max_entries
+        self.lock = threading.Lock()
 
     def register_node(self, node: Node) -> None:
         """Register a node in the global directory.
@@ -76,14 +96,15 @@ class Registry:
             bool: True if the node was known and removed,
             False otherwise.
         """
-        if node_id not in self.nodes:
-            return False
-        del self.nodes[node_id]
-        # Garbage-collect the node from every fragment's holder
-        # set so stale entries don't accumulate.
-        for locs in self.fragment_locations.values():
-            locs.discard(node_id)
-        return True
+        with self.lock:
+            if node_id not in self.nodes:
+                return False
+            del self.nodes[node_id]
+            # Garbage-collect the node from every fragment's holder
+            # set so stale entries don't accumulate.
+            for locs in self.fragment_locations.values():
+                locs.discard(node_id)
+            return True
 
     def record_fragment_location(self, content_hash: str, node_id: str) -> None:
         """Record that a fragment is stored on a node.
@@ -92,7 +113,15 @@ class Registry:
             content_hash: Fragment content hash.
             node_id: Node holding the fragment.
         """
-        self.fragment_locations.setdefault(content_hash, set()).add(node_id)
+        with self.lock:
+            holders = self.fragment_locations.get(content_hash)
+            if holders is None:
+                holders = self.fragment_locations[content_hash] = set()
+                while len(self.fragment_locations) > self.max_entries:
+                    self.fragment_locations.popitem(last=False)
+            else:
+                self.fragment_locations.move_to_end(content_hash)
+            holders.add(node_id)
 
     def forget_fragment_location(self, content_hash: str, node_id: str) -> bool:
         """Drop ``node_id`` from the holder set for ``content_hash``.
@@ -111,14 +140,15 @@ class Registry:
             bool: ``True`` when a holder was actually removed,
             ``False`` when the hash or node was absent.
         """
-        holders = self.fragment_locations.get(content_hash)
-        if holders is None:
-            return False
-        removed = node_id in holders
-        holders.discard(node_id)
-        if not holders:
-            self.fragment_locations.pop(content_hash, None)
-        return removed
+        with self.lock:
+            holders = self.fragment_locations.get(content_hash)
+            if holders is None:
+                return False
+            removed = node_id in holders
+            holders.discard(node_id)
+            if not holders:
+                self.fragment_locations.pop(content_hash, None)
+            return removed
 
     def forget_fragment(self, content_hash: str) -> bool:
         """Remove every entry for ``content_hash``.
@@ -133,7 +163,8 @@ class Registry:
         Returns:
             bool: ``True`` when an entry was removed.
         """
-        return self.fragment_locations.pop(content_hash, None) is not None
+        with self.lock:
+            return self.fragment_locations.pop(content_hash, None) is not None
 
     def locate_fragment(self, content_hash: str) -> set[str]:
         """Return node IDs that hold the given fragment.
@@ -145,7 +176,8 @@ class Registry:
             set[str]: Defensive copy of the holder set. Empty if
             the directory has no record of the hash.
         """
-        return set(self.fragment_locations.get(content_hash, set()))
+        with self.lock:
+            return set(self.fragment_locations.get(content_hash, ()))
 
     def best_nodes(
         self,
@@ -206,5 +238,6 @@ class Registry:
 
 
 __all__ = [
+    "MAX_LOCATION_ENTRIES",
     "Registry",
 ]

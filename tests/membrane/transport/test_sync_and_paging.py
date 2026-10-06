@@ -34,7 +34,9 @@ def test_inventory_pages() -> None:
         cursor = page["next"]
         if not cursor:
             break
-    assert seen == sorted(f"h{i:03d}" for i in range(25))
+    # Pages walk the inventory bucket by bucket: every hash exactly once.
+    assert len(seen) == 25
+    assert sorted(seen) == sorted(f"h{i:03d}" for i in range(25))
     assert len(client.get("/inventory").json()["digest"]) == 25  # unpaged default
 
 

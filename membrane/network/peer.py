@@ -514,6 +514,45 @@ class Peer:
             if not cursor:
                 return digest
 
+    def bucket_digests(self) -> list[int] | None:
+        """Fetch the peer's inventory bucket digests (``GET /inventory/buckets``).
+
+        Returns:
+            list[int] | None: One digest per bucket, or ``None`` on failure (or
+            from a node that predates buckets).
+        """
+        resp = self.request_with_retry("GET", "/inventory/buckets")
+        if not isinstance(resp, dict) or not isinstance(resp.get("buckets"), list):
+            return None
+        try:
+            return [int(value, 16) for value in resp["buckets"]]
+        except TypeError, ValueError:
+            return None
+
+    def inventory_bucket(self, bucket: int, page_size: int = 10_000) -> dict[str, int] | None:
+        """Fetch every fragment in one inventory bucket, a page at a time.
+
+        Args:
+            bucket: Bucket index.
+            page_size: Hashes per request.
+
+        Returns:
+            dict[str, int] | None: ``content_hash -> version_id``, or ``None``
+            when a page could not be fetched.
+        """
+        from urllib.parse import quote
+
+        held: dict[str, int] = {}
+        cursor = ""
+        while True:
+            page = self.request_with_retry("GET", f"/inventory?bucket={bucket}&limit={page_size}&after={quote(cursor)}")
+            if not isinstance(page, dict):
+                return None
+            held.update(page.get("digest", {}))
+            cursor = str(page.get("next", ""))
+            if not cursor:
+                return held
+
     def store_fragment(self, fragment: Fragment, is_primary: bool = False) -> bool:
         """Send ``POST /store`` with ``fragment`` and ``is_primary``.
 
