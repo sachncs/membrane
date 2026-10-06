@@ -1,178 +1,79 @@
 ---
-import { VERSION, withBase } from '../lib/site';
-
-const transcript = [
-  { cmd: 'membrane serve --daemon', out: ['Membrane server started on 127.0.0.1:8080'] },
-  {
-    cmd: 'membrane client prefill --prompt-tokens "1 2 3 4 5 6 7 8"',
-    out: ['{ "success": true, "fragments": [ { "payload_hash": "b5ca3ba695d8…", "payload_size": 512 } ] }'],
-  },
-  {
-    cmd: 'membrane client retrieve --hash b5ca3ba695d8ec8ce47bf6e7a2b579d0',
-    out: ['{ "found": true, "fragment": { "tenant_id": "public", "ttl": 3600.0, … } }'],
-  },
-];
+import { REPO_URL, VERSION, withBase } from '../lib/site';
 ---
 
-<section id="top" class="relative isolate overflow-hidden pt-32 pb-20 sm:pt-40 sm:pb-28 lg:pt-48 lg:pb-32">
-  <!-- Background layers -->
-  <div class="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
-    <!-- Mesh gradient -->
-    <div class="absolute inset-0 bg-mesh-1 opacity-90 mask-radial"></div>
+<section class="relative overflow-hidden pt-28 sm:pt-32 lg:pt-36">
+  <div class="pointer-events-none absolute inset-0 -z-10 grid-bg mask-radial" aria-hidden="true"></div>
+  <div class="pointer-events-none absolute left-1/2 top-[-18rem] -z-10 h-[36rem] w-[60rem] -translate-x-1/2 rounded-full bg-brand-500/[0.07] blur-3xl" aria-hidden="true"></div>
 
-    <!-- Grid -->
-    <div class="absolute inset-0 grid-bg opacity-[0.18] mask-fade-b"></div>
-
-    <!-- Soft radial accents -->
-    <div class="absolute left-1/2 top-0 h-[600px] w-[1200px] -translate-x-1/2 -translate-y-1/3 rounded-full bg-accent-violet/20 blur-[120px]"></div>
-    <div class="absolute right-0 top-1/3 h-[400px] w-[600px] translate-x-1/3 rounded-full bg-accent-cyan/15 blur-[120px]"></div>
-
-    <!-- Vignette -->
-    <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-ink-950"></div>
-  </div>
-
-  <!-- Floating orbs -->
-  <div class="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
-    <div
-      class="absolute left-[8%] top-[28%] h-2 w-2 rounded-full bg-accent-cyan/80 shadow-[0_0_24px_6px_rgba(34,211,238,0.4)] animate-float"
-      style="animation-delay: -2s;"
-    ></div>
-    <div
-      class="absolute left-[14%] top-[60%] h-1.5 w-1.5 rounded-full bg-accent-violet/80 shadow-[0_0_18px_4px_rgba(124,58,237,0.4)] animate-float"
-      style="animation-delay: -4s;"
-    ></div>
-    <div
-      class="absolute right-[10%] top-[22%] h-1.5 w-1.5 rounded-full bg-accent-mint/70 shadow-[0_0_16px_4px_rgba(94,234,212,0.35)] animate-float"
-      style="animation-delay: -1s;"
-    ></div>
-    <div
-      class="absolute right-[20%] top-[58%] h-2 w-2 rounded-full bg-white/30 shadow-[0_0_14px_3px_rgba(255,255,255,0.25)] animate-float"
-      style="animation-delay: -3s;"
-    ></div>
-  </div>
-
-  <div class="container-page relative">
-    <div class="mx-auto max-w-4xl text-center">
-      <div data-reveal class="flex justify-center">
-        <a
-          href={withBase('/docs/getting-started/')}
-          class="chip group transition-colors duration-300 hover:border-white/20 hover:bg-white/[0.06]"
-        >
-          <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent-mint"></span>
-          <span class="text-ink-100">v{VERSION} · open source · authenticated by default</span>
-          <svg viewBox="0 0 12 12" class="h-3 w-3 text-ink-300 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3.5 6h5M6.5 3.5l2 2.5-2 2.5"/>
-          </svg>
-        </a>
-      </div>
-
-      <h1
-        data-reveal
-        data-reveal-delay="1"
-        class="mt-8 text-balance font-display text-display-xl font-semibold tracking-tightest"
-      >
-        <span class="block">Global</span>
-        <span class="block">
-          <span class="gradient-text">contextual memory</span>
-        </span>
-        <span class="block">for LLM serving.</span>
+  <div class="container-page grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14">
+    <div class="min-w-0">
+      <a href={`${REPO_URL}/releases`} target="_blank" rel="noreferrer noopener" class="chip hover:border-white/20">
+        <span class="h-1.5 w-1.5 rounded-full bg-brand-400"></span>
+        <span>v{VERSION} · Open source · MIT</span>
+      </a>
+      <h1 class="mt-6 max-w-[15ch] text-balance font-display text-display-xl font-semibold text-white">
+        The shared KV‑cache for LLM serving.
       </h1>
-
-      <p
-        data-reveal
-        data-reveal-delay="2"
-        class="mx-auto mt-7 max-w-2xl text-pretty text-[1.0625rem] leading-relaxed text-ink-200 sm:text-lg"
-      >
-        Membrane separates the KV-cache from GPU memory and turns it into a
-        distributed, content-addressed fabric — sharing prefill work across
-        clusters, slashing time-to-first-token, and reclaiming GPU capacity at scale.
+      <p class="lede mt-6 max-w-[34rem] text-[1.125rem]">
+        Membrane stores prefill results once and serves them to every node in your fleet.
+        Repeated prompts skip prefill, time-to-first-token drops, and GPUs stop recomputing
+        the same context.
       </p>
-
-      <div
-        data-reveal
-        data-reveal-delay="3"
-        class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-3"
-      >
-        <a href={withBase('/docs/getting-started/')} class="btn-primary w-full sm:w-auto">
-          <span>Read the quickstart</span>
-          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3.5 8h9M8.5 4l4 4-4 4"/>
-          </svg>
+      <div class="mt-8 flex flex-wrap items-center gap-3">
+        <a href={withBase('/docs/getting-started/')} class="btn-primary">
+          Get started
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8h9M8.5 4l4 4-4 4" /></svg>
         </a>
-        <a href="#architecture" class="btn-secondary w-full sm:w-auto">
-          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="8" cy="8" r="2"/>
-            <path d="M8 2v2M8 12v2M2 8h2M12 8h2M4 4l1.4 1.4M10.6 10.6L12 12M4 12l1.4-1.4M10.6 5.4L12 4"/>
-          </svg>
-          <span>See the architecture</span>
-        </a>
+        <a href={REPO_URL} target="_blank" rel="noreferrer noopener" class="btn-secondary">View on GitHub</a>
       </div>
-
-      <div
-        data-reveal
-        data-reveal-delay="4"
-        class="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-[0.8rem] text-ink-300"
-      >
-        <span class="inline-flex items-center gap-2">
-          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-accent-mint" fill="currentColor" aria-hidden="true">
-            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm3.65 5.85L7 10.5 4.35 7.85l-1.1 1.1L7 12.7l5.75-5.75-1.1-1.1Z"/>
-          </svg>
-          MIT licensed
-        </span>
-        <span class="inline-flex items-center gap-2">
-          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-accent-cyan" fill="currentColor" aria-hidden="true">
-            <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"/>
-          </svg>
-          Python 3.14
-        </span>
-        <span class="inline-flex items-center gap-2">
-          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-accent-violet" fill="currentColor" aria-hidden="true">
-            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM6.78 5.22a.75.75 0 0 0-1.06 1.06L7.94 8.5l-2.22 2.22a.75.75 0 1 0 1.06 1.06L9 9.56l2.22 2.22a.75.75 0 1 0 1.06-1.06L10.06 8.5l2.22-2.22a.75.75 0 0 0-1.06-1.06L9 7.44 6.78 5.22Z"/>
-          </svg>
-          CPU · GPU · OpenAI · Anthropic · Ollama
-        </span>
-      </div>
+      <ul class="mt-10 grid max-w-[36rem] grid-cols-1 gap-y-2.5 text-[0.875rem] text-ink-300">
+        {
+          [
+            'Adapters for vLLM, SGLang, TensorRT-LLM',
+            'Deduplicated, content-addressed storage',
+            'mTLS or API keys on every route',
+            'Tenant isolation, encryption at rest',
+          ].map((item) => (
+            <li class="flex items-start gap-2">
+              <svg viewBox="0 0 16 16" class="mt-[3px] h-3.5 w-3.5 shrink-0 text-brand-400" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7" /></svg>
+              <span>{item}</span>
+            </li>
+          ))
+        }
+      </ul>
     </div>
 
-    <!-- Hero terminal: the real first-run commands and (abridged) output -->
-    <div data-reveal data-reveal-delay="5" class="relative mx-auto mt-16 max-w-4xl sm:mt-20 lg:mt-24">
-      <div class="glass-strong relative overflow-hidden rounded-[24px] text-left shadow-2xl">
-        <div class="flex items-center gap-1.5 border-b border-white/[0.06] px-5 py-3.5">
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="h-2.5 w-2.5 rounded-full bg-white/15"></span>
-          <span class="ml-3 code-block text-[0.72rem] text-ink-300">first run · single node</span>
+    <!-- A real session against one node: prefill once, then rebuild the same context from cache. -->
+    <div class="relative min-w-0">
+      <div class="window">
+        <div class="window-bar">
+          <span class="h-2.5 w-2.5 rounded-full bg-white/10"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-white/10"></span>
+          <span class="h-2.5 w-2.5 rounded-full bg-white/10"></span>
+          <span class="ml-2 font-mono text-[0.75rem] text-ink-400">node-a · :8080</span>
         </div>
-        <div class="code-block space-y-4 overflow-x-auto px-5 py-5 text-[0.8rem] leading-relaxed sm:text-[0.85rem]">
-          {
-            transcript.map((step) => (
-              <div>
-                <div class="whitespace-nowrap text-ink-50">
-                  <span class="select-none text-accent-mint">$ </span>
-                  {step.cmd}
-                </div>
-                {step.out.map((line) => (
-                  <div class="whitespace-nowrap text-ink-300">{line}</div>
-                ))}
-              </div>
-            ))
-          }
-        </div>
+        <pre class="code-block overflow-x-auto px-5 pb-14 pt-5 text-[0.8125rem] leading-[1.75] text-ink-200"><span class="text-ink-500"># 1. A prompt is prefilled once, anywhere in the fleet</span>
+<span class="text-brand-400">$</span> curl -s :8080/prefill -d '&#123;"prompt_tokens": [0, …, 299],
+         "model_id": "llama-3-8b"&#125;'
+<span class="text-ink-400">→ 3 fragments stored   tokens 0–127 · 128–255 · 256–299</span>
+
+<span class="text-ink-500"># 2. The same context, on any node, comes back from cache</span>
+<span class="text-brand-400">$</span> curl -s :8080/reconstruct -d '&#123;"tokens": [0, …, 299],
+         "model_id": "llama-3-8b"&#125;'
+<span class="text-ink-100">&#123; "coverage": <span class="text-brand-300">1.0</span>, "prefilled": <span class="text-brand-300">false</span>,
+  "fragments": [ "1fbfae53…", "ad9a27a8…", "8668eeed…" ] &#125;</span></pre>
       </div>
 
-      <!-- Caption under mock -->
-      <p class="mt-4 text-center text-[0.78rem] text-ink-400">
-        Reference implementation of
-        <a
-          href="https://arxiv.org/abs/2604.15039"
-          target="_blank"
-          rel="noreferrer noopener"
-          class="text-ink-200 underline decoration-white/20 underline-offset-4 transition-colors hover:text-white hover:decoration-white/40"
-        >
-          Prefill-as-a-Service
-        </a>
-        · with the paper's analytical throughput model.
-      </p>
+      <div class="card absolute -bottom-7 right-6 hidden items-center gap-3 px-4 py-3 sm:flex">
+        <span class="grid h-8 w-8 place-items-center rounded-full bg-brand-400/15 text-brand-300">
+          <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7" /></svg>
+        </span>
+        <div class="leading-tight">
+          <div class="text-[0.875rem] font-medium text-white">Prefill skipped</div>
+          <div class="text-[0.8125rem] text-ink-400">300 / 300 tokens served from cache</div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
