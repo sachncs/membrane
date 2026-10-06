@@ -101,8 +101,8 @@ upgrading.
 
 - `scripts/kind_capacity.sh` and the `kind-capacity` CI job measure read
   capacity on kind, with every pod limited to 250m CPU. 5 nodes served
-  1.73x the reads of 3 (3,293 vs 1,906 reads/s); the job fails below
-  1.5x. `kind_load.py` gains `seed` and `capacity` modes, and both kind
+  1.67x-1.73x the reads of 3 over two runs (3,620 vs 2,170 and 3,293 vs
+  1,906 reads/s; linear is 1.67x); the job fails below 1.5x. `kind_load.py` gains `seed` and `capacity` modes, and both kind
   scripts share `scripts/kind_lib.sh`.
 - Coverage gates: CI fails below 84% total or when any module is under
   70% (`tools/check_coverage.py`). Generated protobuf modules are left
