@@ -27,11 +27,12 @@ from the scheduler and the model runner:
 * :meth:`MembraneVLLMAdapter.save_kv` -- push the freshly
   computed K/V back to the cluster.
 
-The connector talks to a :class:`MembraneClusterClient` that
-encapsulates the wire format defined by
-:class:`membrane.transfer_engine.KVTransferEngine`. The
-client is decoupled from the connector so unit tests can
-inject a fake without touching the network.
+The connector talks to a :class:`MembraneClusterClient`, which
+stores KV blocks as named bundles on a Membrane node
+(:class:`membrane.adapters.remote.HTTPClusterClient`, over the
+``/kv/{handle}`` routes). The client is decoupled from the
+connector so unit tests can inject a fake without touching the
+network.
 """
 
 import logging
@@ -112,10 +113,9 @@ class LayerLoad:
 class MembraneClusterClient:
     """Minimal cluster client the vLLM connector talks to.
 
-    The v1 of the client wraps the byte transport defined by
-    :mod:`membrane.transfer_engine`; tests can subclass it
-    with a dictionary-backed fake to drive the connector
-    without a live cluster.
+    :class:`membrane.adapters.remote.HTTPClusterClient` implements
+    it over HTTP; tests can subclass it with a dictionary-backed
+    fake to drive the connector without a live cluster.
     """
 
     def lookup_prefix(

@@ -34,8 +34,7 @@ class TestV3Integration:
         from membrane.security.encryption import StaticKeyProvider
         from membrane.security.key_rotation import RotatingKeyProvider
         from membrane.serialization import to_dict
-        from membrane.tier_migration import TierMigration
-        from membrane.tiers import TierPolicy
+        from membrane.tiers import TierPolicy, select_tier
         from membrane.transport.admin import create_admin_router
         from membrane.transport.fastapi import create_app
 
@@ -50,11 +49,10 @@ class TestV3Integration:
             tier_policy=TierPolicy(hot_threshold=0.7),
         )
         demoted: list[tuple[str, str]] = []
-        migration = TierMigration(
-            policy=TierPolicy(),
-            on_demote=lambda frag, tier: demoted.append((frag.identity.payload_hash, tier)),
+        # Record each evicted fragment with the tier the policy assigns it.
+        node.add_eviction_callback(
+            lambda frag: demoted.append((frag.identity.payload_hash, select_tier(TierPolicy(), frag)))
         )
-        node.add_eviction_callback(migration.on_evict)
         log = AuditLog()
         app = create_app(
             node=node,

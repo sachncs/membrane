@@ -50,6 +50,9 @@ uv sync --frozen --extra dev     # exact versions from uv.lock
 source .venv/bin/activate        # Linux/macOS
 ```
 
+Or run `scripts/setup.sh`, which installs from the lockfile and then
+runs the lint, type, naming, docstring, and test checks once.
+
 `--frozen` installs exactly what `uv.lock` records, as CI does. When you
 change dependencies in `pyproject.toml`, run `uv lock` and commit
 `uv.lock`.
@@ -128,8 +131,10 @@ chore: update pytest to 8.x
    mypy membrane
    python tools/check_naming.py      # naming, __all__, no direct output
    python tools/check_docstrings.py  # complete Google-style docstrings
+   pytest tests/ --cov=membrane --cov-report=json && python tools/check_coverage.py
    ```
-   CI's `CI passed` check must be green before merge.
+   The coverage gate requires at least 84% in total and 70% in every
+   module. CI's `CI passed` check must be green before merge.
 
 3. **Push your branch** and open a Pull Request against `master`.
 
@@ -158,7 +163,8 @@ chore: update pytest to 8.x
   ruff's `D` rules enforce it.
 - Mark overriding methods with `@typing.override`; mypy enforces it.
 - Write Python 3.14: `type` aliases, `match`, `compression.zstd`,
-  `uuid.uuid7()`, template strings for structured logs.
+  and `uuid.uuid7()` for time-ordered IDs. Code must also run on
+  free-threaded Python 3.14t; CI tests both builds.
 
 ### Output
 
@@ -203,6 +209,16 @@ pytest tests/membrane/test_fragment.py -v
 docker run -d --rm -p 6379:6379 redis:7-alpine
 pytest tests/membrane/persistence
 
+# Free-threaded Python 3.14t (the multi-core scaling test runs only here)
+uv venv --python 3.14t .venv-ft
+uv pip install --python .venv-ft -e ".[server,transfer]" pytest pytest-timeout pytest-benchmark hypothesis
+.venv-ft/bin/python -m pytest tests/
+
+# Cluster tests on kind (need Docker, kind, and kubectl)
+docker build -t membrane:ci .
+IMAGE=membrane:ci scripts/kind_e2e.sh        # restarts, node loss, scale-out
+IMAGE=membrane:ci scripts/kind_capacity.sh   # read capacity, 3 vs 5 nodes
+
 # Run type checking
 mypy membrane
 ```
@@ -215,7 +231,12 @@ mypy membrane
 - Keep `README.md` and `docs/` current with new features or setup
   changes. `docs/` is published to the website; `cd site && npm ci &&
   npm run dev` previews it.
+- Start every docs page with a one-paragraph summary after the title:
+  the site uses it as the page description. Use GitHub callouts
+  (`> [!NOTE]`, `> [!WARNING]`), which render on GitHub and the site,
+  and add a page to `site/src/lib/docs-nav.ts` (the build fails if a
+  page is missing from it).
 
 ## Questions?
 
-Open a [GitHub Discussion](https://github.com/sachncs/membrane/discussions) if you have questions or need help getting started.
+Open an [issue](https://github.com/sachncs/membrane/issues) if you have questions or need help getting started, or check the [FAQ](https://sachncs.github.io/membrane/docs/faq/).

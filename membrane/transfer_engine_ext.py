@@ -1,46 +1,15 @@
-"""GPU-direct pinned host memory + adaptive fragment sizing.
+"""Adaptive fragment sizing.
 
-The v3.0.0 release optimizes the GPU → wire path:
-
-* :class:`PinnedTensorHandle` describes a tensor buffer that
-  lives in pinned host memory (the staging area for
-  ``cudaMemcpyAsync``); :class:`KVTransferEngine.transfer_kv`
-  accepts a :class:`PinnedTensorHandle` and writes the bytes
-  straight into the network send buffer, skipping the
-  GPU → CPU → bytes materialization of the v2.0 surface.
-* :class:`AdaptiveFragmenter` sizes the window per
-  architecture + memory pressure + reuse score. Operators
-  flip the feature flag on to enable adaptation; the default
-  size path remains the legacy :class:`membrane.fragmenter.Fragmenter`.
+:class:`AdaptiveFragmenter` sizes the token window per model
+architecture, memory pressure, and reuse score. Operators turn the
+feature flag on to enable adaptation; otherwise the fixed-size
+:class:`membrane.fragmenter.Fragmenter` is used.
 """
 
 import logging
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class PinnedTensorHandle:
-    """Tensor handle backed by pinned host memory.
-
-    Attributes:
-        data: Pinned host memory bytes.
-        shape: Tensor shape.
-        dtype: Element dtype string.
-    """
-
-    data: bytes
-    shape: tuple[int, ...]
-    dtype: str
-
-    def size_bytes(self) -> int:
-        """Return the byte size of the handle.
-
-        Returns:
-            int: ``len(data)``.
-        """
-        return len(self.data)
 
 
 @dataclass(frozen=True)
@@ -135,6 +104,5 @@ class AdaptiveFragmenter:
 __all__ = [
     "AdaptiveFragmenter",
     "ModelSizeProfile",
-    "PinnedTensorHandle",
     "get_model_profile",
 ]

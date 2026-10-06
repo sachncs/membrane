@@ -43,7 +43,6 @@ venv/
 .venv/
 ENV/
 env/
-.python-version
 
 # IDE
 .vscode/
@@ -81,7 +80,6 @@ logs/
 .ipynb_checkpoints/
 
 # pyenv
-.python-version
 
 # pytest
 .pytest_cache/

@@ -39,7 +39,7 @@ The `server` extra installs what `membrane serve` needs: FastAPI, uvicorn, the R
 | Extra | Adds |
 |-------|------|
 | `dev` | Test, lint, and type-check tooling (`pytest`, `ruff`, `mypy`) |
-| `transfer` | KV transfer engine and quantization (`numpy`, `lz4`; zstd is in the standard library) |
+| `transfer` | lz4 transfer compression and KV quantization (`numpy`, `lz4`; zstd is in the standard library) |
 | `gpu`, `local-llm` | PyTorch and Hugging Face Transformers compute backends |
 | `secrets-aws`, `secrets-gcp`, `secrets-vault` | Secret manager backends |
 | `otel` | OpenTelemetry tracing |

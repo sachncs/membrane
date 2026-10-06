@@ -45,7 +45,7 @@ class TestTenantFilterE2E:
         # A stores a tenant_id=acme fragment.
         acme_ctx = AuthContext(subject="acme", scopes=frozenset({"write"}))
         # Need to thread auth_context into op_store. The route
-        # handler in routes_fastapi.py does this via
+        # handler in transport/routes does this via
         # _scope(request, ...). For the test, drive op_store
         # directly with an auth_context.
 

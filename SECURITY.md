@@ -34,7 +34,9 @@ Instead, please report them via [GitHub Security Advisories](https://github.com/
 
 ## Security Best Practices
 
-When deploying Membrane in production:
+When deploying Membrane in production, follow the
+[hardening checklist](https://sachncs.github.io/membrane/docs/security/#hardening-checklist)
+in the security guide. In short:
 
 - Enable authentication: `membrane serve` refuses public binds without an API keyfile or mTLS.
 - Use mTLS (or TLS at a reverse proxy) for all network traffic, including between peers.
@@ -47,7 +49,10 @@ When deploying Membrane in production:
 
 ## Dependency Security
 
-We use GitHub Dependabot to monitor dependencies for known vulnerabilities. Dependabot is configured to check for updates weekly.
+Dependencies are pinned in `uv.lock`, and GitHub Dependabot checks them for
+updates weekly. Every change also runs pip-audit (known vulnerabilities in the
+locked dependencies), bandit (static analysis), gitleaks (committed secrets),
+and Trivy (filesystem and dependency scan) in CI.
 
 ## Scope
 

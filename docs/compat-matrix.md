@@ -11,18 +11,18 @@ The runtimes, serving engines, transports, and GPUs supported by the Membrane 3.
 
 `requires-python = ">=3.14,<3.15"`. Membrane uses 3.14 features
 throughout: deferred annotations (PEP 649), `compression.zstd`
-(PEP 784), template strings in structured logging (PEP 750),
-`InterpreterPoolExecutor` (PEP 734) for the threshold optimizer, and
-`uuid.uuid7()` for request and audit IDs. `.python-version` pins 3.14,
-`uv.lock` pins every dependency, and CI and the container image install
-from the lock.
+(PEP 784), `InterpreterPoolExecutor` (PEP 734) for the threshold
+optimizer, and `uuid.uuid7()` for request and audit IDs. It also runs on
+free-threaded Python 3.14t (PEP 703), where one node scales across cores;
+CI tests both builds. `.python-version` pins 3.14, `uv.lock` pins every
+dependency, and CI and the container images install from the lock.
 
 ## Optional runtime deps
 
 | Package              | Optional dep group      | Required by                |
 |----------------------|-------------------------|---------------------------|
 | `cryptography`      | `membrane[server]`     | TLS, encryption at rest   |
-| `numpy` / `lz4` | `membrane[transfer]` | KV transfer engine, quantization |
+| `numpy` / `lz4` | `membrane[transfer]` | lz4 transfer compression, KV quantization |
 | `fastapi` / `uvicorn` / `httpx` | `membrane[server]` | HTTP transport and clients |
 | `grpcio` | `membrane[disagg]` | Disaggregation gRPC surface |
 | `redis>=8.1.0`     | `membrane[server]`     | Redis persistence backend  |
@@ -31,10 +31,9 @@ from the lock.
 | `opentelemetry-*`  | `membrane[otel]`       | OpenTelemetry tracing      |
 | `boto3` / `google-cloud-secret-manager` / `hvac` | `membrane[secrets-aws]` / `[secrets-gcp]` / `[secrets-vault]` | Secret backends |
 
-> Production deployments pin each of the optional deps to the
-> exact version that ships with the deployment image. The
-> CI matrix exercises a single canonical version of each
-> optional dep and reports drift in the smoke logs.
+> [!NOTE]
+> Pin optional dependencies in production to the versions in `uv.lock`,
+> which are the versions CI tests.
 
 ## Engines
 
@@ -64,16 +63,17 @@ the Python 3.14 release (LMCache has no 3.14 wheels).
 | v5              | yes   | yes (3.0.0+) |
 | v4 / v3 / v2     | rejected | rejected (3.0.0+) |
 
-Operators upgrading from 2.0.x must convert legacy blobs via
-the migration script before booting a 3.0.0 cluster. The
-conversion tool ships in `tools/upgrade_v2_to_v5.py`.
+Operators upgrading from 2.0.x must convert legacy blobs with
+`tools/upgrade_v2_to_v5.py` before starting a 3.x cluster. See
+[Upgrades](operations/upgrade.md#major-upgrades).
 
 ## GPU matrix
 
 | GPU | Notes |
 |-----|-------|
-| NVIDIA A100 / H100 | CUDA 12 + torch 2.3+ recommended |
-| Apple Silicon (MPS) | CPU fallback is the supported path |
+| NVIDIA A100 / H100 | CUDA 12, with the torch version from `membrane[gpu]` (2.13 or later) |
+| Apple Silicon (MPS) | The CPU backend is the supported path |
 
-GPUDirect stage is gated behind a feature flag; the smoke
-test runs on CPU and skips the GPU path.
+CI runs the compute backends on CPU, with stand-ins for torch and
+Transformers, so GPU behavior is exercised by the backends' logic but
+not on GPU hardware.

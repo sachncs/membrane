@@ -1,19 +1,12 @@
-"""Tests for the GPUDirect + adaptive fragment sizing surfaces (Phase 3.3.9-3.3.10)."""
+"""Tests for adaptive fragment sizing."""
 
 import pytest
 
 from membrane.transfer_engine_ext import (
     AdaptiveFragmenter,
     ModelSizeProfile,
-    PinnedTensorHandle,
     get_model_profile,
 )
-
-
-class TestPinnedTensorHandle:
-    def test_size_bytes(self):
-        h = PinnedTensorHandle(data=b"hello", shape=(2, 4), dtype="float16")
-        assert h.size_bytes() == 5
 
 
 class TestModelProfile:

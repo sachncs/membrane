@@ -1,4 +1,4 @@
-"""Tests for the Bloom + Merkle inventory exchange (Phase 5)."""
+"""Tests for the Merkle inventory exchange and gossip state."""
 
 import base64
 import json
@@ -8,7 +8,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from membrane.bloom import BloomFilter
 from membrane.gc import TombstoneTable
 from membrane.merkle import MerkleTree
 from membrane.network.gossip import Gossip, GossipState, PeerEndpoint
@@ -17,66 +16,6 @@ from membrane.registry import Registry
 from membrane.ring import Ring
 from membrane.shard import Shard
 from tests.conftest import make_fragment
-
-
-class TestBloomFilter:
-    def test_round_trip_empty(self):
-        bf = BloomFilter.tuned_for(1000, fp_rate=0.001)
-        buf = bf.serialize()
-        bf2 = BloomFilter.deserialize(buf)
-        assert bf2.m_bits == bf.m_bits
-        assert bf2.k_hashes == bf.k_hashes
-
-    def test_add_then_contains(self):
-        bf = BloomFilter.tuned_for(1000, fp_rate=0.001).add("hello")
-        buf = bf.serialize()
-        bf2 = BloomFilter.deserialize(buf)
-        assert "hello" in bf2
-        assert "missing" not in bf2
-
-    def test_no_false_negatives(self):
-        bf = BloomFilter.tuned_for(1000, fp_rate=0.001)
-        for i in range(100):
-            bf = bf.add(f"item-{i}")
-        buf = bf.serialize()
-        bf2 = BloomFilter.deserialize(buf)
-        for i in range(100):
-            assert f"item-{i}" in bf2
-
-    def test_false_positive_rate_within_target(self):
-        bf = BloomFilter.tuned_for(1000, fp_rate=0.001)
-        for i in range(1000):
-            bf = bf.add(f"item-{i}")
-        fp = 0
-        for i in range(10_000):
-            if f"random-{i}" in bf:
-                fp += 1
-        # FP rate is approximate; 0.005 is a generous bound for a
-        # 0.1% target on 10k probes against a 1k-item filter.
-        assert fp / 10_000 < 0.005
-
-    def test_immutability(self):
-        bf = BloomFilter.tuned_for(10, fp_rate=0.01)
-        bf2 = bf.add("h1")
-        # Original filter is unchanged.
-        assert "h1" not in bf
-        # The new filter is different.
-        assert "h1" in bf2
-
-    def test_membership(self):
-        bf = BloomFilter.tuned_for(10, fp_rate=0.01).add("a").add("b")
-        assert "a" in bf
-        assert "b" in bf
-        assert "c" not in bf
-
-    def test_short_tuned_for_does_not_blow_up(self):
-        # Edge case: very small expected_items + high fp.
-        bf = BloomFilter.tuned_for(1, fp_rate=0.1)
-        assert bf.m_bits > 0
-
-    def test_serialize_magic_mismatch_raises(self):
-        with pytest.raises(ValueError, match="magic"):
-            BloomFilter.deserialize(b"XXXX\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
 
 
 class TestMerkleTree:

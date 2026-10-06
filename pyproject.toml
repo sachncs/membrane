@@ -63,7 +63,7 @@ dev = [
 ]
 # Everything `membrane serve` needs, including TLS / encryption at rest.
 server = ["redis>=8.1.0", "fastapi>=0.142.2", "uvicorn[standard]>=0.54.0", "httpx>=0.28.1", "pydantic>=2.13.5", "cryptography>=44.0.0"]
-# KV transfer engine and quantization (membrane.transfer_engine, membrane.quantization).
+# Peer transfer compression and KV quantization (membrane.codec lz4, membrane.quantization).
 # zstd comes from the standard library (compression.zstd, PEP 784).
 transfer = ["numpy>=1.26.0", "lz4>=4.3.0"]
 # Secret backends (membrane.secrets.*). Each pulls cryptography for envelope encryption.

@@ -1,7 +1,7 @@
 """Shared HTTP operation logic.
 
 This module holds the *business* logic that backs each Membrane HTTP
-endpoint. The FastAPI binding :mod:`membrane.transport.routes_fastapi`
+endpoint. The FastAPI binding :mod:`membrane.transport.routes`
 delegates to these functions so the actual store / retrieve / sync
 logic lives in exactly one place.
 

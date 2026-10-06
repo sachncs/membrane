@@ -1,32 +1,21 @@
 ## Summary
 
-Briefly describe what this PR does and why.
+What this PR changes and why.
 
-## Related Issue
+## Related issue
 
 Closes #<!-- issue number -->
 
-## Changes
-
-- 
-
 ## Testing
 
-Describe the tests you ran and how to reproduce them:
+The commands you ran, and anything a reviewer should run to reproduce.
 
-```bash
-pytest tests/ -v
-```
-
-- [ ] Unit tests pass locally
-- [ ] Type checking passes (`mypy membrane/`)
-- [ ] New tests added (if applicable)
+- [ ] `pytest tests/` passes (and on free-threaded 3.14t, if concurrency changed)
+- [ ] `ruff check`, `ruff format --check`, and `mypy membrane` pass
+- [ ] `tools/check_naming.py` and `tools/check_docstrings.py` pass
+- [ ] New or changed behavior is covered by tests; the coverage gate holds
 
 ## Checklist
 
-- [ ] My code follows the project's coding standards.
-- [ ] I have added docstrings to new public functions/classes.
-- [ ] I have updated the CHANGELOG.md under `[Unreleased]`.
-- [ ] I have updated documentation if needed.
-- [ ] I have added tests that cover my changes.
-- [ ] All existing tests pass.
+- [ ] `CHANGELOG.md` is updated under `[Unreleased]` (with **Breaking** where flags or APIs change)
+- [ ] `README.md` and `docs/` are updated if behavior or setup changed

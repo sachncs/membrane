@@ -12,6 +12,33 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Removed (dead code and files)
+
+Modules that no production code imported, only their own tests:
+
+- `membrane.bloom` (gossip's `inventory_bloom` has been empty since the
+  scale-out release), `membrane.chunks` (chunked transfer is
+  `membrane.wire.v3.chunks`), `membrane.versions`,
+  `membrane.tier_migration` (the warm tier replaced it), and
+  `membrane.transfer_engine` with `PinnedTensorHandle`, its only input.
+- `membrane.transport.routes_fastapi`, a re-export shim; import from
+  `membrane.transport.routes` and `membrane.transport.routes.models`.
+- `scripts/cleanup.sh` (`git clean -fdX` does the same), the unused
+  `site/scripts/render-og.mjs`, the Markdown issue templates the YAML
+  forms replaced, and unreferenced site logos.
+
+None were part of the stable API ([API stability](docs/api-stability.md)).
+
+### Fixed (documentation)
+
+- `.python-version` is now committed. Several docs said uv reads it, but
+  it was gitignored, so fresh clones did not get it.
+- Links to GitHub Discussions (not enabled) now point to the issue
+  tracker and the docs.
+- Docs that described removed or never-shipped features were corrected:
+  template strings in logging, a GPUDirect path, a `v1 -> v2` upgrade
+  tool, and the `lru` eviction reason.
+
 ### Fixed (tenants)
 
 - Two tenants storing byte-identical content each keep their own copy,

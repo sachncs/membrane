@@ -10,7 +10,7 @@ exhaust memory on a single field.
 import pytest
 from pydantic import ValidationError
 
-from membrane.transport.routes_fastapi import (
+from membrane.transport.routes.models import (
     DeleteRequest,
     FragmentPayload,
     GossipRequest,

@@ -6,7 +6,6 @@ import pytest
 
 from membrane.analytical import Isolation, Tenant, Workload
 from membrane.canonical import canonicalize, parse_canonical
-from membrane.chunks import Chunks
 from membrane.delta import DeltaEncoder
 from membrane.density import density
 from membrane.economic import Economic
@@ -28,7 +27,6 @@ from membrane.roles import NodeRole, Roles, SystemState
 from membrane.semantics import SemanticCluster
 from membrane.sessions import Sessions
 from membrane.telemetry import Telemetry
-from membrane.versions import Versions
 from membrane.weighted import Weighted
 
 
@@ -70,13 +68,6 @@ class TestMembraneIntegration:
         new = (*tuple(range(10)), 99, 100)
         delta = enc.encode(base, new)
         assert enc.decode(base, delta) == new
-
-    def test_phase_5_version_chain_ancestor(self):
-        chain = Versions()
-        chain.append_version("h1", 1)
-        chain.append_version("h2", 2, parent_version=1)
-        chain.append_version("h3", 3, parent_version=1)
-        assert chain.get_common_ancestor(2, 3) == 1
 
     def test_phase_6_graph_cluster_replication(self):
         g = Weighted()

@@ -102,9 +102,8 @@ class GossipState:
       ``content_hash -> [node_ids]`` mapping the sender knows
       about. Sampling bounds the message size; receivers fill
       in the rest via additional rounds.
-    * ``inventory_bloom`` — serialized
-      :class:`~membrane.bloom.BloomFilter` over the sender's
-      fragment set, used for the cheap ping/pong side-channel.
+    * ``inventory_bloom`` — always empty; kept so older peers
+      can still parse the message (repair uses bucket digests).
     * ``inventory_merkle_root`` — 32-byte root of the
       :class:`~membrane.merkle.MerkleTree` over the sender's
       ``(content_hash, owner_node_id)`` pairs. When roots

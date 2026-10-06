@@ -1,18 +1,20 @@
 <p align="center">
   <h1 align="center">Membrane</h1>
-  <p align="center">Distributed, content-addressed KV-cache sharing for LLM serving clusters.</p>
+  <p align="center">The shared KV-cache for LLM serving: prefill once, serve every node.</p>
   <p align="center">
     <a href="https://github.com/sachncs/membrane/actions/workflows/ci.yml"><img src="https://github.com/sachncs/membrane/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
     <img src="https://img.shields.io/badge/python-3.14-blue" alt="Python 3.14">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
-    <a href="https://sachncs.github.io/membrane/"><img src="https://img.shields.io/badge/docs-sachncs.github.io%2Fmembrane-7c3aed" alt="Documentation"></a>
+    <a href="https://sachncs.github.io/membrane/"><img src="https://img.shields.io/badge/docs-sachncs.github.io%2Fmembrane-14b8a6" alt="Documentation"></a>
   </p>
 </p>
 
 Membrane separates the KV cache from GPU memory. KV segments become
 immutable, content-addressed **fragments** held by a cluster of nodes,
-so prefill work done once can be reused by other requests, tenants,
-and regions; only the spans nobody holds are prefilled again.
+so prefill work done once is reused by other requests, nodes, and
+regions; only the spans nobody holds are prefilled again. Repeated
+prompts skip prefill, time-to-first-token drops, and GPUs stop
+recomputing the same context.
 
 It implements the analytical model of
 [*Prefill-as-a-Service: KVCache of Next-Generation Models Could Go Cross-Datacenter*](https://arxiv.org/abs/2604.15039)
@@ -59,16 +61,18 @@ client, authentication, a three-node cluster, and the container image.
   a prompt, `/prefix/lookup` reports how much is cached, and `/route`
   says where to fetch, prefill, and store, with pluggable placement
   policies ([Memory API](docs/memory-api.md)).
-- **Prefill / decode disaggregation.** `--role prefill|decode`: decode
+- **Prefill and decode disaggregation.** `--role prefill|decode`: decode
   nodes pull the KV a prefill node computed, over REST or gRPC
-  ([Prefill / decode](docs/disaggregation.md)).
+  ([Prefill and decode](docs/disaggregation.md)).
 - **Scales up and out.** On free-threaded Python 3.14 (`Dockerfile.ft`)
-  one node serves requests on several cores; adding nodes spreads
-  ownership, and per-node consistency costs follow what changed.
+  one node reads 3.2x faster on 4 cores than on 1 (8.1M reads/s);
+  going from 3 to 5 nodes serves 1.6x the reads, with every node
+  agreeing on ownership, and per-node consistency costs follow what
+  changed.
 - **Secure by default.** A node will not listen on a public address
   without API keys or mTLS; keyfiles hold only SHA-256 digests and must
-  be private; every route checks a scope; reads are isolated per
-  tenant; peers authenticate to each other.
+  be private; every route checks a scope; each tenant keeps and reads
+  its own fragments; peers authenticate to each other.
 - **Reliable under load.** Bounded concurrency with `503` +
   `Retry-After` backpressure, per-key rate limits, quorum writes that
   honour their deadline, and a `SIGTERM` drain that lets a 3-node
@@ -97,11 +101,11 @@ client, authentication, a three-node cluster, and the container image.
 | Container, Compose, Kubernetes, systemd | [Deployment](docs/deployment.md) |
 | API keys, mTLS, scopes, tenants | [Security](docs/security.md) |
 | Write consistency and quorum | [Consistency levels](docs/consistency.md) |
-| Reconstruction, prefix lookup, routing | [Memory API & routing](docs/memory-api.md) |
-| Prefill / decode nodes, engine adapters | [Prefill / decode](docs/disaggregation.md) |
-| Monitoring and alerts | [SLOs](docs/operations/slo.md) |
+| Reconstruction, prefix lookup, routing | [Memory API and routing](docs/memory-api.md) |
+| Prefill and decode nodes, engine adapters | [Prefill and decode](docs/disaggregation.md) |
+| Monitoring and alerts | [SLOs and alerting](docs/operations/slo.md) |
 | Sizing | [Capacity planning](docs/operations/capacity.md) |
-| Backups, upgrades, incidents | [Backup & restore](docs/operations/backup-restore.md), [Upgrades](docs/operations/upgrade.md), [Incident response](docs/operations/incident-response.md) |
+| Backups, upgrades, incidents | [Backup and restore](docs/operations/backup-restore.md), [Upgrades](docs/operations/upgrade.md), [Incident response](docs/operations/incident-response.md) |
 | How it fits together | [Architecture](docs/architecture.md) |
 | Extending it | [Plugins](docs/plugins.md) |
 | Common questions | [FAQ](docs/faq.md) |
@@ -128,12 +132,15 @@ free-threaded 3.14t, plus:
 - smoke tests of both container images;
 - a 5-node Kubernetes (kind) end-to-end test: rolling restart, primary
   loss, and scale-out;
+- a kind read-capacity test: 5 nodes must serve at least 1.5x the reads
+  of 3, at a fixed CPU budget per pod;
+- coverage gates: at least 84% in total and 70% in every module;
 - the documentation site build and a docs link check. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and
 [docs/release.md](docs/release.md) for releases.
 
 The site in [`site/`](site/) (Astro) publishes the landing page and
-renders `docs/` to <https://sachncs.github.io/membrane/>.
+renders `docs/`, with search, to <https://sachncs.github.io/membrane/>.
 
 ## Status
 

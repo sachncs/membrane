@@ -322,7 +322,7 @@ class TestMalformedPayloads:
     def test_pydantic_rejects_oversized_prompt(self):
         from pydantic import ValidationError
 
-        from membrane.transport.routes_fastapi import PrefillRequest
+        from membrane.transport.routes.models import PrefillRequest
 
         with pytest.raises(ValidationError):
             PrefillRequest(prompt_tokens=list(range(0, 40000)), model_id="m")
@@ -330,7 +330,7 @@ class TestMalformedPayloads:
     def test_pydantic_rejects_oversized_tenant_id(self):
         from pydantic import ValidationError
 
-        from membrane.transport.routes_fastapi import FragmentPayload
+        from membrane.transport.routes.models import FragmentPayload
 
         with pytest.raises(ValidationError):
             FragmentPayload(
@@ -346,7 +346,7 @@ class TestMalformedPayloads:
     def test_pydantic_rejects_negative_payload_size(self):
         from pydantic import ValidationError
 
-        from membrane.transport.routes_fastapi import FragmentPayload
+        from membrane.transport.routes.models import FragmentPayload
 
         with pytest.raises(ValidationError):
             FragmentPayload(

@@ -1,7 +1,7 @@
 """Snapshot + audit log integration test (Phase 3.2.8 follow-up).
 
 The 3.2.8 commit shipped the hash-chained audit log. The
-existing tests cover the log + admin route + tier migration
+existing tests cover the log + admin route + eviction tiering
 in isolation. This test runs the full path: a Node writes
 a fragment, the operator's policy is updated via /admin/policy,
 the operator triggers an evict via /admin/evict, and every
@@ -22,19 +22,17 @@ class TestSnapshotAuditFlow:
         from membrane.fragment import Fragment
         from membrane.identity import PayloadIdentity
         from membrane.node import Node
-        from membrane.tier_migration import TierMigration
-        from membrane.tiers import TierPolicy
+        from membrane.tiers import TierPolicy, select_tier
         from membrane.transport.admin import create_admin_router
 
-        # 1. Set up a Node + AuditLog + TierMigration.
+        # 1. Set up a Node, an AuditLog, and an eviction recorder.
         node = Node(node_id="n1", max_memory_bytes=10_000, tier_policy=TierPolicy())
         log = AuditLog()
         demoted: list[tuple[str, str]] = []
-        migration = TierMigration(
-            policy=TierPolicy(),
-            on_demote=lambda frag, tier: demoted.append((frag.identity.payload_hash, tier)),
+        # Record each evicted fragment with the tier the policy assigns it.
+        node.add_eviction_callback(
+            lambda frag: demoted.append((frag.identity.payload_hash, select_tier(TierPolicy(), frag)))
         )
-        node.add_eviction_callback(migration.on_evict)
 
         # 2. Seed fragments.
         for i in range(3):
@@ -115,16 +113,14 @@ class TestSnapshotAuditFlow:
         from membrane.fragment import Fragment
         from membrane.identity import PayloadIdentity
         from membrane.node import Node
-        from membrane.tier_migration import TierMigration
-        from membrane.tiers import TierPolicy
+        from membrane.tiers import TierPolicy, select_tier
 
         node = Node(node_id="n1", max_memory_bytes=10_000, tier_policy=TierPolicy())
         demoted: list[tuple[str, str]] = []
-        migration = TierMigration(
-            policy=TierPolicy(),
-            on_demote=lambda frag, tier: demoted.append((frag.identity.payload_hash, tier)),
+        # Record each evicted fragment with the tier the policy assigns it.
+        node.add_eviction_callback(
+            lambda frag: demoted.append((frag.identity.payload_hash, select_tier(TierPolicy(), frag)))
         )
-        node.add_eviction_callback(migration.on_evict)
         # Fill the node with high-reuse fragments so the
         # weighted LRU phase evicts them on memory pressure.
         for i in range(20):
@@ -154,5 +150,5 @@ class TestSnapshotAuditFlow:
             )
         # Evict some bytes; the tier callback fires.
         node.evict(target_bytes=100)
-        # The tier migration was called at least once.
+        # The eviction recorder was called at least once.
         assert len(demoted) >= 1

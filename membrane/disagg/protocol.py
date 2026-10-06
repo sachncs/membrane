@@ -3,9 +3,9 @@
 The prefill service runs on a node optimized for the
 compute-bound prefill phase; the decode service runs on a
 node optimized for the memory-bound, low-latency decode
-phase. The two services exchange K/V caches over a
-:class:`membrane.transfer_engine.TransferEnvelope` instead
-of the text stream, so the decode node picks up where the
+phase. The prefill node stores the K/V fragments and a manifest
+naming them under a handle; the decode node fetches them by that
+handle instead of re-reading the prompt, so it picks up where the
 prefill node left off without redoing the prefill.
 
 The protocol is small on purpose: a :class:`PrefillRequest`

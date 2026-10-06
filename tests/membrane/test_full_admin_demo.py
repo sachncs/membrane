@@ -1,4 +1,4 @@
-"""End-to-end demo: the audit log records admin ops + tier migration fires.
+"""End-to-end demo: the audit log records admin ops and evictions are tiered.
 
 A single integration test that exercises the audit log +
 the admin surface + tier migration in one go, so a single
@@ -12,7 +12,7 @@ from tests.conftest import with_promoter
 
 class TestFullAdminDemo:
     def test_full_admin_audit_workflow(self):
-        """Boot a Node + AuditLog + TierMigration, run admin ops,
+        """Boot a Node + AuditLog + eviction recorder, run admin ops,
         verify the audit log captures the chain + the tier
         assignments + the audit log is still intact."""
         from fastapi import FastAPI
@@ -23,20 +23,17 @@ class TestFullAdminDemo:
         from membrane.identity import PayloadIdentity
         from membrane.node import Node
         from membrane.shard import Shard
-        from membrane.tier_migration import TierMigration
-        from membrane.tiers import TierPolicy
+        from membrane.tiers import TierPolicy, select_tier
         from membrane.transport.admin import create_admin_router
 
         node = Node(node_id="n1", max_memory_bytes=10_000, tier_policy=TierPolicy())
         shard = Shard()
         log = AuditLog()
         migrations: list[tuple[str, str]] = []
-        # TierMigration: each demote appends to the list.
-        migration = TierMigration(
-            policy=TierPolicy(),
-            on_demote=lambda frag, tier: migrations.append((frag.identity.payload_hash, tier)),
+        # Record each evicted fragment with the tier the policy assigns it.
+        node.add_eviction_callback(
+            lambda frag: migrations.append((frag.identity.payload_hash, select_tier(TierPolicy(), frag)))
         )
-        node.add_eviction_callback(migration.on_evict)
 
         # Pre-populate the audit log + tier registry.
         ident = PayloadIdentity(
