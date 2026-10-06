@@ -1,0 +1,14 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import DocsHeader from '../components/DocsHeader.astro';
+---
+
+<BaseLayout title="Documentation · Membrane" description="Install, run, secure, and operate Membrane, the shared KV-cache for LLM serving.">
+  <DocsHeader />
+  <main id="main" class="px-5 pb-24 pt-28 sm:px-8" data-pagefind-ignore>
+    <slot />
+  </main>
+  <footer class="border-t border-white/[0.06] py-8 text-center text-[0.8125rem] text-ink-500">
+    Membrane is open source under the MIT License.
+  </footer>
+</BaseLayout>

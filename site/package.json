@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "astro build",
+    "build": "astro build && pagefind --site dist",
     "preview": "astro preview",
     "astro": "astro",
     "check": "astro check"
@@ -19,13 +19,17 @@
     "@fontsource-variable/jetbrains-mono": "^5.1.1",
     "@tailwindcss/typography": "^0.5.15",
     "astro": "^7.3.5",
+    "astro-expressive-code": "^0.44.2",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.5.1",
+    "rehype-autolink-headings": "^7.1.0",
+    "remark-github-blockquote-alert": "^2.1.0",
     "tailwindcss": "^3.4.17",
     "unist-util-visit": "^5.1.0"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "pagefind": "^1.5.2",
     "typescript": "^5.9.3"
   }
 }

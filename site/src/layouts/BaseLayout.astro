@@ -17,6 +17,7 @@ const {
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const faviconHref = `${base}/favicon.svg`;
+const ICON_VERSION = '2';
 // Crawlers need an absolute image URL.
 const ogImageHref = new URL(`${base}${ogImage}`, Astro.site).toString();
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
@@ -29,7 +30,11 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#08090b" />
     <meta name="color-scheme" content="dark" />
-    <link rel="icon" type="image/svg+xml" href={faviconHref} />
+    <!-- Versioned so browsers drop the previous icon from their cache. -->
+    <link rel="icon" href={`${base}/favicon.ico?v=${ICON_VERSION}`} sizes="32x32" />
+    <link rel="icon" type="image/svg+xml" href={`${faviconHref}?v=${ICON_VERSION}`} />
+    <link rel="apple-touch-icon" href={`${base}/apple-touch-icon.png?v=${ICON_VERSION}`} />
+    <link rel="manifest" href={`${base}/site.webmanifest?v=${ICON_VERSION}`} />
     <link rel="canonical" href={canonical} />
     <link rel="sitemap" href={`${base}/sitemap-index.xml`} />
 
