@@ -20,10 +20,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from membrane.decision import AdmissionPolicy, TenantQuota, TinyLFU
-from membrane.fragment import Fragment
+from membrane.fragment import DEFAULT_TENANT, KEY_SEPARATOR, Fragment, fragment_key
 from membrane.graph import Graph
 from membrane.index import Index
 from membrane.metrics import NodeMetrics
+from membrane.security.tenant import has_admin_scope
 from membrane.store.eviction import EVICTION_REUSE_EPSILON, EvictionPolicy, FrequencyLRU, WeightedLRU
 from membrane.store.table import FragmentTable
 from membrane.store.tenant_guard import TenantGuard
@@ -338,7 +339,7 @@ class Node:
             )
             return False
         if self.tier_policy is not None:
-            self.__selected_tiers[fragment.identity.payload_hash] = select_tier(self.tier_policy, fragment)
+            self.__selected_tiers[fragment.key] = select_tier(self.tier_policy, fragment)
         if fragment.payload_size > self.max_memory_bytes:
             logger.warning(
                 "Fragment %s size %s exceeds node %s limit %s",
@@ -351,7 +352,7 @@ class Node:
 
         with self.lock:
             now = time.time()
-            content_hash = fragment.identity.payload_hash
+            content_hash = fragment.key
 
             if content_hash not in self.fragments:
                 required = self.memory_usage + fragment.payload_size
@@ -408,6 +409,13 @@ class Node:
         Performs opportunistic TTL cleanup: if the fragment has
         expired, it is removed before returning ``None``.
 
+        Each tenant keeps its own copy of a content hash
+        (:func:`~membrane.fragment.fragment_key`). A bare hash resolves to
+        the caller's own copy first, then to the default tenant's. A caller
+        allowed to read every tenant (authentication off, or ``admin``)
+        falls back to any tenant's copy. A tenant-scoped key
+        (``"tenant:hash"``) names one copy directly.
+
         The v3.0.0 release adds a tenant scope check: a caller
         without the ``admin`` scope may only read fragments
         from their own tenant (or from the system tenant when
@@ -416,7 +424,7 @@ class Node:
         forbidden read from an absent fragment.
 
         Args:
-            content_hash: Hash to look up.
+            content_hash: Hash (or tenant-scoped key) to look up.
             caller_tenant: Tenant id of the caller; empty string
                 means "unauthenticated" and the check is bypassed.
             caller_scopes: Scopes granted to the caller.
@@ -425,6 +433,67 @@ class Node:
             Fragment | None: The fragment if present and the
             caller is authorized; ``None`` when the fragment is
             absent, expired, or the caller is not authorized.
+        """
+        if KEY_SEPARATOR in content_hash:
+            return self.__retrieve_key(content_hash, caller_tenant, caller_scopes)
+        if caller_tenant and caller_tenant != DEFAULT_TENANT:
+            own = self.__retrieve_key(fragment_key(caller_tenant, content_hash), caller_tenant, caller_scopes)
+            if own is not None:
+                return own
+        fragment = self.__retrieve_key(content_hash, caller_tenant, caller_scopes)
+        if fragment is not None or self.table.tenant_keys.get(content_hash) is None:
+            return fragment
+        if caller_tenant and not has_admin_scope(caller_scopes):
+            return None
+        other = self.table.any_tenant_copy(content_hash)
+        return self.__retrieve_key(other, caller_tenant, caller_scopes) if other is not None else None
+
+    def locate(
+        self,
+        content_hash: str,
+        caller_tenant: str = "",
+        caller_scopes: frozenset[str] = frozenset(),
+    ) -> str | None:
+        """The resident key :meth:`retrieve` would read for ``content_hash``.
+
+        Resolves like :meth:`retrieve` without its side effects (no access
+        recorded, no promotion, no TTL cleanup, no read check).
+
+        Args:
+            content_hash: Hash (or tenant-scoped key).
+            caller_tenant: Tenant id of the caller (empty: any tenant).
+            caller_scopes: Scopes granted to the caller.
+
+        Returns:
+            str | None: The storage key, or ``None`` when no visible copy is resident.
+        """
+        if KEY_SEPARATOR in content_hash:
+            return content_hash if content_hash in self.table else None
+        if caller_tenant and caller_tenant != DEFAULT_TENANT:
+            own = fragment_key(caller_tenant, content_hash)
+            if own in self.table:
+                return own
+        if content_hash in self.table:
+            return content_hash
+        if caller_tenant and not has_admin_scope(caller_scopes):
+            return None
+        return self.table.any_tenant_copy(content_hash)
+
+    def __retrieve_key(
+        self,
+        content_hash: str,
+        caller_tenant: str,
+        caller_scopes: frozenset[str],
+    ) -> Fragment | None:
+        """Look up one storage key (see :meth:`retrieve`).
+
+        Args:
+            content_hash: Storage key.
+            caller_tenant: Tenant id of the caller.
+            caller_scopes: Scopes granted to the caller.
+
+        Returns:
+            Fragment | None: The fragment, or ``None``.
         """
         if self.lower_tier is not None and content_hash not in self.table:
             self.__promote(content_hash)
@@ -464,9 +533,10 @@ class Node:
         with self.lock:
             frag = self.table.pop(content_hash)
             self.__notify(self.__on_remove, content_hash)
-            # Drop the canonical frame from the active store too.
+            # Drop the canonical frame from the active store too, unless
+            # another tenant's copy of the same content still uses it.
             # A None payload_ref is metadata-only; skip cleanly.
-            if frag.payload_ref is not None:
+            if frag.payload_ref is not None and not self.table.references(frag.payload_ref):
                 self.content_store.delete(frag.payload_ref)
             if self.metrics is not None:
                 self.metrics.tenant.bump_fragment(frag.tenant_id, -1)
@@ -492,20 +562,20 @@ class Node:
         """Return the tier name assigned to ``content_hash``.
 
         Args:
-            content_hash: The fragment hash.
+            content_hash: The fragment hash (or storage key).
 
         Returns:
             str | None: ``"hot"`` / ``"warm"`` / ``"cold"`` /
             ``"archival"`` when a tier policy is configured and
             the fragment was admitted; ``None`` otherwise.
         """
-        return self.__selected_tiers.get(content_hash)
+        return self.__selected_tiers.get(self.locate(content_hash) or content_hash)
 
     def record_hit(self, content_hash: str) -> None:
         """Record a cache hit on ``content_hash``.
 
         Args:
-            content_hash: The hash of the accessed fragment.
+            content_hash: The hash (or storage key) of the accessed fragment.
 
         The v3.0.0 release runs the
         :class:`~membrane.decision.HitObserver` EMA on every hit
@@ -515,10 +585,11 @@ class Node:
         recorded as a sketch hit, which biases the future
         eviction decision toward keeping the key.
         """
-        fragment = self.fragments.get(content_hash)
-        if fragment is None:
+        key = self.locate(content_hash)
+        fragment = self.fragments.get(key) if key is not None else None
+        if key is None or fragment is None:
             return
-        self.eviction_policy.touch(content_hash)
+        self.eviction_policy.touch(key)
         # HitObserver EMA on reuse_score; the helper lives
         # at module level so we don't keep a long-lived
         # observer instance per node.

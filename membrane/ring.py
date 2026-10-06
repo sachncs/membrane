@@ -33,6 +33,8 @@ import bisect
 import hashlib
 import logging
 
+from membrane.fragment import split_key
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,7 +124,9 @@ class Ring:
     def get_node(self, content_hash: str) -> str:
         """Return the node responsible for ``content_hash``.
 
-        Uses binary search for O(log n) lookup.
+        Uses binary search for O(log n) lookup. A tenant-scoped key
+        (:func:`~membrane.fragment.fragment_key`) places by its content
+        hash, so every tenant's copy of some content shares its owners.
 
         Args:
             content_hash: Hash to look up.
@@ -136,7 +140,7 @@ class Ring:
             EmptyRingError: If the ring has no nodes.
         """
         self.require_non_empty()
-        hash_key = self.hash_value(content_hash)
+        hash_key = self.hash_value(split_key(content_hash)[1])
         idx = bisect.bisect_left(self.sorted_keys, hash_key)
         if idx < len(self.sorted_keys):
             return self.ring[self.sorted_keys[idx]]
@@ -165,7 +169,7 @@ class Ring:
         self.require_non_empty()
         if n <= 0:
             return []
-        hash_key = self.hash_value(content_hash)
+        hash_key = self.hash_value(split_key(content_hash)[1])
         nodes: list[str] = []
         seen: set[str] = set()
         start_index = bisect.bisect_left(self.sorted_keys, hash_key)

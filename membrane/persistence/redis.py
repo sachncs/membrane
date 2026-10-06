@@ -219,7 +219,7 @@ class Redis:
         Returns:
             bool: True if stored.
         """
-        h = fragment.identity.payload_hash
+        h = fragment.key
         data = self.serialize_fragment(fragment)
         # Use a pipeline so the fragment, the per-node set, the
         # primary key, and the LRU score are written atomically

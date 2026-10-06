@@ -126,7 +126,7 @@ class GossipRequest(BaseModel):
 class DeleteRequest(BaseModel):
     """``POST /delete`` body."""
 
-    content_hash: str = Field(min_length=1, max_length=128)
+    content_hash: str = Field(min_length=1, max_length=256)
     node_id: str = Field(min_length=1, max_length=128)
     tombstone_until: float | None = None
 
@@ -134,7 +134,7 @@ class DeleteRequest(BaseModel):
 class TombstoneRequest(BaseModel):
     """``POST /tombstone`` body."""
 
-    content_hash: str = Field(min_length=1, max_length=128)
+    content_hash: str = Field(min_length=1, max_length=256)
     until: float
     node_id: str = Field(min_length=1, max_length=128)
 
@@ -142,13 +142,13 @@ class TombstoneRequest(BaseModel):
 class PurgeRequest(BaseModel):
     """``POST /purge`` body."""
 
-    content_hash: str = Field(min_length=1, max_length=128)
+    content_hash: str = Field(min_length=1, max_length=256)
 
 
 class VerifyRequest(BaseModel):
     """``POST /verify`` body."""
 
-    content_hash: str = Field(min_length=1, max_length=128)
+    content_hash: str = Field(min_length=1, max_length=256)
     claimed_size: int = Field(ge=0, le=MAX_BODY_BYTES)
     claimed_sha256_hex: str = Field(min_length=64, max_length=64)
 

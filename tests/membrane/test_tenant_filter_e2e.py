@@ -157,9 +157,9 @@ class TestTenantFilterE2E:
             auth_context=admin_ctx,
         )
         assert status == 200
-        # The fragment is held under the acme tenant.
-        assert ident.payload_hash in node.fragments
-        assert node.fragments[ident.payload_hash].tenant_id == "acme"
+        # The fragment is held under the acme tenant's key.
+        assert f"acme:{ident.payload_hash}" in node.fragments
+        assert node.fragments[f"acme:{ident.payload_hash}"].tenant_id == "acme"
 
     def test_no_auth_context_admits_unauthenticated_store(self):
         """When no auth_context is set, the tenant filter is bypassed.
@@ -209,4 +209,6 @@ class TestTenantFilterE2E:
             cluster_metrics=None,
         )
         assert status == 200
-        assert ident.payload_hash in node.fragments
+        assert f"acme:{ident.payload_hash}" in node.fragments
+        # Without authentication every tenant's copy is readable by hash.
+        assert node.retrieve(ident.payload_hash) is not None

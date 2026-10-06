@@ -31,13 +31,19 @@ class FragmentTable:
     """Resident fragments of one node.
 
     Attributes:
-        fragments: ``content_hash -> Fragment``.
+        fragments: ``key -> Fragment``, keyed by
+            :attr:`~membrane.fragment.Fragment.key` (the bare content hash
+            for the default tenant, ``"tenant:hash"`` otherwise).
         primary_hashes: Hashes this node owns as primary.
         access_times: ``content_hash ->`` last access (Unix time).
         insertion_times: ``content_hash ->`` insertion (Unix time).
         memory_usage: Sum of resident ``payload_size`` in bytes.
         lock: Re-entrant lock guarding every field.
         digest: Bucketed inventory digest, updated on every add and pop.
+        tenant_keys: ``content_hash ->`` keys of the resident copies that
+            belong to a non-default tenant.
+        payload_refs: ``payload_ref ->`` resident fragments referencing it
+            (tenants storing identical content share one blob).
     """
 
     def __init__(self) -> None:
@@ -49,6 +55,8 @@ class FragmentTable:
         self.memory_usage = 0
         self.lock = threading.RLock()
         self.digest = InventoryDigest()
+        self.tenant_keys: dict[str, set[str]] = {}
+        self.payload_refs: dict[str, int] = {}
         self.__local = threading.local()
         self.__buffers: list[dict[str, float]] = []
         share(self.__local)
@@ -131,12 +139,16 @@ class FragmentTable:
             fragment: The fragment.
             now: Insertion time.
         """
-        content_hash = fragment.identity.payload_hash
+        content_hash = fragment.key
         with self.lock:
             self.fragments[content_hash] = fragment
             self.memory_usage += fragment.payload_size
             self.insertion_times[content_hash] = now
             self.digest.add(content_hash, fragment.version_id)
+            if content_hash != fragment.identity.payload_hash:
+                self.tenant_keys.setdefault(fragment.identity.payload_hash, set()).add(content_hash)
+            if fragment.payload_ref is not None:
+                self.payload_refs[fragment.payload_ref] = self.payload_refs.get(fragment.payload_ref, 0) + 1
 
     def touch(self, content_hash: str, now: float, is_primary: bool = False) -> None:
         """Record an access, and optionally primary ownership.
@@ -170,7 +182,44 @@ class FragmentTable:
             self.primary_hashes.discard(content_hash)
             self.access_times.pop(content_hash, None)
             self.insertion_times.pop(content_hash, None)
+            copies = self.tenant_keys.get(fragment.identity.payload_hash)
+            if copies is not None:
+                copies.discard(content_hash)
+                if not copies:
+                    del self.tenant_keys[fragment.identity.payload_hash]
+            ref = fragment.payload_ref
+            if ref is not None:
+                remaining = self.payload_refs.get(ref, 1) - 1
+                if remaining > 0:
+                    self.payload_refs[ref] = remaining
+                else:
+                    self.payload_refs.pop(ref, None)
             return fragment
+
+    def references(self, payload_ref: str) -> int:
+        """How many resident fragments reference a payload blob.
+
+        Args:
+            payload_ref: Content-store key.
+
+        Returns:
+            int: The count (0 when no resident fragment uses it).
+        """
+        return self.payload_refs.get(payload_ref, 0)
+
+    def any_tenant_copy(self, payload_hash: str) -> str | None:
+        """The key of some non-default tenant's copy of ``payload_hash``.
+
+        Args:
+            payload_hash: Content hash.
+
+        Returns:
+            str | None: A resident key, or ``None`` when no other tenant
+            holds the content.
+        """
+        with self.lock:
+            copies = self.tenant_keys.get(payload_hash)
+            return min(copies) if copies else None
 
     def is_expired(self, content_hash: str, now: float) -> bool:
         """Whether a resident fragment has outlived its TTL.

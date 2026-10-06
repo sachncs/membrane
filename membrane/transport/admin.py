@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 class PlacementOverride(BaseModel):
     """``POST /admin/placement`` body."""
 
-    content_hash: str = Field(min_length=1, max_length=128)
+    content_hash: str = Field(min_length=1, max_length=256)
     primary_node_id: str = Field(min_length=1, max_length=128)
 
 
@@ -55,7 +55,7 @@ class BackupRequest(BaseModel):
 class EvictRequest(BaseModel):
     """``POST /admin/evict`` body."""
 
-    content_hash: str = Field(min_length=1, max_length=128)
+    content_hash: str = Field(min_length=1, max_length=256)
 
 
 class RepairRequest(BaseModel):
@@ -102,8 +102,9 @@ def create_admin_router() -> APIRouter:
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
         with node.lock:
-            fragment = node.fragments.get(content_hash)
-            if fragment is None:
+            key = node.locate(content_hash)
+            fragment = node.fragments.get(key) if key is not None else None
+            if key is None or fragment is None:
                 raise HTTPException(status_code=404, detail="not_found")
             request_audit_log(request).record(
                 actor=context.subject,
@@ -120,7 +121,8 @@ def create_admin_router() -> APIRouter:
                 "consistency": fragment.consistency,
                 "hlc": fragment.hlc,
                 "fingerprint_compat": fragment.fingerprint_compat,
-                "primary": content_hash in node.primary_hashes,
+                "key": key,
+                "primary": key in node.primary_hashes,
             }
 
     @router.post("/placement")
@@ -152,9 +154,10 @@ def create_admin_router() -> APIRouter:
         if node is None:
             raise HTTPException(status_code=503, detail="no node")
         with node.lock:
-            if payload.content_hash not in node.fragments:
+            key = node.locate(payload.content_hash)
+            if key is None:
                 raise HTTPException(status_code=404, detail="not_found")
-            node.remove_fragment(payload.content_hash)
+            node.remove_fragment(key)
         request_audit_log(request).record(
             actor=context.subject,
             action="admin.evict",

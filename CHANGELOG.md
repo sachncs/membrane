@@ -12,6 +12,31 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Fixed (tenants)
+
+- Two tenants storing byte-identical content each keep their own copy,
+  and both hit. Previously the node kept the first tenant's copy and the
+  second tenant's reads missed.
+  - A fragment is stored under its key: the bare content hash for the
+    `public` tenant, `<tenant>:<hash>` otherwise.
+  - `/retrieve` by bare hash returns the caller's copy, then the `public`
+    one; callers without a tenant or with `admin` fall back to any copy.
+  - The copies share one KV blob, deleted with the last copy (in memory
+    and in the warm tier).
+  - The ring places a key by its content hash.
+- `docs/security.md` claimed a `tenant:<id>` scope grants reads of that
+  tenant; no such scope exists, and the text now says so.
+
+### Breaking (tenants)
+
+- `/inventory`, persistence records, warm-tier entries, and the
+  `FragmentStored`/`FragmentRemoved` events name a non-`public` tenant's
+  fragment by `<tenant>:<hash>`. Records persisted by an earlier version
+  under the bare hash still restore (they are re-keyed on load); the
+  old record expires with its TTL.
+- Request models accept a `content_hash` of up to 256 characters (was
+  128), to fit a key.
+
 ### Added (scale out)
 
 - Incremental inventory digests:

@@ -271,7 +271,7 @@ class Disaggregation:
         tenant, scopes = caller_of(caller)
         cluster = self.view.cluster
         for content_hash in manifest["fragments"]:
-            if content_hash in self.node.fragments:
+            if self.node.locate(content_hash, tenant, scopes) is not None:
                 continue
             sources = []
             if cluster is not None:

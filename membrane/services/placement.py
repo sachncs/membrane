@@ -176,7 +176,7 @@ class ClusterView:
             list[str]: Node identifiers.
         """
         healthy = set(self.nodes())
-        found = [self.local_id] if content_hash in self.node.fragments else []
+        found = [self.local_id] if self.node.locate(content_hash) is not None else []
         if self.cluster is not None:
             found += sorted(n for n in self.cluster.directory.locate_fragment(content_hash) if n in healthy)
         return list(dict.fromkeys(found))
@@ -238,7 +238,8 @@ class ClusterView:
         Returns:
             Fragment | None: The fragment.
         """
-        return self.node.fragments.get(content_hash)
+        key = self.node.locate(content_hash)
+        return self.node.fragments.get(key) if key is not None else None
 
 
 class PlacementPolicy(Protocol):

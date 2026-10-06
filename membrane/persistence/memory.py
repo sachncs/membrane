@@ -84,7 +84,7 @@ class Memory:
         Returns:
             bool: Always ``True`` for the in-memory backend.
         """
-        h = fragment.identity.payload_hash
+        h = fragment.key
         self.fragments[h] = fragment
         self.node_fragments.setdefault(node_id, set()).add(h)
         if is_primary:

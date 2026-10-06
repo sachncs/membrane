@@ -79,7 +79,7 @@ class CachingPersistence:
             bool: True when the inner backend stored it.
         """
         with self.lock:
-            self.cache[fragment.identity.payload_hash] = fragment
+            self.cache[fragment.key] = fragment
         try:
             return self.inner.store_fragment(fragment, node_id, is_primary)
         except Exception as exc:
