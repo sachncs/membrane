@@ -190,8 +190,12 @@ class TestGossipStatePhase5:
 
 
 class TestGossipBuildStatePhase5:
-    def test_build_state_includes_bloom_and_merkle(self):
-        node = _FakeNode({"h1": MagicMock(), "h2": MagicMock()})
+    def test_build_state_includes_the_incremental_root(self):
+        from membrane.node import Node
+
+        node = Node("local")
+        for name in ("h1", "h2"):
+            node.store(make_fragment(name))
         ring = Ring()
         shard = Shard(ring)
         mem = Membership("local", ring, shard)
@@ -205,9 +209,10 @@ class TestGossipBuildStatePhase5:
             running=[False],
         )
         state = gossip.build_state()
-        # Bloom filter is non-empty.
-        assert len(state.inventory_bloom) > 0
-        # Merkle root is 32 bytes.
+        # The Bloom filter is no longer built; the root is the node's digest root.
+        assert state.inventory_bloom == b""
+        assert state.inventory_merkle_root == node.digest.root()
         assert len(state.inventory_merkle_root) == 32
-        # inventory_size == 2.
         assert state.inventory_size == 2
+        assert set(state.fragment_locations) == {"h1", "h2"}
+        assert all("local" in holders for holders in state.fragment_locations.values())

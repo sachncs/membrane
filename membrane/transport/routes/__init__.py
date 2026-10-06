@@ -27,6 +27,7 @@ from membrane.transport.routes.data import (
     handle_begin_upload,
     handle_get_blob,
     handle_inventory,
+    handle_inventory_buckets,
     handle_prefill,
     handle_put_blob,
     handle_retrieve,
@@ -87,9 +88,13 @@ def register_routes(app: FastAPI) -> None:
         session_id = request.headers.get(SESSION_HEADER, "")
         return handle_retrieve(app, content_hash, route_scope(request, "GET", "/retrieve"), session_id)
 
-    def inventory_handler(request: Request, after: str = "", limit: int = 0):
+    def inventory_handler(request: Request, after: str = "", limit: int = 0, bucket: int = -1):
         route_scope(request, "GET", "/inventory")
-        return handle_inventory(app, after, limit)
+        return handle_inventory(app, after, limit, bucket)
+
+    def inventory_buckets_handler(request: Request):
+        route_scope(request, "GET", "/inventory/buckets")
+        return handle_inventory_buckets(app)
 
     def peers_handler(request: Request):
         route_scope(request, "GET", "/peers")
@@ -99,6 +104,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_api_route("/metrics.json", metrics_json_handler, methods=["GET"])
     app.add_api_route("/retrieve", retrieve_handler, methods=["GET"])
     app.add_api_route("/inventory", inventory_handler, methods=["GET"])
+    app.add_api_route("/inventory/buckets", inventory_buckets_handler, methods=["GET"])
     app.add_api_route("/peers", peers_handler, methods=["GET"])
 
     limits = app_context(app).limits

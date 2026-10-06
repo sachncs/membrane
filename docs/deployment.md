@@ -88,7 +88,7 @@ peers still hold replicas). To survive restarts, give each node both:
 
 | Flag | Env | Stores |
 |------|-----|--------|
-| `--redis redis://host:6379/0` | `MEMBRANE_REDIS_URL` | Fragment metadata, written behind every store and removal by a background writer that retries through Redis outages |
+| `--redis redis://host:6379/0` | `MEMBRANE_REDIS_URL` | Fragment metadata, written behind every store and removal by a background writer that retries through Redis outages. Also `redis+sentinel://s1:26379,s2:26379/mymaster` (the current master, failing over with Sentinel) and `redis+cluster://n1:6379,n2:6379` (Redis Cluster); `rediss+` for TLS |
 | `--data-dir /var/lib/membrane` | `MEMBRANE_DATA_DIR` | KV bytes, AES-256-GCM encrypted, under `<data-dir>/blobs` |
 
 The data key is generated into `<data-dir>/master.key` (mode 0600) on

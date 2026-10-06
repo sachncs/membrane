@@ -120,6 +120,8 @@ jobs:
       - name: Verify Redis is reachable
         run: python -c "from membrane.persistence.redis import Redis; assert Redis().ping(), 'redis unreachable'"
       - run: pytest tests/membrane/persistence -q --timeout=300
+      - name: Redis Sentinel and Cluster
+        run: scripts/redis_topologies.sh
       # ACME end to end against Pebble (Let's Encrypt's test CA): it
       # validates HTTP-01 by fetching from this runner via host-gateway.
       - name: Start Pebble

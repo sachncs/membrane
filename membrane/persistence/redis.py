@@ -17,8 +17,20 @@ Key layout (all prefixed by ``prefix``):
   access timestamp; older scores are returned by
   :meth:`lru_candidates`.
 
-The backend performs writes in a Redis pipeline to keep them
-atomic from the client's point of view.
+The backend performs writes in a Redis pipeline: a ``MULTI`` transaction
+on a single server or behind Sentinel, and a non-transactional pipeline on
+Redis Cluster, where the keys of one write live in different hash slots.
+
+Topologies (see :func:`connect`):
+
+* ``redis://`` / ``rediss://`` — one server.
+* ``redis+sentinel://[:password@]host:port[,host:port...]/service[/db]`` —
+  the current master of ``service``, found through Sentinel; fails over
+  with it.
+* ``redis+cluster://[:password@]host:port[,host:port...]`` — Redis
+  Cluster; any reachable node seeds the slot map.
+
+The ``rediss+`` forms use TLS.
 
 Security:
     * The Redis connection URL should be treated as a secret.
@@ -32,6 +44,7 @@ import logging
 import math
 import time
 from typing import Any, cast
+from urllib.parse import parse_qs, unquote
 
 from membrane.fragment import Fragment
 from membrane.identity import PayloadIdentity
@@ -39,12 +52,108 @@ from membrane.identity import PayloadIdentity
 logger = logging.getLogger(__name__)
 
 
+SENTINEL_SCHEMES = frozenset({"redis+sentinel", "rediss+sentinel"})
+CLUSTER_SCHEMES = frozenset({"redis+cluster", "rediss+cluster"})
+
+
+def parse_multi_host(url: str) -> tuple[str, str | None, str | None, list[tuple[str, int]], list[str], dict[str, str]]:
+    """Split a multi-host Redis URL.
+
+    Args:
+        url: ``scheme://[user:password@]host:port[,host:port...][/path][?query]``.
+
+    Returns:
+        tuple: ``(scheme, username, password, hosts, path_parts, query)``.
+
+    Raises:
+        ValueError: On a URL without hosts or with a bad port.
+    """
+    scheme, sep, rest = url.partition("://")
+    if not sep:
+        raise ValueError("Redis URL needs a scheme")
+    rest, _, query_text = rest.partition("?")
+    netloc, _, path = rest.partition("/")
+    username = password = None
+    if "@" in netloc:
+        userinfo, netloc = netloc.rsplit("@", 1)
+        user, has_password, secret = userinfo.partition(":")
+        username = unquote(user) or None
+        password = unquote(secret) if has_password else None
+    default_port = 26379 if scheme in SENTINEL_SCHEMES else 6379
+    hosts: list[tuple[str, int]] = []
+    for item in filter(None, netloc.split(",")):
+        if item.startswith("["):  # [IPv6]:port
+            host, _, port = item[1:].partition("]")
+            port = port.removeprefix(":")
+        elif ":" in item:
+            host, _, port = item.rpartition(":")
+        else:
+            host, port = item, ""
+        hosts.append((host, int(port) if port else default_port))
+    if not hosts:
+        raise ValueError(f"Redis URL {scheme}:// names no hosts")
+    query = {k: v[-1] for k, v in parse_qs(query_text).items()}
+    return scheme, username, password, hosts, [unquote(p) for p in path.split("/") if p], query
+
+
+def connect(redis_url: str) -> tuple[Any, bool]:
+    """Open a Redis client for any supported topology.
+
+    Args:
+        redis_url: ``redis://``, ``redis+sentinel://``, or ``redis+cluster://``
+            URL (``rediss`` variants use TLS).
+
+    Returns:
+        tuple[Any, bool]: The client, and whether it talks to Redis Cluster.
+
+    Raises:
+        ValueError: On a malformed Sentinel or Cluster URL.
+    """
+    import redis
+
+    scheme = redis_url.partition("://")[0]
+    if scheme not in SENTINEL_SCHEMES | CLUSTER_SCHEMES:
+        return redis.from_url(redis_url, decode_responses=True), False
+    _scheme, username, password, hosts, path, query = parse_multi_host(redis_url)
+    tls = scheme.startswith("rediss")
+    timeout = float(query.get("socket_timeout", "5"))
+    if scheme in CLUSTER_SCHEMES:
+        from redis.cluster import ClusterNode, RedisCluster
+
+        client = RedisCluster(
+            startup_nodes=[ClusterNode(host, port) for host, port in hosts],
+            username=username,
+            password=password,
+            ssl=tls,
+            decode_responses=True,
+            socket_timeout=timeout,
+        )
+        return client, True
+    from redis.sentinel import Sentinel
+
+    if not path:
+        raise ValueError("redis+sentinel:// URLs name the service: redis+sentinel://host:26379/mymaster[/db]")
+    service = path[0]
+    db = int(path[1]) if len(path) > 1 else int(query.get("db", "0"))
+    sentinel = Sentinel(
+        hosts,
+        socket_timeout=timeout,
+        sentinel_kwargs={"password": query["sentinel_password"]} if "sentinel_password" in query else None,
+        ssl=tls,
+    )
+    master = sentinel.master_for(
+        service, db=db, username=username, password=password, decode_responses=True, socket_timeout=timeout, ssl=tls
+    )
+    return master, False
+
+
 class Redis:
     """Redis-backed persistence layer for Membrane fragments.
 
     Args:
-        redis_url: Redis connection URL
-            (e.g., ``redis://localhost:6379/0``).
+        redis_url: Redis connection URL (e.g., ``redis://localhost:6379/0``,
+            ``redis+sentinel://s1:26379,s2:26379/mymaster``, or
+            ``redis+cluster://n1:6379,n2:6379``).
         prefix: Key prefix for Membrane data
             (default ``membrane:``).
     """
@@ -64,12 +173,20 @@ class Redis:
         # ``redis`` package is not installed.
         import redis
 
-        self.client = redis.from_url(redis_url, decode_responses=True)
+        self.client, self.cluster = connect(redis_url)
         self.prefix = prefix
 
         # Expose RedisError so callers can narrow exception handling
         # without re-importing redis themselves.
         self.RedisError = redis.RedisError
+
+    def pipeline(self) -> Any:
+        """Open a write pipeline (transactional except on Redis Cluster).
+
+        Returns:
+            Any: A redis-py pipeline.
+        """
+        return self.client.pipeline(transaction=not self.cluster)
 
     def key_for(self, suffix: str) -> str:
         """Return the prefixed Redis key for ``suffix``.
@@ -107,7 +224,7 @@ class Redis:
         # Use a pipeline so the fragment, the per-node set, the
         # primary key, and the LRU score are written atomically
         # from the client's perspective.
-        pipe = self.client.pipeline()
+        pipe = self.pipeline()
         # redis-py's Mapping type accepts dict[str, str] at runtime
         # but the stub signature uses a Union of bytes/bytearray/etc.
         # The cast to the broader Mapping type satisfies mypy without
@@ -153,7 +270,7 @@ class Redis:
         Returns:
             bool: True if removed.
         """
-        pipe = self.client.pipeline()
+        pipe = self.pipeline()
         pipe.delete(self.key_for(f"frag:{content_hash}"))
         pipe.delete(self.key_for(f"primary:{content_hash}"))
         pipe.zrem(self.key_for("lru"), content_hash)
@@ -379,5 +496,9 @@ class Redis:
 
 
 __all__ = [
+    "CLUSTER_SCHEMES",
+    "SENTINEL_SCHEMES",
     "Redis",
+    "connect",
+    "parse_multi_host",
 ]

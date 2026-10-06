@@ -271,6 +271,11 @@ class Node:
         self.table.memory_usage = value
 
     @property
+    def digest(self) -> Any:
+        """Bucketed inventory digest (:class:`~membrane.store.digest.InventoryDigest`)."""
+        return self.table.digest
+
+    @property
     def lock(self) -> threading.RLock:
         """The table lock; hold it to make several operations atomic."""
         return self.table.lock

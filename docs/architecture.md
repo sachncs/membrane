@@ -82,6 +82,7 @@ cluster, and HTTP transport together. The pieces live in
 |-------|--------|------|
 | `Node` | `membrane/node.py` | Holds fragments in memory; TTL expiry, weighted-LRU and graph-aware eviction, tenant checks. Reads take no lock (per-thread access buffers merged on eviction); writes hold the table lock |
 | `Index` | `membrane/index.py` | Facade over exact, semantic, positional, and co-access indices |
+| `InventoryDigest` | `membrane/store/digest.py` | Bucketed (1,024) set digest of the node's fragments, updated in O(1) on every store and removal; serves `/inventory/buckets` and per-bucket paging |
 | `ContentStore` implementations | `membrane/content_store.py` | KV bytes: `InProcessBytes`, `FilesystemBlob` (AES-256-GCM); `EncryptedInProcessBytes` in `content_store_encrypted.py` |
 | `Memory`, `Redis`, `CachingPersistence` | `membrane/persistence/` | Persistence backends for node state, written behind by `PersistenceWriter` |
 | `Sweeper`, `TombstoneTable` | `membrane/gc.py` | Periodic TTL sweep and soft-delete propagation |
@@ -108,10 +109,11 @@ writes them to a `ContentStore`.
 | `Cluster` | Owns the subsystems below and the background threads; restarts a loop that raises |
 | `Membership` | Peer table; seed bootstrap with retry |
 | `Heartbeat`, `ThresholdDetector` | Liveness and failure detection |
-| `Gossip`, `GossipState` | Membership, fragment locations, Bloom / Merkle inventory digests (cached on large inventories), tombstones |
+| `Gossip`, `GossipState` | Membership, sampled fragment locations, the inventory digest root, tombstones |
 | `Ring`, `Shard` | Consistent-hash placement of primaries and replicas |
 | `Peer`, `PeerCredentials` | Outbound HTTP(S) client; bearer key or mTLS client cert |
-| `Replicator` | Keeps primaries replicated (new primaries each sweep, a digest-based full pass every `repair_interval_sec`) and rebalances ownership when membership changes, through verified hand-offs (`membrane/replication.py`) |
+| `Replicator` | Keeps primaries replicated (new primaries each sweep, and every `repair_interval_sec` a pass that pages only the inventory buckets that changed) and rebalances ownership when membership changes, through verified hand-offs (`membrane/replication.py`) |
+| `Registry` | Fragment locations: a bounded, thread-safe LRU of hints; unknown hashes resolve through the ring |
 
 Outbound peer URLs pass the SSRF guard
 (`membrane/security/url_allowlist.py`): seed hosts and the configured

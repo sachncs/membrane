@@ -58,8 +58,8 @@ def test_gossip_state_is_safe_under_concurrent_writes() -> None:
     try:
         deadline = time.monotonic() + 1.0
         while time.monotonic() < deadline:
-            gossip.build_state()
-            gossip._Gossip__inventory_pairs()  # name-mangled private
+            state = gossip.build_state()
+            assert state.inventory_size >= 0
     finally:
         stop.set()
         thread.join()
@@ -213,7 +213,7 @@ def make_gossip(node: Node, **config) -> Gossip:
     )
 
 
-def test_small_inventory_summary_tracks_every_change() -> None:
+def test_inventory_summary_tracks_every_change_without_rebuilding() -> None:
     node = Node("local", max_memory_bytes=10**7)
     gossip = make_gossip(node)
     first = gossip.build_state()
@@ -221,18 +221,6 @@ def test_small_inventory_summary_tracks_every_change() -> None:
     second = gossip.build_state()
     assert second.inventory_size == first.inventory_size + 1
     assert second.inventory_merkle_root != first.inventory_merkle_root
-
-
-def test_large_inventory_summary_is_reused_until_stale(monkeypatch) -> None:
-    from membrane.network import gossip as gossip_module
-
-    monkeypatch.setattr(gossip_module, "SMALL_INVENTORY", 2)
-    node = Node("local", max_memory_bytes=10**7)
-    for name in ("a", "b", "c"):
-        node.store(make_fragment(name))
-    gossip = make_gossip(node, inventory_summary_interval_sec=0.2)
-    built = gossip.build_state()
-    node.store(make_fragment("d"))
-    assert gossip.build_state().inventory_size == built.inventory_size  # cached
-    time.sleep(0.25)
-    assert gossip.build_state().inventory_size == built.inventory_size + 1  # rebuilt
+    with node.lock:
+        node.remove_fragment("a")
+    assert gossip.build_state().inventory_merkle_root == first.inventory_merkle_root  # same set, same root

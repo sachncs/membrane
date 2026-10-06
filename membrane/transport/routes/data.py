@@ -17,6 +17,7 @@ from membrane.transport.ops import (
     MAX_BODY_BYTES,
     op_get_blob,
     op_inventory,
+    op_inventory_buckets,
     op_prefill,
     op_put_blob,
     op_retrieve,
@@ -111,13 +112,14 @@ def handle_store(app: FastAPI, req: StoreRequest, request: Request):
     return respond(status, body)
 
 
-def handle_inventory(app: FastAPI, after: str = "", limit: int = 0):
-    """Serve ``GET /inventory`` (``?after=&limit=`` pages through large nodes).
+def handle_inventory(app: FastAPI, after: str = "", limit: int = 0, bucket: int = -1):
+    """Serve ``GET /inventory`` (``?after=&limit=`` pages; ``?bucket=N`` one bucket).
 
     Args:
         app: The FastAPI application.
         after: Page cursor.
         limit: Page size; ``0`` for everything (capped at 100,000 per page).
+        bucket: Only this bucket (``-1``: every bucket).
 
     Returns:
         object: The HTTP response.
@@ -127,7 +129,25 @@ def handle_inventory(app: FastAPI, after: str = "", limit: int = 0):
         transport_metrics_for(app),
         "inventory",
         "GET",
-        lambda: op_inventory(app_context(app).node, after=after, limit=limit),
+        lambda: op_inventory(app_context(app).node, after=after, limit=limit, bucket=bucket if bucket >= 0 else None),
+    )
+    return respond(status, body)
+
+
+def handle_inventory_buckets(app: FastAPI):
+    """Serve ``GET /inventory/buckets``.
+
+    Args:
+        app: The FastAPI application.
+
+    Returns:
+        object: The HTTP response.
+    """
+    status, body = record_transport(
+        transport_metrics_for(app),
+        "inventory_buckets",
+        "GET",
+        lambda: op_inventory_buckets(app_context(app).node),
     )
     return respond(status, body)
 
@@ -335,6 +355,7 @@ __all__ = [
     "handle_begin_upload",
     "handle_get_blob",
     "handle_inventory",
+    "handle_inventory_buckets",
     "handle_prefill",
     "handle_put_blob",
     "handle_retrieve",

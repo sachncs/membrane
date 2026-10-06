@@ -28,11 +28,12 @@ import threading
 import time
 from collections.abc import Callable
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from membrane.node import Node
 from membrane.replication import hand_off_primary, payload_for, replicate_fragment
 from membrane.ring import EmptyRingError
+from membrane.store.digest import BUCKETS, bucket_of, fold
 from membrane.transfer import TransferService
 
 if TYPE_CHECKING:
@@ -105,6 +106,9 @@ class Replicator:
         self.migrator = migrator
         #: Fragments each peer lacked at its last full pass (repair drift).
         self.drift: dict[str, int] = {}
+        #: Per peer, per bucket: ``(peer digest, local expectation)`` when the
+        #: bucket was last verified complete.
+        self.verified: dict[str, dict[int, tuple[int, int]]] = {}
 
     def replicate_cluster(
         self,
@@ -225,7 +229,13 @@ class Replicator:
     def push_missing(self, peer_id: str, hashes: list[str]) -> set[str]:
         """Push the fragments in ``hashes`` that ``peer_id`` lacks.
 
-        One ``GET /inventory`` replaces a probe per fragment.
+        The peer's inventory is compared bucket by bucket
+        (:mod:`membrane.store.digest`): one request fetches its bucket
+        digests, and only buckets where the peer's digest or the local
+        expectation changed since they were last verified are paged. On a
+        quiet cluster a pass costs one small request per peer, whatever the
+        data size. A peer without bucket digests gets one full inventory
+        request instead.
 
         Args:
             peer_id: Destination peer id.
@@ -240,22 +250,90 @@ class Replicator:
         if client is None:
             return set(hashes)
         try:
+            remote = client.bucket_digests()
+        except Exception as exc:
+            logger.debug("replication: bucket digests from %s failed: %s", peer_id, exc)
+            remote = None
+        if remote is None or len(remote) != BUCKETS:
+            return self.push_missing_full(client, peer_id, hashes)
+        groups: dict[int, dict[str, int]] = {}
+        for content_hash in hashes:
+            fragment = self.node.fragments.get(content_hash)
+            if fragment is not None:
+                groups.setdefault(bucket_of(content_hash), {})[content_hash] = fragment.version_id
+        verified = self.verified.setdefault(peer_id, {})
+        failed: set[str] = set()
+        missing_total = 0
+        for bucket, expected in groups.items():
+            if self.stop_event is not None and self.stop_event.is_set():
+                break
+            state = (remote[bucket], fold(expected))
+            if verified.get(bucket) == state:
+                continue  # neither side changed since this bucket was verified
+            try:
+                held = client.inventory_bucket(bucket)
+            except Exception as exc:
+                logger.debug("replication: bucket %s from %s failed: %s", bucket, peer_id, exc)
+                held = None
+            if held is None:
+                failed |= set(expected)
+                continue
+            missing = [h for h, v in expected.items() if held.get(h, 0) < v]
+            missing_total += len(missing)
+            bucket_failed = self.push_all(client, peer_id, missing)
+            failed |= bucket_failed
+            if not missing:
+                verified[bucket] = state
+            elif not bucket_failed:
+                verified.pop(bucket, None)  # our pushes changed the peer's digest: verify next pass
+        self.drift[peer_id] = missing_total
+        return failed
+
+    def push_missing_full(self, client: Any, peer_id: str, hashes: list[str]) -> set[str]:
+        """Push what ``peer_id`` lacks using one full inventory request.
+
+        Args:
+            client: The peer's client.
+            peer_id: Destination peer id.
+            hashes: Content hashes the peer should hold.
+
+        Returns:
+            set[str]: Hashes that could not be confirmed or pushed.
+        """
+        try:
             held = client.inventory_digest()
         except Exception as exc:
             logger.debug("replication: inventory from %s failed: %s", peer_id, exc)
             return set(hashes)
         if held is None:
             return set(hashes)
-        self.drift[peer_id] = sum(1 for h in hashes if h not in held)
+        missing = [h for h in hashes if h not in held]
+        self.drift[peer_id] = len(missing)
+        return self.push_all(client, peer_id, missing)
+
+    def push_all(self, client: Any, peer_id: str, hashes: list[str]) -> set[str]:
+        """Replicate each of ``hashes``, bytes included, to the peer.
+
+        Args:
+            client: The peer's client.
+            peer_id: Destination peer id.
+            hashes: Content hashes to push.
+
+        Returns:
+            set[str]: Hashes that failed.
+        """
         failed: set[str] = set()
+        node = self.node
+        if node is None:
+            return set(hashes)
         for content_hash in hashes:
-            if content_hash in held or (self.stop_event is not None and self.stop_event.is_set()):
-                continue
-            fragment = self.node.retrieve(content_hash)
+            if self.stop_event is not None and self.stop_event.is_set():
+                break
+            fragment = node.retrieve(content_hash)
             if fragment is None:
                 continue
             try:
-                payload = payload_for(fragment, self.node.content_store)
+                payload = payload_for(fragment, node.content_store)
                 ok = self.__guarded(partial(replicate_fragment, client, fragment, payload))
             except Exception as exc:
                 logger.debug("replication of %s to %s failed: %s", content_hash, peer_id, exc)

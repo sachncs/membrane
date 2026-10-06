@@ -12,6 +12,46 @@ only, a modular and hardened runtime, logging-only output, and complete
 docstrings. Several changes affect operators; read **Breaking** before
 upgrading.
 
+### Added (scale out)
+
+- Incremental inventory digests:
+  - 1,024 buckets, updated in O(1) on every store and removal;
+  - served by `GET /inventory/buckets`, with `GET /inventory?bucket=N`
+    paging one bucket;
+  - whole-inventory paging walks the buckets instead of sorting
+    everything for every page.
+- Repair pages only the buckets whose digest (on the peer or locally)
+  changed since they were last verified. A quiet cluster repairs with
+  one small request per peer, not a full inventory transfer.
+- Gossip carries the digest root (O(1)) instead of rebuilding a Bloom
+  filter and Merkle tree over every fragment.
+- The location registry is a bounded, thread-safe LRU
+  (`max_location_entries`, default 200,000). Placement falls back to
+  ring owners for hashes it does not record.
+- `redis+sentinel://` and `redis+cluster://` persistence URLs (and
+  `rediss+` forms). These are tested against real Sentinel and Redis
+  Cluster in CI (`scripts/redis_topologies.sh`).
+- The kind e2e scales to 5 nodes and fails if any node owns more than
+  30% of the primaries after rebalancing.
+
+### Fixed (scale out)
+
+- Gossip compared inventory roots between nodes that hold different
+  shards (never equal by design), so every message triggered an O(n)
+  "diff". That diff then attempted a pull that could never send
+  anything. Both are removed; repair belongs to the replicator.
+- Sampled gossip locations left out the sender itself, so peers often
+  learned no holder for a sampled fragment.
+- `GET /inventory` paging sorted the whole inventory for every page.
+
+### Breaking (scale out)
+
+- Paged `GET /inventory` returns pages in bucket order, with an opaque
+  `next` cursor (use it as returned).
+- `inventory_bloom` in gossip is always empty, and the
+  `inventory_summary_interval_sec`, `gossip_payload_expected_items`, and
+  `gossip_payload_fpr` cluster settings are gone.
+
 ### Added (scale up)
 
 - Free-threaded Python 3.14 support:
