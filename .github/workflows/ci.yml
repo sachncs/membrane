@@ -137,7 +137,7 @@ jobs:
           MEMBRANE_PEBBLE_CA: ${{ runner.temp }}/pebble.minica.pem
         run: |
           pytest tests/membrane/transport/test_acme.py -q --timeout=300
-          pytest tests/membrane/transport/test_acme.py -q -k pebble 2>&1 | grep -q "1 passed"
+          pytest tests/membrane/transport/test_acme.py -q -k pebble 2>&1 | grep "1 passed"
 
   extended:
     name: Stress, chaos & bench smoke
@@ -237,7 +237,7 @@ jobs:
             -d '{"prompt_tokens":[1,2,3,4],"model_id":"ci"}' localhost:8080/prefill
           docker stop -t 40 smoke
           test "$(docker inspect -f '{{.State.ExitCode}}' smoke)" = 0
-          docker logs smoke 2>&1 | grep -q '"drain complete'
+          docker logs smoke 2>&1 | grep '"drain complete' >/dev/null
       - name: Container logs
         if: always()
         run: docker logs smoke 2>&1 || true
@@ -271,8 +271,8 @@ jobs:
           set -euo pipefail
           docker run -d --name smoke-ft -p 8081:8080 -e MEMBRANE_ALLOW_UNAUTHENTICATED=true membrane:ci-ft
           for _ in $(seq 1 30); do curl -fsS localhost:8081/readyz && break; sleep 1; done
-          curl -fsS localhost:8081/metrics | grep -q '^membrane_gil_enabled 0.0'
-          curl -fsS localhost:8081/metrics | grep -q '^membrane_http_event_loops 4.0'
+          curl -fsS localhost:8081/metrics | grep '^membrane_gil_enabled 0.0'
+          curl -fsS localhost:8081/metrics | grep '^membrane_http_event_loops 4.0'
           curl -fsS -H 'Content-Type: application/json' -d '{"prompt_tokens":[1,2,3,4],"model_id":"ci"}' \
             localhost:8081/prefill
           docker stop -t 40 smoke-ft
