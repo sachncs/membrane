@@ -86,8 +86,10 @@ The secret settings `--api-key-file`, `--peer-api-key-file`,
 `--api-key` accept `secret://NAME` in place of a file or value. It is
 resolved through `--secret-provider`:
 `env` (environment variables, the default), `aws` (Secrets Manager;
-`AWS_REGION`), `gcp` (Secret Manager; `GOOGLE_CLOUD_PROJECT`), or
-`vault` (`VAULT_ADDR`, `VAULT_TOKEN`), or an installed
+`AWS_REGION`, and `AWS_PROFILE` for a named profile), `gcp` (Secret
+Manager; `GOOGLE_CLOUD_PROJECT`), or `vault` (`VAULT_ADDR`,
+`VAULT_TOKEN`; reads the `value` field of a KV v2 secret on the `secret`
+mount), or an installed
 `membrane.secret_providers` plugin. The secret never touches disk.
 
 Authentication failures return `401` with `WWW-Authenticate: Bearer`;

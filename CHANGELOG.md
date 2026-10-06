@@ -97,6 +97,53 @@ upgrading.
   startup warning when a free-threaded node runs with the GIL.
 - `scripts/bench_http.py` measures `/retrieve` throughput of one node.
 
+### Added (capacity and coverage)
+
+- `scripts/kind_capacity.sh` and the `kind-capacity` CI job measure read
+  capacity on kind, with every pod limited to 250m CPU. 5 nodes served
+  1.73x the reads of 3 (3,293 vs 1,906 reads/s); the job fails below
+  1.5x. `kind_load.py` gains `seed` and `capacity` modes, and both kind
+  scripts share `scripts/kind_lib.sh`.
+- Coverage gates: CI fails below 84% total or when any module is under
+  70% (`tools/check_coverage.py`). Generated protobuf modules are left
+  out of coverage. Now 92.8% total; the lowest module is above 70%.
+
+### Fixed (found by the new tests)
+
+- `/delete`, `/tombstone`, and `/purge` never saw the server's tombstone
+  table: deletes left no tombstone, and `/tombstone` always answered
+  "no tombstone table configured".
+- `/admin/policy` was a stub: GET returned zeros and POST changed nothing.
+  It now reads and sets the live promotion thresholds, and answers 409
+  when promotion is off.
+- `/verify` hashed the blob named by the content hash instead of the
+  fragment's `payload_ref`.
+- `TransferService.pull_from_remote` stored a pulled fragment without
+  its KV bytes.
+- `CachingPersistence.inventory_digest` called its backend without the
+  node id the backends require, and reported the resulting error as an
+  outage.
+- The Vault provider's default prefix `secret/data` produced
+  `/v1/secret/data/data/<name>` for KV v2; the default is now the
+  `secret` mount (a `secret/data` prefix still works).
+- The AWS provider passed `profile_name` to `boto3.client()`, which does
+  not accept it, so `AWS_PROFILE` broke every lookup.
+- `KVBackend(device="auto")` without CUDA used the device `"auto"`
+  instead of the CPU.
+- `membrane llm-status` always showed backend "unknown": `/metrics.json`
+  now includes `backend_name`.
+- The setup wizard accepted the `grpc` transport, which the server does
+  not offer; the remote dashboard ended with a traceback on Ctrl+C, and
+  its footer offered a `Q` key that did nothing.
+
+### Breaking (found by the new tests)
+
+- `GET`/`POST /admin/policy` answer 409 when promotion is off
+  (`--promote-replicas 0` or no cluster); they used to answer 200 with
+  values that had no effect. The body adds `max_replicas`.
+- `VaultSecretProvider.path_prefix` defaults to `secret` (the mount
+  point) instead of `secret/data`.
+
 ### Changed (scale up)
 
 - Node reads scale with cores for real request keys. Every request

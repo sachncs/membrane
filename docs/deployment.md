@@ -137,10 +137,11 @@ Measured on a 12-core laptop:
 | Workload | GIL build | Free-threaded |
 |----------|-----------|---------------|
 | `GET /retrieve` over HTTP (ApacheBench, keep-alive) | 6.1k req/s with 1 or 4 loops | 8.2k req/s with 1 loop, 15.4k with 2 (the load generator saturates beyond) |
-| `Node.retrieve` from 4 threads vs 1 (in process) | 1.0x | 2.7x |
+| `Node.retrieve` from 4 threads vs 1 (in process, each thread parsing its own keys) | 1.0x | 3.2x (8.1M reads/s) |
 
-The read path takes no lock. Each request thread records reads in its own
-buffer, and long-lived objects use deferred reference counting
+The read path takes no lock. Each request thread reads through its own
+cache of the fragment table and records reads in its own buffer, and
+long-lived objects use deferred reference counting
 (`membrane.runtime.concurrency.share`), so threads do not contend on a
 shared reference count. `membrane_gil_enabled` (0 or 1) and
 `membrane_http_event_loops` report what a node is running with. A

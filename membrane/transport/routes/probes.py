@@ -97,7 +97,7 @@ def handle_metrics(app: FastAPI):
 
 
 def metrics_json(app: FastAPI):
-    """``GET /metrics.json`` — legacy JSON snapshot for the TUI.
+    """``GET /metrics.json`` — JSON snapshot for the TUI and ``membrane llm-status``.
 
     Args:
         app: The FastAPI application.
@@ -105,7 +105,10 @@ def metrics_json(app: FastAPI):
     Returns:
         object: The JSON metrics snapshot.
     """
-    status, body = op_metrics(app_context(app).node)
+    context = app_context(app)
+    status, body = op_metrics(context.node)
+    if isinstance(body, dict) and context.compute_backend is not None:
+        body["backend_name"] = context.compute_backend.device_name()
     return respond(status, body)
 
 

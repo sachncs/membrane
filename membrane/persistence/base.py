@@ -124,12 +124,15 @@ class Inventory(Protocol):
         """
         ...
 
-    def inventory_digest(self) -> dict[str, int]:
-        """``content_hash -> version_id`` for every stored fragment.
+    def inventory_digest(self, node_id: str) -> dict[str, int]:
+        """``content_hash -> version_id`` for every fragment ``node_id`` stores.
+
+        Args:
+            node_id: Node identifier.
 
         Returns:
-            dict[str, int]: ``content_hash -> version_id`` for every stored
-            fragment.
+            dict[str, int]: ``content_hash -> version_id`` for the node's
+            fragments.
         """
         ...
 

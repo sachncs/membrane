@@ -8,6 +8,8 @@ the placement override takes effect end-to-end.
 
 import pytest
 
+from tests.conftest import with_promoter
+
 
 class TestAdminPlacementOverride:
     def test_placement_override_takes_effect(self):
@@ -90,6 +92,7 @@ class TestAdminPlacementOverride:
 
         log = AuditLog()
         app = FastAPI()
+        with_promoter(app)
         app.state.cluster_manager = _StubCluster()
         app.state.audit_log = log
         app.include_router(create_admin_router())

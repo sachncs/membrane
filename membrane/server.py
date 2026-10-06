@@ -280,6 +280,7 @@ class Server:
             queue_depth=self.queue_depth,
         )
         self.transport.app.state.services = self.services
+        self.transport.app.state.tombstones = self.tombstones
         mount_disagg(self.transport.app, self.services.disagg)
         self.grpc_port = grpc_port
         self.grpc_server: Any = None

@@ -171,7 +171,7 @@ def verify_replica(target: ReplicaTarget, fragment: Fragment, payload: bytes | N
         bool: True when the metadata is present and, if the fragment has
         a payload, the peer's digest matches the local bytes.
     """
-    if target.retrieve_fragment(fragment.identity.payload_hash) is None:
+    if target.retrieve_fragment(fragment.key) is None:
         return False
     if fragment.payload_ref is None:
         return True

@@ -152,17 +152,20 @@ class CachingPersistence:
             return False
         return True
 
-    def inventory_digest(self) -> dict[str, int]:
+    def inventory_digest(self, node_id: str) -> dict[str, int]:
         """Return the inventory digest from the inner backend.
 
         The cache does not maintain its own digest (the canonical digest
         lives in Redis) — caching here would risk divergence.
 
+        Args:
+            node_id: Node identifier.
+
         Returns:
             dict[str, int]: The inventory digest from the inner backend.
         """
         try:
-            return self.inner.inventory_digest()
+            return self.inner.inventory_digest(node_id)
         except Exception as exc:
             self.on_unavailable("inventory_digest", exc)
             return {}

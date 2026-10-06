@@ -647,7 +647,7 @@ class TransferService:
             fragment = src_endpoint.retrieve(content_hash)
             if fragment is None:
                 return False
-            return tgt_endpoint.store(fragment, is_primary=False)
+            return tgt_endpoint.store(fragment, is_primary=False, payload=src_endpoint.payload(fragment))
         if not isinstance(tgt_endpoint, ClusterPeerEndpoint):
             return False
         # Remote target: chain peer-to-peer.

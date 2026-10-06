@@ -2,6 +2,8 @@
 
 import pytest
 
+from tests.conftest import with_promoter
+
 
 class TestAdminAuditEndToEnd:
     def test_admin_evict_writes_audit_entry(self):
@@ -127,6 +129,7 @@ class TestAdminAuditEndToEnd:
         node = Node(node_id="n1", max_memory_bytes=10_000)
         log = AuditLog()
         app = FastAPI()
+        with_promoter(app)
         app.state.node = node
         app.state.audit_log = log
         app.include_router(create_admin_router())

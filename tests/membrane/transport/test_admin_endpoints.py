@@ -2,6 +2,8 @@
 
 import pytest
 
+from tests.conftest import with_promoter
+
 
 class TestAdminEndpoints:
     def test_inspect_returns_fragment_metadata(self):
@@ -163,7 +165,7 @@ class TestAdminEndpoints:
         resp = client.post("/admin/repair", json={"peer_node_id": "peer-1"})
         assert resp.status_code == 503
 
-    def test_policy_get_returns_default(self):
+    def test_policy_get_returns_the_live_thresholds(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
@@ -172,16 +174,15 @@ class TestAdminEndpoints:
 
         node = Node(node_id="n1", max_memory_bytes=10_000)
         app = FastAPI()
+        with_promoter(app)
         app.state.node = node
         app.include_router(create_admin_router())
         client = TestClient(app)
         resp = client.get("/admin/policy")
         assert resp.status_code == 200
-        body = resp.json()
-        assert "min_reuse_score" in body
-        assert "demand_threshold" in body
+        assert resp.json() == {"min_reuse_score": 0.7, "demand_threshold": 3, "max_replicas": 3}
 
-    def test_policy_post_echoes(self):
+    def test_policy_post_changes_the_live_thresholds(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
@@ -190,6 +191,7 @@ class TestAdminEndpoints:
 
         node = Node(node_id="n1", max_memory_bytes=10_000)
         app = FastAPI()
+        with_promoter(app)
         app.state.node = node
         app.include_router(create_admin_router())
         client = TestClient(app)
@@ -201,3 +203,17 @@ class TestAdminEndpoints:
         body = resp.json()
         assert body["min_reuse_score"] == 0.6
         assert body["demand_threshold"] == 5
+        assert client.get("/admin/policy").json()["min_reuse_score"] == 0.6
+
+
+def test_policy_is_409_when_promotion_is_off():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from membrane.transport.admin import create_admin_router
+
+    app = FastAPI()
+    app.include_router(create_admin_router())
+    client = TestClient(app)
+    assert client.get("/admin/policy").status_code == 409
+    assert client.post("/admin/policy", json={"min_reuse_score": 0.5, "demand_threshold": 1}).status_code == 409

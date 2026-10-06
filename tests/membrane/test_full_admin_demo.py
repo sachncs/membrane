@@ -7,6 +7,8 @@ test demonstrates the v3.0+ observability story end-to-end.
 
 import pytest
 
+from tests.conftest import with_promoter
+
 
 class TestFullAdminDemo:
     def test_full_admin_audit_workflow(self):
@@ -73,6 +75,7 @@ class TestFullAdminDemo:
             replicator = None
 
         app = FastAPI()
+        with_promoter(app)
         app.state.node = node
         app.state.cluster_manager = _StubCluster()
         app.state.audit_log = log

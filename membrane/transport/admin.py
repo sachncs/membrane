@@ -20,6 +20,7 @@ Operations:
 * ``GET /admin/audit`` -- query the audit log.
 """
 
+import dataclasses
 import logging
 from typing import Any
 
@@ -182,20 +183,39 @@ def create_admin_router() -> APIRouter:
         )
         return {"peer_node_id": payload.peer_node_id, "repair_started": True}
 
+    def promoter(request: Request) -> Any:
+        """The live hot-fragment promoter.
+
+        Raises:
+            HTTPException: 409 when promotion is off.
+        """
+        services = getattr(app_context(request.app).server, "services", None)
+        found = getattr(services, "promoter", None)
+        if found is None:
+            raise HTTPException(status_code=409, detail="promotion is off (--promote-replicas 0, or no cluster)")
+        return found
+
+    def policy_view(config: Any) -> dict[str, Any]:
+        return {
+            "min_reuse_score": config.reuse_threshold,
+            "demand_threshold": config.demand_threshold,
+            "max_replicas": config.max_replicas,
+        }
+
     @router.get("/policy")
     async def admin_get_policy(request: Request) -> dict[str, Any]:
-        """Return the current :class:`Promotion` knobs."""
+        """Return the live promotion thresholds (:class:`~membrane.policy.PromotionConfig`)."""
         admin_scope(request, "GET", "/admin/policy")
-        return {
-            "min_reuse_score": 0.0,
-            "demand_threshold": 0,
-            "note": "policy surface is read-write in 3.1; the live Promotion instance is composed at Server construction",
-        }
+        return policy_view(promoter(request).policy.config)
 
     @router.post("/policy")
     async def admin_set_policy(payload: PolicyUpdate, request: Request) -> dict[str, Any]:
-        """Set the :class:`Promotion` knobs."""
+        """Change the live promotion thresholds; the next promotion pass uses them."""
         context = admin_scope(request, "POST", "/admin/policy")
+        policy = promoter(request).policy
+        policy.config = dataclasses.replace(
+            policy.config, reuse_threshold=payload.min_reuse_score, demand_threshold=payload.demand_threshold
+        )
         request_audit_log(request).record(
             actor=context.subject,
             action="admin.policy.update",
@@ -204,10 +224,7 @@ def create_admin_router() -> APIRouter:
                 "demand_threshold": payload.demand_threshold,
             },
         )
-        return {
-            "min_reuse_score": payload.min_reuse_score,
-            "demand_threshold": payload.demand_threshold,
-        }
+        return policy_view(policy.config)
 
     @router.get("/audit")
     async def admin_audit(request: Request) -> dict[str, Any]:
