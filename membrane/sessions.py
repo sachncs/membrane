@@ -17,16 +17,16 @@ Typical consumers:
   frequently accessed together.
 
 Thread safety:
-    The current implementation is *not* thread-safe. Callers running
-    in multi-threaded contexts should serialize access via an
-    external lock or replace ``self.sessions`` with a
-    thread-safe mapping. The classes here are mutable by design so
-    that callers can manage their own concurrency primitives.
+    :class:`Sessions` serializes its own updates with a lock, so the
+    HTTP handlers of a running server share one tracker.
 
 Limitations:
     * All state is held in memory; no persistence to the canonical
       store or to disk is performed. Restarting the process discards
       the history.
+    * The tracker is bounded: at most ``max_sessions`` sessions (the
+      least recently active are dropped) of at most ``max_history``
+      accesses each (the oldest are dropped).
 """
 
 import logging
@@ -34,7 +34,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
+
+MAX_SESSIONS = 10_000
+MAX_HISTORY = 1_000
 
 
 @dataclass
@@ -67,13 +72,20 @@ class Sessions:
             tracker methods to preserve invariants.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_sessions: int = MAX_SESSIONS, max_history: int = MAX_HISTORY) -> None:
         """Initialize an empty session tracker.
 
         The internal ``sessions`` dict starts empty; sessions are
         created lazily by :meth:`record_access`.
+
+        Args:
+            max_sessions: Sessions kept; the least recently active go first.
+            max_history: Accesses kept per session; the oldest go first.
         """
-        self.sessions: dict[str, Session] = {}
+        self.sessions: OrderedDict[str, Session] = OrderedDict()
+        self.max_sessions = max_sessions
+        self.max_history = max_history
+        self.__lock = threading.Lock()
 
     def record_access(self, session_id: str, content_hash: str) -> None:
         """Record that ``session_id`` accessed ``content_hash``.
@@ -89,8 +101,17 @@ class Sessions:
             session_id: Identifier of the accessing session.
             content_hash: Hash of the fragment that was accessed.
         """
-        session = self.sessions.setdefault(session_id, Session(session_id=session_id))
-        session.access_history.append(content_hash)
+        with self.__lock:
+            session = self.sessions.get(session_id)
+            if session is None:
+                session = self.sessions[session_id] = Session(session_id=session_id)
+                while len(self.sessions) > self.max_sessions:
+                    self.sessions.popitem(last=False)
+            else:
+                self.sessions.move_to_end(session_id)
+            session.access_history.append(content_hash)
+            if len(session.access_history) > self.max_history:
+                del session.access_history[: len(session.access_history) - self.max_history]
 
     def get_session_history(self, session_id: str) -> list[str]:
         """Return the access history for a session.
@@ -106,10 +127,29 @@ class Sessions:
             accessed by the session. Returns an empty list for
             unknown sessions.
         """
-        session = self.sessions.get(session_id)
-        if session is None:
-            return []
-        return list(session.access_history)
+        with self.__lock:
+            session = self.sessions.get(session_id)
+            return [] if session is None else list(session.access_history)
+
+    def forget(self, session_id: str) -> bool:
+        """Drop a session's history.
+
+        Args:
+            session_id: Identifier of the session.
+
+        Returns:
+            bool: True when the session existed.
+        """
+        with self.__lock:
+            return self.sessions.pop(session_id, None) is not None
+
+    def __len__(self) -> int:
+        """Number of tracked sessions.
+
+        Returns:
+            int: Session count.
+        """
+        return len(self.sessions)
 
     def get_unique_accesses(self, session_id: str) -> set[str]:
         """Return unique content hashes accessed in a session.
@@ -128,6 +168,8 @@ class Sessions:
 
 
 __all__ = [
+    "MAX_HISTORY",
+    "MAX_SESSIONS",
     "Session",
     "Sessions",
 ]

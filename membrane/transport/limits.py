@@ -93,11 +93,33 @@ def is_exempt(scope: Scope) -> bool:
     return scope["type"] != "http" or scope.get("path") in EXEMPT_PATHS
 
 
+class InFlight:
+    """Requests being handled and requests waiting for a slot.
+
+    Read by the routing scheduler as the node's queue depth. Updated
+    only from the event loop thread, so plain integers suffice.
+
+    Attributes:
+        active: Requests holding a concurrency slot.
+        waiting: Requests queued for a slot.
+    """
+
+    def __init__(self) -> None:
+        """Start at zero."""
+        self.active = 0
+        self.waiting = 0
+
+
 class ConcurrencyLimitMiddleware:
     """Bound in-flight requests; shed load with 503 when saturated."""
 
     def __init__(
-        self, app: ASGIApp, max_concurrency: int, queue_timeout_sec: float, on_reject: RejectHook | None = None
+        self,
+        app: ASGIApp,
+        max_concurrency: int,
+        queue_timeout_sec: float,
+        on_reject: RejectHook | None = None,
+        in_flight: InFlight | None = None,
     ) -> None:
         """Wrap ``app``.
 
@@ -106,10 +128,12 @@ class ConcurrencyLimitMiddleware:
             max_concurrency: Requests handled at once.
             queue_timeout_sec: Seconds to wait for a slot.
             on_reject: Called with ``"overloaded"`` for each shed request.
+            in_flight: Counters updated as requests wait and run.
         """
         self.app = app
         self.max_concurrency = max_concurrency
         self.queue_timeout_sec = queue_timeout_sec
+        self.in_flight = in_flight or InFlight()
         self.__on_reject = on_reject
         self.__slots = asyncio.Semaphore(max_concurrency)
         self.__pool_sized = False
@@ -131,6 +155,7 @@ class ConcurrencyLimitMiddleware:
             limiter = anyio.to_thread.current_default_thread_limiter()
             limiter.total_tokens = max(limiter.total_tokens, self.max_concurrency)
             self.__pool_sized = True
+        self.in_flight.waiting += 1
         try:
             await asyncio.wait_for(self.__slots.acquire(), timeout=self.queue_timeout_sec)
         except TimeoutError:
@@ -138,9 +163,13 @@ class ConcurrencyLimitMiddleware:
                 self.__on_reject("overloaded")
             await send_json(send, 503, {"error": "overloaded"}, retry_after=1)
             return
+        finally:
+            self.in_flight.waiting -= 1
+        self.in_flight.active += 1
         try:
             await self.app(scope, receive, send)
         finally:
+            self.in_flight.active -= 1
             self.__slots.release()
 
 
@@ -235,6 +264,7 @@ __all__ = [
     "EXEMPT_PATHS",
     "MAX_TRACKED_CALLERS",
     "ConcurrencyLimitMiddleware",
+    "InFlight",
     "RateLimitMiddleware",
     "RejectHook",
     "TransportLimits",

@@ -17,12 +17,14 @@ Thread safety:
 
 import logging
 import re
+from collections.abc import Callable
 from typing import Any, cast
 
 from membrane.auth import AuthContext
 from membrane.compute.base import Backend
 from membrane.compute.cpu import CPU
 from membrane.errors import TenantScopeError
+from membrane.fragment import Fragment
 from membrane.metrics import ClusterMetrics, MetricsCollector
 from membrane.network.cluster import Cluster
 from membrane.network.peer import JsonDict, Peer
@@ -84,6 +86,7 @@ def op_heartbeat(
     cluster: Cluster | None = None,
     headers: dict[str, str] | None = None,
     auth_context: AuthContext | None = None,
+    advertised: JsonDict | None = None,
 ) -> tuple[int, JsonDict]:
     """``GET /heartbeat`` — node health and load snapshot.
 
@@ -106,6 +109,7 @@ def op_heartbeat(
         headers: Lowercased request headers.
         auth_context: Authenticated caller; ``None`` when authentication is
             off.
+        advertised: Further fields peers route by (role, GPU load).
 
     Returns:
         tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
@@ -128,6 +132,7 @@ def op_heartbeat(
             "healthy": True,
             "attributes": node.attributes.to_dict(),
         }
+        | (advertised or {})
     )
 
 
@@ -294,6 +299,7 @@ def op_store(
     draining: bool = False,
     auth_context: AuthContext | None = None,
     cluster_metrics: ClusterMetrics | None = None,
+    store_guard: Callable[[Fragment], None] | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /store`` — store a fragment with a configured consistency level.
 
@@ -327,6 +333,8 @@ def op_store(
             503).
         auth_context: Authenticated caller; ``None`` when authentication is
             off.
+        store_guard: Raises ``ValueError`` (with an optional ``status``) to
+            refuse the fragment, e.g. for a compatibility mismatch.
 
     Returns:
         tuple[int, JsonDict]: ``(200, {"success": True, ...})``
@@ -365,6 +373,11 @@ def op_store(
             "payload_ref": frag.payload_ref,
             "content_hash": frag.identity.payload_hash,
         }
+    if store_guard is not None:
+        try:
+            store_guard(frag)
+        except ValueError as exc:
+            return getattr(exc, "status", 409), {"error": "store refused", "detail": str(exc)}
 
     # Local write always happens first so the cluster keeps a
     # single, source-of-truth copy at the primary even if quorum
@@ -630,6 +643,7 @@ def op_prefill(
     prompt_tokens: list[int],
     model_id: str = "default",
     auth_context: AuthContext | None = None,
+    stamp: Callable[[Fragment], Fragment] | None = None,
 ) -> tuple[int, JsonDict]:
     """``POST /prefill`` — run prefill and store fragments as primary.
 
@@ -640,6 +654,8 @@ def op_prefill(
         model_id: Model identifier.
         auth_context: Authenticated caller; ``None`` when authentication is
             off.
+        stamp: Applied to each produced fragment (the node's compatibility
+            fingerprint).
 
     Returns:
         tuple[int, JsonDict]: ``(status, body)`` for the transport to send.
@@ -654,6 +670,8 @@ def op_prefill(
     # this every tenant's prefill would land in the public tenant.
     if caller_tenant:
         fragments = [frag.with_tenant(caller_tenant) for frag in fragments]
+    if stamp is not None:
+        fragments = [stamp(frag) for frag in fragments]
     for frag in fragments:
         # Simulated / remote backends never write KV bytes; store
         # their placeholder payload so /retrieve can serve the

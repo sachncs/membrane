@@ -8,6 +8,8 @@ delegating to a transport-agnostic operation in :mod:`membrane.transport.ops`.
 * :mod:`~membrane.transport.routes.data`: fragments, blobs, prefill, sync.
 * :mod:`~membrane.transport.routes.cluster`: replication, membership, gossip.
 * :mod:`~membrane.transport.routes.deletes`: delete, tombstone, purge, verify.
+* :mod:`~membrane.transport.routes.memory`: reconstruct, prefix lookup,
+  sessions, typed objects, and ``/route``.
 * :mod:`~membrane.transport.routes.models`: request bodies.
 * :mod:`~membrane.transport.routes.common`: shared helpers.
 """
@@ -17,6 +19,7 @@ from fastapi.responses import JSONResponse
 
 from membrane.auth import AuthBackendError
 from membrane.openapi import generate_spec
+from membrane.services.memory import SESSION_HEADER
 from membrane.transport.context import app_context
 from membrane.transport.routes.cluster import handle_gossip, handle_join, handle_leave, handle_peers, handle_replicate
 from membrane.transport.routes.common import auth_error_response, route_scope
@@ -32,6 +35,7 @@ from membrane.transport.routes.data import (
     handle_upload_chunk,
 )
 from membrane.transport.routes.deletes import handle_delete, handle_purge, handle_tombstone, handle_verify
+from membrane.transport.routes.memory import register_memory_routes
 from membrane.transport.routes.models import (
     DeleteRequest,
     GossipRequest,
@@ -80,7 +84,8 @@ def register_routes(app: FastAPI) -> None:
         return metrics_json(app)
 
     def retrieve_handler(content_hash: str, request: Request):
-        return handle_retrieve(app, content_hash, route_scope(request, "GET", "/retrieve"))
+        session_id = request.headers.get(SESSION_HEADER, "")
+        return handle_retrieve(app, content_hash, route_scope(request, "GET", "/retrieve"), session_id)
 
     def inventory_handler(request: Request, after: str = "", limit: int = 0):
         route_scope(request, "GET", "/inventory")
@@ -174,6 +179,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_api_route("/tombstone", tombstone_handler, methods=["POST"], response_model=None)
     app.add_api_route("/purge", purge_handler, methods=["POST"], response_model=None)
     app.add_api_route("/verify", verify_handler, methods=["POST"], response_model=None)
+    register_memory_routes(app)
 
 
 __all__ = ["register_routes"]

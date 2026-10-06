@@ -153,6 +153,34 @@ class VerifyRequest(BaseModel):
     claimed_sha256_hex: str = Field(min_length=64, max_length=64)
 
 
+class ReconstructRequest(BaseModel):
+    """``POST /reconstruct`` body: assemble cached KV for a prompt.
+
+    ``prefill`` also computes the uncovered spans with the node's compute
+    backend (needs the ``write`` scope).
+    """
+
+    tokens: conlist(int, max_length=131072)  # type: ignore[valid-type]
+    model_id: str = Field(default="default", max_length=256)
+    prefill: bool = False
+
+
+class PrefixLookupRequest(BaseModel):
+    """``POST /prefix/lookup`` body (the ``GET`` form takes ``?tokens=1,2,3``)."""
+
+    tokens: conlist(int, max_length=131072)  # type: ignore[valid-type]
+    model_id: str = Field(default="default", max_length=256)
+
+
+class RouteRequest(BaseModel):
+    """``POST /route`` body: place a fragment (``content_hash``) or a prompt (``tokens``)."""
+
+    content_hash: str = Field(default="", max_length=256)
+    tokens: conlist(int, max_length=131072) | None = None  # type: ignore[valid-type]
+    model_id: str = Field(default="default", max_length=256)
+    local_cached_tokens: int = Field(default=0, ge=0)
+
+
 __all__ = [
     "DeleteRequest",
     "FragmentPayload",
@@ -160,8 +188,11 @@ __all__ = [
     "JoinRequest",
     "LeaveRequest",
     "PrefillRequest",
+    "PrefixLookupRequest",
     "PurgeRequest",
+    "ReconstructRequest",
     "ReplicateRequest",
+    "RouteRequest",
     "StoreRequest",
     "SyncRequest",
     "TombstoneRequest",

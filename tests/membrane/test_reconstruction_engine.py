@@ -152,3 +152,51 @@ def test_graph_links_recorded():
     engine.rebuild_context(tokens, "m")
     neighbors = index.co_access_neighbors(a.identity.payload_hash)
     assert b.identity.payload_hash in neighbors
+
+
+def test_positional_candidate_for_other_tokens_is_rejected():
+    index = Index()
+    engine = Reconstructor(index, Adapter(), config=ReconstructorConfig(max_gap_tokens=1000))
+    tokens = list(range(100))
+    index.insert(_fragment_for_span(tokens, 0, 49), {"n1"})
+    # Right position, wrong tokens: KV for another prompt.
+    index.insert(_fragment_for_span(list(range(500, 600)), 50, 99), {"n1"})
+    result = engine.rebuild_context(tokens, "m")
+    assert result.coverage_ratio == 0.5
+
+
+def test_backend_window_hashes_match():
+    from membrane.compute.base import Backend
+
+    index = Index()
+    engine = Reconstructor(index, Adapter())
+    tokens = list(range(200))
+    window = Backend.simulate_prefill_fragment(tokens[:128], 0, 200, "m")
+    index.insert(window, {"n1"})
+    assert engine.longest_match(tokens, "m") == window
+
+
+def test_visible_filter_hides_fragments():
+    index = Index()
+    tokens = list(range(10))
+    index.insert(_fragment_for_span(tokens, 0, 9), {"n1"})
+    engine = Reconstructor(index, Adapter(), visible=lambda fragment: False)
+    assert engine.rebuild_context(tokens, "m").coverage_ratio == 0.0
+
+
+def test_prefilled_spans_are_rebased_onto_the_prompt():
+    from membrane.compute.cpu import CPU
+    from membrane.prefilling import PrefillResult
+
+    class GapPrefill(Adapter):
+        def prefill(self, prompt_tokens, model_id):
+            return PrefillResult(0.0, 0.0, None, CPU().prefill(prompt_tokens, model_id))
+
+    index = Index()
+    tokens = list(range(60))
+    index.insert(_fragment_for_span(tokens, 0, 19), {"n1"})
+    seen = []
+    engine = Reconstructor(index, GapPrefill(), config=ReconstructorConfig(max_gap_tokens=0), on_prefilled=seen.append)
+    result = engine.rebuild_context(tokens, "m")
+    assert result.coverage_ratio == 1.0
+    assert [f.identity.token_span for f in seen] == [(20, 59)]

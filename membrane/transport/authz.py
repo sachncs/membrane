@@ -78,6 +78,14 @@ ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("HEAD", "/blobs"): "admin",
     ("POST", "/blobs/upload"): "admin",
     ("PUT", "/blobs/upload"): "admin",
+    # Memory API and routing.
+    ("POST", "/reconstruct"): "read",  # with prefill, /prefill's write scope is also checked
+    ("GET", "/prefix/lookup"): "read",
+    ("GET", "/sessions"): "read",
+    ("DELETE", "/sessions"): "write",
+    ("POST", "/objects"): "write",
+    ("GET", "/objects"): "read",
+    ("POST", "/route"): "read",
 }
 """(method, path) -> required scope. ``public`` means no auth check."""
 

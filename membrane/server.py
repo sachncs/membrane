@@ -62,6 +62,7 @@ from membrane.runtime.observability import EventLog, ServerDiagnostics, ServerEv
 from membrane.runtime.persistence_writer import PersistenceWriter
 from membrane.runtime.plugins import COMPUTE_BACKENDS, HOOKS
 from membrane.security.keyring import DirectoryKeyring
+from membrane.services import ServiceOptions, Services
 from membrane.snapshot import SNAPSHOT_SCHEMA_VERSION, ClusterEpochGuard, Snapshot
 from membrane.transfer import TransferService
 from membrane.transport.acme import ACMEConfig, ensure_certificate
@@ -137,6 +138,7 @@ class Server:
         spiffe: SPIFFEConfig | None = None,
         audit_path: str | None = None,
         transfer_compression: str = "zstd",
+        services: ServiceOptions | None = None,
     ) -> None:
         """Initialize the server with all configured subsystems.
 
@@ -186,6 +188,7 @@ class Server:
                 memory only when ``None``.
             transfer_compression: How KV bytes travel to peers (``zstd``,
                 ``lz4``, ``deflate``, ``raw``).
+            services: Memory API, routing, and background-policy settings.
         """
         self.node = node
         self.limits = limits or TransportLimits()
@@ -196,8 +199,13 @@ class Server:
         self.cluster_config = cluster_config
         self.tls = tls or (cluster_config.mtls if cluster_config is not None else None)
         self.authenticator = authenticator or build_authenticator(self.tls)
-        if cluster_config is not None:
-            configure_peer_access(cluster_config, self.tls, peer_api_key, peer_networks, transfer_compression)
+        self.service_options = services or ServiceOptions()
+        self.services: Services | None = None
+        origin = (self.service_options.origin,) if self.service_options.origin else ()
+        if cluster_config is not None or origin:
+            configure_peer_access(
+                cluster_config, self.tls, peer_api_key, peer_networks, transfer_compression, extra_peers=origin
+            )
 
         self.start_time = time.time()
         self.request_count = 0
@@ -259,6 +267,15 @@ class Server:
             self.cluster_manager.membership.listeners.append(self.on_membership_change)
 
         self.transport = self.build_transport(transport, host, port)
+        self.services = Services(
+            self.service_options,
+            self.node,
+            self.compute_backend,
+            self.cluster_manager,
+            replica_count=cluster_config.replica_count if cluster_config is not None else 0,
+            queue_depth=self.queue_depth,
+        )
+        self.transport.app.state.services = self.services
         self.audit_log = AuditLog.open(FileAuditStorage(Path(audit_path))) if audit_path else AuditLog()
         self.transport.app.state.audit_log = self.audit_log
         self.metrics_peers.audit_chain_valid.set(0.0 if self.audit_log.broken_at is not None else 1.0)
@@ -312,6 +329,8 @@ class Server:
         """
         if self.durable:
             self.persistence_writer.store(fragment, is_primary)
+        if self.services is not None:
+            self.services.memory.on_stored(fragment)
         self.event_bus.publish(FragmentStored(fragment.identity.payload_hash, fragment.tenant_id, is_primary))
 
     def on_fragment_removed(self, content_hash: str) -> None:
@@ -322,7 +341,19 @@ class Server:
         """
         if self.durable:
             self.persistence_writer.forget(content_hash)
+        if self.services is not None:
+            self.services.memory.on_removed(content_hash)
         self.event_bus.publish(FragmentRemoved(content_hash))
+
+    def queue_depth(self) -> tuple[int, int]:
+        """Requests waiting for a slot, and the depth that counts as saturated.
+
+        Returns:
+            tuple[int, int]: ``(waiting, saturated_depth)``.
+        """
+        in_flight = getattr(self.transport.app.state, "in_flight", None)
+        waiting = in_flight.waiting if in_flight is not None else 0
+        return waiting, max(1, self.limits.max_concurrency or 50)
 
     def on_membership_change(self, change: str, node_id: str) -> None:
         """Announce a peer joining or leaving.
@@ -456,6 +487,8 @@ class Server:
             self.acme_task.start()
         if self.spiffe is not None:
             self.spiffe_task.start()
+        if self.services is not None:
+            self.services.start()
         self.log_event("info", f"Server started on {self.host}:{self.port}")
 
     def rotate_tls(self, cert_pem: str, key_pem: str) -> None:
@@ -560,6 +593,8 @@ class Server:
             self.cert_watcher.stop()
         self.acme_task.stop(deadline_sec)
         self.spiffe_task.stop(deadline_sec)
+        if self.services is not None:
+            self.services.stop(deadline_sec)
         if self.replicator is not None:
             self.replicator.shutdown()
         joined_cleanly = self.persistence_writer.stop(deadline_sec) and joined_cleanly

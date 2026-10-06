@@ -58,7 +58,7 @@ cluster, and HTTP transport together. The pieces live in
 | Module | Role |
 |--------|------|
 | `settings.py` | `ServerSettings` (frozen, validated) and `build_server`, which enforces the startup policy (authentication beyond loopback, private secret files, admin peer key) |
-| `plugins.py` | `PluginRegistry` for compute backends, authenticators, and content stores; extended through entry points ([Plugins](plugins.md)) |
+| `plugins.py` | `PluginRegistry` for compute backends, authenticators, content stores, persistence, eviction, secret providers, placement, and hooks; extended through entry points ([Plugins](plugins.md)) |
 | `components.py` | Builders for persistence, the content store, authentication, and peer access |
 | `persistence_writer.py` | Ordered, bounded write-behind queue that keeps Redis off the node lock, retries through outages, and flushes on shutdown |
 | `lifecycle.py` | `PeriodicTask` (checkpoint, sweeper) and `run_until_signalled`, which turns `SIGTERM` into a drain |
@@ -116,6 +116,16 @@ Outbound peer URLs pass the SSRF guard
 (`membrane/security/url_allowlist.py`): seed hosts and the configured
 `--peer-network` CIDRs are allowed; other private addresses are not.
 
+### Node services (`membrane/services/`)
+
+| Module | Role |
+|--------|------|
+| `memory.py` | `MemoryService`: `/reconstruct` (`Reconstructor`, tenant-scoped and token-verified), `/prefix/lookup` (`PrefixCache`, invalidated on removal), sessions, typed objects, and the write guard (`MembraneValidator`, `IdentityIndex`) |
+| `placement.py` | `PlacementService` behind `/route`: `ClusterView` (holders, ring owners, heartbeat telemetry), the placement plugins, `Router` with the `DualTimescaleScheduler`, and the `CostModel` |
+| `policies.py` | `Promoter` (`Promotion`, `Selector`), `RolePolicy` (`Roles`), and `OriginLink` (regional read-through for a `Replica` node) |
+
+See [Memory API and routing](memory-api.md).
+
 ### Routing and the analytical model
 
 | Module | Contents |
@@ -124,7 +134,8 @@ Outbound peer URLs pass the SSRF guard
 | `membrane/model/optimizer.py` | Grid search over routing threshold and PD split, parallel across subinterpreters (`InterpreterPoolExecutor`) |
 | `membrane/model/scheduler.py` | `DualTimescaleScheduler`: short-term routing, long-term reallocation |
 | `membrane/model/simulator.py` | Case-study simulation (`python scripts/demo.py`) |
-| `membrane/latency.py`, `economic.py`, `joint.py` | Latency, cost, and joint placement routers |
+| `membrane/latency.py`, `economic.py`, `joint.py`, `selector.py` | Latency, cost, joint, and load-score placement, used by the `/route` policies |
+| `membrane/model/router.py` | Prefill offload decision (threshold on uncached length), used by `/route` |
 
 ### Engine adapters (`membrane/adapters/`)
 

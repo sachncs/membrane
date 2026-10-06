@@ -22,6 +22,7 @@ from membrane.network.peer import Peer, peer_url
 from membrane.registry import Registry
 from membrane.ring import Ring
 from membrane.shard import Shard
+from membrane.telemetry import Telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,11 @@ class PeerInfo:
             The membership table uses this field as the canonical source of
             truth for the membership table freshness, in tandem
             with the heartbeat-miss counter.
+        latency_ms: Heartbeat round trip (moving average), in milliseconds.
+        memory_pressure: Memory in use over the limit, from the last heartbeat.
+        gpu_load: GPU utilization in ``[0, 1]`` the peer reports.
+        region: Region the peer advertises (``""`` when unset).
+        role: Role the peer advertises (``""`` when unset).
     """
 
     node_id: str
@@ -67,6 +73,25 @@ class PeerInfo:
     cluster_epoch: int = 0
     peer_cn: str = ""
     lease_until: float = 0.0
+    latency_ms: float = 0.0
+    memory_pressure: float = 0.0
+    gpu_load: float = 0.0
+    region: str = ""
+    role: str = ""
+
+    def telemetry(self) -> Telemetry:
+        """Return the peer's last reported load as a routing input.
+
+        Returns:
+            Telemetry: Latency, GPU load, and memory pressure.
+        """
+        return Telemetry(
+            node_id=self.node_id,
+            latency_ms=self.latency_ms,
+            bandwidth_cost=0.0,
+            gpu_load=self.gpu_load,
+            memory_pressure=self.memory_pressure,
+        )
 
     def to_json(self) -> dict[str, Any]:
         """Serialize this peer to a JSON-compatible dict.
@@ -84,6 +109,11 @@ class PeerInfo:
             "cluster_epoch": self.cluster_epoch,
             "peer_cn": self.peer_cn,
             "lease_until": self.lease_until,
+            "latency_ms": self.latency_ms,
+            "memory_pressure": self.memory_pressure,
+            "gpu_load": self.gpu_load,
+            "region": self.region,
+            "role": self.role,
         }
 
 
@@ -316,6 +346,8 @@ class Membership:
         self,
         node_id: str,
         lease_until: float = 0.0,
+        report: dict[str, Any] | None = None,
+        round_trip_ms: float | None = None,
     ) -> None:
         """Reset heartbeat counters for ``node_id``.
 
@@ -327,6 +359,8 @@ class Membership:
         Args:
             node_id: Peer identifier whose counters to reset.
             lease_until: Optional Unix deadline.
+            report: The peer's ``/heartbeat`` body (load, region, role).
+            round_trip_ms: Measured heartbeat round trip.
         """
         with self.lock:
             peer = self.peers.get(node_id)
@@ -338,6 +372,26 @@ class Membership:
             peer.healthy = True
             if lease_until > 0:
                 peer.lease_until = lease_until
+            if round_trip_ms is not None:
+                # Moving average: one slow heartbeat does not reroute traffic.
+                peer.latency_ms = (
+                    round_trip_ms if peer.latency_ms == 0.0 else 0.8 * peer.latency_ms + 0.2 * round_trip_ms
+                )
+            if report:
+                peer.memory_pressure = min(1.0, max(0.0, float(report.get("load", 0.0) or 0.0)))
+                peer.gpu_load = min(1.0, max(0.0, float(report.get("gpu_load", 0.0) or 0.0)))
+                attributes = report.get("attributes") or {}
+                peer.region = str(report.get("region") or attributes.get("region", "") or "")
+                peer.role = str(report.get("role", "") or "")
+
+    def telemetry(self) -> dict[str, Telemetry]:
+        """Return the last reported load of every healthy peer.
+
+        Returns:
+            dict[str, Telemetry]: ``node_id -> Telemetry``.
+        """
+        with self.lock:
+            return {p.node_id: p.telemetry() for p in self.peers.values() if p.healthy}
 
     def evict_expired_leases(self, now: float | None = None) -> list[str]:
         """Mark peers whose lease deadline has elapsed as suspect.

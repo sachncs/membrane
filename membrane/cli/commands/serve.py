@@ -146,6 +146,45 @@ def main(
     no_hooks: bool = typer.Option(
         False, "--no-hooks", envvar="MEMBRANE_NO_HOOKS", help="Do not run installed membrane.hooks plugins"
     ),
+    placement: str = typer.Option(
+        "ring",
+        "--placement",
+        envvar="MEMBRANE_PLACEMENT",
+        help="Placement policy for /route: ring, latency, selector, economic, joint, or installed",
+    ),
+    route_threshold: int = typer.Option(
+        0,
+        "--route-threshold",
+        envvar="MEMBRANE_ROUTE_THRESHOLD",
+        help="Uncached tokens above which /route says to offload prefill to Membrane (adapts to load; 0: off)",
+    ),
+    promote_replicas: int = typer.Option(
+        0,
+        "--promote-replicas",
+        envvar="MEMBRANE_PROMOTE_REPLICAS",
+        help="Copy hot fragments to more peers, up to this many copies (0: off)",
+    ),
+    dynamic_roles: bool = typer.Option(
+        False,
+        "--dynamic-roles",
+        envvar="MEMBRANE_DYNAMIC_ROLES",
+        help="Re-evaluate this node's role (memory host, prefill, decode) from load and advertise it",
+    ),
+    region: str = typer.Option(
+        "", "--region", envvar="MEMBRANE_REGION", help="Region this node runs in (routing and replica locality)"
+    ),
+    origin: str = typer.Option(
+        "",
+        "--origin",
+        envvar="MEMBRANE_ORIGIN",
+        help="Act as a regional cache for this origin HOST:PORT: misses are read through to it",
+    ),
+    require_compat: str = typer.Option(
+        "",
+        "--require-compat",
+        envvar="MEMBRANE_REQUIRE_COMPAT",
+        help="Refuse fragments not stamped for MODEL[:DTYPE]; prefill stamps its fragments",
+    ),
     max_memory: int = typer.Option(
         1 << 30, "--max-memory", "-m", envvar="MEMBRANE_MAX_MEMORY", help="Max memory bytes"
     ),
@@ -362,6 +401,13 @@ def main(
         transfer_compression: How KV bytes travel to peers.
         otel_endpoint: OTLP/gRPC endpoint for traces.
         no_hooks: Do not run installed hook plugins.
+        placement: Placement policy for ``/route``.
+        route_threshold: Prefill offload threshold in tokens (0: off).
+        promote_replicas: Copies a hot fragment may reach (0: off).
+        dynamic_roles: Re-evaluate and advertise the node's role.
+        region: Region this node runs in.
+        origin: Origin ``HOST:PORT`` this node caches for.
+        require_compat: ``MODEL[:DTYPE]`` every stored fragment must be stamped for.
         max_memory: Max memory bytes.
         log_level: Logging level.
         log_format: Diagnostics format: text or json (one object per line).
@@ -469,6 +515,13 @@ def main(
             eviction=eviction,
             load_hooks=not no_hooks,
             otel_endpoint=otel_endpoint,
+            placement=placement,
+            route_threshold=route_threshold,
+            promote_replicas=promote_replicas,
+            dynamic_roles=dynamic_roles,
+            region=region,
+            origin=origin,
+            require_compat=require_compat,
             transfer_compression=transfer_compression,
             kv_quantization=kv_quantization,
             warm_tier_bytes=warm_tier_bytes,

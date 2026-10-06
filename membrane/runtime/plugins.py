@@ -1,4 +1,4 @@
-"""Named plugin registries: compute, auth, storage, eviction, secrets, and hooks.
+"""Named plugin registries: compute, auth, storage, eviction, secrets, placement, and hooks.
 
 Built-in implementations are registered here. Third-party packages add
 their own through :mod:`importlib.metadata` entry points; no change to
@@ -20,6 +20,7 @@ Group                         Factory
 ``membrane.persistence``      ``(url) -> persistence backend``
 ``membrane.eviction``         ``() -> EvictionPolicy``
 ``membrane.secret_providers`` ``() -> SecretProvider`` (reads its own env)
+``membrane.placement``        ``() -> PlacementPolicy``
 ``membrane.hooks``            ``(bus: EventBus, server: Server) -> None``
 ============================= =================================================
 
@@ -50,6 +51,7 @@ type PersistenceFactory = Callable[[str], Any]
 type EvictionFactory = Callable[[], EvictionPolicy]
 type SecretProviderFactory = Callable[[], SecretProvider]
 type HookFactory = Callable[[Any, Any], None]
+type PlacementFactory = Callable[[], Any]
 
 
 class UnknownPluginError(ValueError):
@@ -438,6 +440,61 @@ def vault_secrets() -> SecretProvider:
     return VaultSecretProvider(url=os.environ.get("VAULT_ADDR", ""), token=os.environ.get("VAULT_TOKEN", ""))
 
 
+def ring_placement() -> Any:
+    """Build the ring-owner placement policy.
+
+    Returns:
+        Any: :class:`~membrane.services.placement.RingPlacement`.
+    """
+    from membrane.services.placement import RingPlacement
+
+    return RingPlacement()
+
+
+def latency_placement() -> Any:
+    """Build the lowest-latency placement policy.
+
+    Returns:
+        Any: :class:`~membrane.services.placement.LatencyPlacement`.
+    """
+    from membrane.services.placement import LatencyPlacement
+
+    return LatencyPlacement()
+
+
+def selector_placement() -> Any:
+    """Build the load-score placement policy.
+
+    Returns:
+        Any: :class:`~membrane.services.placement.SelectorPlacement`.
+    """
+    from membrane.services.placement import SelectorPlacement
+
+    return SelectorPlacement()
+
+
+def economic_placement() -> Any:
+    """Build the value-minus-cost placement policy.
+
+    Returns:
+        Any: :class:`~membrane.services.placement.EconomicPlacement`.
+    """
+    from membrane.services.placement import EconomicPlacement
+
+    return EconomicPlacement()
+
+
+def joint_placement() -> Any:
+    """Build the joint compute-and-memory placement policy.
+
+    Returns:
+        Any: :class:`~membrane.services.placement.JointPlacement`.
+    """
+    from membrane.services.placement import JointPlacement
+
+    return JointPlacement()
+
+
 COMPUTE_BACKENDS = PluginRegistry[ComputeBackendFactory]("membrane.compute", "compute backend")
 AUTHENTICATORS = PluginRegistry[AuthenticatorFactory]("membrane.authenticators", "authenticator")
 CONTENT_STORES = PluginRegistry[ContentStoreFactory]("membrane.content_stores", "content store")
@@ -445,6 +502,7 @@ PERSISTENCE = PluginRegistry[PersistenceFactory]("membrane.persistence", "persis
 EVICTION = PluginRegistry[EvictionFactory]("membrane.eviction", "eviction policy")
 SECRET_PROVIDERS = PluginRegistry[SecretProviderFactory]("membrane.secret_providers", "secret provider")
 HOOKS = PluginRegistry[HookFactory]("membrane.hooks", "hook")
+PLACEMENT = PluginRegistry[PlacementFactory]("membrane.placement", "placement policy")
 
 COMPUTE_BACKENDS.register("cpu", cpu_backend)
 COMPUTE_BACKENDS.register("gpu", gpu_backend)
@@ -465,6 +523,11 @@ SECRET_PROVIDERS.register("env", env_secrets)
 SECRET_PROVIDERS.register("aws", aws_secrets)
 SECRET_PROVIDERS.register("gcp", gcp_secrets)
 SECRET_PROVIDERS.register("vault", vault_secrets)
+PLACEMENT.register("ring", ring_placement)
+PLACEMENT.register("latency", latency_placement)
+PLACEMENT.register("selector", selector_placement)
+PLACEMENT.register("economic", economic_placement)
+PLACEMENT.register("joint", joint_placement)
 
 __all__ = [
     "AUTHENTICATORS",
@@ -473,6 +536,7 @@ __all__ = [
     "EVICTION",
     "HOOKS",
     "PERSISTENCE",
+    "PLACEMENT",
     "SECRET_PROVIDERS",
     "AuthenticatorFactory",
     "ComputeBackendFactory",
@@ -480,6 +544,7 @@ __all__ = [
     "EvictionFactory",
     "HookFactory",
     "PersistenceFactory",
+    "PlacementFactory",
     "PluginRegistry",
     "SecretProviderFactory",
     "UnknownPluginError",
@@ -487,18 +552,23 @@ __all__ = [
     "apikey_authenticator",
     "aws_secrets",
     "cpu_backend",
+    "economic_placement",
     "encrypted_memory_content_store",
     "env_secrets",
     "filesystem_content_store",
     "gcp_secrets",
     "gpu_backend",
+    "joint_placement",
     "kv_backend",
+    "latency_placement",
     "memory_content_store",
     "memory_persistence",
     "ollama_backend",
     "openai_backend",
     "optional_backend",
     "redis_persistence",
+    "ring_placement",
+    "selector_placement",
     "tinylfu_eviction",
     "transformers_backend",
     "vault_secrets",

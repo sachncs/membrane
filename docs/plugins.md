@@ -15,6 +15,7 @@ entry point, with no change to Membrane.
 | `membrane.persistence` | `--persistence NAME` (URL from `--redis`) | `(url: str) -> backend` | `redis`, `memory` |
 | `membrane.eviction` | `--eviction NAME` | `() -> EvictionPolicy` | `weighted-lru`, `tinylfu` |
 | `membrane.secret_providers` | used to resolve secrets | `() -> SecretProvider` (reads its own environment) | `env`, `aws`, `gcp`, `vault` |
+| `membrane.placement` | `--placement NAME` | `() -> PlacementPolicy` | `ring`, `latency`, `selector`, `economic`, `joint` |
 | `membrane.hooks` | every installed hook runs (`--no-hooks` disables) | `(bus: EventBus, server: Server) -> None` | none |
 
 A built-in name always wins over an entry point with the same name, so
@@ -165,3 +166,39 @@ class OldestFirst:
 [project.entry-points."membrane.eviction"]
 oldest-first = "my_package.eviction:OldestFirst"
 ```
+
+## Writing a placement policy
+
+A placement policy answers `POST /route` ([Memory API](memory-api.md)).
+`place` receives a `ClusterView` (`membrane.services.placement`) with
+this node's fragments, the gossiped location directory, ring owners, and
+each healthy node's last reported load, plus the recently read hashes:
+
+```python
+from membrane.services.placement import ClusterView, Placement
+
+
+class LeastPressure:
+    def place(self, view: ClusterView, content_hash: str, history: list[str]) -> Placement:
+        telemetry = view.telemetry()
+        coolest = min(telemetry, key=lambda node_id: telemetry[node_id].memory_pressure)
+        holders = view.holders(content_hash)
+        return Placement(
+            fetch_from=holders[0] if holders else "",
+            store_on=coolest,
+            prefill_on=view.local_id,
+            reason="least memory pressure",
+        )
+
+
+def make_policy():
+    return LeastPressure()
+```
+
+```toml
+[project.entry-points."membrane.placement"]
+least-pressure = "my_plugin.placement:make_policy"
+```
+
+`membrane serve --placement least-pressure` then routes with it.
+

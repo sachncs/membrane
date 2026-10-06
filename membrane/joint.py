@@ -21,11 +21,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 from membrane.fragment import Fragment
-from membrane.node import Node
 from membrane.telemetry import Telemetry
+
+
+class Node(Protocol):
+    """What the optimizer reads from a candidate: a local node or a peer's last report."""
+
+    node_id: str
+
+    def heartbeat(self) -> float:
+        """Return memory pressure.
+
+        Returns:
+            float: Memory pressure in ``[0, 1]``.
+        """
+        ...
 
 
 @dataclass(frozen=True)
@@ -59,14 +74,14 @@ class Joint:
 
     def optimize(
         self,
-        fragment: Fragment,
-        nodes: list[Node],
+        fragment: Fragment | None,
+        nodes: Sequence[Node],
         telemetry_map: dict[str, Telemetry],
     ) -> PlacementDecision:
         """Jointly select compute node and memory node.
 
         Args:
-            fragment: Fragment to place. Currently unused by the
+            fragment: Fragment to place (``None`` when unknown). Currently unused by the
                 scoring logic but accepted for forward
                 compatibility with fragment-aware heuristics.
             nodes: Candidate nodes.

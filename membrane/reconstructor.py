@@ -13,6 +13,11 @@ Workflow:
    fragments to fill in additional tokens.
 3. **Semantic fill** — search the semantic index for fragments
    that cover any remaining gaps.
+
+Every candidate must hash to the prompt tokens it claims to cover
+(:attr:`ReconstructorConfig.verify_tokens`): a fragment at the right
+position or with a similar embedding but different tokens holds KV for
+a different prompt and is never returned.
 4. **Prefill fallback** — when a gap is too large to ignore,
    delegate to a :class:`~membrane.prefill_adapter.Adapter`
    to compute the missing tokens and index the new fragments.
@@ -30,8 +35,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+import dataclasses
+from collections.abc import Callable
 from dataclasses import dataclass
 
+from membrane.compute.hashing import token_hash
 from membrane.fragment import Fragment
 from membrane.fragmenter import compute_content_hash, generate_embedding
 from membrane.index import Index
@@ -74,6 +82,25 @@ class ReconstructorConfig:
 
     max_gap_tokens: int = 256
     max_prefix_attempts: int = 128
+    verify_tokens: bool = True
+    index_prefilled: bool = True
+
+
+def token_hashes(tokens: list[int] | tuple[int, ...]) -> tuple[str, str]:
+    """Both content hashes a fragment covering ``tokens`` may carry.
+
+    Compute backends address a window with
+    :func:`~membrane.compute.hashing.token_hash`; the
+    :class:`~membrane.fragmenter.Fragmenter` uses
+    :func:`~membrane.fragmenter.compute_content_hash`.
+
+    Args:
+        tokens: Token IDs.
+
+    Returns:
+        tuple[str, str]: ``(token_hash, compute_content_hash)``.
+    """
+    return token_hash(tokens), compute_content_hash(tuple(tokens))
 
 
 class Reconstructor:
@@ -96,6 +123,8 @@ class Reconstructor:
         index_system: Index,
         prefill_adapter: Adapter,
         config: ReconstructorConfig | None = None,
+        visible: Callable[[Fragment], bool] | None = None,
+        on_prefilled: Callable[[Fragment], None] | None = None,
     ) -> None:
         """Initialize the engine.
 
@@ -106,10 +135,16 @@ class Reconstructor:
             config: Reconstruction thresholds. A default
                 :class:`ReconstructorConfig` is used when
                 ``None``.
+            visible: Filter applied to every candidate (for example the
+                caller's tenant); every fragment is visible when ``None``.
+            on_prefilled: Called with each prefilled fragment, its span
+                already rebased onto the prompt (for example to store it).
         """
         self.index_system = index_system
         self.prefill_adapter = prefill_adapter
         self.config = config or ReconstructorConfig()
+        self.visible = visible
+        self.on_prefilled = on_prefilled
         logger.info("Initialized %s", self.__class__.__name__)
 
     def rebuild_context(
@@ -170,7 +205,7 @@ class Reconstructor:
             candidates = self.index_system.semantic_lookup(gap_embedding, k=3)
             for cand in candidates:
                 c_start, c_end = cand.identity.token_span
-                if c_start >= gap_start and c_end <= gap_end:
+                if c_start >= gap_start and c_end <= gap_end and self.accepts(cand, prompt_tokens, model_id):
                     assembled.append(cand)
                     for i in range(c_start, min(c_end + 1, length)):
                         coverage[i] = True
@@ -187,15 +222,20 @@ class Reconstructor:
                 if result.fragments:
                     prefill_invoked = True
                     for frag in result.fragments:
-                        assembled.append(frag)
-                        # Index the new fragment with no
-                        # locations — the local index is enough.
-                        self.index_system.insert(frag, set())
+                        # The adapter saw only the gap, so its spans are
+                        # relative to it; rebase them onto the prompt.
                         f_start, f_end = frag.identity.token_span
-                        # Map fragment span (relative to the gap)
-                        # to absolute prompt positions.
                         abs_start = gap_start + f_start
                         abs_end = gap_start + f_end
+                        frag = dataclasses.replace(
+                            frag, identity=dataclasses.replace(frag.identity, token_span=(abs_start, abs_end))
+                        )
+                        assembled.append(frag)
+                        if self.on_prefilled is not None:
+                            self.on_prefilled(frag)
+                        if self.config.index_prefilled:
+                            # No locations: the local index is enough.
+                            self.index_system.insert(frag, set())
                         for i in range(max(0, abs_start), min(abs_end + 1, length)):
                             coverage[i] = True
                     missing_segments.append((gap_start, gap_end))
@@ -255,19 +295,48 @@ class Reconstructor:
         # attempts to keep latency bounded.
         step = max(1, length // max_prefix_attempts) if max_prefix_attempts > 0 else 1
         for i in range(length, 0, -step):
-            prefix = tuple(prompt_tokens[:i])
-            h = compute_content_hash(prefix)
-            entry = self.index_system.exact_lookup(h)
-            if entry is not None:
+            for h in token_hashes(prompt_tokens[:i]):
+                entry = self.index_system.exact_lookup(h)
+                if entry is None:
+                    continue
                 frag = entry.fragment
                 # Only accept fragments produced by the same
                 # model — different models produce
                 # incompatible KV tensors.
-                if frag.identity.model_id == model_id and (
-                    best is None or i > (best.identity.token_span[1] - best.identity.token_span[0] + 1)
+                if (
+                    frag.identity.model_id == model_id
+                    and frag.identity.token_span[0] == 0
+                    and (self.visible is None or self.visible(frag))
+                    and (best is None or i > (best.identity.token_span[1] - best.identity.token_span[0] + 1))
                 ):
                     best = frag
+            if best is not None:
+                return best  # scanning longest first: the first hit is the longest
         return best
+
+    def accepts(self, fragment: Fragment, prompt_tokens: list[int], model_id: str) -> bool:
+        """Whether ``fragment`` may cover its span of ``prompt_tokens``.
+
+        Args:
+            fragment: Candidate fragment.
+            prompt_tokens: The prompt.
+            model_id: Model identifier.
+
+        Returns:
+            bool: True when the model matches, the caller may see the
+            fragment, and (with ``verify_tokens``) its hash matches the
+            tokens it covers.
+        """
+        if fragment.identity.model_id != model_id:
+            return False
+        if self.visible is not None and not self.visible(fragment):
+            return False
+        if not self.config.verify_tokens:
+            return True
+        start, end = fragment.identity.token_span
+        if start < 0 or end >= len(prompt_tokens) or end < start:
+            return False
+        return fragment.identity.payload_hash in token_hashes(prompt_tokens[start : end + 1])
 
     def find_next_adjacent(
         self,
@@ -292,7 +361,7 @@ class Reconstructor:
         """
         candidates = self.index_system.positional_adjacent(current_end, max_gap=self.config.max_gap_tokens)
         for cand in candidates:
-            if cand.identity.model_id != model_id:
+            if not self.accepts(cand, prompt_tokens, model_id):
                 continue
             c_start, c_end = cand.identity.token_span
             if c_start <= current_end:
@@ -389,4 +458,5 @@ __all__ = [
     "Reconstructor",
     "ReconstructorConfig",
     "ReconstructorResult",
+    "token_hashes",
 ]

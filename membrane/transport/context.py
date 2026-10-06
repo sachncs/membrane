@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from membrane.metrics import ClusterMetrics, MetricsCollector, TransportMetrics
     from membrane.network.cluster import Cluster
     from membrane.node import Node
+    from membrane.services import Services
     from membrane.transfer import TransferService
     from membrane.transport.limits import TransportLimits
 
@@ -122,6 +123,11 @@ class AppContext:
     def limits(self) -> TransportLimits | None:
         """HTTP capacity settings."""
         return self.__get("limits")
+
+    @property
+    def services(self) -> Services | None:
+        """The memory API, routing, and background policies."""
+        return self.__get("services")
 
     @property
     def audit_log(self) -> AuditLog | None:

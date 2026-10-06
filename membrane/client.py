@@ -25,6 +25,8 @@ from typing import Any
 
 import httpx
 
+from membrane.constants import SESSION_HEADER
+
 logger = logging.getLogger(__name__)
 
 
@@ -247,6 +249,118 @@ class MembraneClient:
             raise_for_status(resp.status_code, resp.text)
         return resp.json()
 
+    def reconstruct(
+        self, tokens: list[int], model_id: str = "default", prefill: bool = False, session_id: str = ""
+    ) -> dict[str, Any]:
+        """Call ``POST /reconstruct``: the cached fragments covering a prompt.
+
+        Args:
+            tokens: Prompt token IDs.
+            model_id: Model identifier.
+            prefill: Compute uncovered spans on the node (``write`` scope).
+            session_id: Record the reads under this session.
+
+        Returns:
+            dict[str, Any]: ``fragments``, ``coverage``, ``missing``,
+            ``prefilled``, and ``prefetch``.
+        """
+        headers = self.__headers | ({SESSION_HEADER: session_id} if session_id else {})
+        return self.__json(
+            "POST", "/reconstruct", json={"tokens": tokens, "model_id": model_id, "prefill": prefill}, headers=headers
+        )
+
+    def prefix_lookup(self, tokens: list[int], model_id: str = "default") -> dict[str, Any]:
+        """Call ``POST /prefix/lookup``: how many leading tokens the node has cached.
+
+        Args:
+            tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            dict[str, Any]: ``matched_tokens``, ``total_tokens``, ``full``, ``fragments``.
+        """
+        return self.__json("POST", "/prefix/lookup", json={"tokens": tokens, "model_id": model_id})
+
+    def route(
+        self,
+        tokens: list[int] | None = None,
+        content_hash: str = "",
+        model_id: str = "default",
+        local_cached_tokens: int = 0,
+    ) -> dict[str, Any]:
+        """Call ``POST /route``: where to fetch, prefill, and store.
+
+        Args:
+            tokens: The prompt (or pass ``content_hash``).
+            content_hash: A fragment to place.
+            model_id: Model identifier.
+            local_cached_tokens: Prompt tokens cached on the caller's engine.
+
+        Returns:
+            dict[str, Any]: ``placement``, ``fragments``, ``matched_tokens``,
+            ``reuse``, and ``offload``.
+        """
+        body = {
+            "tokens": tokens,
+            "content_hash": content_hash,
+            "model_id": model_id,
+            "local_cached_tokens": local_cached_tokens,
+        }
+        return self.__json("POST", "/route", json=body)
+
+    def put_object(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Call ``POST /objects``: store a typed memory object.
+
+        Args:
+            body: ``{"kind": "prefix" | "segment" | "artifact" | "trace", ...}``.
+
+        Returns:
+            dict[str, Any]: ``{"content_hash", "kind"}``.
+        """
+        return self.__json("POST", "/objects", json=body)
+
+    def get_object(self, content_hash: str) -> dict[str, Any] | None:
+        """Call ``GET /objects/{content_hash}``.
+
+        Args:
+            content_hash: The object's hash.
+
+        Returns:
+            dict[str, Any] | None: The object, or ``None`` when absent.
+        """
+        try:
+            return self.__json("GET", f"/objects/{content_hash}")
+        except MembraneNotFoundError:
+            return None
+
+    def session(self, session_id: str) -> dict[str, Any]:
+        """Call ``GET /sessions/{session_id}``.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            dict[str, Any]: ``history`` and ``unique``.
+        """
+        return self.__json("GET", f"/sessions/{session_id}")
+
+    def __json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+        """Issue a request and return its JSON body.
+
+        Args:
+            method: HTTP method.
+            path: URL path.
+            **kwargs: ``json``, ``params``, ``headers`` (default headers when omitted).
+
+        Returns:
+            dict[str, Any]: The response body.
+        """
+        kwargs.setdefault("headers", self.__headers)
+        resp = self.__call(self.__client.request, method, f"{self.base_url}{path}", **kwargs)
+        if resp.status_code >= 400:
+            raise_for_status(resp.status_code, resp.text)
+        return resp.json()
+
     def metrics(self) -> str:
         """Call ``GET /metrics``.
 
@@ -406,6 +520,116 @@ class AsyncMembraneClient:
             dict[str, Any]: The node's inventory digest.
         """
         resp = await self.__acall("GET", "/inventory", headers=self.__headers)
+        if resp.status_code >= 400:
+            raise_for_status(resp.status_code, resp.text)
+        return resp.json()
+
+    async def reconstruct(
+        self, tokens: list[int], model_id: str = "default", prefill: bool = False, session_id: str = ""
+    ) -> dict[str, Any]:
+        """Call ``POST /reconstruct``.
+
+        Args:
+            tokens: Prompt token IDs.
+            model_id: Model identifier.
+            prefill: Compute uncovered spans on the node (``write`` scope).
+            session_id: Record the reads under this session.
+
+        Returns:
+            dict[str, Any]: The assembled fragments and coverage.
+        """
+        headers = self.__headers | ({SESSION_HEADER: session_id} if session_id else {})
+        return await self.__json(
+            "POST", "/reconstruct", json={"tokens": tokens, "model_id": model_id, "prefill": prefill}, headers=headers
+        )
+
+    async def prefix_lookup(self, tokens: list[int], model_id: str = "default") -> dict[str, Any]:
+        """Call ``POST /prefix/lookup``.
+
+        Args:
+            tokens: Prompt token IDs.
+            model_id: Model identifier.
+
+        Returns:
+            dict[str, Any]: The matched prefix.
+        """
+        return await self.__json("POST", "/prefix/lookup", json={"tokens": tokens, "model_id": model_id})
+
+    async def route(
+        self,
+        tokens: list[int] | None = None,
+        content_hash: str = "",
+        model_id: str = "default",
+        local_cached_tokens: int = 0,
+    ) -> dict[str, Any]:
+        """Call ``POST /route``.
+
+        Args:
+            tokens: The prompt (or pass ``content_hash``).
+            content_hash: A fragment to place.
+            model_id: Model identifier.
+            local_cached_tokens: Prompt tokens cached on the caller's engine.
+
+        Returns:
+            dict[str, Any]: The placement answer.
+        """
+        body = {
+            "tokens": tokens,
+            "content_hash": content_hash,
+            "model_id": model_id,
+            "local_cached_tokens": local_cached_tokens,
+        }
+        return await self.__json("POST", "/route", json=body)
+
+    async def put_object(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Call ``POST /objects``.
+
+        Args:
+            body: The typed object.
+
+        Returns:
+            dict[str, Any]: ``{"content_hash", "kind"}``.
+        """
+        return await self.__json("POST", "/objects", json=body)
+
+    async def get_object(self, content_hash: str) -> dict[str, Any] | None:
+        """Call ``GET /objects/{content_hash}``.
+
+        Args:
+            content_hash: The object's hash.
+
+        Returns:
+            dict[str, Any] | None: The object, or ``None`` when absent.
+        """
+        try:
+            return await self.__json("GET", f"/objects/{content_hash}")
+        except MembraneNotFoundError:
+            return None
+
+    async def session(self, session_id: str) -> dict[str, Any]:
+        """Call ``GET /sessions/{session_id}``.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            dict[str, Any]: ``history`` and ``unique``.
+        """
+        return await self.__json("GET", f"/sessions/{session_id}")
+
+    async def __json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+        """Issue a request and return its JSON body.
+
+        Args:
+            method: HTTP method.
+            path: URL path.
+            **kwargs: ``json``, ``params``, ``headers`` (default headers when omitted).
+
+        Returns:
+            dict[str, Any]: The response body.
+        """
+        kwargs.setdefault("headers", self.__headers)
+        resp = await self.__acall(method, path, **kwargs)
         if resp.status_code >= 400:
             raise_for_status(resp.status_code, resp.text)
         return resp.json()
