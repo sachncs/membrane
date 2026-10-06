@@ -1,8 +1,28 @@
-# Incident Response Playbook
+# Incident response
 
-Steps for the on-call engineer when a Membrane alert fires. Pair with
-[SLOs](slo.md) for the alert definitions and
-[Backup & restore](backup-restore.md) for recovery.
+The on-call runbook for Membrane: how to triage an alert, diagnose the common failure modes, and communicate during an incident. Pair it with [SLOs and alerting](slo.md) for the alert definitions and [Backup and restore](backup-restore.md) for recovery.
+
+## Quick reference
+
+| Symptom or alert | Go to |
+|------------------|-------|
+| Strong writes return `503` (`quorum not met`) | [Strong writes return 503](#strong-writes-return-503-quorum-not-met) |
+| A node exits at startup with code 2 | [Node will not start](#node-will-not-start) |
+| Callers get `401` or `403` | [Callers get 401 / 403](#callers-get-401--403) |
+| Callers get `429`, or `503` with `Retry-After` | [Callers get 429 or 503](#callers-get-429-or-503-with-retry-after) |
+| `membrane_persistence_queue_depth` rising | [Redis writes falling behind](#redis-writes-falling-behind) |
+| `membrane_peer_circuit_open` is 1 | [A peer's circuit breaker is open](#a-peers-circuit-breaker-is-open) |
+| `membrane_tls_cert_expiry_seconds` low | [Certificate expiring](#certificate-expiring) |
+| `membrane_audit_chain_valid` is 0 | [Audit chain broken](#audit-chain-broken) |
+| Capacity evictions rising, hit rate falling | [Memory pressure](#memory-pressure) |
+| Nodes disagree about membership | [Cluster partition](#cluster-partition) |
+
+## First five minutes
+
+1. Acknowledge the alert, and declare a severity using the table below.
+2. Check the probes and the cluster view (see [Triage](#triage)).
+3. Find the matching scenario in the quick reference.
+4. Post the first update using the [communication template](#communication-templates).
 
 ## Severity levels
 
@@ -140,10 +160,10 @@ and that port 80 of the domain reaches `--tls-acme-http-port`.
 
 ### Audit chain broken
 
-`membrane_audit_chain_valid` is 0 and the log shows `audit log chain
-is broken at entry N`: `<data-dir>/audit.jsonl` was edited, truncated,
-or reordered. Preserve the file and the node's disk for investigation;
-the node keeps recording new entries after the break.
+`membrane_audit_chain_valid` is 0 and the log shows `audit log chain is broken at entry N`: `<data-dir>/audit.jsonl` was edited, truncated, or reordered. The node keeps recording new entries after the break.
+
+> [!CAUTION]
+> Treat a broken audit chain as a potential security incident. Preserve the file and the node's disk for investigation before changing anything, and follow your security incident process.
 
 ### Memory pressure
 
@@ -153,10 +173,10 @@ nodes, or shorten fragment TTLs.
 
 ### Cluster partition
 
-`/peers` on different nodes disagree, and
-`membrane_gossip_failures_total` climbs. Strong writes fail closed on
-the minority side, so no acknowledged write is lost. Fix the network;
-nodes re-converge through heartbeats and gossip without intervention.
+`/peers` on different nodes disagree, and `membrane_gossip_failures_total` climbs. Strong writes fail closed on the minority side, so no acknowledged write is lost.
+
+> [!NOTE]
+> Fix the network; nodes re-converge through heartbeats and gossip without intervention, and primaries settle back on their ring owners.
 
 ## Communication templates
 
@@ -177,5 +197,4 @@ Follow-ups: <links>
 
 ## After the incident
 
-Within 5 business days write a review covering the timeline, root
-cause, contributing factors, and 3–5 action items with owners.
+Within five business days, write a blameless review that covers the timeline, root cause, contributing factors, and three to five action items, each with an owner.

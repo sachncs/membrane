@@ -1,9 +1,6 @@
 # Architecture
 
-Membrane separates the KV cache from GPU memory. KV segments become
-immutable, content-addressed **fragments** held by a cluster of nodes;
-serving engines look fragments up instead of recomputing prefill, and
-only prefill the spans nobody holds.
+How Membrane is built: the request path, the components of a node, the cluster layer, and the design principles behind them. Membrane separates the KV cache from GPU memory. KV segments become immutable, content-addressed **fragments** held by a cluster of nodes; serving engines look fragments up instead of recomputing prefill, and prefill only the spans nobody holds.
 
 ```text
   clients / engine adapters (vLLM · SGLang · TensorRT-LLM)
@@ -31,11 +28,13 @@ only prefill the spans nobody holds.
    `enforce_route_scope` (`membrane/transport/authz.py`) against the
    configured API-key or mTLS authenticator, then checks the route's
    scope (`read`, `write`, `admin`).
-2. **Operate.** Route handlers in `membrane/transport/routes_fastapi.py`
-   delegate to transport-agnostic functions in
-   `membrane/transport/ops.py` and `ops_cluster.py`.
+2. **Operate.** Route handlers, grouped by area in `membrane/transport/routes/`
+   (data, memory, cluster, deletes, probes, disagg), delegate to
+   transport-agnostic functions in `membrane/transport/ops.py` and
+   `ops_cluster.py`.
 3. **Store.** `op_store` checks that the fragment's payload bytes are in
-   the node's content store, applies the tenant check, writes locally,
+   the node's content store, applies the tenant check, writes locally
+   under the fragment's tenant-scoped key,
    and for `strong` / `quorum` writes fans out to replicas in parallel
    and waits for acknowledgements (`QuorumReplicator`,
    `membrane/quorum.py`). It returns as soon as quorum is reached or the
@@ -80,7 +79,7 @@ cluster, and HTTP transport together. The pieces live in
 
 | Class | Module | Role |
 |-------|--------|------|
-| `Node` | `membrane/node.py` | Holds fragments in memory; TTL expiry, weighted-LRU and graph-aware eviction, tenant checks. Reads take no lock (per-thread access buffers merged on eviction); writes hold the table lock |
+| `Node` | `membrane/node.py` | Holds fragments in memory under tenant-scoped keys; TTL expiry, weighted-LRU and graph-aware eviction, tenant checks. Reads take no lock: each thread reads through its own cache of the fragment table, which removals invalidate. Writes hold the table lock |
 | `Index` | `membrane/index.py` | Facade over exact, semantic, positional, and co-access indices |
 | `InventoryDigest` | `membrane/store/digest.py` | Bucketed (1,024) set digest of the node's fragments, updated in O(1) on every store and removal; serves `/inventory/buckets` and per-bucket paging |
 | `ContentStore` implementations | `membrane/content_store.py` | KV bytes: `InProcessBytes`, `FilesystemBlob` (AES-256-GCM); `EncryptedInProcessBytes` in `content_store_encrypted.py` |
@@ -110,7 +109,7 @@ writes them to a `ContentStore`.
 | `Membership` | Peer table; seed bootstrap with retry |
 | `Heartbeat`, `ThresholdDetector` | Liveness and failure detection |
 | `Gossip`, `GossipState` | Membership, sampled fragment locations, the inventory digest root, tombstones |
-| `Ring`, `Shard` | Consistent-hash placement of primaries and replicas |
+| `Ring`, `Shard` | Consistent-hash placement of primaries and replicas. Every node, itself included, is on the ring, so all nodes agree on each fragment's owners |
 | `Peer`, `PeerCredentials` | Outbound HTTP(S) client; bearer key or mTLS client cert |
 | `Replicator` | Keeps primaries replicated (new primaries each sweep, and every `repair_interval_sec` a pass that pages only the inventory buckets that changed) and rebalances ownership when membership changes, through verified hand-offs (`membrane/replication.py`) |
 | `Registry` | Fragment locations: a bounded, thread-safe LRU of hints; unknown hashes resolve through the ring |
@@ -152,7 +151,8 @@ has HTTP clients that keep the KV in a node through `/kv/{handle}`
 ## Design principles
 
 1. **Content-addressed.** Identical KV segments have identical
-   identities, so work is shared across requests, tenants, and regions.
+   identities, so work is shared across requests, nodes, and regions.
+   Each tenant keeps its own copy of shared content, backed by one blob.
 2. **Immutable.** Fragments are never modified; new versions get new
    identities.
 3. **Reconstruction-driven.** Context is rebuilt from fragments, and

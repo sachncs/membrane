@@ -1,11 +1,8 @@
 # Plugins
 
-Compute backends, authenticators, content stores, persistence backends,
-eviction policies, and secret providers are looked up by name in
-registries (`membrane.runtime.plugins`). Hooks subscribe to server
-events. The built-ins are
-registered there. Any installed package can add more through a Python
-entry point, with no change to Membrane.
+Extend Membrane without forking it. Compute backends, authenticators, content stores, persistence backends, eviction policies, placement policies, and secret providers are looked up by name, and any installed package can add its own through a standard Python entry point. Hooks let you observe server events, for example to export audit data.
+
+## Extension points
 
 | Group | Selected by | Factory signature | Built-ins |
 |-------|-------------|-------------------|-----------|
@@ -18,9 +15,10 @@ entry point, with no change to Membrane.
 | `membrane.placement` | `--placement NAME` | `() -> PlacementPolicy` | `ring`, `latency`, `selector`, `economic`, `joint` |
 | `membrane.hooks` | every installed hook runs (`--no-hooks` disables) | `(bus: EventBus, server: Server) -> None` | none |
 
-A built-in name always wins over an entry point with the same name, so
-an installed package cannot silently replace a built-in. An unknown
-name fails at startup with the list of available names:
+> [!IMPORTANT]
+> A built-in name always wins over an entry point with the same name, so an installed package cannot silently replace a built-in.
+
+An unknown name fails at startup with the list of available names:
 
 ```text
 membrane serve --compute vlm
@@ -33,14 +31,12 @@ A compute backend implements `membrane.compute.base.Backend` (see
 `membrane/compute/cpu.py` for a complete example). Package it with an
 entry point:
 
-```toml
-# pyproject.toml of your package
+```toml title="pyproject.toml (your package)"
 [project.entry-points."membrane.compute"]
 my-engine = "my_package.membrane_plugin:make_backend"
 ```
 
-```python
-# my_package/membrane_plugin.py
+```python title="my_package/membrane_plugin.py"
 from typing import override
 
 from membrane.compute.base import Backend
@@ -137,16 +133,16 @@ def install(bus, server):
 
 | Event | Fields | Published when |
 |-------|--------|----------------|
-| `FragmentStored` | `content_hash`, `tenant_id`, `is_primary` | a fragment becomes resident |
-| `FragmentRemoved` | `content_hash` | a fragment leaves (eviction, expiry, delete, rollback) |
-| `PeerJoined` / `PeerLeft` | `node_id` | the membership table changes |
-| `DrainStarted` | `deadline_sec` | `SIGTERM` drain begins |
-| `DrainFinished` | `migrated`, `stragglers` | the drain's hand-offs are done |
+| `FragmentStored` | `content_hash`, `tenant_id`, `is_primary` | A fragment becomes resident |
+| `FragmentRemoved` | `content_hash` | A fragment leaves (eviction, expiry, delete, or rollback) |
+| `PeerJoined`, `PeerLeft` | `node_id` | The membership table changes |
+| `DrainStarted` | `deadline_sec` | A `SIGTERM` drain begins |
+| `DrainFinished` | `migrated`, `stragglers` | The drain's hand-offs are done |
 
-Events are delivered in order on one dispatcher thread, never on the
-request path. A handler that raises is logged and skipped, and when
-10,000 events are queued new ones are dropped, so keep handlers fast
-and hand slow work to your own queue.
+In fragment events, `content_hash` is the storage key: the bare content hash for the `public` tenant, and `<tenant>:<hash>` for others (see [Security](security.md#identical-content-across-tenants)).
+
+> [!WARNING]
+> Events are delivered in order on one dispatcher thread, never on the request path. A handler that raises is logged and skipped, and once 10,000 events are queued new ones are dropped. Keep handlers fast, and hand slow work to your own queue.
 
 ## Writing an eviction policy
 

@@ -1,9 +1,6 @@
-# Compatibility matrix
+# Compatibility
 
-The v3.0.0 release drops the v0.8 + 1.0.x compat shims. The
-matrix below is the single source of truth for which versions
-of the supported runtimes, models, and GPUs are known to
-work with the 3.x series.
+The runtimes, serving engines, transports, and GPUs supported by the Membrane 3.x series. This page is the single source of truth for compatibility; the 3.0.0 release removed the 0.8 and 1.0.x compatibility shims.
 
 ## Python
 
@@ -24,15 +21,15 @@ from the lock.
 
 | Package              | Optional dep group      | Required by                |
 |----------------------|-------------------------|---------------------------|
-| ``cryptography``      | ``membrane[server]``     | TLS, encryption at rest   |
-| ``numpy`` / ``lz4`` | ``membrane[transfer]`` | KV transfer engine, quantization |
-| ``fastapi`` / ``uvicorn`` / ``httpx`` | ``membrane[server]`` | HTTP transport and clients |
-| ``grpcio`` | ``membrane[disagg]`` | Disaggregation gRPC surface |
-| ``redis>=8.1.0``     | ``membrane[server]``     | Redis persistence backend  |
-| ``torch>=2.13.0``    | ``membrane[gpu]``        | GPU compute backend        |
-| ``transformers`` / ``tokenizers`` / ``sentencepiece`` / ``protobuf`` | ``membrane[local-llm]`` | HuggingFace local LLM backend |
-| ``opentelemetry-*``  | ``membrane[otel]``       | OpenTelemetry tracing      |
-| ``boto3`` / ``google-cloud-secret-manager`` / ``hvac`` | ``membrane[secrets-aws]`` / ``[secrets-gcp]`` / ``[secrets-vault]`` | Secret backends |
+| `cryptography`      | `membrane[server]`     | TLS, encryption at rest   |
+| `numpy` / `lz4` | `membrane[transfer]` | KV transfer engine, quantization |
+| `fastapi` / `uvicorn` / `httpx` | `membrane[server]` | HTTP transport and clients |
+| `grpcio` | `membrane[disagg]` | Disaggregation gRPC surface |
+| `redis>=8.1.0`     | `membrane[server]`     | Redis persistence backend  |
+| `torch>=2.13.0`    | `membrane[gpu]`        | GPU compute backend        |
+| `transformers` / `tokenizers` / `sentencepiece` / `protobuf` | `membrane[local-llm]` | HuggingFace local LLM backend |
+| `opentelemetry-*`  | `membrane[otel]`       | OpenTelemetry tracing      |
+| `boto3` / `google-cloud-secret-manager` / `hvac` | `membrane[secrets-aws]` / `[secrets-gcp]` / `[secrets-vault]` | Secret backends |
 
 > Production deployments pin each of the optional deps to the
 > exact version that ships with the deployment image. The
@@ -43,14 +40,14 @@ from the lock.
 
 | Engine      | Version          | Plugin                                |
 |-------------|------------------|---------------------------------------|
-| vLLM        | 0.10.x – 0.11.x  | ``membrane.adapters.vllm``   |
-| SGLang      | 0.4.x – 0.5.x    | ``membrane.adapters.sglang`` |
-| TensorRT-LLM | 0.20.x – 0.21.x | ``membrane.adapters.trtllm`` |
+| vLLM        | 0.10.x – 0.11.x  | `membrane.adapters.vllm`   |
+| SGLang      | 0.4.x – 0.5.x    | `membrane.adapters.sglang` |
+| TensorRT-LLM | 0.20.x – 0.21.x | `membrane.adapters.trtllm` |
 
 The engines are not extras. They pin their own dependency stacks (vLLM
 caps FastAPI below what the server needs) and do not all ship Python
 3.14 wheels. Install the engine in its own environment;
-``membrane.adapters`` imports it lazily. CI exercises the adapters
+`membrane.adapters` imports it lazily. CI exercises the adapters
 against their in-memory clients. The LMCache integration was removed in
 the Python 3.14 release (LMCache has no 3.14 wheels).
 
@@ -58,7 +55,7 @@ the Python 3.14 release (LMCache has no 3.14 wheels).
 
 | Transport     | Version | Notes                                  |
 |---------------|---------|----------------------------------------|
-| HTTP (FastAPI) | 0.142+ | The only ``membrane serve`` transport; HTTPS with mTLS optional |
+| HTTP (FastAPI) | 0.142+ | The only `membrane serve` transport; HTTPS with mTLS optional |
 
 ## Wire schema
 
@@ -69,7 +66,7 @@ the Python 3.14 release (LMCache has no 3.14 wheels).
 
 Operators upgrading from 2.0.x must convert legacy blobs via
 the migration script before booting a 3.0.0 cluster. The
-conversion tool ships in ``tools/upgrade_v2_to_v5.py``.
+conversion tool ships in `tools/upgrade_v2_to_v5.py`.
 
 ## GPU matrix
 
