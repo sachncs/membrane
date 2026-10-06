@@ -13,18 +13,49 @@ synchronized), so the read path scales across threads without serializing
 on the lock. A reader may see a fragment that a concurrent writer is about
 to remove, exactly as if the read had happened first.
 
-:meth:`record_access` writes to a per-thread buffer rather than the shared
-``access_times`` map, so concurrent reads do not contend on one dict.
-Buffers are merged into ``access_times`` whenever it is read through
+The read path (:meth:`lookup`) goes through a per-thread cache. On a
+free-threaded Python, looking up a key string the request just parsed in
+the shared map takes a reference to the stored key for the comparison,
+and those reference-count updates on shared objects stop reads from
+scaling with cores. Each thread's cache is keyed by its own strings, so
+a hit touches only that thread's objects. :meth:`pop` removes the key from
+every cache, and a fill that races with a removal is undone. Mutate the
+table only through :meth:`add` and :meth:`pop`, or caches go stale.
+
+Reads are recorded in the same per-thread state rather than the shared
+``access_times`` map, and merged into it whenever it is read through
 :meth:`recency` (eviction, snapshots). A read recorded concurrently with a
 merge can be lost; recency is a heuristic, so that is harmless.
 """
 
 import threading
+import weakref
 
 from membrane.fragment import Fragment
 from membrane.runtime.concurrency import share
 from membrane.store.digest import InventoryDigest
+
+#: Entries one thread's read cache holds before it starts over.
+READ_CACHE_ENTRIES = 1 << 16
+
+
+class ReadCache(dict[str, tuple[Fragment, float]]):
+    """One thread's ``key -> (fragment, expiry)`` cache (see :meth:`FragmentTable.lookup`).
+
+    Attributes:
+        accesses: The thread's reads not yet merged into ``access_times``.
+    """
+
+    __slots__ = ("__weakref__", "accesses")
+
+    def __init__(self) -> None:
+        """Start empty."""
+        super().__init__()
+        self.accesses: dict[str, float] = {}
+
+    # Identity, so a WeakSet can hold the caches of every thread.
+    __hash__ = object.__hash__  # type: ignore[assignment]
+    __eq__ = object.__eq__  # type: ignore[assignment]
 
 
 class FragmentTable:
@@ -58,7 +89,10 @@ class FragmentTable:
         self.tenant_keys: dict[str, set[str]] = {}
         self.payload_refs: dict[str, int] = {}
         self.__local = threading.local()
-        self.__buffers: list[dict[str, float]] = []
+        self.__caches: weakref.WeakSet[ReadCache] = weakref.WeakSet()
+        # Every thread's unmerged reads, kept after the thread exits until merged.
+        self.__buffers: list[tuple[weakref.ref[ReadCache], dict[str, float]]] = []
+        self.__removals = 0
         share(self.__local)
 
     def __contains__(self, content_hash: object) -> bool:
@@ -91,6 +125,64 @@ class FragmentTable:
         """
         return self.fragments.get(content_hash)
 
+    def thread_cache(self) -> ReadCache:
+        """This thread's read cache (created on first use).
+
+        Returns:
+            ReadCache: The cache.
+        """
+        try:
+            return self.__local.reads  # type: ignore[no-any-return]
+        except AttributeError:
+            cache = self.__local.reads = ReadCache()
+            with self.lock:
+                self.__caches.add(cache)
+                self.__buffers.append((weakref.ref(cache), cache.accesses))
+            return cache
+
+    def lookup(self, content_hash: str, now: float | None = None) -> tuple[Fragment, float] | None:
+        """Return a resident fragment and when it expires, through this thread's cache.
+
+        On a free-threaded Python, a lookup in the shared ``fragments`` map
+        with a key string the caller just built (every request parses its
+        own) briefly takes a reference to the stored key, and the threads'
+        reference-count updates on shared keys keep them from scaling. Each
+        thread therefore keeps its own cache, keyed by its own strings.
+        :meth:`pop` drops a key from every cache, and a fill that races
+        with a removal is undone, so a cache never serves a removed fragment.
+
+        Args:
+            content_hash: Storage key.
+            now: When given, a hit is also recorded as a read at this time
+                (as :meth:`record_access` does).
+
+        Returns:
+            tuple[Fragment, float] | None: The fragment and its expiry time
+            (insertion time plus TTL), or ``None`` when absent.
+        """
+        try:
+            cache = self.__local.reads
+        except AttributeError:
+            cache = self.thread_cache()
+        entry = cache.get(content_hash)
+        if entry is not None:
+            if now is not None:
+                cache.accesses[content_hash] = now
+            return entry
+        removals = self.__removals
+        fragment = self.fragments.get(content_hash)
+        if fragment is None:
+            return None
+        entry = (fragment, self.insertion_times.get(content_hash, 0.0) + fragment.ttl)
+        if len(cache) >= READ_CACHE_ENTRIES:
+            cache.clear()
+        cache[content_hash] = entry
+        if self.__removals != removals:
+            cache.pop(content_hash, None)
+        if now is not None:
+            cache.accesses[content_hash] = now
+        return entry
+
     def inserted_at(self, content_hash: str, default: float) -> float:
         """Return when a fragment was inserted (no lock: one dict read).
 
@@ -110,12 +202,7 @@ class FragmentTable:
             content_hash: Content hash.
             now: Access time.
         """
-        buffer = getattr(self.__local, "accesses", None)
-        if buffer is None:
-            buffer = self.__local.accesses = {}
-            with self.lock:
-                self.__buffers.append(buffer)
-        buffer[content_hash] = now
+        self.thread_cache().accesses[content_hash] = now
 
     def recency(self) -> dict[str, float]:
         """Merge every thread's buffered reads and return ``access_times``.
@@ -124,9 +211,13 @@ class FragmentTable:
             dict[str, float]: Last access per resident hash.
         """
         with self.lock:
-            for buffer in self.__buffers:
+            # Buffers of exited threads are dropped once merged.
+            buffers, self.__buffers = self.__buffers, []
+            for owner, buffer in buffers:
                 pending = buffer.copy()
                 buffer.clear()
+                if owner() is not None:
+                    self.__buffers.append((owner, buffer))
                 for content_hash, at in pending.items():
                     if content_hash in self.fragments and at > self.access_times.get(content_hash, 0.0):
                         self.access_times[content_hash] = at
@@ -177,6 +268,9 @@ class FragmentTable:
         """
         with self.lock:
             fragment = self.fragments.pop(content_hash)
+            self.__removals += 1
+            for cache in self.__caches:
+                cache.pop(content_hash, None)
             self.digest.remove(content_hash)
             self.memory_usage -= fragment.payload_size
             self.primary_hashes.discard(content_hash)

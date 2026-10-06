@@ -7,7 +7,14 @@ tenants, and the system tenant is readable by everyone.
 """
 
 from membrane.errors import TenantScopeError
+from membrane.runtime.concurrency import share
 from membrane.security.tenant import TenantAuthorizer
+
+#: The scopes of a caller without any (the default argument of node reads
+#: and writes). One shared object, switched to deferred reference counting,
+#: so request threads do not contend on a default argument's count.
+NO_SCOPES: frozenset[str] = frozenset()
+share(NO_SCOPES)
 
 
 class TenantGuard:
@@ -50,4 +57,4 @@ class TenantGuard:
         return True
 
 
-__all__ = ["TenantGuard"]
+__all__ = ["NO_SCOPES", "TenantGuard"]

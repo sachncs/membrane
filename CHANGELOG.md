@@ -97,7 +97,28 @@ upgrading.
   startup warning when a free-threaded node runs with the GIL.
 - `scripts/bench_http.py` measures `/retrieve` throughput of one node.
 
+### Changed (scale up)
+
+- Node reads scale with cores for real request keys. Every request
+  parses its own key string, and on 3.14t comparing it with the shared
+  table's key briefly took a reference to that key, so four threads read
+  only 1.6x as fast as one. Each thread now reads through its own cache
+  (at most 65,536 entries), and removals invalidate every cache.
+  - In-process retrieve with 4 long-lived threads, each with its own key
+    strings, runs 3.2x one thread on a 12-core laptop (was 1.6x), and
+    8.1M reads/s (was 3.3M/s).
+  - The scaling test now measures that way (it used to reuse the stored
+    key objects, which hid the effect). It requires 3.0x on hosts with at
+    least 8 logical CPUs, and 1.8x on smaller ones such as a 4-vCPU CI
+    runner.
+  - The default `caller_scopes` of node reads is one shared, deferred
+    object (`NO_SCOPES`), and `time.time` joins the objects
+    `share_hot_objects` defers.
+
 ### Fixed (scale up)
+
+- `test_concurrent_store_then_remove` checked and removed without the node
+  lock, so on 3.14t two threads could remove the same fragment.
 
 - `InProcessBytes.put` and `delete` re-summed every stored blob, which
   was O(n) per write.

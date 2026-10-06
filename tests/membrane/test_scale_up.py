@@ -159,30 +159,134 @@ def test_share_switches_objects_only_on_free_threaded_builds() -> None:
     assert switched == (2 if FREE_THREADED else 0)
 
 
+#: Required 4-thread / 1-thread retrieve throughput. Four workers need four
+#: physical cores; hosts with fewer than 8 logical CPUs (a 4-vCPU CI runner
+#: is 2 cores with SMT) get the lower bar.
+SCALING_TARGET = 3.0 if (os.cpu_count() or 1) >= 8 else 1.8
+
+
+class ReadWorkers:
+    """Long-lived reader threads, like a server's event loops, run in rounds."""
+
+    def __init__(self, node: Node, threads: int, keys: int) -> None:
+        self.node = node
+        self.keys = keys
+        self.count = 0
+        self.start = [threading.Event() for _ in range(threads)]
+        self.done = threading.Barrier(threads + 1)
+        for index in range(threads):
+            threading.Thread(target=self.run, args=(index,), daemon=True).start()
+
+    def run(self, index: int) -> None:
+        rnd = random.Random(index)
+        # Each request parses its own key string; so does each worker here.
+        keys = [f"{i:032x}" for i in range(self.keys)]
+        n = len(keys)
+        retrieve = self.node.retrieve
+        while True:
+            self.start[index].wait()
+            self.start[index].clear()
+            for _ in range(self.count):
+                retrieve(keys[rnd.randrange(n)])
+            self.done.wait()
+
+    def round(self, count: int) -> float:
+        self.count = count
+        started = time.perf_counter()
+        for event in self.start:
+            event.set()
+        self.done.wait()
+        return len(self.start) * count / (time.perf_counter() - started)
+
+
 @pytest.mark.skipif(not PARALLEL, reason="needs a free-threaded Python running without the GIL")
 @pytest.mark.skipif((os.cpu_count() or 1) < 4, reason="needs at least 4 cores")
 def test_retrieve_throughput_scales_with_threads() -> None:
+    keys = 20_000
     node = Node("bench", max_memory_bytes=1 << 34)
-    hashes = [f"{i:032x}" for i in range(20_000)]
-    for h in hashes:
-        node.store(make_fragment(h, (0, 3)))
+    for i in range(keys):
+        node.store(make_fragment(f"{i:032x}", (0, 3)))
+    one, four = ReadWorkers(node, 1, keys), ReadWorkers(node, 4, keys)
+    one.round(100_000)  # warm the read caches
+    four.round(100_000)
+    ratios = []
+    for _ in range(5):
+        single = one.round(150_000)
+        ratios.append(four.round(150_000) / single)
+    ratios.sort()
+    assert ratios[2] >= SCALING_TARGET, f"4 threads / 1 thread: {ratios} (median below {SCALING_TARGET})"
 
-    def work(count: int) -> None:
-        rnd = random.Random()
-        retrieve = node.retrieve
-        for _ in range(count):
-            retrieve(hashes[rnd.randrange(len(hashes))])
 
-    def throughput(threads: int, per_thread: int = 60_000) -> float:
-        workers = [threading.Thread(target=work, args=(per_thread,)) for _ in range(threads)]
-        started = time.perf_counter()
-        for worker in workers:
-            worker.start()
-        for worker in workers:
-            worker.join()
-        return threads * per_thread / (time.perf_counter() - started)
+def test_a_removal_reaches_every_threads_read_cache() -> None:
+    node = Node("cache", max_memory_bytes=1 << 20)
+    node.store(make_fragment("a" * 32, (0, 3)))
+    seen: list[object] = []
+    read = threading.Event()
+    removed = threading.Event()
 
-    throughput(1)  # warm up
-    single = max(throughput(1) for _ in range(2))
-    four = max(throughput(4) for _ in range(2))
-    assert four / single >= 1.8, f"4 threads: {four:,.0f}/s vs 1 thread: {single:,.0f}/s"
+    def reader() -> None:
+        key = "".join(["a"] * 32)  # this thread's own string, as a request would parse it
+        seen.append(node.retrieve(key))
+        read.set()
+        removed.wait()
+        seen.append(node.retrieve(key))
+
+    thread = threading.Thread(target=reader)
+    thread.start()
+    read.wait()
+    with node.lock:
+        node.remove_fragment("a" * 32)
+    removed.set()
+    thread.join()
+    assert seen[0] is not None and seen[1] is None
+
+
+def test_read_caches_never_hold_a_removed_fragment() -> None:
+    """Readers fill their caches while writers remove and re-store; no cache may go stale."""
+    node = Node("churn", max_memory_bytes=1 << 30)
+    hashes = [f"{i:032x}" for i in range(64)]
+    stop = threading.Event()
+    errors: list[BaseException] = []
+
+    def writer(seed: int) -> None:
+        rnd = random.Random(seed)
+        try:
+            while not stop.is_set():
+                h = hashes[rnd.randrange(len(hashes))]
+                with node.lock:
+                    if h in node.fragments:
+                        node.remove_fragment(h)
+                node.store(make_fragment(h, (0, 3)))
+        except BaseException as exc:
+            errors.append(exc)
+
+    caches = []
+
+    def reader(seed: int) -> None:
+        rnd = random.Random(seed)
+        own = ["".join(list(h)) for h in hashes]  # this thread's own strings
+        try:
+            caches.append(node.table.thread_cache())
+            while not stop.is_set():
+                node.retrieve(own[rnd.randrange(len(own))])
+        except BaseException as exc:
+            errors.append(exc)
+
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        threads = [threading.Thread(target=writer, args=(n,)) for n in range(2)]
+        threads += [threading.Thread(target=reader, args=(n,)) for n in range(4)]
+        for thread in threads:
+            thread.start()
+        time.sleep(1.5)
+        stop.set()
+        for thread in threads:
+            thread.join()
+    finally:
+        sys.setswitchinterval(interval)
+    assert not errors
+    with node.lock:
+        for cache in caches:
+            for key, (fragment, _expires) in cache.items():
+                assert node.fragments.get(key) is fragment, key

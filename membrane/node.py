@@ -27,7 +27,7 @@ from membrane.metrics import NodeMetrics
 from membrane.security.tenant import has_admin_scope
 from membrane.store.eviction import EVICTION_REUSE_EPSILON, EvictionPolicy, FrequencyLRU, WeightedLRU
 from membrane.store.table import FragmentTable
-from membrane.store.tenant_guard import TenantGuard
+from membrane.store.tenant_guard import NO_SCOPES, TenantGuard
 from membrane.tiers import TierPolicy, select_tier
 from membrane.transfer_engine_ext import AdaptiveFragmenter
 
@@ -214,7 +214,8 @@ class Node:
         """Let every request thread read this node without refcount contention.
 
         On a free-threaded Python, switches the node and the objects each
-        read reaches (table, its maps, content store, eviction policy) to
+        read reaches (table, its maps, content store, eviction policy, the
+        clock) to
         deferred reference counting (:func:`~membrane.runtime.concurrency.share`).
         Call again after replacing one of them.
 
@@ -235,6 +236,7 @@ class Node:
             store_map if isinstance(store_map, dict) else None,
             self.eviction_policy,
             self.index_system,
+            time.time,
         )
 
     @property
@@ -286,7 +288,7 @@ class Node:
         fragment: Fragment,
         is_primary: bool = True,
         caller_tenant: str = "",
-        caller_scopes: frozenset[str] = frozenset(),
+        caller_scopes: frozenset[str] = NO_SCOPES,
     ) -> bool:
         """Store a fragment in this node.
 
@@ -402,7 +404,7 @@ class Node:
         self,
         content_hash: str,
         caller_tenant: str = "",
-        caller_scopes: frozenset[str] = frozenset(),
+        caller_scopes: frozenset[str] = NO_SCOPES,
     ) -> Fragment | None:
         """Retrieve a fragment by content hash.
 
@@ -452,7 +454,7 @@ class Node:
         self,
         content_hash: str,
         caller_tenant: str = "",
-        caller_scopes: frozenset[str] = frozenset(),
+        caller_scopes: frozenset[str] = NO_SCOPES,
     ) -> str | None:
         """The resident key :meth:`retrieve` would read for ``content_hash``.
 
@@ -500,13 +502,14 @@ class Node:
         # A hit takes no lock (single dict reads and one write), so reads
         # run in parallel on a free-threaded Python; only removing an
         # expired fragment does.
-        fragment = self.table.get(content_hash)
-        if fragment is None:
-            return None
-        if not TenantGuard.can_read(fragment.tenant_id, caller_tenant, caller_scopes):
-            return None
         now = time.time()
-        if now - self.table.inserted_at(content_hash, now) > fragment.ttl:
+        entry = self.table.lookup(content_hash, now)
+        if entry is None:
+            return None
+        fragment, expires = entry
+        if caller_tenant and not TenantGuard.can_read(fragment.tenant_id, caller_tenant, caller_scopes):
+            return None
+        if now > expires:
             with self.lock:
                 if self.table.is_expired(content_hash, now):
                     # Background TTL cleanup: remove the expired entry
@@ -514,7 +517,6 @@ class Node:
                     logger.debug("Evicting expired fragment %s from %s", content_hash, self.node_id)
                     self.remove_fragment(content_hash)
             return None
-        self.table.record_access(content_hash, now)
         return fragment
 
     def remove_fragment(self, content_hash: str) -> Fragment:
