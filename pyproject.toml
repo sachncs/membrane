@@ -55,7 +55,7 @@ dev = [
     "numpy>=1.26.0",
     "lz4>=4.3.0",
     "hypothesis>=6.100.0",
-    "pytest-benchmark>=4.0.0",
+    "pytest-benchmark>=5.3.0",
     "pytest-timeout>=2.3.0",
     # Tracing tests use the SDK's in-memory exporter.
     "opentelemetry-sdk>=1.25.0",
