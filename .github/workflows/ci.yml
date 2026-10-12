@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           activate-environment: true
           enable-cache: true
@@ -64,7 +64,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           activate-environment: true
           enable-cache: true
@@ -90,7 +90,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           enable-cache: true
       # grpcio would turn the GIL back on, so this environment leaves it
@@ -124,7 +124,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           activate-environment: true
           enable-cache: true
@@ -159,7 +159,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           activate-environment: true
           enable-cache: true
@@ -179,7 +179,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # gitleaks scans history
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           activate-environment: true
           enable-cache: true
@@ -313,7 +313,7 @@ jobs:
       - uses: helm/kind-action@v1.15.0
         with:
           install_only: true
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.0
       # Rolling restart under strong writes, primary loss, and scale-out on
       # the shipped StatefulSet, with payload-bearing fragments.
       - name: Cluster end-to-end
@@ -337,7 +337,7 @@ jobs:
       - uses: helm/kind-action@v1.15.0
         with:
           install_only: true
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.0
       # Each pod gets 250m CPU (requests = limits); 5 nodes must serve at
       # least 1.5x the reads of 3 (linear is 1.67x).
       - name: Read capacity, 3 -> 5 nodes
