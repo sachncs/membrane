@@ -310,7 +310,7 @@ jobs:
           load: true
           tags: membrane:ci
           cache-from: type=gha
-      - uses: helm/kind-action@v1.15.0
+      - uses: helm/kind-action@v1.15.1
         with:
           install_only: true
       - uses: astral-sh/setup-uv@v10.2.0
@@ -334,7 +334,7 @@ jobs:
           load: true
           tags: membrane:ci
           cache-from: type=gha
-      - uses: helm/kind-action@v1.15.0
+      - uses: helm/kind-action@v1.15.1
         with:
           install_only: true
       - uses: astral-sh/setup-uv@v10.2.0
