@@ -46,7 +46,7 @@ dev = [
     # transport tests import fastapi and grpcio.
     "grpcio>=1.84.0",
     "grpcio-tools>=1.84.0",
-    "fastapi>=0.142.2",
+    "fastapi>=0.143.0",
     "uvicorn[standard]>=0.54.0",
     "httpx>=0.28.1",
     "pydantic>=2.13.5",
@@ -62,7 +62,7 @@ dev = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
 ]
 # Everything `membrane serve` needs, including TLS / encryption at rest.
-server = ["redis>=8.1.0", "fastapi>=0.142.2", "uvicorn[standard]>=0.54.0", "httpx>=0.28.1", "pydantic>=2.13.5", "cryptography>=44.0.0"]
+server = ["redis>=8.1.0", "fastapi>=0.143.0", "uvicorn[standard]>=0.54.0", "httpx>=0.28.1", "pydantic>=2.13.5", "cryptography>=44.0.0"]
 # KV transfer engine and quantization (membrane.transfer_engine, membrane.quantization).
 # zstd comes from the standard library (compression.zstd, PEP 784).
 transfer = ["numpy>=1.26.0", "lz4>=4.3.0"]
@@ -83,7 +83,7 @@ local-llm = ["transformers>=5.18.0", "tokenizers>=0.23.1", "torch>=2.13.0", "sen
 # REST surface is FastAPI-only; the gRPC surface additionally
 # pulls in grpcio. Operators that only need one of the two
 # surfaces can install the corresponding extra directly.
-disagg = ["fastapi>=0.142.2", "uvicorn[standard]>=0.54.0", "grpcio>=1.84.0", "grpcio-tools>=1.84.0"]
+disagg = ["fastapi>=0.143.0", "uvicorn[standard]>=0.54.0", "grpcio>=1.84.0", "grpcio-tools>=1.84.0"]
 
 [project.scripts]
 membrane = "membrane.cli:main"
