@@ -67,7 +67,7 @@ server = ["redis>=8.1.0", "fastapi>=0.142.2", "uvicorn[standard]>=0.54.0", "http
 # zstd comes from the standard library (compression.zstd, PEP 784).
 transfer = ["numpy>=1.26.0", "lz4>=4.3.0"]
 # Secret backends (membrane.secrets.*). Each pulls cryptography for envelope encryption.
-secrets-aws = ["boto3>=1.34.0", "cryptography>=44.0.0"]
+secrets-aws = ["boto3>=1.43.110", "cryptography>=44.0.0"]
 secrets-gcp = ["google-cloud-secret-manager>=2.20.0", "cryptography>=44.0.0"]
 secrets-vault = ["hvac>=2.1.0", "cryptography>=44.0.0"]
 tls-spiffe = ["spiffe>=0.2.0"]
