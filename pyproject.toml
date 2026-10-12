@@ -73,8 +73,8 @@ secrets-vault = ["hvac>=2.1.0", "cryptography>=44.0.0"]
 tls-spiffe = ["spiffe>=0.2.0"]
 # OpenTelemetry tracing (membrane.otel_tracer).
 otel = ["opentelemetry-api>=1.25.0", "opentelemetry-sdk>=1.25.0", "opentelemetry-exporter-otlp-proto-grpc>=1.25.0"]
-gpu = ["torch>=2.13.0"]
-local-llm = ["transformers>=5.18.0", "tokenizers>=0.23.1", "torch>=2.13.0", "sentencepiece>=0.2.2", "protobuf>=7.36.2"]
+gpu = ["torch>=2.14.1"]
+local-llm = ["transformers>=5.18.0", "tokenizers>=0.23.1", "torch>=2.14.1", "sentencepiece>=0.2.2", "protobuf>=7.36.2"]
 # Serving engines (vLLM, SGLang, TensorRT-LLM) are not extras: they pin
 # their own dependency stacks (vLLM caps fastapi below what the server
 # needs) and do not all ship Python 3.14 wheels. Install the engine in its
