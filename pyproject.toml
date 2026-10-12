@@ -72,7 +72,7 @@ secrets-gcp = ["google-cloud-secret-manager>=2.20.0", "cryptography>=44.0.0"]
 secrets-vault = ["hvac>=2.1.0", "cryptography>=44.0.0"]
 tls-spiffe = ["spiffe>=0.2.0"]
 # OpenTelemetry tracing (membrane.otel_tracer).
-otel = ["opentelemetry-api>=1.25.0", "opentelemetry-sdk>=1.25.0", "opentelemetry-exporter-otlp-proto-grpc>=1.25.0"]
+otel = ["opentelemetry-api>=1.45.1", "opentelemetry-sdk>=1.25.0", "opentelemetry-exporter-otlp-proto-grpc>=1.25.0"]
 gpu = ["torch>=2.13.0"]
 local-llm = ["transformers>=5.18.0", "tokenizers>=0.23.1", "torch>=2.13.0", "sentencepiece>=0.2.2", "protobuf>=7.36.2"]
 # Serving engines (vLLM, SGLang, TensorRT-LLM) are not extras: they pin
